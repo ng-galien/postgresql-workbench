@@ -287,3 +287,7 @@ After publication:
    version and expected behavior;
 6. verify the GitHub build-provenance attestation;
 7. retain the SHA-256 file as the integrity checksum for the published artifact.
+
+The `extension-v*` tag also triggers the GitHub Pages workflow. Confirm that
+the Pages deployment for the release commit succeeds before considering the
+release complete.

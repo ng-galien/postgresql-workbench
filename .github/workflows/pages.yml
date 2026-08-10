@@ -3,6 +3,7 @@ name: GitHub Pages
 on:
   push:
     branches: [main]
+    tags: ["extension-v*"]
     paths:
       - ".github/workflows/pages.yml"
       - "docs/user/**"
