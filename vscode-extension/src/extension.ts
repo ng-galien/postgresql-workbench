@@ -752,7 +752,8 @@ function registerGraphWorkbenchCommands(options: WorkbenchCommandOptions): void 
     ),
     vscode.commands.registerCommand(
       "postgresql-workbench.searchDatabaseObjects",
-      async (query?: string) => {
+      async (context?: unknown) => {
+        const query = typeof context === "string" ? context : undefined;
         if (query !== undefined) search.query = query;
         const result = index.state.result;
         if (index.state.status !== "available" || !result) {

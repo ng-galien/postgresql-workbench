@@ -444,6 +444,49 @@ suite("Command call sites (registered server)", function () {
     assert.strictEqual(api.workbenchIndex.state.status, "available");
   });
 
+  test("tree header search button opens an indexed PostgreSQL definition", async () => {
+    const extension = vscode.extensions.getExtension(EXT_ID);
+    assert.ok(extension, "PostgreSQL Workbench extension should be installed");
+    const packageJson = extension.packageJSON as {
+      contributes?: {
+        menus?: {
+          "view/title"?: Array<{ command: string; group?: string; when?: string }>;
+        };
+      };
+    };
+    const searchButton = packageJson.contributes?.menus?.["view/title"]?.find(
+      (item) =>
+        item.command === "postgresql-workbench.searchDatabaseObjects" &&
+        item.when === "view == postgresql-workbench-connections",
+    );
+    assert.ok(searchButton, "The Workbench tree header should contribute its search command");
+    assert.strictEqual(searchButton.group, "navigation@2");
+
+    assert.ok(await vscode.commands.executeCommand("postgresql-workbench.indexActiveDatabase"));
+    const primedUri = await vscode.commands.executeCommand<vscode.Uri>(
+      searchButton.command,
+      "shop product table",
+    );
+    assert.ok(primedUri, "The deterministic search hook should prime the last query");
+
+    const object = api.treeProvider.searchObjects("shop product table", 10)[0];
+    assert.ok(object, "The indexed table should be available as a TreeView object");
+    const treeContext = api.treeProvider.itemForObject(object);
+    assert.ok(treeContext, "The search click should receive the active TreeView context");
+    const searchFromHeader = vscode.commands.executeCommand<vscode.Uri>(
+      searchButton.command,
+      treeContext,
+    );
+    await delay(100);
+    await vscode.commands.executeCommand("workbench.action.closeQuickOpen");
+    assert.strictEqual(
+      await searchFromHeader,
+      undefined,
+      "Closing the picker should cancel a real header search without treating its context as text",
+    );
+    assert.strictEqual(api.workbenchSearchQuery(), "shop product table");
+  });
+
   test("search opens the exact indexed PostgreSQL definition", async () => {
     assert.ok(await vscode.commands.executeCommand("postgresql-workbench.indexActiveDatabase"));
     const uri = await vscode.commands.executeCommand<vscode.Uri>(

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### PostgreSQL Workbench
+
+- Fixed the Workbench tree header search action so VS Code view context is not
+  mistaken for a text query; clicking it now reliably opens the indexed object
+  picker
+
 ### Standalone PostgreSQL DAP
 
 - Added the independently publishable `@ng-galien/postgresql-dap` package, its
