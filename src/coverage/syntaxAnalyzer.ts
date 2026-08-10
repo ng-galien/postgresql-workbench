@@ -40,7 +40,6 @@ interface AnalyzerState {
   points: CoveragePoint[];
   diagnostics: CoverageDiagnostic[];
   nextPoint: number;
-  nextLoop: number;
 }
 
 interface StatementLocation {
@@ -91,7 +90,6 @@ export function analyzeCoverageSyntax(source: string, syntax: SyntaxTree): Cover
     points: [],
     diagnostics: [],
     nextPoint: 0,
-    nextLoop: 0,
   };
   analyzeBlock(block, state, "root");
   detectAmbiguousLineSites(state);
@@ -312,11 +310,9 @@ function analyzeLoop(statement: SyntaxNode, state: AnalyzerState, path: string):
     return;
   }
 
-  const loopKey = `l${state.nextLoop++}`;
   const lastBodyLine = lastStatementLine(section) ?? first.line;
   addPoint(state, statement.start.line, "branch", `loop enter @${statement.start.line}`, {
     kind: "loop_enter",
-    loopKey,
     loopLine: statement.start.line,
     line: first.line,
     searchAfter: lastBodyLine,
@@ -325,9 +321,8 @@ function analyzeLoop(statement: SyntaxNode, state: AnalyzerState, path: string):
     byteOffset: first.byteOffset,
   });
   if (statement.kind !== "stmt_loop") {
-    addPoint(state, statement.start.line, "branch", `loop skip @${statement.start.line}`, {
-      kind: "loop_skip",
-      loopKey,
+    addPoint(state, statement.start.line, "branch", `loop exit @${statement.start.line}`, {
+      kind: "loop_exit",
       loopLine: statement.start.line,
       searchAfter: lastBodyLine,
       byteOffset: body.byteRange[1],

@@ -5,9 +5,6 @@ on:
     branches: [main]
   workflow_dispatch:
 
-env:
-  CODE_MONIKER_REF: 391414ae9298c34d46e6f66c47834c656078486b
-
 jobs:
   biome:
     name: Biome
@@ -59,8 +56,6 @@ jobs:
     name: Integration Tests
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    env:
-      CODE_MONIKER_CHECKOUT: ${{ github.workspace }}/code-moniker-runtime
     services:
       postgres:
         image: galien0xffffff/postgres-debugger:17
@@ -77,11 +72,6 @@ jobs:
           --health-retries 15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          repository: ng-galien/code-moniker
-          ref: ${{ env.CODE_MONIKER_REF }}
-          path: code-moniker-runtime
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
@@ -89,13 +79,10 @@ jobs:
           cache-dependency-path: |
             package-lock.json
             vscode-extension/package-lock.json
-            code-moniker-runtime/packages/client/package-lock.json
       - run: sudo apt-get update
       - run: sudo apt-get install -y postgresql-client xvfb
       - run: npm ci
       - run: npm --prefix vscode-extension ci
-      - name: Build pinned local Code Moniker npm packages
-        run: npm --prefix vscode-extension run prepare:code-moniker:local
       - run: npm run build
       - name: Wait for PostgreSQL
         env:
@@ -114,6 +101,7 @@ jobs:
         run: |
           psql -h 127.0.0.1 -p 5433 -U postgres -d testdb -v ON_ERROR_STOP=1 -f e2e/init/01-extension.sql
           psql -h 127.0.0.1 -p 5433 -U postgres -d testdb -v ON_ERROR_STOP=1 -f e2e/init/02-test-functions.sql
+          psql -h 127.0.0.1 -p 5433 -U postgres -d testdb -v ON_ERROR_STOP=1 -f e2e/init/03-coverage.sql
           psql -h 127.0.0.1 -p 5433 -U postgres -d testdb -v ON_ERROR_STOP=1 -f demo/init/03-shop.sql
       - name: Run DAP integration tests
         run: npm run test:e2e:run
@@ -142,8 +130,12 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: package-lock.json
+          cache-dependency-path: |
+            package-lock.json
+            vscode-extension/package-lock.json
       - run: npm ci
+      - run: npm --prefix vscode-extension ci
+      - run: npm --prefix vscode-extension run stage:code-moniker
       - run: npm run test:e2e:legacy
 
   package-extension:
@@ -162,15 +154,9 @@ jobs:
           - target: win32-x64
             runner: windows-2025
     env:
-      CODE_MONIKER_CHECKOUT: ${{ github.workspace }}/code-moniker-runtime
       CODE_MONIKER_TARGET: ${{ matrix.target }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          repository: ng-galien/code-moniker
-          ref: ${{ env.CODE_MONIKER_REF }}
-          path: code-moniker-runtime
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
@@ -178,12 +164,21 @@ jobs:
           cache-dependency-path: |
             package-lock.json
             vscode-extension/package-lock.json
-            code-moniker-runtime/packages/client/package-lock.json
       - run: npm ci
       - run: npm --prefix vscode-extension ci
-      - run: npm --prefix vscode-extension run prepare:code-moniker:local
       - run: npm --prefix vscode-extension run package
       - run: git diff --exit-code -- vscode-extension/THIRD_PARTY_NOTICES.md
+      - name: Install Linux display server for VS Code smoke test
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb
+      - name: Smoke-test extension activation and Code Moniker on Linux
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npm --prefix vscode-extension run test:smoke
+      - name: Smoke-test extension activation and Code Moniker
+        if: runner.os != 'Linux'
+        run: npm --prefix vscode-extension run test:smoke
       - name: Generate validated artifact checksum
         run: npm --prefix vscode-extension run checksum:package
       - name: Upload VSIX artifact

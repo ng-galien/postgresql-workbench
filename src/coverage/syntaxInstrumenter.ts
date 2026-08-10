@@ -17,12 +17,8 @@ export function instrumentCoverageSyntaxBody(
   if (errors.length > 0) throw new CoverageInstrumentationError(errors);
 
   const injections: ByteInjection[] = [];
-  const loopEntries = analysis.points.filter((point) => point.placement.kind === "loop_enter");
   for (const point of analysis.points) {
     addPointInjections(source, point, runId, injections);
-  }
-  if (loopEntries.length > 0) {
-    addDeclarations(source, analysis, runId, loopEntries, injections);
   }
 
   return {
@@ -55,55 +51,16 @@ function addPointInjections(
     return;
   }
   if (placement.kind === "loop_enter") {
-    const loopOffset = requiredOffset(placement.loopByteOffset, point);
     const entryOffset = requiredOffset(placement.byteOffset, point);
-    const flag = loopFlag(runId, placement.loopKey);
-    injections.push(beforeInjection(source, loopOffset, -2, [`${flag} := false;`]));
-    injections.push(
-      beforeInjection(source, entryOffset, -1, [`${flag} := true;`, marker(runId, point.id)]),
-    );
+    injections.push(beforeInjection(source, entryOffset, -1, [marker(runId, point.id)]));
     return;
   }
   const offset = requiredOffset(placement.byteOffset, point);
   const indent = indentationAt(source, offset);
-  const flag = loopFlag(runId, placement.loopKey);
   injections.push({
     offset,
     order: pointOrder(point),
-    text:
-      `\n${indent}IF NOT ${flag} THEN\n` +
-      `${indent}  ${marker(runId, point.id)}\n` +
-      `${indent}END IF;`,
-  });
-}
-
-function addDeclarations(
-  source: string,
-  analysis: CoverageAnalysis,
-  runId: string,
-  loopEntries: readonly CoveragePoint[],
-  injections: ByteInjection[],
-): void {
-  const declaration = analysis.instrumentation?.declaration;
-  if (!declaration) {
-    throw instrumentationError(
-      "coverage.ast-placement-missing",
-      "The PL/pgSQL syntax tree does not expose a declaration insertion point.",
-    );
-  }
-  const indent = indentationAt(source, declaration.byteOffset);
-  const declarations = loopEntries.map((point) => {
-    const placement = point.placement;
-    if (placement.kind !== "loop_enter") throw new Error("unreachable loop placement");
-    return `${indent}  ${loopFlag(runId, placement.loopKey)} boolean := false;`;
-  });
-  injections.push({
-    offset: declaration.byteOffset,
-    order: Number.MIN_SAFE_INTEGER,
-    text:
-      declaration.kind === "append"
-        ? `\n${declarations.join("\n")}`
-        : `DECLARE\n${declarations.join("\n")}\n${indent}`,
+    text: `\n${indent}${marker(runId, point.id)}`,
   });
 }
 
@@ -167,10 +124,6 @@ function requiredOffset(offset: number | undefined, point: CoveragePoint): numbe
 
 function marker(runId: string, pointId: string): string {
   return `RAISE WARNING '${formatCoverageMarker(runId, pointId)}';`;
-}
-
-function loopFlag(runId: string, loopKey: string): string {
-  return `__plpgsql_cov_${runId.replace(/-/g, "_")}_${loopKey}`;
 }
 
 function pointOrder(point: CoveragePoint): number {

@@ -133,7 +133,7 @@ END;
       "IF false @3",
       "WHEN @9",
       "loop enter @12",
-      "loop skip @12",
+      "loop exit @12",
       "EXCEPTION division_by_zero",
     ]);
     expect(analysis.points.slice(0, 5).map((point) => point.label)).toEqual([
@@ -203,11 +203,11 @@ END;
       analysis.points.filter((point) => point.kind === "branch").map((point) => point.label),
     ).toEqual([
       "loop enter @2",
-      "loop skip @2",
+      "loop exit @2",
       "loop enter @5",
-      "loop skip @5",
+      "loop exit @5",
       "loop enter @8",
-      "loop skip @8",
+      "loop exit @8",
       "loop enter @11",
     ]);
   });

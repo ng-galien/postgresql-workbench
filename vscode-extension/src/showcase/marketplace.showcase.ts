@@ -5,6 +5,7 @@ import * as net from "node:net";
 import path from "node:path";
 import { TextDecoder } from "node:util";
 import * as vscode from "vscode";
+import type { PgTapCoverageSnapshot } from "../coverageRunProfile.js";
 import type { PlpgsqlExtensionApi } from "../extension.js";
 import { NEW_SQL_NOTEBOOK_COMMAND } from "../sqlNotebook.js";
 import { SQL_NOTEBOOK_RESULT_MIME } from "../sqlNotebookModel.js";
@@ -173,6 +174,7 @@ async function coverageScene(api: PlpgsqlExtensionApi): Promise<void> {
     await vscode.commands.executeCommand("testing.coverageSelected");
     const coverage = await completed;
     assert.ok(coverage.files.length > 0, "The coverage run must publish at least one file");
+    await assertRestockLoopCovered(api, coverage, routine);
     await vscode.commands.executeCommand("testing.openCoverage");
     const uri = api.workbenchIndex.documentUri(routine.symbolUri);
     assert.ok(uri);
@@ -181,6 +183,48 @@ async function coverageScene(api: PlpgsqlExtensionApi): Promise<void> {
     await vscode.commands.executeCommand("testing.toggleInlineCoverage");
     await delay(3200);
   });
+}
+
+async function assertRestockLoopCovered(
+  api: PlpgsqlExtensionApi,
+  coverage: PgTapCoverageSnapshot,
+  routine: WorkbenchObjectModel,
+): Promise<void> {
+  const file = coverage.files.find(
+    ({ uri }) => api.workbenchIndex.sourceDescriptorForDocumentUri(uri)?.oid === routine.oid,
+  );
+  assert.ok(file, "The coverage run must include shop.restock_report");
+  const cancellation = new vscode.CancellationTokenSource();
+  let details: vscode.FileCoverageDetail[] | undefined;
+  try {
+    details = await api.coverageTests.coverageProfile.profile.loadDetailedCoverage?.(
+      coverage.run,
+      file,
+      cancellation.token,
+    );
+  } finally {
+    cancellation.dispose();
+  }
+  assert.ok(details, "The coverage run must expose native details for shop.restock_report");
+  const document = await vscode.workspace.openTextDocument(file.uri);
+  const loop = details.find(
+    (detail): detail is vscode.StatementCoverage =>
+      detail instanceof vscode.StatementCoverage &&
+      document.lineAt(coverageLine(detail)).text.includes("FOR rec IN SELECT"),
+  );
+  assert.ok(loop, "The coverage run must expose the restock FOR loop");
+  assert.ok(Number(loop.executed) > 0, "The executed restock FOR loop must be covered");
+  assert.equal(loop.branches.length, 2, "The restock FOR loop must expose enter and exit branches");
+  assert.ok(
+    loop.branches.every(({ executed }) => Number(executed) > 0),
+    "Entering and normally exiting the restock FOR loop must cover both loop branches",
+  );
+}
+
+function coverageLine(statement: vscode.StatementCoverage): number {
+  return statement.location instanceof vscode.Range
+    ? statement.location.start.line
+    : statement.location.line;
 }
 
 async function debuggerScene(api: PlpgsqlExtensionApi): Promise<void> {
@@ -300,7 +344,7 @@ function colorThemeKind(kind: vscode.ColorThemeKind): string {
 }
 
 function waitForCoverage(api: PlpgsqlExtensionApi, timeoutMs = 30_000) {
-  return new Promise<{ files: readonly vscode.FileCoverage[] }>((resolve, reject) => {
+  return new Promise<PgTapCoverageSnapshot>((resolve, reject) => {
     const timer = setTimeout(() => {
       subscription.dispose();
       reject(new Error("Timed out waiting for native pgTAP coverage"));

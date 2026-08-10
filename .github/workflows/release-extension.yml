@@ -8,9 +8,6 @@ on:
 permissions:
   contents: read
 
-env:
-  CODE_MONIKER_REF: 391414ae9298c34d46e6f66c47834c656078486b
-
 jobs:
   validate:
     name: Validate extension release
@@ -19,11 +16,6 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          repository: ng-galien/code-moniker
-          ref: ${{ env.CODE_MONIKER_REF }}
-          path: code-moniker-runtime
 
       - name: Verify release commit and tag
         run: |
@@ -38,14 +30,10 @@ jobs:
           cache-dependency-path: |
             package-lock.json
             vscode-extension/package-lock.json
-            code-moniker-runtime/packages/client/package-lock.json
 
       - run: npm ci
       - run: npm --prefix vscode-extension ci
-      - name: Build pinned local Code Moniker npm packages
-        env:
-          CODE_MONIKER_CHECKOUT: ${{ github.workspace }}/code-moniker-runtime
-        run: npm --prefix vscode-extension run prepare:code-moniker:local
+      - run: npm --prefix vscode-extension run stage:code-moniker
 
       - run: npm run check
       - run: npm run typecheck
@@ -61,12 +49,8 @@ jobs:
       - name: Run PostgreSQL DAP integration tests
         run: npm run test:e2e:run
       - name: Run VS Code extension integration tests
-        env:
-          CODE_MONIKER_CHECKOUT: ${{ github.workspace }}/code-moniker-runtime
         run: xvfb-run -a npm --prefix vscode-extension test
       - name: Run extension tests on minimum supported VS Code
-        env:
-          CODE_MONIKER_CHECKOUT: ${{ github.workspace }}/code-moniker-runtime
         run: xvfb-run -a npm --prefix vscode-extension run test:min-vscode
       - name: Stop PostgreSQL integration fixture
         if: always()
@@ -91,15 +75,9 @@ jobs:
           - target: win32-x64
             runner: windows-2025
     env:
-      CODE_MONIKER_CHECKOUT: ${{ github.workspace }}/code-moniker-runtime
       CODE_MONIKER_TARGET: ${{ matrix.target }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          repository: ng-galien/code-moniker
-          ref: ${{ env.CODE_MONIKER_REF }}
-          path: code-moniker-runtime
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
@@ -107,12 +85,21 @@ jobs:
           cache-dependency-path: |
             package-lock.json
             vscode-extension/package-lock.json
-            code-moniker-runtime/packages/client/package-lock.json
       - run: npm ci
       - run: npm --prefix vscode-extension ci
-      - run: npm --prefix vscode-extension run prepare:code-moniker:local
       - run: npm --prefix vscode-extension run package
       - run: git diff --exit-code -- vscode-extension/THIRD_PARTY_NOTICES.md
+      - name: Install Linux display server for VS Code smoke test
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb
+      - name: Smoke-test extension activation and Code Moniker on Linux
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npm --prefix vscode-extension run test:smoke
+      - name: Smoke-test extension activation and Code Moniker
+        if: runner.os != 'Linux'
+        run: npm --prefix vscode-extension run test:smoke
       - name: Generate validated artifact checksum
         run: npm --prefix vscode-extension run checksum:package
       - name: Upload target VSIX

@@ -120,8 +120,12 @@ describe.skipIf(!LOCAL_CODE_MONIKER_AVAILABLE)(
         workspaceRoots: [workspaceRoot],
         clientName: "postgresql-workbench-u1-e2e",
       });
-      expect(session.metadata.packageVersion).toBe("0.6.0");
-      expect(session.metadata.source).toMatch(/^((local-)?npm):/);
+      await waitForWorkspaceReady(session);
+      expect(session.metadata.packageVersion).toMatch(/^\d+\.\d+\.\d+$/);
+      expect(session.metadata.source).toBe(
+        `npm:@code-moniker/client@${session.metadata.packageVersion}+` +
+          `@code-moniker/cli-${process.platform}-${process.arch}@${session.metadata.packageVersion}`,
+      );
       expect(session.client.supportsCommand("workspace.source_set.replace")).toBe(true);
       expect(session.client.supportsQuery("symbol.graph")).toBe(true);
 
@@ -238,4 +242,17 @@ function catalogClient(client: Client): CatalogQueryClient {
       return { rows: result.rows };
     },
   };
+}
+
+async function waitForWorkspaceReady(session: LocalCodeMonikerSession): Promise<void> {
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
+    const status = await session.client.workspace.status();
+    if (status.phase === "ready") return;
+    if (status.phase === "failed") {
+      throw new Error(status.failure?.message ?? "Code Moniker workspace indexing failed");
+    }
+    await new Promise((resolveReady) => setTimeout(resolveReady, 50));
+  }
+  throw new Error("Code Moniker workspace did not become ready within 30000ms");
 }

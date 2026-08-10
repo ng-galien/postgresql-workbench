@@ -91,7 +91,7 @@ describe("e2e: transactional coverage runner", () => {
         expect.objectContaining({
           point: expect.objectContaining({
             kind: "branch",
-            label: expect.stringMatching(/^loop skip @/),
+            label: expect.stringMatching(/^loop exit @/),
           }),
           executed: expect.any(Number),
         }),

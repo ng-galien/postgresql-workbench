@@ -191,7 +191,7 @@ export class ScratchpadsItem extends vscode.TreeItem {
   constructor(public readonly server: ServerConfig) {
     super("Scratchpads", vscode.TreeItemCollapsibleState.Collapsed);
     this.id = `postgres-scratchpads:${server.id}`;
-    this.iconPath = new vscode.ThemeIcon("notebook");
+    this.iconPath = new vscode.ThemeIcon("notebook-template");
     this.contextValue = "postgresql-workbench-scratchpads";
   }
 }
@@ -218,7 +218,7 @@ export class SqlNotebookItem extends vscode.TreeItem {
     super(label, vscode.TreeItemCollapsibleState.Collapsed);
     this.id = entry.uri.toString();
     this.resourceUri = entry.uri;
-    this.iconPath = new vscode.ThemeIcon(entry.error ? "warning" : "notebook");
+    this.iconPath = new vscode.ThemeIcon(entry.error ? "warning" : "note");
     this.contextValue = "postgresql-workbench-sql-notebook";
     this.description =
       binding.status === "bound"

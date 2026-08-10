@@ -5,17 +5,14 @@ import {
   copyFileSync,
   existsSync,
   mkdirSync,
-  mkdtempSync,
   readFileSync,
   rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
 import { createRequire } from "node:module";
-import { tmpdir } from "node:os";
-import { dirname, join, resolve, sep } from "node:path";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { gunzipSync } from "node:zlib";
 import { build } from "esbuild";
 import {
   CODE_MONIKER_TARGETS,
@@ -24,10 +21,6 @@ import {
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const extensionRoot = resolve(scriptDirectory, "..");
-const repositoryRoot = resolve(extensionRoot, "..");
-const localCheckout = resolve(
-  process.env.CODE_MONIKER_CHECKOUT ?? resolve(repositoryRoot, "..", "code-moniker"),
-);
 const runtimeRoot = resolve(extensionRoot, "runtime", "code-moniker");
 const clientOutput = resolve(runtimeRoot, "client", "index.cjs");
 const nodeOutput = resolve(runtimeRoot, "client", "node.cjs");
@@ -35,20 +28,18 @@ const requireFromExtension = createRequire(import.meta.url);
 const target = resolveCodeMonikerTarget();
 const targetPackage = CODE_MONIKER_TARGETS[target];
 
-const temporaryRoot = mkdtempSync(join(tmpdir(), "postgresql-workbench-code-moniker-package-"));
-try {
-  const packageSource = resolveInstalledPackages() ?? materializeLocalPackages(temporaryRoot);
-  await stageRuntime(packageSource);
-} finally {
-  rmSync(temporaryRoot, { recursive: true, force: true });
-}
+await stageRuntime(resolveInstalledPackages());
 
 function resolveInstalledPackages() {
   let clientIndexSource;
   try {
     clientIndexSource = requireFromExtension.resolve("@code-moniker/client");
   } catch (error) {
-    if (isMissingModule(error, "@code-moniker/client")) return undefined;
+    if (isMissingModule(error, "@code-moniker/client")) {
+      throw new Error(
+        "Published @code-moniker/client is not installed. Run npm ci in vscode-extension.",
+      );
+    }
     throw error;
   }
 
@@ -79,65 +70,6 @@ function resolveInstalledPackages() {
     clientLicense: resolve(clientRoot, "LICENSE"),
     nativeLicense: resolve(nativeRoot, "LICENSE"),
     nodePaths: [],
-    sourceKind: "registry",
-  };
-}
-
-function materializeLocalPackages(temporaryDirectory) {
-  const clientRoot = resolve(localCheckout, "packages", "client");
-  const clientManifestPath = resolve(clientRoot, "package.json");
-  const clientIndexBuild = resolve(clientRoot, "dist", "index.cjs");
-  const clientNodeBuild = resolve(clientRoot, "dist", "node.cjs");
-  const binaryBuild = resolve(localCheckout, "target", "release", targetPackage.executable);
-  const nativeStageScript = resolve(clientRoot, "scripts", "stage-native-package.mjs");
-  for (const required of [
-    clientManifestPath,
-    clientIndexBuild,
-    clientNodeBuild,
-    binaryBuild,
-    nativeStageScript,
-  ]) {
-    if (!existsSync(required)) {
-      throw new Error(
-        `Local Code Moniker package artifact is missing: ${required}. ` +
-          "Build @code-moniker/client and the release binary before building the Workbench.",
-      );
-    }
-  }
-
-  const packDirectory = resolve(temporaryDirectory, "packs");
-  const cacheDirectory = resolve(temporaryDirectory, "npm-cache");
-  const nativeStage = resolve(temporaryDirectory, "native-stage");
-  mkdirSync(packDirectory, { recursive: true });
-  execFileSync(
-    process.execPath,
-    [nativeStageScript, target, binaryBuild, nativeStage],
-    { stdio: "inherit" },
-  );
-
-  const clientTarball = packPackage(clientRoot, packDirectory, cacheDirectory);
-  const nativeTarball = packPackage(nativeStage, packDirectory, cacheDirectory);
-  const clientPackageRoot = extractPackage(
-    clientTarball.path,
-    resolve(temporaryDirectory, "client-package"),
-  );
-  const nativePackageRoot = extractPackage(
-    nativeTarball.path,
-    resolve(temporaryDirectory, "native-package"),
-  );
-
-  return {
-    clientIndexSource: resolve(clientPackageRoot, "dist", "index.cjs"),
-    clientNodeSource: resolve(clientPackageRoot, "dist", "node.cjs"),
-    clientManifestPath: resolve(clientPackageRoot, "package.json"),
-    nativeManifestPath: resolve(nativePackageRoot, "package.json"),
-    binarySource: resolve(nativePackageRoot, "bin", targetPackage.executable),
-    clientLicense: resolve(clientPackageRoot, "LICENSE"),
-    nativeLicense: resolve(nativePackageRoot, "LICENSE"),
-    nodePaths: [resolve(clientRoot, "node_modules")],
-    sourceKind: "local-tarballs",
-    clientTarballSha256: clientTarball.sha256,
-    nativeTarballSha256: nativeTarball.sha256,
   };
 }
 
@@ -227,10 +159,7 @@ async function stageRuntime(packageSource) {
     );
   }
   const binarySha256 = createHash("sha256").update(readFileSync(binaryOutput)).digest("hex");
-  const source =
-    packageSource.sourceKind === "registry"
-      ? `npm:${clientManifest.name}@${clientManifest.version}+${nativeManifest.name}@${nativeManifest.version}`
-      : `local-npm:${clientManifest.name}@${clientManifest.version}#sha256:${packageSource.clientTarballSha256}+${nativeManifest.name}@${nativeManifest.version}#sha256:${packageSource.nativeTarballSha256}`;
+  const source = `npm:${clientManifest.name}@${clientManifest.version}+${nativeManifest.name}@${nativeManifest.version}`;
 
   writeFileSync(
     resolve(runtimeRoot, "manifest.json"),
@@ -258,77 +187,6 @@ async function stageRuntime(packageSource) {
     `Staged Code Moniker npm packages ${clientManifest.version} ` +
       `protocol=${client.PROTOCOL_VERSION} target=${target} source=${source}\n`,
   );
-}
-
-function packPackage(packageRootPath, packDirectory, cacheDirectory) {
-  const npmCli = process.env.npm_execpath;
-  if (!npmCli) {
-    throw new Error("Local Code Moniker npm packages must be staged through npm");
-  }
-  const output = execFileSync(
-    process.execPath,
-    [
-      npmCli,
-      "pack",
-      packageRootPath,
-      "--json",
-      "--ignore-scripts",
-      "--pack-destination",
-      packDirectory,
-    ],
-    {
-      encoding: "utf8",
-      env: { ...process.env, npm_config_cache: cacheDirectory },
-    },
-  );
-  const [packed] = JSON.parse(output);
-  if (!packed?.filename) {
-    throw new Error(`npm pack returned no tarball for ${packageRootPath}`);
-  }
-  const path = resolve(packDirectory, packed.filename);
-  return {
-    path,
-    sha256: createHash("sha256").update(readFileSync(path)).digest("hex"),
-  };
-}
-
-function extractPackage(tarball, destination) {
-  mkdirSync(destination, { recursive: true });
-  const archive = gunzipSync(readFileSync(tarball));
-  let offset = 0;
-  while (offset + 512 <= archive.length) {
-    const header = archive.subarray(offset, offset + 512);
-    if (header.every((byte) => byte === 0)) break;
-    const name = tarText(header, 0, 100);
-    const prefix = tarText(header, 345, 155);
-    const relativePath = prefix ? `${prefix}/${name}` : name;
-    const size = Number.parseInt(tarText(header, 124, 12).trim() || "0", 8);
-    const mode = Number.parseInt(tarText(header, 100, 8).trim() || "644", 8);
-    const type = String.fromCharCode(header[156] || 48);
-    const contentStart = offset + 512;
-    const output = resolve(destination, relativePath);
-    if (output !== destination && !output.startsWith(`${destination}${sep}`)) {
-      throw new Error(`npm tarball path escapes its destination: ${relativePath}`);
-    }
-    if (type === "5") {
-      mkdirSync(output, { recursive: true });
-    } else if (type === "0") {
-      mkdirSync(dirname(output), { recursive: true });
-      writeFileSync(output, archive.subarray(contentStart, contentStart + size));
-      if (process.platform !== "win32") chmodSync(output, mode);
-    }
-    offset = contentStart + Math.ceil(size / 512) * 512;
-  }
-  const extracted = resolve(destination, "package");
-  if (!existsSync(extracted)) {
-    throw new Error(`npm tarball did not contain a package directory: ${tarball}`);
-  }
-  return extracted;
-}
-
-function tarText(header, start, length) {
-  const end = header.indexOf(0, start);
-  return header.toString("utf8", start, end === -1 || end > start + length ? start + length : end);
 }
 
 function packageRoot(path, expectedName) {

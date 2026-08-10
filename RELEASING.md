@@ -60,11 +60,10 @@ The CI VSIX artifacts prove that the extension packages correctly on every
 supported host, but they are not release artifacts. The release workflow always
 rebuilds from the tagged commit.
 
-Until `@code-moniker/client` is published, both workflows check out the exact
-`CODE_MONIKER_REF` declared in their workflow file and build local npm tarballs.
-That commit must be reachable from `ng-galien/code-moniker` before CI runs. Once
-the npm packages are public, replace this bootstrap with an exact npm dependency
-and remove the secondary checkout and preparation step.
+Both workflows install the published Code Moniker client and native packages
+from npm using `vscode-extension/package-lock.json`. They never check out or
+build Code Moniker source. Update the npm dependency and lockfile explicitly
+when adopting a new Code Moniker release, then validate every packaged target.
 
 ## Prepare a release
 

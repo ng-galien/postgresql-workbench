@@ -48,8 +48,13 @@ const commands = {
   preview,
 };
 
-if (!commands[command]) fail(`Unknown command: ${command}\n`);
-await commands[command](...args);
+try {
+  if (!commands[command]) fail(`Unknown command: ${command}\n`);
+  await commands[command](...args);
+} catch (error) {
+  process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+  process.exitCode = 1;
+}
 
 function printHelp() {
   console.log(`PostgreSQL Workbench Marketplace showcase runner
@@ -173,7 +178,7 @@ async function runScene(sceneId, ...options) {
 async function capture(sceneId, ...options) {
   const scene = requireScene(sceneId);
   const { theme, remaining } = parseThemeOptions(options);
-  ensureCaptureTools();
+  await ensureCaptureTools();
   await startDemoDatabase(false);
   if (!remaining.includes("--no-build")) await buildShowcase();
   await executeShowcase(scene, true, theme);
@@ -182,7 +187,7 @@ async function capture(sceneId, ...options) {
 
 async function captureAll(...options) {
   const { theme } = parseThemeOptions(options);
-  ensureCaptureTools();
+  await ensureCaptureTools();
   await startDemoDatabase(false);
   await buildShowcase();
   for (const scene of manifest.scenes) {
@@ -204,11 +209,12 @@ async function executeShowcase(scene, withCapture, theme) {
   const donePath = path.join(controlDir, "done");
   const stoppedPath = path.join(controlDir, "stopped");
   let recorder;
+  let testProcess;
 
   try {
     if (withCapture) await rm(rawPath, { force: true });
     console.log(`\n▶ ${scene.title}`);
-    const testProcess = spawn(
+    testProcess = spawn(
       showcaseRunner,
       ["--config", showcaseConfig, "--fail-zero"],
       {
@@ -233,17 +239,13 @@ async function executeShowcase(scene, withCapture, theme) {
     }
     if (withCapture) {
       const rect = insetCaptureRect(await resolveShowcaseWindowRect());
-      recorder = startRecorder(rawPath, rect, scene.maxDurationSeconds);
-      await delay(900);
-      if (recorder.exitCode !== null) {
-        fail("The macOS screen recorder stopped before the showcase began.\n");
-      }
+      recorder = await startRecorder(rawPath, rect, scene.maxDurationSeconds);
     }
 
     await writeFile(recordingPath, "ready\n");
     await waitForFile(donePath, (scene.maxDurationSeconds + 10) * 1000, testExit);
 
-    if (recorder) await waitForRecorder(recorder, scene.maxDurationSeconds + 5);
+    if (recorder) await stopRecorder(recorder);
     await writeFile(stoppedPath, "stopped\n");
     const exitCode = await testExit;
     if (exitCode !== 0) fail(`VS Code showcase exited with code ${exitCode}.\n`);
@@ -252,7 +254,13 @@ async function executeShowcase(scene, withCapture, theme) {
     }
     console.log(`✓ ${scene.id} choreography completed`);
   } finally {
-    if (recorder && recorder.exitCode === null) recorder.kill("SIGINT");
+    if (recorder && recorder.exitCode === null && recorder.signalCode === null) {
+      recorder.kill("SIGINT");
+      await processOutcomeWithin(recorder, 2_000);
+    }
+    if (testProcess && testProcess.exitCode === null && testProcess.signalCode === null) {
+      await terminateProcess(testProcess);
+    }
     await rm(controlDir, { recursive: true, force: true });
     await rm(profileDir, { recursive: true, force: true });
   }
@@ -419,26 +427,127 @@ async function buildShowcase() {
   await run("npm", ["run", "pretest"], { cwd: extensionRoot });
 }
 
-function startRecorder(rawPath, rect, maxDurationSeconds) {
+async function startRecorder(rawPath, rect, maxDurationSeconds) {
+  const device = resolveScreenCaptureDevice();
+  const screen = resolveMainScreenBounds();
+  const crop = [
+    `trunc(iw*${rect.width}/${screen.width}/2)*2`,
+    `trunc(ih*${rect.height}/${screen.height}/2)*2`,
+    `trunc(iw*${rect.x - screen.x}/${screen.width}/2)*2`,
+    `trunc(ih*${rect.y - screen.y}/${screen.height}/2)*2`,
+  ].join(":");
   const region = `${rect.x},${rect.y},${rect.width},${rect.height}`;
   console.log(`Recording VS Code region ${region}…`);
-  return spawn(
-    "screencapture",
-    ["-x", "-v", `-R${region}`, "-k", `-V${maxDurationSeconds}`, rawPath],
-    { stdio: "inherit" },
-  );
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const recorder = spawn(
+      "ffmpeg",
+      [
+        "-y",
+        "-hide_banner",
+        "-loglevel",
+        "warning",
+        "-f",
+        "avfoundation",
+        "-framerate",
+        "12",
+        "-capture_cursor",
+        "1",
+        "-capture_mouse_clicks",
+        "1",
+        "-i",
+        `${device}:none`,
+        "-vf",
+        `crop=${crop}`,
+        "-t",
+        String(maxDurationSeconds),
+        "-r",
+        "12",
+        "-c:v",
+        "h264_videotoolbox",
+        "-pix_fmt",
+        "yuv420p",
+        "-video_track_timescale",
+        "600",
+        rawPath,
+      ],
+      { stdio: ["pipe", "inherit", "inherit"] },
+    );
+    await delay(900);
+    if (recorder.exitCode === null && recorder.signalCode === null) return recorder;
+    const outcome = await processOutcome(recorder);
+    await rm(rawPath, { force: true });
+    if (attempt < 3) {
+      console.log(
+        `Screen recorder initialization returned ` +
+          `${outcome.code ?? outcome.signal ?? "an unknown status"}; retrying (${attempt}/3)…`,
+      );
+      await delay(600);
+      continue;
+    }
+    fail(
+      `The FFmpeg screen recorder could not start ` +
+        `(${outcome.code ?? outcome.signal ?? "unknown status"}).\n`,
+    );
+  }
+  throw new Error("unreachable");
 }
 
-async function waitForRecorder(recorder, timeoutSeconds) {
-  const outcome = await Promise.race([
-    processExit(recorder).then((code) => ({ code })),
-    delay(timeoutSeconds * 1000).then(() => undefined),
-  ]);
-  if (!outcome) {
-    recorder.kill("SIGTERM");
-    fail("The macOS screen recorder did not stop after its configured duration.\n");
+async function stopRecorder(recorder) {
+  console.log("Finalizing screen recording…");
+  if (recorder.exitCode === null && recorder.signalCode === null) {
+    recorder.stdin.write("q\n");
+    recorder.stdin.end();
   }
-  if (outcome.code !== 0) fail(`The macOS screen recorder exited with code ${outcome.code}.\n`);
+  const outcome = await recorderOutcome(recorder, 5_000);
+  if (!outcome) {
+    recorder.kill("SIGKILL");
+    fail("The FFmpeg screen recorder did not stop after the showcase completed.\n");
+  }
+  if (outcome.code !== 0) {
+    fail(
+      `The FFmpeg screen recorder exited with ${outcome.code ?? outcome.signal ?? "an unknown status"}.\n`,
+    );
+  }
+}
+
+function resolveScreenCaptureDevice() {
+  const result = spawnSync(
+    "ffmpeg",
+    ["-hide_banner", "-f", "avfoundation", "-list_devices", "true", "-i", ""],
+    { encoding: "utf8" },
+  );
+  const match = `${result.stdout}\n${result.stderr}`.match(/\[(\d+)\]\s+Capture screen 0\b/);
+  if (!match) fail("FFmpeg could not find the macOS Capture screen 0 device.\n");
+  return match[1];
+}
+
+function resolveMainScreenBounds() {
+  const result = spawnSync(
+    "osascript",
+    ["-e", 'tell application "Finder" to get bounds of window of desktop'],
+    { encoding: "utf8" },
+  );
+  const [left, top, right, bottom] = result.stdout.split(",").map(Number);
+  if (
+    result.status !== 0 ||
+    ![left, top, right, bottom].every(Number.isFinite) ||
+    right <= left ||
+    bottom <= top
+  ) {
+    fail("Could not resolve the main macOS screen bounds for recording.\n");
+  }
+  return { x: left, y: top, width: right - left, height: bottom - top };
+}
+
+async function recorderOutcome(recorder, timeoutMs) {
+  return processOutcomeWithin(recorder, timeoutMs);
+}
+
+async function terminateProcess(child) {
+  child.kill("SIGTERM");
+  if (await processOutcomeWithin(child, 3_000)) return;
+  child.kill("SIGKILL");
+  await processOutcomeWithin(child, 2_000);
 }
 
 async function resolveShowcaseWindowRect() {
@@ -512,12 +621,26 @@ function insetCaptureRect(windowRect) {
   return rect;
 }
 
-function processExit(child) {
-  if (child.exitCode !== null) return Promise.resolve(child.exitCode);
+async function processExit(child) {
+  const outcome = await processOutcome(child);
+  return outcome.code ?? 1;
+}
+
+function processOutcome(child) {
+  if (child.exitCode !== null || child.signalCode !== null) {
+    return Promise.resolve({ code: child.exitCode, signal: child.signalCode });
+  }
   return new Promise((resolve, reject) => {
     child.once("error", reject);
-    child.once("exit", (code) => resolve(code ?? 1));
+    child.once("exit", (code, signal) => resolve({ code, signal }));
   });
+}
+
+function processOutcomeWithin(child, timeoutMs) {
+  return Promise.race([
+    processOutcome(child),
+    delay(timeoutMs).then(() => undefined),
+  ]);
 }
 
 async function waitForFile(file, timeoutMs, competingExit) {
@@ -539,10 +662,17 @@ function checkPlatform() {
   return true;
 }
 
-function ensureCaptureTools() {
+async function ensureCaptureTools() {
   if (process.platform !== "darwin") fail("Screen capture requires macOS.\n");
   for (const binary of ["screencapture", "osascript", "ffmpeg", "ffprobe"]) {
     ensureBinary(binary);
+  }
+  if (!(await checkScreenCaptureAccess())) {
+    fail(
+      "Screen recording is not authorized for this terminal. Enable it in " +
+        "System Settings → Privacy & Security → Screen & System Audio Recording, " +
+        "then restart the terminal.\n",
+    );
   }
 }
 
@@ -623,6 +753,5 @@ function delay(milliseconds) {
 }
 
 function fail(message) {
-  process.stderr.write(message);
-  process.exit(1);
+  throw new Error(message.trimEnd());
 }

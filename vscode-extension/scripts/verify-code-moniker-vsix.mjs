@@ -5,6 +5,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -63,14 +64,17 @@ if (!notices.includes("Permission is hereby granted")) {
 }
 
 const extracted = mkdtempSync(join(tmpdir(), "postgresql-workbench-code-moniker-vsix-"));
+let runtime;
+let ownedDaemon;
+let client;
 try {
-  const runtime = resolve(extracted, "runtime");
+  const runtimeDirectory = resolve(extracted, "runtime");
   const manifest = JSON.parse(
     await requiredText(zip, "extension/runtime/code-moniker/manifest.json"),
   );
   for (const relative of [manifest.clientEntry, manifest.nodeEntry, manifest.binary]) {
     const archivePath = `extension/runtime/code-moniker/${relative}`;
-    const output = resolve(runtime, relative);
+    const output = resolve(runtimeDirectory, relative);
     mkdirSync(resolve(output, ".."), { recursive: true });
     writeFileSync(output, await requiredBuffer(zip, archivePath));
   }
@@ -86,26 +90,26 @@ try {
       `VSIX runtime platform ${manifest.platform}-${manifest.arch} does not match ${target}`,
     );
   }
-  if (!/^((local-)?npm):/.test(manifest.source)) {
+  if (!/^npm:/.test(manifest.source)) {
     throw new Error(`VSIX runtime has invalid npm provenance: ${manifest.source}`);
   }
 
-  const requireFromRuntime = createRequire(resolve(runtime, manifest.nodeEntry));
-  const client = requireFromRuntime(resolve(runtime, manifest.clientEntry));
-  const nodeClient = requireFromRuntime(resolve(runtime, manifest.nodeEntry));
-  if (!Number.isInteger(client.PROTOCOL_VERSION)) {
+  const requireFromRuntime = createRequire(resolve(runtimeDirectory, manifest.nodeEntry));
+  const portableClient = requireFromRuntime(resolve(runtimeDirectory, manifest.clientEntry));
+  const nodeClient = requireFromRuntime(resolve(runtimeDirectory, manifest.nodeEntry));
+  if (!Number.isInteger(portableClient.PROTOCOL_VERSION)) {
     throw new Error("VSIX Code Moniker client does not expose PROTOCOL_VERSION");
   }
-  if (client.PROTOCOL_VERSION !== manifest.protocolVersion) {
+  if (portableClient.PROTOCOL_VERSION !== manifest.protocolVersion) {
     throw new Error(
-      `VSIX Code Moniker protocol ${client.PROTOCOL_VERSION} does not match manifest ${manifest.protocolVersion}`,
+      `VSIX Code Moniker protocol ${portableClient.PROTOCOL_VERSION} does not match manifest ${manifest.protocolVersion}`,
     );
   }
   if (typeof nodeClient.NodeDaemonRuntime !== "function") {
     throw new Error("VSIX Code Moniker Node client does not expose NodeDaemonRuntime");
   }
 
-  const binary = resolve(runtime, manifest.binary);
+  const binary = resolve(runtimeDirectory, manifest.binary);
   if (targetPackage.platform !== "win32") chmodSync(binary, 0o755);
   const binarySha256 = createHash("sha256").update(readFileSync(binary)).digest("hex");
   if (binarySha256 !== manifest.binarySha256) {
@@ -121,11 +125,51 @@ try {
       `VSIX Code Moniker binary ${binaryVersion} does not match manifest ${manifest.binaryVersion}`,
     );
   }
+  const workspaceDirectory = resolve(extracted, "workspace");
+  const registry = resolve(extracted, "registry");
+  mkdirSync(workspaceDirectory, { recursive: true });
+  const workspace = realpathSync(workspaceDirectory);
+  runtime = new nodeClient.NodeDaemonRuntime({
+    registryDirectory: registry,
+    binaryCandidates: [binary],
+    timeoutMs: 30_000,
+  });
+  ownedDaemon = await runtime.launch({
+    workspaceRoots: [workspace],
+    binaryCandidates: [binary],
+    registrationTimeoutMs: 30_000,
+  });
+  client = await runtime.connect(ownedDaemon.entry, {
+    clientName: "postgresql-workbench-vsix-smoke",
+    expectedWorkspaceRoots: [workspace],
+    timeoutMs: 30_000,
+  });
+  await waitForWorkspaceReady(client, 30_000);
 } finally {
-  rmSync(extracted, { recursive: true, force: true });
+  client?.close();
+  try {
+    if (runtime && ownedDaemon) {
+      await runtime.stopOwned(ownedDaemon, { timeoutMs: 15_000 });
+    }
+  } finally {
+    rmSync(extracted, { recursive: true, force: true });
+  }
 }
 
-process.stdout.write(`Verified loadable ${target} Code Moniker runtime in ${vsix}\n`);
+process.stdout.write(`Verified launchable ${target} Code Moniker runtime in ${vsix}\n`);
+
+async function waitForWorkspaceReady(workspaceClient, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const status = await workspaceClient.workspace.status();
+    if (status.phase === "ready") return;
+    if (status.phase === "failed") {
+      throw new Error(`VSIX Code Moniker workspace failed: ${status.message ?? "unknown error"}`);
+    }
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100));
+  }
+  throw new Error("VSIX Code Moniker workspace did not become ready within 30000ms");
+}
 
 async function requiredText(archive, path) {
   return (await requiredFile(archive, path)).async("string");

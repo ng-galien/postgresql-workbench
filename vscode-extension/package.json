@@ -583,12 +583,12 @@
       {
         "command": "postgresql-workbench.newSqlNotebook",
         "title": "PostgreSQL Workbench: New SQL Scratchpad",
-        "icon": "$(add)"
+        "icon": "$(notebook-template)"
       },
       {
         "command": "postgresql-workbench.openSqlNotebook",
         "title": "Open SQL Scratchpad",
-        "icon": "$(go-to-file)"
+        "icon": "$(notebook)"
       },
       {
         "command": "postgresql-workbench.renameSqlNotebook",
@@ -1012,15 +1012,15 @@
     ]
   },
   "scripts": {
-    "prepare:code-moniker:local": "node scripts/prepare-local-code-moniker.mjs",
     "stage:code-moniker": "node scripts/stage-code-moniker-runtime.mjs",
     "build": "npm run stage:code-moniker && node esbuild.mjs",
     "build:production": "npm run stage:code-moniker && node esbuild.mjs --production",
     "watch": "npm run stage:code-moniker && node esbuild.mjs --watch",
     "compile": "tsc --noEmit",
     "test:scripts": "node --test scripts/*.node-test.mjs",
-    "pretest": "npm run build && tsc -p . --outDir dist",
+    "pretest": "npm run build && tsc -p . --outDir dist && node scripts/mark-test-output-esm.mjs",
     "test": "vscode-test --fail-zero",
+    "test:smoke": "npm run pretest && vscode-test --config .vscode-smoke.mjs --fail-zero",
     "test:notebook": "npm run pretest && vscode-test --fail-zero --run dist/vscode-extension/src/test/sqlNotebook.test.js",
     "test:call-sites": "npm run pretest && vscode-test --fail-zero --run dist/vscode-extension/src/test/callSites.test.js",
     "test:min-vscode": "npm run pretest && vscode-test --code-version 1.109.0 --fail-zero",
@@ -1031,7 +1031,7 @@
     "vscode:prepublish": "npm run build:production"
   },
   "dependencies": {
-    "@code-moniker/client": "^0.6.0",
+    "@code-moniker/client": "^0.6.1",
     "@shikijs/core": "^4.4.1",
     "@shikijs/engine-javascript": "^4.4.1",
     "@shikijs/langs": "^4.4.1",

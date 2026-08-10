@@ -37,7 +37,6 @@ export interface ElseProbePlacement {
 
 export interface LoopEnterProbePlacement {
   kind: "loop_enter";
-  loopKey: string;
   loopLine: number;
   line: number;
   searchAfter: number;
@@ -46,9 +45,8 @@ export interface LoopEnterProbePlacement {
   byteOffset?: number;
 }
 
-export interface LoopSkipProbePlacement {
-  kind: "loop_skip";
-  loopKey: string;
+export interface LoopExitProbePlacement {
+  kind: "loop_exit";
   loopLine: number;
   searchAfter: number;
   byteOffset?: number;
@@ -58,7 +56,7 @@ export type CoverageProbePlacement =
   | DirectProbePlacement
   | ElseProbePlacement
   | LoopEnterProbePlacement
-  | LoopSkipProbePlacement;
+  | LoopExitProbePlacement;
 
 export interface CoveragePoint {
   id: string;

@@ -170,8 +170,8 @@ describe("Workbench tree model", () => {
           .map(({ command, icon }) => [command, icon]),
       ),
     ).toEqual({
-      "postgresql-workbench.newSqlNotebook": "$(add)",
-      "postgresql-workbench.openSqlNotebook": "$(go-to-file)",
+      "postgresql-workbench.newSqlNotebook": "$(notebook-template)",
+      "postgresql-workbench.openSqlNotebook": "$(notebook)",
       "postgresql-workbench.renameSqlNotebook": "$(edit)",
       "postgresql-workbench.deleteSqlNotebook": "$(trash)",
       "postgresql-workbench.refreshSqlNotebooks": "$(refresh)",
