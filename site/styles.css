@@ -149,10 +149,10 @@ p {
 h1 {
   max-width: 900px;
   margin: 0;
-  font-size: clamp(3rem, 6vw, 5.5rem);
-  font-weight: 720;
-  line-height: 0.96;
-  letter-spacing: -0.068em;
+  font-size: clamp(2.35rem, 3.7vw, 3.35rem);
+  font-weight: 600;
+  line-height: 1.08;
+  letter-spacing: -0.035em;
 }
 
 .hero-summary {
@@ -271,10 +271,10 @@ h1 {
 .final-cta h2 {
   max-width: 880px;
   margin: 0;
-  font-size: clamp(2.3rem, 5vw, 4.7rem);
-  font-weight: 700;
-  line-height: 1.02;
-  letter-spacing: -0.055em;
+  font-size: clamp(1.85rem, 3vw, 2.7rem);
+  font-weight: 600;
+  line-height: 1.12;
+  letter-spacing: -0.03em;
 }
 
 .feature {
@@ -297,9 +297,10 @@ h1 {
 .feature h3,
 .steps h3 {
   margin: 0;
-  font-size: clamp(1.8rem, 3.5vw, 3.4rem);
-  line-height: 1.04;
-  letter-spacing: -0.045em;
+  font-size: clamp(1.3rem, 2vw, 1.85rem);
+  font-weight: 600;
+  line-height: 1.18;
+  letter-spacing: -0.02em;
 }
 
 .feature-copy > p:not(.feature-number) {
@@ -484,7 +485,7 @@ h1 {
 }
 
 .documentation-heading h2 {
-  font-size: clamp(2.4rem, 5vw, 4.6rem);
+  font-size: clamp(1.85rem, 3vw, 2.7rem);
 }
 
 .documentation-heading > p:last-child {
@@ -537,9 +538,10 @@ h1 {
 
 .documentation-content h3 {
   margin: 0 0 24px;
-  font-size: clamp(1.8rem, 3.2vw, 3rem);
-  line-height: 1.08;
-  letter-spacing: -0.045em;
+  font-size: clamp(1.3rem, 2vw, 1.85rem);
+  font-weight: 600;
+  line-height: 1.18;
+  letter-spacing: -0.02em;
 }
 
 .documentation-content article > p:not(.feature-number) {
@@ -714,7 +716,10 @@ h1 {
 .docs-article > h1 {
   max-width: 900px;
   margin: 0 0 28px;
-  font-size: clamp(2.8rem, 5vw, 5.2rem);
+  font-size: clamp(2.1rem, 3.4vw, 3.1rem);
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -0.03em;
 }
 
 .docs-article > h1 + p {
@@ -726,9 +731,10 @@ h1 {
 .docs-article h2 {
   scroll-margin-top: 100px;
   margin: 92px 0 22px;
-  font-size: clamp(1.8rem, 3vw, 2.8rem);
-  line-height: 1.08;
-  letter-spacing: -0.04em;
+  font-size: clamp(1.4rem, 2vw, 1.9rem);
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.015em;
 }
 
 .docs-article h3 {
@@ -1046,7 +1052,7 @@ footer {
   }
 
   h1 {
-    font-size: clamp(3rem, 14vw, 5.6rem);
+    font-size: clamp(2.2rem, 9vw, 3rem);
   }
 
   .proof-strip {
@@ -1145,7 +1151,7 @@ footer {
   }
 
   .docs-article > h1 {
-    font-size: clamp(2.7rem, 12vw, 4.5rem);
+    font-size: clamp(2rem, 8.5vw, 2.8rem);
   }
 
   .annotated-cockpit + ol {

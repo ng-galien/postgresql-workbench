@@ -1,10 +1,10 @@
 ---
 title: Workbench Cockpit
-description: Read PostgreSQL structure as a connected system.
+description: Browse indexed PostgreSQL relations.
 eyebrow: Workbench Cockpit
 ---
 
-# Read PostgreSQL structure as a connected system.
+# Workbench Cockpit
 
 The Cockpit is a structural view. It uses the active DatabaseContext and the
 current Code Moniker index; it never displays table rows.
@@ -33,10 +33,9 @@ Each numbered marker corresponds to an explanation below the image.
 
 ## Where the relations come from
 
-PostgreSQL catalog definitions are projected into a Code Moniker SourceSet.
-Code Moniker resolves symbols and direct usages. The Cockpit and Sources tree
-consume that same semantic graph, so they do not maintain competing relation
-models.
+The Cockpit and Sources tree use the same indexed relations. They show direct
+calls, reads, writes, references, and type usages from the PostgreSQL
+definitions currently indexed for the active database.
 
 ## Automatic DDL synchronization
 

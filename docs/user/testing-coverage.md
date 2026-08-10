@@ -1,12 +1,12 @@
 ---
 title: pgTAP and coverage
-description: Test database behavior and see which PL/pgSQL paths ran.
+description: Run pgTAP tests and inspect PL/pgSQL coverage.
 eyebrow: pgTAP and coverage
 media: coverage.gif
 mediaAlt: pgTAP tests with PL/pgSQL coverage in VS Code
 ---
 
-# Test database behavior and see which PL/pgSQL paths ran.
+# pgTAP tests and coverage
 
 Tests use VS Code's native Testing UI. Coverage is collected independently from
 the debugger in a dedicated transaction.

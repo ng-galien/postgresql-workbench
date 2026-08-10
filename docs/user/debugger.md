@@ -1,13 +1,13 @@
 ---
 title: PL/pgSQL debugger
-description: Debug stored code with ordinary VS Code controls.
+description: Debug PL/pgSQL routines from VS Code.
 eyebrow: PL/pgSQL debugger
 media: debugger.gif
 mediaAlt: PL/pgSQL debugger stopped inside a routine with variables visible
 mediaDark: true
 ---
 
-# Debug stored code with ordinary VS Code controls.
+# PL/pgSQL debugger
 
 The extension translates VS Code Debug Adapter Protocol requests into pldbgapi
 sessions while keeping PostgreSQL source, variables, notices, and results

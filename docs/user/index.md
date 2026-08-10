@@ -1,13 +1,13 @@
 ---
 title: Documentation
-description: Use the whole PostgreSQL development loop.
+description: Set up and use PostgreSQL Workbench.
 eyebrow: Documentation
 ---
 
-# Use the whole PostgreSQL development loop.
+# PostgreSQL Workbench documentation
 
-Start with the Workbench, then go deeper into SQL scratchpads, pgTAP coverage,
-PL/pgSQL debugging, or the standalone Debug Adapter Protocol server.
+Set up a development database, then choose the guide for schema navigation, SQL
+scratchpads, pgTAP coverage, PL/pgSQL debugging, or the standalone DAP server.
 
 ## Start with a development database
 

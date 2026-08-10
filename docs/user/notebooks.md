@@ -1,12 +1,12 @@
 ---
 title: SQL scratchpads
-description: Keep exploratory SQL persistent and correctly bound.
+description: Create, bind, and run SQL scratchpads.
 eyebrow: SQL scratchpads
 media: notebook.gif
 mediaAlt: SQL scratchpad executing a query and showing a PostgreSQL result grid
 ---
 
-# Keep exploratory SQL persistent and correctly bound.
+# SQL scratchpads
 
 A scratchpad is a VS Code notebook with an explicit NotebookBinding. It does
 not silently follow whichever database happens to be active.
