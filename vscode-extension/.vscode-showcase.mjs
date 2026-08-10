@@ -1,0 +1,20 @@
+import { defineConfig } from "@vscode/test-cli";
+
+const profileRoot =
+  process.env.POSTGRESQL_WORKBENCH_SHOWCASE_PROFILE_DIR ??
+  "/private/tmp/postgresql-workbench-showcase";
+
+export default defineConfig({
+  label: "marketplace-showcase",
+  files: "dist/**/showcase/**/*.showcase.js",
+  workspaceFolder: "../demo/PostgreSQL Workbench Showcase.code-workspace",
+  launchArgs: [
+    "--new-window",
+    `--user-data-dir=${profileRoot}/user-data`,
+    `--extensions-dir=${profileRoot}/extensions`,
+  ],
+  mocha: {
+    ui: "tdd",
+    timeout: 120_000,
+  },
+});

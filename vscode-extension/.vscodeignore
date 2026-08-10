@@ -1,5 +1,6 @@
 .vscode/**
 .vscode-test*
+.vscode-showcase.mjs
 test-workspace/**
 src/**
 node_modules/**
@@ -9,6 +10,8 @@ esbuild.mjs
 scripts/**
 code-moniker.fragment.toml
 icons/concepts/**
+!media/marketplace/**
+media/marketplace/raw/**
 .DS_Store
 *.sha256
 **/*.ts
@@ -16,3 +19,4 @@ icons/concepts/**
 !dist/**
 dist/**/*.map
 dist/**/*.d.ts
+dist/**/showcase/**

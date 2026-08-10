@@ -27,7 +27,8 @@
     "test:e2e:legacy:run": "npm run build:dap && vitest run e2e/legacy-compat.test.ts --fileParallelism=false",
     "test:e2e:legacy:down": "cd e2e && docker compose -f docker-compose.legacy.yml down -v",
     "test:e2e:legacy": "node scripts/run-e2e.mjs legacy",
-    "package:ext": "npm --prefix vscode-extension run package"
+    "package:ext": "npm --prefix vscode-extension run package",
+    "marketplace:media": "node scripts/marketplace-media.mjs"
   },
   "dependencies": {
     "@vscode/debugadapter": "^1.68.0",

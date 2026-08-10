@@ -1,0 +1,23 @@
+{
+  "folders": [
+    {
+      "name": "PostgreSQL Workbench Showcase",
+      "path": "."
+    }
+  ],
+  "settings": {
+    "workbench.startupEditor": "none",
+    "window.autoDetectColorScheme": false,
+    "git.openRepositoryInParentFolders": "never",
+    "extensions.ignoreRecommendations": true,
+    "workbench.secondarySideBar.defaultVisibility": "hidden",
+    "workbench.editor.enablePreview": false,
+    "window.commandCenter": false,
+    "editor.minimap.enabled": false,
+    "breadcrumbs.enabled": true,
+    "postgresql-workbench.tests.patterns": [
+      "*_ut.test_*",
+      "*_it.test_*"
+    ]
+  }
+}

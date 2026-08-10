@@ -6,12 +6,57 @@
 [![Docker pulls](https://img.shields.io/docker/pulls/galien0xffffff/postgres-debugger?logo=docker)](https://hub.docker.com/r/galien0xffffff/postgres-debugger)
 [![License: MIT](https://img.shields.io/github/license/ng-galien/postgresql-workbench)](LICENSE)
 
-Explore PostgreSQL schemas, work in persistent SQL scratchpads, inspect bounded
-results, synchronize structural changes, run pgTAP tests and coverage, and debug
-PL/pgSQL without leaving VS Code. With an enhanced pldebugger build, records,
-composites, arrays, and JSONB are rendered as structured, expandable values.
+Turn VS Code into a coherent PostgreSQL development environment: understand a
+schema, query real data, test routines, inspect coverage, and debug PL/pgSQL
+without switching tools.
 
 Built for your **development database**: local PostgreSQL, Docker, or self-hosted.
+
+## See the Workbench in action
+
+### Understand the architecture before changing it
+
+Focus a central table, expand upstream and downstream relationships, and move
+through the live PostgreSQL graph without losing context.
+
+![Expand and navigate the PostgreSQL architecture graph](./media/marketplace/01-cockpit.gif)
+
+### Query data in persistent SQL scratchpads
+
+Keep notebooks bound to the right database, execute business queries, and work
+with a bounded, sortable result grid designed for real PostgreSQL values.
+
+![Run a business query and inspect its PostgreSQL result grid](./media/marketplace/02-sql-notebook.gif)
+
+### Run pgTAP tests and inspect native coverage
+
+Discover database tests in VS Code's Test Explorer, run them with coverage, and
+jump directly to statement and branch coverage in the routine source.
+
+![Run pgTAP tests and inspect PL/pgSQL coverage in the editor](./media/marketplace/03-tests-coverage.gif)
+
+### Debug PL/pgSQL with familiar VS Code controls
+
+Stop inside a routine, step through production-shaped logic, inspect composite
+variables, and keep PostgreSQL notices and query results close at hand.
+
+![Step through a PL/pgSQL routine and inspect variables](./media/marketplace/04-debugger.gif)
+
+## One database context, one connected workflow
+
+- **PostgreSQL Cockpit** — explore indexed schemas, dependencies, callers, reads,
+  writes, references, pins, and saved perspectives.
+- **SQL notebooks** — create persistent scratchpads, retain their database
+  binding, page through results, sort columns, inspect structured values, and
+  export bounded previews.
+- **Schema synchronization** — opt in to PostgreSQL DDL notifications and update
+  the structural index incrementally when database objects change.
+- **pgTAP and coverage** — discover and run database tests, then inspect native
+  statement and branch coverage in the editor.
+- **PL/pgSQL debugger** — use breakpoints, step controls, inline values, the
+  Variables panel, Debug Console, and structured PostgreSQL values.
+- **Connection-aware navigation** — keep Sources, Graph, notebooks, results,
+  tests, and debugging attached to an explicit database context.
 
 ## Start a debug-ready PostgreSQL from VS Code
 
@@ -51,7 +96,7 @@ running `CREATE EXTENSION pldbgapi` for you when possible.
 > unavailable, debug against a local, Docker, or self-hosted development
 > database, then deploy.
 
-## Features
+## Debugging features
 
 - **Step-by-step debugging** — step over, step into, continue, across nested calls
 - **Breakpoints** — validated against executable lines; conditional breakpoints and logpoints supported

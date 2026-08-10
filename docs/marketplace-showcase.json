@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "extensionVsix": "postgresql-workbench-1.0.0-darwin-arm64.vsix",
+  "window": {
+    "title": "PostgreSQL Workbench Showcase",
+    "x": 219,
+    "y": 194,
+    "width": 1411,
+    "height": 841
+  },
+  "captureInsets": {
+    "top": 32,
+    "right": 12,
+    "bottom": 24,
+    "left": 12
+  },
+  "defaults": {
+    "theme": "light",
+    "width": 1080,
+    "fps": 12,
+    "maxGifBytes": 8388608,
+    "startupTimeoutMs": 120000
+  },
+  "scenes": [
+    {
+      "id": "cockpit",
+      "file": "01-cockpit",
+      "title": "Understand a PostgreSQL schema at a glance",
+      "maxDurationSeconds": 12
+    },
+    {
+      "id": "sql-notebook",
+      "file": "02-sql-notebook",
+      "title": "Query data in a persistent SQL scratchpad",
+      "maxDurationSeconds": 10
+    },
+    {
+      "id": "tests-coverage",
+      "file": "03-tests-coverage",
+      "title": "Run pgTAP tests and inspect native coverage",
+      "maxDurationSeconds": 10
+    },
+    {
+      "id": "debugger",
+      "file": "04-debugger",
+      "title": "Debug PL/pgSQL with the native VS Code debugger",
+      "maxDurationSeconds": 12
+    }
+  ]
+}
