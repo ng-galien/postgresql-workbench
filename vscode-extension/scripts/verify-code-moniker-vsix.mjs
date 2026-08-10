@@ -141,7 +141,7 @@ try {
   });
   client = await runtime.connect(ownedDaemon.entry, {
     clientName: "postgresql-workbench-vsix-smoke",
-    expectedWorkspaceRoots: [workspace],
+    expectedWorkspaceRoots: ownedDaemon.entry.workspaceRoots,
     timeoutMs: 30_000,
   });
   await waitForWorkspaceReady(client, 30_000);
