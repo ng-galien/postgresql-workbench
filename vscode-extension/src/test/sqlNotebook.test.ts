@@ -166,7 +166,7 @@ suite("SQL notebook integration", function () {
     );
     assert.ok(item);
     assert.strictEqual(item.contextValue, "postgresql-workbench-sql-notebook");
-    assert.strictEqual((item.iconPath as vscode.ThemeIcon).id, "notebook");
+    assert.strictEqual((item.iconPath as vscode.ThemeIcon).id, "note");
     assert.match(item.accessibilityInformation?.label ?? "", /SQL scratchpad Scratch \d{3}/u);
     assert.match(
       item.accessibilityInformation?.label ?? "",

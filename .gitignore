@@ -12,5 +12,6 @@ vscode-extension/.vscode-test/
 .DS_Store
 .vscode/
 .idea/
-test-workspace/
+test-workspace/*
+!test-workspace/.gitkeep
 private/

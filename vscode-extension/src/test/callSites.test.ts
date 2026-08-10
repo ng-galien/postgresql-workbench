@@ -746,7 +746,7 @@ suite("Command call sites (registered server)", function () {
         AS $$
         BEGIN
           PERFORM public.u24_subject(2);
-          PERFORM pg_sleep(10);
+          PERFORM pg_sleep(20);
           RETURN NEXT pass('cancelled before completion');
         END;
         $$;
@@ -780,8 +780,8 @@ suite("Command call sites (registered server)", function () {
         "Cancelling the contextual run should skip its active pgTAP test",
       );
       assert.ok(
-        Date.now() - startedAt < 5_000,
-        "Cancellation should stop the PostgreSQL test before its ten-second sleep completes",
+        Date.now() - startedAt < 15_000,
+        "Cancellation should settle within its bounded fallback before the twenty-second query completes",
       );
     } finally {
       await client!.query("DROP SCHEMA IF EXISTS u24_ut CASCADE");

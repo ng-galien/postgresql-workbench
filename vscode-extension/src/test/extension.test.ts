@@ -428,7 +428,7 @@ suite("Debug session e2e", function () {
   test("launch → entry stop → threads → stack → scopes → args → locals → step → continue → terminate", async () => {
     // --- Launch ---
     const session = await startPlpgsqlSession(pgConfig("SELECT test_simple(1, 'hello')"));
-    assert.strictEqual(session.type, "plpgsql");
+    assert.strictEqual(session.type, "postgresql-workbench");
 
     // Wait for DAP to connect + waitForTarget + stop on entry
     await delay(5000);
