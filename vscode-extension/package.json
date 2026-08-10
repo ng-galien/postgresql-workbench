@@ -2,7 +2,7 @@
   "name": "postgresql-workbench",
   "displayName": "PostgreSQL Workbench",
   "version": "1.0.0",
-  "description": "Explore PostgreSQL schemas, run SQL notebooks, inspect results, test and cover routines, and debug PL/pgSQL from one workbench.",
+  "description": "Debug PL/pgSQL, run pgTAP tests with coverage, explore schemas, and query data in SQL notebooks — without leaving VS Code.",
   "publisher": "ng-galien",
   "author": {
     "name": "Alexandre Boyer",
@@ -27,10 +27,14 @@
   },
   "keywords": [
     "postgresql",
+    "postgres",
     "plpgsql",
+    "pgtap",
     "debugger",
-    "stored-procedures",
-    "database"
+    "coverage",
+    "sql",
+    "database",
+    "notebook"
   ],
   "engines": {
     "node": ">=22.0.0",
@@ -46,8 +50,9 @@
   },
   "categories": [
     "Debuggers",
-    "Programming Languages",
-    "Testing"
+    "Testing",
+    "Notebooks",
+    "Programming Languages"
   ],
   "activationEvents": [
     "onStartupFinished",
