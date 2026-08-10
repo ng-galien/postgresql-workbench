@@ -194,14 +194,18 @@ export async function buildSite() {
     const rendered = renderDocumentation(expandedMarkdown, file);
     const outputFile = file.replace(/\.md$/, ".html");
     const canonicalUrl = `https://ng-galien.github.io/postgresql-workbench/docs/${outputFile}`;
-    const title = escapeHtml(attributes.title ?? "Documentation");
+    const rawTitle = attributes.title ?? "Documentation";
+    const title = escapeHtml(rawTitle);
     const isDocumentationIndex = file === "index.md";
     const breadcrumb = isDocumentationIndex
       ? ""
       : `<p class="docs-breadcrumb"><a href="index.html">Documentation</a> / ${title}</p>`;
-    const eyebrowBlock = isDocumentationIndex
-      ? ""
-      : `<p class="eyebrow">${escapeHtml(attributes.eyebrow ?? "Documentation")}</p>`;
+    const eyebrow = attributes.eyebrow ?? "Documentation";
+    const repeatsTitle = eyebrow.trim().toLocaleLowerCase() === rawTitle.trim().toLocaleLowerCase();
+    const eyebrowBlock =
+      isDocumentationIndex || repeatsTitle
+        ? ""
+        : `<p class="eyebrow">${escapeHtml(eyebrow)}</p>`;
     const output = layout
       .replaceAll("{{title}}", title)
       .replaceAll(
@@ -211,7 +215,7 @@ export async function buildSite() {
       .replaceAll("{{canonicalUrl}}", canonicalUrl)
       .replace("{{breadcrumb}}", breadcrumb)
       .replace("{{eyebrowBlock}}", eyebrowBlock)
-      .replace("{{guideNavigation}}", rendered.navigation)
+      .replaceAll("{{guideNavigation}}", rendered.navigation)
       .replace("{{tableOfContents}}", rendered.tableOfContents)
       .replace("{{content}}", rendered.content);
     await writeFile(path.join(documentationOutput, outputFile), output, "utf8");
