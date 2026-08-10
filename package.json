@@ -1,6 +1,7 @@
 {
   "name": "postgresql-workbench",
   "version": "0.1.0",
+  "private": true,
   "description": "PostgreSQL development workbench for VS Code with SQL notebooks, schema exploration, testing, coverage, and PL/pgSQL debugging",
   "homepage": "https://ng-galien.github.io/postgresql-workbench/",
   "repository": {
@@ -17,15 +18,19 @@
   "scripts": {
     "build": "npm run build:dap && npm --prefix vscode-extension run compile && npm run build:ext",
     "build:dap": "node scripts/clean-dap.mjs && tsc",
+    "build:dap:package": "node scripts/build-dap-package.mjs",
     "build:ext": "npm --prefix vscode-extension run build",
     "typecheck": "tsc --noEmit && npm --prefix vscode-extension run compile",
     "watch": "node scripts/clean-dap.mjs && tsc -w",
     "start": "node dist/main.js",
-    "check": "biome check src/ vscode-extension/src/ e2e/ site/ scripts/build-site.mjs scripts/dev-site.mjs",
-    "check:fix": "biome check --write src/ vscode-extension/src/ e2e/ site/ scripts/build-site.mjs scripts/dev-site.mjs",
+    "check": "biome check src/ vscode-extension/src/ e2e/ site/ packages/postgresql-dap/ scripts/build-site.mjs scripts/dev-site.mjs scripts/build-dap-package.mjs scripts/verify-dap-package.mjs scripts/test-dap-package.mjs",
+    "check:fix": "biome check --write src/ vscode-extension/src/ e2e/ site/ packages/postgresql-dap/ scripts/build-site.mjs scripts/dev-site.mjs scripts/build-dap-package.mjs scripts/verify-dap-package.mjs scripts/test-dap-package.mjs",
     "test": "vitest run --exclude e2e/ --exclude vscode-extension/src/test/ && npm --prefix vscode-extension run test:scripts",
+    "test:dap": "vitest run --exclude 'vscode-extension/**' --exclude 'e2e/**'",
+    "test:dap:package": "node scripts/test-dap-package.mjs",
     "test:e2e:up": "cd e2e && docker compose up -d --build --wait",
     "test:e2e:run": "npm run build:dap && vitest run e2e/ --exclude e2e/legacy-compat.test.ts --fileParallelism=false",
+    "test:e2e:dap": "npm run build:dap && vitest run e2e/e2e.test.ts e2e/debug-lifecycle.test.ts e2e/syntax-consumers.test.ts --fileParallelism=false",
     "test:e2e:workbench": "REQUIRE_LOCAL_CODE_MONIKER=1 vitest run e2e/workbench-index.test.ts --fileParallelism=false",
     "test:e2e:lifecycle": "npm run build:dap && vitest run e2e/debug-lifecycle.test.ts --fileParallelism=false",
     "test:e2e:callsites": "npm --prefix vscode-extension run test:call-sites --",
@@ -41,6 +46,7 @@
     "site:dev": "node scripts/dev-site.mjs"
   },
   "dependencies": {
+    "@code-moniker/client": "0.6.1",
     "@vscode/debugadapter": "^1.68.0",
     "@vscode/debugprotocol": "^1.68.0",
     "pg": "^8.13.1"
@@ -50,6 +56,7 @@
     "@types/node": "^22.0.0",
     "@types/pg": "^8.11.10",
     "@vscode/debugadapter-testsupport": "^1.68.0",
+    "esbuild": "^0.28.1",
     "lefthook": "^2.1.4",
     "marked": "^18.0.9",
     "typescript": "^5.7.0",

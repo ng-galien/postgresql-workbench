@@ -3,12 +3,14 @@
 This document is the operational reference for validating and publishing the
 `ng-galien.postgresql-workbench` VS Code extension.
 
-There are two independent GitHub Actions workflows:
+There are three independent GitHub Actions workflows:
 
 - [CI](.github/workflows/ci.yml) validates pull requests and can be run
   manually;
 - [Extension Release](.github/workflows/release-extension.yml) rebuilds,
-  releases, and publishes the extension for `extension-v<version>` tags.
+  releases, and publishes the extension for `extension-v<version>` tags;
+- [DAP Release](.github/workflows/release-dap.yml) validates and publishes the
+  standalone `@ng-galien/postgresql-dap` package for `dap-v<version>` tags.
 
 The release workflow never publishes a developer-built VSIX. It builds and
 validates one target-specific artifact for Linux x64, macOS ARM64, macOS x64,
@@ -50,7 +52,7 @@ release and artifact-handling actions.
 | `Unit Tests` | Runs the root Vitest suite. |
 | `Integration Tests` | Starts `galien0xffffff/postgres-debugger:17`, loads the E2E and demo fixtures, runs the DAP tests and the real VS Code integration suite, then activates the extension and Code Moniker in a focused smoke test on the minimum supported VS Code 1.109.0. |
 | `EnterpriseDB pldebugger Compatibility` | Builds and tests against the pinned unpatched EnterpriseDB pldebugger implementation. |
-| `Package Extension` | Builds the four native production VSIX files, validates their contents and executables, and uploads one target-specific CI artifact per platform. |
+| `Package Artifacts` | Builds the four native production VSIX files, validates their contents and executables, smoke-tests the standalone npm DAP with the matching Code Moniker native package, and uploads one target-specific VSIX artifact per platform. |
 
 The integration job uploads VS Code logs even when tests fail. Download the
 `vscode-test-logs` artifact from the failed workflow run before rerunning a
@@ -64,6 +66,10 @@ Both workflows install the published Code Moniker client and native packages
 from npm using `vscode-extension/package-lock.json`. They never check out or
 build Code Moniker source. Update the npm dependency and lockfile explicitly
 when adopting a new Code Moniker release, then validate every packaged target.
+
+The standalone DAP uses that native package only through a private, lazy MCP
+stdio syntax worker over an empty temporary directory. Its package build rejects
+dependencies from the DAP bundle into Workbench indexing or daemon lifecycle.
 
 ## Prepare a release
 
@@ -291,3 +297,68 @@ After publication:
 The `extension-v*` tag also triggers the GitHub Pages workflow. Confirm that
 the Pages deployment for the release commit succeeds before considering the
 release complete.
+
+## Publish the standalone DAP package
+
+The DAP has its own package version and release tag. It is not coupled to the
+VS Code extension version.
+
+1. Update `packages/postgresql-dap/package.json` and validate the package:
+
+   ```bash
+   npm ci
+   npm run build:dap
+   npm run test:dap
+   npm run test:dap:package
+   npm run test:e2e:up
+   npm run test:e2e:dap
+   npm run test:dap:package -- --e2e
+   npm run test:e2e:down
+   npm run test:e2e:legacy
+   ```
+
+2. Commit and push the release preparation on `main`.
+3. Create an annotated tag matching the package version:
+
+   ```bash
+   git tag -a dap-v0.1.0 -m "PostgreSQL DAP 0.1.0"
+   git push origin main dap-v0.1.0
+   ```
+
+The DAP workflow rebuilds and tests the package, packs a minimal npm tarball,
+verifies its checksum, attests its provenance, publishes that exact tarball to
+npm, and attaches it to a dedicated GitHub Release.
+
+### npm trusted publishing
+
+The publish job uses GitHub OIDC rather than a long-lived npm token. Configure
+the npm trusted publisher for:
+
+- package: `@ng-galien/postgresql-dap`;
+- repository: `ng-galien/postgresql-workbench`;
+- workflow: `release-dap.yml`;
+- GitHub environment: `npm`.
+
+The GitHub `npm` environment must accept only `dap-v*` tags and should require
+explicit approval. The workflow uses npm 11.5.1 or newer on Node.js 24 and
+requests `id-token: write`, as required by npm trusted publishing.
+
+The first publication must establish the scoped package before its trusted
+publisher can be configured. Create a short-lived granular npm token allowed to
+publish `@ng-galien/postgresql-dap`, store it as `NPM_BOOTSTRAP_TOKEN` in the
+protected GitHub `npm` environment, and approve the first `dap-v0.1.0` run. The
+workflow still publishes the validated tarball from GitHub Actions with
+`--provenance`; the token supplies authentication only.
+
+Immediately after the first publication:
+
+1. configure the trusted publisher above;
+2. revoke the granular npm token;
+3. delete `NPM_BOOTSTRAP_TOKEN` from the GitHub environment;
+4. rerun the failed publish job if the first run stopped after npm publication.
+
+The publish step compares registry integrity with the validated tarball before
+doing anything. An exact existing publication is accepted; a mismatch fails the
+release. Subsequent `dap-v*` releases authenticate only through OIDC. GitHub
+Release creation is idempotent, so rerunning the publish job replaces its two
+validated assets instead of failing on an existing release.

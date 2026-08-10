@@ -58,6 +58,7 @@ const dapServerConfig = {
   entryPoints: ["../src/main.ts"],
   bundle: true,
   outfile: "dist/dap-server.js",
+  external: ["@code-moniker/client"],
   format: "cjs",
   platform: "node",
   target: "es2022",

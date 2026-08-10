@@ -10,7 +10,6 @@ import {
   type CodeMonikerIdentitySegment,
   type CodeMonikerSymbol,
   ensureLocalCodeMonikerWorkspace,
-  type LocalCodeMonikerDaemon,
   type LocalCodeMonikerSession,
 } from "../../src/workbench/localCodeMoniker.js";
 import {
@@ -82,8 +81,6 @@ export interface WorkbenchIndexResult {
 
 export interface WorkbenchSyntaxRuntimeConfiguration {
   runtimePath: string;
-  workspaceRoots: string[];
-  daemon: LocalCodeMonikerDaemon;
   timeoutMs: number;
 }
 
@@ -317,12 +314,9 @@ export class WorkbenchIndexController implements vscode.Disposable {
     return this.syntaxParserPromise;
   }
 
-  async syntaxRuntimeConfiguration(): Promise<WorkbenchSyntaxRuntimeConfiguration> {
-    const session = await this.ensureSession();
+  syntaxRuntimeConfiguration(): WorkbenchSyntaxRuntimeConfiguration {
     return {
-      runtimePath: session.metadata.runtimePath,
-      workspaceRoots: [...session.daemon.workspaceRoots],
-      daemon: session.daemon,
+      runtimePath: this.codeMonikerRuntimePath(),
       timeoutMs: this.codeMonikerCommandTimeoutMs(),
     };
   }

@@ -24,6 +24,7 @@ e2e/                       PostgreSQL, DAP, coverage, and compatibility tests
 demo/                      deterministic PostgreSQL demo used by showcases
 docs/                      design and Marketplace showcase configuration
 scripts/                   repository-level automation
+packages/postgresql-dap/   independently versioned npm DAP package
 ```
 
 ## Documentation
@@ -47,6 +48,7 @@ npm run check                 # Biome
 npm run typecheck             # DAP + extension TypeScript
 npm test                      # unit and script tests
 npm run build                 # DAP + extension build
+npm run test:dap:package      # pack/install/runtime smoke for npm DAP
 npm run package:ext           # host-platform VSIX + content verification
 
 npm run test:e2e:up           # start PostgreSQL test fixture
@@ -69,8 +71,16 @@ verify the real VS Code and PostgreSQL paths affected by the release.
   release workflows.
 - `npm --prefix vscode-extension run stage:code-moniker` stages and validates
   the installed npm runtime for the current `CODE_MONIKER_TARGET`.
+- The standalone `@ng-galien/postgresql-dap` package consumes
+  the optional native package installed by `@code-moniker/client`. It may use
+  only a lazy MCP stdio worker for stateless SQL/PL-pgSQL parsing. It must not
+  discover, launch, connect to, restart, or stop a workspace daemon; index a
+  workspace; or call symbols, graph, usages, navigation, or source-set APIs.
+  Do not duplicate native Code Moniker packages in the DAP.
 - Code Moniker is the shared SQL and PL/pgSQL syntax/index provider. Feature
-  modules must not start independent parsers or daemons.
+  modules receive the `SyntaxParser` port and must not construct runtime clients.
+  Only the Workbench index owner and the standalone DAP syntax boundary may
+  create their respective Code Moniker transport.
 
 ## Architecture invariants
 
@@ -95,6 +105,8 @@ verify the real VS Code and PostgreSQL paths affected by the release.
 - `.github/workflows/release-extension.yml` runs only for
   `extension-v<version>` tags. Never create or push a release tag unless the
   user explicitly authorizes publication.
+- `.github/workflows/release-dap.yml` runs only for `dap-v<version>` tags and
+  publishes `@ng-galien/postgresql-dap` through npm trusted publishing.
 - A regular commit or push must never publish the extension.
 - All external GitHub Actions must remain pinned to full commit SHAs with a
   readable version comment.

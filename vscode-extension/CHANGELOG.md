@@ -1,5 +1,31 @@
 # Changelog
 
+## Unreleased
+
+### Standalone PostgreSQL DAP
+
+- Added the independently publishable `@ng-galien/postgresql-dap` package, its
+  package validation and real PostgreSQL smoke tests, and a dedicated `dap-v*`
+  release workflow
+- Reduced the standalone DAP dependency on Code Moniker to lazy, stateless
+  SQL/PL/pgSQL parsing on demand; it no longer manages a workspace daemon,
+  indexes sources, or requires Code Moniker URIs
+- Added autonomous `postgresql-dap://routine/<oid>` source identities and DAP
+  source references so structured targets, source retrieval, and breakpoints do
+  not depend on a Workbench index
+- Kept host-provided Code Moniker source URIs as optional enrichment while
+  preventing VS Code debug launches from forcing database indexing
+- Hardened the private syntax worker lifecycle with bounded graceful shutdown,
+  SIGTERM and SIGKILL fallbacks, cleanup tests, and an executable architecture
+  guard for the reduced DAP boundary
+- Documented standalone installation, transport, launch contracts, packaging,
+  release tags, platform smoke tests, and the exact Code Moniker boundary
+
+### Documentation tooling
+
+- Normalized generated documentation formatting so repeated site builds remain
+  deterministic
+
 ## [1.0.0] - 2026-08-10
 
 First Marketplace release of PostgreSQL Workbench: one VS Code extension for

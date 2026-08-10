@@ -12,7 +12,6 @@ export interface LaunchTargetArguments {
   sql?: string;
   routine?: DebugLaunchRoutineTarget;
   routineArgs?: DebugLaunchRoutineArgument[];
-  sourceUris: Record<string, string>;
 }
 
 export interface TargetExecution {
@@ -171,13 +170,16 @@ async function resolveStructuredTargetExecution(
 export async function resolveTargetExecution(
   debuggerBackend: PostgresDebugger,
   args: LaunchTargetArguments,
-  parser: SyntaxParser,
+  parser?: SyntaxParser,
 ): Promise<TargetExecution> {
   if (args.routine) {
     return resolveStructuredTargetExecution(debuggerBackend, args.routine, args.routineArgs ?? []);
   }
   if (!args.sql) {
     throw new Error("Missing launch target. Provide either sql or routine.");
+  }
+  if (!parser) {
+    throw new Error("A syntax parser is required for a raw SQL launch target");
   }
 
   const parsed = await parseCall(args.sql, parser);

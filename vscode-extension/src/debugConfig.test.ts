@@ -155,6 +155,23 @@ describe("debugConfig", () => {
     expect(resolved?.stopOnEntry).toBe(false);
   });
 
+  it("keeps raw SQL launches usable without a host-side syntax parser", async () => {
+    const resolved = await resolveDebugConfiguration(
+      {
+        sql: "SELECT test_simple(1, 'standalone')",
+        host: "localhost",
+        port: 5433,
+        database: "testdb",
+        user: "postgres",
+        password: "postgres",
+      },
+      makeManager(undefined),
+      { showErrorMessage: vi.fn() },
+    );
+
+    expect(resolved?.name).toBe("Debug PL/pgSQL");
+  });
+
   it("resolves active server credentials and connects if needed", async () => {
     const server = makeServer({ ssl: "require" });
     const ui: DebugConfigUi = { showErrorMessage: vi.fn() };

@@ -16,9 +16,9 @@ export interface CodeMonikerTestRuntime {
 }
 
 export async function startCodeMonikerTestRuntime(): Promise<CodeMonikerTestRuntime> {
-  const runtimePath = resolve(
-    process.env.CODE_MONIKER_RUNTIME ?? "vscode-extension/runtime/code-moniker",
-  );
+  const runtimePath = process.env.CODE_MONIKER_RUNTIME
+    ? resolve(process.env.CODE_MONIKER_RUNTIME)
+    : undefined;
   const session: LocalCodeMonikerSession = await ensureLocalCodeMonikerWorkspace({
     runtimePath,
     workspaceRoots: [process.cwd()],
@@ -77,9 +77,9 @@ export async function startCodeMonikerTestRuntime(): Promise<CodeMonikerTestRunt
     },
     dapEnvironment: () => ({
       ...process.env,
-      PLPGSQL_CODE_MONIKER_RUNTIME: session.metadata.runtimePath,
-      PLPGSQL_CODE_MONIKER_WORKSPACE_ROOTS: JSON.stringify(session.daemon.workspaceRoots),
-      PLPGSQL_CODE_MONIKER_DAEMON: JSON.stringify(session.daemon),
+      ...(runtimePath
+        ? { PLPGSQL_CODE_MONIKER_RUNTIME: session.metadata.runtimePath }
+        : { PLPGSQL_CODE_MONIKER_RUNTIME: undefined }),
     }),
     dispose: () => session.dispose(),
   };

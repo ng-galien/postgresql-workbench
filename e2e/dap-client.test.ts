@@ -11,7 +11,9 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import { DEBUG_RESULT_EVENT, DEBUG_RESULT_STATUS_EVENT } from "../src/debugger/launch/index.js";
 import { type CodeMonikerTestRuntime, startCodeMonikerTestRuntime } from "./codeMonikerRuntime.js";
 
-const DAP_SERVER = path.resolve(__dirname, "../dist/main.js");
+const DAP_SERVER = process.env.POSTGRESQL_DAP_SERVER
+  ? path.resolve(process.env.POSTGRESQL_DAP_SERVER)
+  : path.resolve(__dirname, "../dist/main.js");
 const LAUNCH_ARGS = {
   host: "localhost",
   port: 5433,
@@ -250,7 +252,6 @@ describe("DAP client e2e", () => {
   it("launches from a structured routine target", async () => {
     const stopped = await launchAndWaitForStop(dc, {
       ...LAUNCH_ARGS,
-      sourceUris: canonicalSourceUris,
       routine: {
         schema: "public",
         name: "test_simple",
@@ -260,6 +261,21 @@ describe("DAP client e2e", () => {
       routineArgs: [{ value: "42" }, { value: "bound" }],
     });
     expect(stopped.body.reason).toBe("entry");
+    const stack = await dc.stackTraceRequest({ threadId: 1 });
+    const frame = stack.body.stackFrames[0];
+    if (!frame?.source) throw new Error("Structured launch did not expose a DAP source");
+    expect(frame.source.path).toMatch(/^postgresql-dap:\/\/routine\/\d+$/);
+    expect(frame.source.sourceReference).toBeGreaterThan(0);
+    const source = await dc.sourceRequest({
+      source: frame.source,
+      sourceReference: frame.source.sourceReference ?? 0,
+    });
+    expect(source.body.content).toContain("CREATE OR REPLACE FUNCTION public.test_simple");
+    const breakpoints = await dc.setBreakpointsRequest({
+      source: frame.source,
+      breakpoints: [{ line: frame.line }],
+    });
+    expect(breakpoints.body.breakpoints[0]?.verified).toBe(true);
   });
 
   it("launches a zero-arg structured routine target", async () => {
@@ -897,6 +913,7 @@ describe("DAP client e2e", () => {
     const oid = await routineOid("test_simple(integer,text)");
     expect(sourcePath).toBe(canonicalSourceUris[String(oid)]);
     expect(sourcePath).toMatch(/^code\+moniker:\/\//);
+    expect(stack.body.stackFrames[0]?.source?.sourceReference).toBe(0);
 
     await dc.disconnectRequest();
   });

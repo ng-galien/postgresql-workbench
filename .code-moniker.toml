@@ -21,6 +21,7 @@ postgres_ddl_sync_core_source = "source.segment('module') = 'postgresDdlSync'"
 postgres_ddl_sync_runtime_target = "target.segment('module') = 'localCodeMoniker' OR target.segment('module') = 'codeMonikerRuntime' OR target.segment('module') = 'postgresCatalog' OR target.segment('module') = 'postgresSourceProvider'"
 analysis_source = "source ~ '**/lang:ts/dir:src/dir:analysis/**'"
 workbench_core_target = "target ~ '**/lang:ts/dir:src/dir:workbench/**'"
+standalone_dap_source = "source.segment('module') = 'main' OR source.segment('module') = 'localCodeMonikerSyntax' OR source.segment('module') = 'callParser' OR source.segment('module') = 'functionSource' OR source ~ '**/lang:ts/dir:src/dir:analysis/**' OR source ~ '**/lang:ts/dir:src/dir:debugger/**'"
 
 [profiles.smells]
 enable = ["\\.smell-"]
@@ -34,6 +35,7 @@ enable = [
   "sql-notebook-model-remains-passive",
   "postgres-ddl-sync-core-remains-pure",
   "analysis-does-not-depend-on-workbench-runtime",
+  "standalone-dap-does-not-depend-on-workbench-runtime",
 ]
 
 [[ts.refs.where]]
@@ -77,6 +79,13 @@ severity = "error"
 expr = "$analysis_source AND $architectural_dependency => NOT $workbench_core_target"
 message = "The shared analysis layer depends on the Workbench runtime; move the runtime adapter outward to restore workbench -> analysis direction."
 rationale = "SyntaxParser is the shared semantic contract consumed by Workbench and debugger features. Runtime adapters that connect Code Moniker sessions live outside analysis so the dependency direction remains workbench/runtime -> analysis."
+
+[[ts.refs.where]]
+id = "standalone-dap-does-not-depend-on-workbench-runtime"
+severity = "error"
+expr = "$standalone_dap_source AND $architectural_dependency => NOT $workbench_core_target"
+message = "The standalone DAP must not depend on Workbench indexing or Code Moniker workspace lifecycle modules."
+rationale = "The standalone adapter is allowed only a lazy stateless SQL/PL-pgSQL parser. Workspace daemons, indexed sources, symbols, graph, usages, catalog projection, and DDL synchronization belong to the Workbench host."
 
 [[views]]
 id = "postgres-workbench-boundaries"
@@ -158,6 +167,28 @@ symbols = [
   "module:postgresSourceProvider/function:changedPostgresResources(state:PostgresSourceProviderState,objects:readonlyPostgresDdlObject[])",
 ]
 rules = ["code-moniker-syntax-provider-owned-by-runtime-boundary"]
+
+[[views.boundaries]]
+id = "standalone-dap-code-moniker"
+owns = [
+  "lazy stateless SQL and PL/pgSQL parsing",
+  "process-owned MCP stdio syntax worker bootstrapped on an empty temporary root",
+  "autonomous PostgreSQL routine source identifiers",
+]
+forbids = [
+  "user workspace or index state as debugger input",
+  "workspace daemon discovery, connection, or lifecycle",
+  "mandatory Code Moniker source URIs",
+  "symbols, graph, usages, navigation, source-set publication, catalog projection, or DDL synchronization",
+]
+forbid_rules = ["standalone-dap-does-not-depend-on-workbench-runtime"]
+rationale = "The published CLI exposes stateless parsing through code_moniker_read on MCP stdio, so the DAP owns one lazy in-process worker bootstrapped on an empty temporary root. It never reads or indexes the user's workspace, connects to a registry daemon, or consumes indexed capabilities. A Workbench host may optionally provide canonical source URIs, but the debugger remains functional without them."
+symbols = [
+  "module:localCodeMonikerSyntax/class:StatelessCodeMonikerSyntaxRuntime",
+  "module:codeMonikerSyntax/function:createCodeMonikerSyntaxParser(client:CodeMonikerSyntaxClient)",
+  "module:sourceRegistry/function:standaloneSourceUri(oid:number)",
+]
+rules = ["standalone-dap-does-not-depend-on-workbench-runtime"]
 
 [[views.boundaries]]
 id = "tree-and-graph"

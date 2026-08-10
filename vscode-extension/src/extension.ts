@@ -1,4 +1,3 @@
-import { Client } from "pg";
 import * as vscode from "vscode";
 import {
   classifySqlResultExecution,
@@ -59,7 +58,7 @@ import { executeSqlSelection, prepareSqlSelection } from "./sqlSelectionExecutio
 import { WorkbenchDdlSyncController } from "./workbenchDdlSync.js";
 import { WorkbenchGraphTreeSync } from "./workbenchGraph/treeSync.js";
 import { WorkbenchGraphView } from "./workbenchGraphView.js";
-import { WorkbenchIndexController, type WorkbenchIndexResult } from "./workbenchIndexController.js";
+import { WorkbenchIndexController } from "./workbenchIndexController.js";
 import {
   actionsForWorkbenchSurface,
   buildWorkbenchObjectActions,
@@ -1240,13 +1239,11 @@ function registerDebugInfrastructure(options: DebugInfrastructureOptions): Debug
     vscode.debug.registerDebugAdapterDescriptorFactory("postgresql-workbench", {
       async createDebugAdapterDescriptor(): Promise<vscode.DebugAdapterDescriptor> {
         const dapPath = context.asAbsolutePath("dist/dap-server.js");
-        const syntaxRuntime = await index.syntaxRuntimeConfiguration();
+        const syntaxRuntime = index.syntaxRuntimeConfiguration();
         output.appendLine(`createDebugAdapterDescriptor: ${dapPath}`);
         return new vscode.DebugAdapterExecutable("node", [dapPath], {
           env: {
             PLPGSQL_CODE_MONIKER_RUNTIME: syntaxRuntime.runtimePath,
-            PLPGSQL_CODE_MONIKER_WORKSPACE_ROOTS: JSON.stringify(syntaxRuntime.workspaceRoots),
-            PLPGSQL_CODE_MONIKER_DAEMON: JSON.stringify(syntaxRuntime.daemon),
             PLPGSQL_CODE_MONIKER_TIMEOUT_MS: String(syntaxRuntime.timeoutMs),
           },
         });
@@ -1261,7 +1258,7 @@ function registerDebugInfrastructure(options: DebugInfrastructureOptions): Debug
           config,
           connections,
           vscode.window,
-          async (sql) => parseCall(sql, await index.syntaxParser()),
+          undefined,
           output,
         )) as vscode.DebugConfiguration | undefined;
         if (resolved && resolved.resultMaxRows === undefined) {
@@ -1270,68 +1267,34 @@ function registerDebugInfrastructure(options: DebugInfrastructureOptions): Debug
             .get<number>("maxRows", DEBUG_RESULT_LIMITS.DEFAULT_ROWS);
         }
         if (!resolved) return undefined;
-        try {
-          let serverId = String(resolved.server ?? "");
-          let indexed: WorkbenchIndexResult;
-          const configuredServer = serverId ? connections.store.get(serverId) : undefined;
-          if (configuredServer) {
-            indexed = await index.indexActiveDatabase();
-          } else {
-            const host = String(resolved.host ?? "");
-            const port = Number(resolved.port ?? 5432);
-            const database = String(resolved.database ?? "");
-            const user = String(resolved.user ?? "");
-            if (!host || !database || !user) {
-              throw new Error("The inline PostgreSQL connection is incomplete.");
-            }
+        let serverId = String(resolved.server ?? "");
+        const configuredServer = serverId ? connections.store.get(serverId) : undefined;
+        const database = configuredServer?.database ?? String(resolved.database ?? "");
+        if (!configuredServer) {
+          const host = String(resolved.host ?? "");
+          const port = Number(resolved.port ?? 5432);
+          const user = String(resolved.user ?? "");
+          if (host && database && user) {
             const inlineServerId = ServerStore.makeId(host, port, database, user);
-            if (serverId && serverId !== inlineServerId) {
-              throw new Error(
-                `Inline PostgreSQL connection identity ${inlineServerId} does not match ${serverId}.`,
-              );
+            if (!serverId || serverId === inlineServerId) {
+              serverId = inlineServerId;
+              resolved.server = serverId;
             }
-            serverId = inlineServerId;
-            const client = new Client({
-              host,
-              port,
-              database,
-              user,
-              password: String(resolved.password ?? ""),
-              ssl:
-                resolved.ssl === true || resolved.ssl === "require" || resolved.ssl === "prefer"
-                  ? { rejectUnauthorized: false }
-                  : false,
-            });
-            await client.connect();
-            try {
-              indexed = await index.indexPostgresDatabase(
-                { query: (sql) => client.query(sql) },
-                { serverId, database },
-              );
-            } finally {
-              await client.end().catch(() => {});
-            }
-            resolved.server = serverId;
           }
-          if (indexed.serverId !== serverId) {
-            throw new Error(
-              "The Code Moniker PostgreSQL index does not match the debug connection.",
-            );
-          }
-          resolved.sourceUris = index.routineSourceUris(serverId);
-          if (Object.keys(resolved.sourceUris).length === 0) {
-            throw new Error("Code Moniker did not return any indexed PL/pgSQL routine URI.");
-          }
+        }
+        const indexed = index.state.result;
+        if (
+          index.state.status === "available" &&
+          indexed?.serverId === serverId &&
+          indexed.database === database
+        ) {
+          const sourceUris = index.routineSourceUris(serverId);
+          if (Object.keys(sourceUris).length > 0) resolved.sourceUris = sourceUris;
           if (resolved.routine) {
             const oid = Number(resolved.routine.oid ?? 0);
             const symbol = oid > 0 ? index.routineSymbol(serverId, oid) : undefined;
             if (symbol) resolved.routine = { ...resolved.routine, symbolUri: symbol.uri };
           }
-        } catch (error) {
-          void vscode.window.showErrorMessage(
-            `Debug launch requires the Code Moniker PostgreSQL index: ${error instanceof Error ? error.message : String(error)}`,
-          );
-          return undefined;
         }
         const launchToken = sessions.admit(
           debugDescriptor(resolved, vscode.window.activeTextEditor?.viewColumn),

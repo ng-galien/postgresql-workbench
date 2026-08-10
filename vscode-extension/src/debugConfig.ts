@@ -64,8 +64,9 @@ export function configNameFromRoutine(target: DebugLaunchRoutineTarget): string 
 
 export async function configNameFromSql(
   sql: string,
-  parseTarget: SqlTargetParser,
+  parseTarget?: SqlTargetParser,
 ): Promise<string> {
+  if (!parseTarget) return "Debug PL/pgSQL";
   try {
     const parsed = await parseTarget(sql);
     if (!parsed.routine) return "Debug PL/pgSQL";
@@ -98,7 +99,7 @@ export async function resolveDebugConfiguration(
   config: DebugConfigurationLike,
   cm: DebugConfigConnectionManager,
   ui: DebugConfigUi,
-  parseTarget: SqlTargetParser,
+  parseTarget?: SqlTargetParser,
   out?: DebugConfigLogger,
 ): Promise<DebugConfigurationLike | undefined> {
   out?.appendLine(

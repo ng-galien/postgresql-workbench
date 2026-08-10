@@ -73,7 +73,7 @@ export async function prepareDebugLaunch(
   args: DebugLaunchArguments,
   sessionSuffix: string,
   hooks: DebugLaunchHooks,
-  parser: SyntaxParser,
+  getParser: () => Promise<SyntaxParser>,
 ): Promise<PreparedDebugLaunch> {
   const pgConfig = postgresConfig(args);
   const listenerClient = new Client({
@@ -97,7 +97,11 @@ export async function prepareDebugLaunch(
     }
 
     await debuggerBackend.createListener();
-    const execution = await resolveTargetExecution(debuggerBackend, args, parser);
+    const execution = await resolveTargetExecution(
+      debuggerBackend,
+      args,
+      args.routine ? undefined : await getParser(),
+    );
     await listenerClient.query("SELECT set_config('application_name', $1, false)", [
       debugApplicationName("listener", sessionSuffix, execution.entryOid),
     ]);

@@ -203,9 +203,7 @@ export async function buildSite() {
     const eyebrow = attributes.eyebrow ?? "Documentation";
     const repeatsTitle = eyebrow.trim().toLocaleLowerCase() === rawTitle.trim().toLocaleLowerCase();
     const eyebrowBlock =
-      isDocumentationIndex || repeatsTitle
-        ? ""
-        : `<p class="eyebrow">${escapeHtml(eyebrow)}</p>`;
+      isDocumentationIndex || repeatsTitle ? "" : `<p class="eyebrow">${escapeHtml(eyebrow)}</p>`;
     const output = layout
       .replaceAll("{{title}}", title)
       .replaceAll(

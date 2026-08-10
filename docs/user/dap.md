@@ -12,16 +12,29 @@ integrate it.
 
 {{dap-flow}}
 
-## Current distribution
+## Distribution
 
-The standalone server is built from this repository and bundled into the VS
-Code extension. A separate package is planned, but is not published yet. Until
-then, build and run the repository version:
+The standalone server is packaged independently from the VS Code extension as
+`@ng-galien/postgresql-dap`. After the first npm release, run it with:
 
 ```bash
-npm install
-npm run build:dap
-npm start
+npx @ng-galien/postgresql-dap
+```
+
+`@code-moniker/client` installs and selects the matching native syntax runtime
+for macOS ARM64/x64, Linux x64, or Windows x64. Normal standalone use does not
+require a separate Code Moniker installation or runtime path.
+
+The adapter calls that runtime only through a lazy, private MCP stdio worker for
+stateless SQL and PL/pgSQL parsing. It does not attach to a workspace daemon or
+index the user's project. Symbol search, graph, usages, navigation, source-set
+publication, PostgreSQL catalog projection, and DDL synchronization are
+Workbench capabilities and are outside the standalone DAP contract.
+
+Verify the installed runtime without starting a DAP session:
+
+```bash
+npx @ng-galien/postgresql-dap --check-code-moniker
 ```
 
 ## Launch contract
@@ -57,7 +70,8 @@ output, and termination events.
 - Step over, step into, continue, stack frames, scopes, and variable updates.
 - Records, composites, arrays, JSON, and two-pass PostgreSQL value resolution.
 - Debug Console SQL evaluation and PostgreSQL notice forwarding.
-- Canonical virtual PostgreSQL source documents.
+- Virtual PostgreSQL source documents, with optional canonical identities from
+  an indexing host.
 - Session isolation, attach timeout, and idempotent cleanup.
 
 ## For client implementers
@@ -67,6 +81,11 @@ Initialize, answers Launch before waiting for the PostgreSQL target, retains
 breakpoints received before listener creation, and waits for the target during
 Configuration Done. Clients should follow the standard DAP configuration
 sequence.
+
+Structured routine targets start without parsing launch SQL. When an integrating
+host supplies `sourceUris`, the adapter preserves those canonical Code Moniker
+identities. Otherwise it exposes autonomous `postgresql-dap://routine/<oid>`
+sources and serves their content through the standard DAP Source request.
 
 The [DAP source](https://github.com/ng-galien/postgresql-workbench/tree/main/src)
 and [protocol integration tests](https://github.com/ng-galien/postgresql-workbench/tree/main/e2e)

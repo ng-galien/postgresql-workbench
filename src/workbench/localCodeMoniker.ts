@@ -1,4 +1,6 @@
+import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
+import { dirname, resolve } from "node:path";
 import type { CodeMonikerSyntaxClient } from "../analysis/codeMonikerSyntax.js";
 import { inspectCodeMonikerRuntime } from "./codeMonikerRuntime.js";
 import type { PostgresDocumentDescriptor, VirtualSqlSourceSet } from "./postgresCatalog.js";
@@ -203,11 +205,15 @@ interface NodeDaemonRuntime {
   forgetDaemon(expected: DaemonRegistryEntry): void;
   launch(options: {
     workspaceRoots: readonly string[];
-    binaryCandidates: readonly string[];
+    binaryCandidates?: readonly string[];
   }): Promise<OwnedDaemon>;
   connect(
     entry: DaemonRegistryEntry,
-    options?: { clientName?: string; timeoutMs?: number },
+    options?: {
+      clientName?: string;
+      expectedWorkspaceRoots?: readonly string[];
+      timeoutMs?: number;
+    },
   ): Promise<CodeMonikerClient>;
   stopOwned(
     owned: OwnedDaemon,
@@ -217,7 +223,7 @@ interface NodeDaemonRuntime {
     entry: DaemonRegistryEntry,
     launchOptions: {
       workspaceRoots: readonly string[];
-      binaryCandidates: readonly string[];
+      binaryCandidates?: readonly string[];
     },
     stopOptions?: { exitTimeoutMs?: number; pollIntervalMs?: number; timeoutMs?: number },
   ): Promise<OwnedDaemon>;
@@ -236,7 +242,8 @@ interface LocalClientModule {
 }
 
 export interface LocalCodeMonikerOptions {
-  runtimePath: string;
+  /** Packaged VSIX runtime. Omit it to use the published @code-moniker/client package. */
+  runtimePath?: string;
   workspaceRoots: readonly string[];
   clientName?: string;
   daemon?: LocalCodeMonikerDaemon;
@@ -302,20 +309,20 @@ async function openLocalCodeMoniker(
   if (options.workspaceRoots.length === 0) {
     throw new Error("Code Moniker requires at least one workspace root");
   }
-  const packaged = inspectCodeMonikerRuntime(options.runtimePath);
-  const require = createRequire(packaged.clientEntry);
-  const nodeModule = require(packaged.nodeEntry) as LocalNodeModule;
-  const clientModule = require(packaged.clientEntry) as LocalClientModule;
+  const resolved = resolveCodeMonikerModules(options.runtimePath);
+  const require = createRequire(resolved.clientEntry);
+  const nodeModule = require(resolved.nodeEntry) as LocalNodeModule;
+  const clientModule = require(resolved.clientEntry) as LocalClientModule;
   if (typeof nodeModule.NodeDaemonRuntime !== "function") {
     throw new Error("Local Code Moniker client does not expose NodeDaemonRuntime");
   }
   if (!Number.isInteger(clientModule.PROTOCOL_VERSION)) {
     throw new Error("Packaged Code Moniker client does not expose a protocol version");
   }
-  if (clientModule.PROTOCOL_VERSION !== packaged.manifest.protocolVersion) {
+  if (clientModule.PROTOCOL_VERSION !== resolved.protocolVersion) {
     throw new Error(
       `Packaged Code Moniker client protocol ${clientModule.PROTOCOL_VERSION} ` +
-        `does not match runtime manifest protocol ${packaged.manifest.protocolVersion}`,
+        `does not match runtime protocol ${resolved.protocolVersion}`,
     );
   }
 
@@ -335,7 +342,7 @@ async function openLocalCodeMoniker(
   const existing = configured;
   const launchOptions = {
     workspaceRoots: options.workspaceRoots,
-    binaryCandidates: [packaged.binaryPath],
+    ...(resolved.binaryPath ? { binaryCandidates: [resolved.binaryPath] } : {}),
   };
   let owned = existing ? undefined : await runtime.launch(launchOptions);
   let entry = existing ?? owned?.entry;
@@ -347,6 +354,7 @@ async function openLocalCodeMoniker(
   try {
     client = await runtime.connect(entry, {
       clientName: options.clientName ?? "postgresql-workbench",
+      expectedWorkspaceRoots: options.workspaceRoots,
       timeoutMs: options.timeoutMs,
     });
   } catch (error) {
@@ -361,6 +369,7 @@ async function openLocalCodeMoniker(
       entry = owned.entry;
       client = await runtime.connect(entry, {
         clientName: options.clientName ?? "postgresql-workbench",
+        expectedWorkspaceRoots: options.workspaceRoots,
         timeoutMs: options.timeoutMs,
       });
     } else if (owned) {
@@ -373,11 +382,11 @@ async function openLocalCodeMoniker(
   return new LocalCodeMonikerSession(
     client,
     {
-      runtimePath: packaged.rootPath,
-      source: packaged.manifest.source,
-      packageVersion: packaged.manifest.clientVersion,
+      runtimePath: resolved.rootPath,
+      source: resolved.source,
+      packageVersion: resolved.packageVersion,
       protocolVersion: clientModule.PROTOCOL_VERSION,
-      binaryPath: packaged.binaryPath,
+      binaryPath: resolved.binaryPath,
       daemonPid: entry.pid,
       ownedDaemon: owned !== undefined,
     },
@@ -385,6 +394,70 @@ async function openLocalCodeMoniker(
     runtime,
     owned,
   );
+}
+
+interface ResolvedCodeMonikerModules {
+  rootPath: string;
+  clientEntry: string;
+  nodeEntry: string;
+  source: string;
+  packageVersion: string;
+  protocolVersion: number;
+  binaryPath?: string;
+}
+
+function resolveCodeMonikerModules(runtimePath?: string): ResolvedCodeMonikerModules {
+  if (runtimePath) {
+    const packaged = inspectCodeMonikerRuntime(runtimePath);
+    return {
+      rootPath: packaged.rootPath,
+      clientEntry: packaged.clientEntry,
+      nodeEntry: packaged.nodeEntry,
+      source: packaged.manifest.source,
+      packageVersion: packaged.manifest.clientVersion,
+      protocolVersion: packaged.manifest.protocolVersion,
+      binaryPath: packaged.binaryPath,
+    };
+  }
+
+  const require = createRequire(__filename);
+  const clientEntry = require.resolve("@code-moniker/client");
+  const nodeEntry = require.resolve("@code-moniker/client/node");
+  const manifestPath = findPackageManifest(clientEntry, "@code-moniker/client");
+  const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as {
+    name?: string;
+    version?: string;
+  };
+  if (manifest.name !== "@code-moniker/client" || typeof manifest.version !== "string") {
+    throw new Error(`Invalid installed Code Moniker client manifest: ${manifestPath}`);
+  }
+  const clientModule = require(clientEntry) as LocalClientModule;
+  if (!Number.isInteger(clientModule.PROTOCOL_VERSION)) {
+    throw new Error("Installed Code Moniker client does not expose a protocol version");
+  }
+  return {
+    rootPath: dirname(manifestPath),
+    clientEntry,
+    nodeEntry,
+    source: `npm:${manifest.name}@${manifest.version}`,
+    packageVersion: manifest.version,
+    protocolVersion: clientModule.PROTOCOL_VERSION,
+  };
+}
+
+function findPackageManifest(entryPath: string, expectedName: string): string {
+  let current = dirname(entryPath);
+  while (true) {
+    const manifestPath = resolve(current, "package.json");
+    if (existsSync(manifestPath)) {
+      const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as { name?: string };
+      if (manifest.name === expectedName) return manifestPath;
+    }
+    const parent = dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+  throw new Error(`Cannot find ${expectedName} package root from ${entryPath}`);
 }
 
 function isDaemonProtocolMismatch(error: unknown): boolean {

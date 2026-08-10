@@ -51,7 +51,7 @@ import {
 } from "../launch/startDebugLaunch.js";
 import type { PlApiFunctionDef, PostgresDebugger } from "../postgres/index.js";
 import { DebugSessionLifecycle } from "./DebugSessionLifecycle.js";
-import { canonicalSourceUris } from "./sourceRegistry.js";
+import { canonicalSourceUris, standaloneSourceOid, standaloneSourceUri } from "./sourceRegistry.js";
 
 const logFile = path.join(os.tmpdir(), "postgresql-workbench.log");
 const log = (msg: string) =>
@@ -87,15 +87,16 @@ interface LaunchRequestArguments extends DebugProtocol.LaunchRequestArguments {
   resultMaxRows?: number;
   resultLabel?: string;
   resultSource?: DebugResultSource;
-  sourceUris: Record<string, string>;
+  /** Optional indexed source identities supplied by an integrating host such as the Workbench. */
+  sourceUris?: Record<string, string>;
 }
 
 const DEFAULT_ATTACH_TIMEOUT_MS = 30_000;
 
 /**
- * Cleanup/shutdown timing budget. The phases run sequentially, so
- * SHUTDOWN_BUDGET_MS (the hard exit deadline in main.ts) intentionally cuts
- * cleanup short on SIGTERM — raise it if you raise the phase timeouts.
+ * Cleanup/shutdown timing budget. PostgreSQL phases run sequentially while the
+ * syntax worker stops in parallel. The hard exit deadline must exceed both
+ * bounded paths so it does not orphan the worker during its forced shutdown.
  */
 export const TIMEOUTS = {
   /** pldbg_abort_target on an idle listener */
@@ -107,7 +108,7 @@ export const TIMEOUTS = {
   /** grace for a step command to settle after the target query ends */
   STEP_SETTLE_GRACE_MS: 750,
   /** hard process-exit deadline on SIGTERM/SIGINT */
-  SHUTDOWN_BUDGET_MS: 2_000,
+  SHUTDOWN_BUDGET_MS: 8_000,
 } as const;
 
 /** Resolve with the promise's value, or undefined once `ms` elapses — never rejects. */
@@ -257,6 +258,9 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
   private entrySource: DebugSessionSource | undefined;
   private sourceUris = new Map<number, string>();
   private sourceOids = new Map<string, number>();
+  private sourceReferences = new Map<number, number>();
+  private sourceReferenceByOid = new Map<number, number>();
+  private nextSourceReference = 1;
 
   constructor(private readonly syntaxParser: () => Promise<SyntaxParser>) {
     super("postgresql-workbench-debug.log");
@@ -346,7 +350,7 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
             this.sendEvent(new OutputEvent(`[${severity}] ${message}\n`, "console"));
           },
         },
-        await this.syntaxParser(),
+        this.syntaxParser,
       );
       this.startPreparedTarget(response, args, prepared);
     } catch (err) {
@@ -371,9 +375,10 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
     this.entryOid = prepared.execution.entryOid;
     this.sourceUris = canonicalSourceUris(args.sourceUris);
     this.sourceOids = new Map([...this.sourceUris].map(([oid, symbolUri]) => [symbolUri, oid]));
-    if (!this.sourceUris.has(this.entryOid)) {
-      throw new Error(`Code Moniker source URI is missing for routine OID ${this.entryOid}`);
-    }
+    this.sourceReferences.clear();
+    this.sourceReferenceByOid.clear();
+    this.nextSourceReference = 1;
+    this.sourceUri(this.entryOid);
     this.targetPid = prepared.targetPid;
     this.targetBackendPid = prepared.targetPid;
     this.listenerPid = prepared.debuggerBackend.getBackendPid();
@@ -484,8 +489,8 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
     sourcePath: string,
     breakpoints: Array<{ id: number; line: number; condition?: string; logMessage?: string }>,
   ): Promise<DebugProtocol.Breakpoint[]> {
-    const oid = this.sourceOids.get(sourcePath);
-    if (!oid) throw new Error(`Unknown Code Moniker source URI: ${sourcePath}`);
+    const oid = this.sourceOids.get(sourcePath) ?? standaloneSourceOid(sourcePath);
+    if (!oid) throw new Error(`Unknown debug source URI: ${sourcePath}`);
 
     const cached = oid ? await this.getSource(oid) : null;
     const bodyOffset = cached?.bodyLineOffset ?? 0;
@@ -714,10 +719,14 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
         const cached = await this.getSource(frame.oid);
         if (cached) this.frameAnalyses.set(frame.level, cached.analysis);
         const funcDef = cached?.funcDef;
-        const symbolUri = this.sourceUris.get(frame.oid);
+        const symbolUri = this.sourceUri(frame.oid);
         const source =
           funcDef && symbolUri
-            ? new Source(`${funcDef.schema}.${funcDef.name}`, symbolUri, 0)
+            ? new Source(
+                `${funcDef.schema}.${funcDef.name}`,
+                symbolUri,
+                this.sourceReference(frame.oid, symbolUri),
+              )
             : undefined;
 
         const absLine = frame.line + (cached?.bodyLineOffset ?? 0);
@@ -795,14 +804,23 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
     args: DebugProtocol.SourceArguments,
   ): Promise<void> {
     const sourcePath = args.source?.path;
-    const oid = sourcePath ? this.sourceOids.get(sourcePath) : undefined;
-    if (!sourcePath || oid === undefined) {
-      this.sendErrorResponse(response, 9, "Unknown Code Moniker source URI");
+    const sourceReference = args.sourceReference || args.source?.sourceReference || 0;
+    const oid =
+      this.sourceReferences.get(sourceReference) ??
+      (sourcePath
+        ? (this.sourceOids.get(sourcePath) ?? standaloneSourceOid(sourcePath))
+        : undefined);
+    if (oid === undefined) {
+      this.sendErrorResponse(response, 9, "Unknown debug source URI");
       return;
     }
     const cached = await this.getSource(oid);
     if (!cached) {
-      this.sendErrorResponse(response, 9, `Source is unavailable for ${sourcePath}`);
+      this.sendErrorResponse(
+        response,
+        9,
+        `Source is unavailable for ${sourcePath ?? `reference ${sourceReference}`}`,
+      );
       return;
     }
     response.body = {
@@ -1098,8 +1116,7 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
   ): Promise<DebugSessionSource | undefined> {
     const cached = await this.getSource(oid);
     if (!cached) return undefined;
-    const symbolUri = this.sourceUris.get(oid);
-    if (!symbolUri) return undefined;
+    const symbolUri = this.sourceUri(oid);
     return {
       name: `${cached.funcDef.schema}.${cached.funcDef.name}`,
       path: symbolUri,
@@ -1470,5 +1487,24 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
     const cached: CachedSource = { funcDef, analysis, bodyLineOffset };
     this.sourceCache.set(oid, cached);
     return cached;
+  }
+
+  private sourceUri(oid: number): string {
+    const existing = this.sourceUris.get(oid);
+    if (existing) return existing;
+    const generated = standaloneSourceUri(oid);
+    this.sourceUris.set(oid, generated);
+    this.sourceOids.set(generated, oid);
+    return generated;
+  }
+
+  private sourceReference(oid: number, documentUri: string): number {
+    if (!documentUri.startsWith("postgresql-dap://")) return 0;
+    const existing = this.sourceReferenceByOid.get(oid);
+    if (existing) return existing;
+    const reference = this.nextSourceReference++;
+    this.sourceReferenceByOid.set(oid, reference);
+    this.sourceReferences.set(reference, oid);
+    return reference;
   }
 }

@@ -6,12 +6,12 @@ import type {
   SyntaxTree,
 } from "./syntaxTree.js";
 
-interface CodeMonikerSyntaxPoint {
+export interface CodeMonikerSyntaxPoint {
   line: number;
   column: number;
 }
 
-interface CodeMonikerSyntaxNode {
+export interface CodeMonikerSyntaxNode {
   kind: string;
   language?: string | null;
   named: boolean;
@@ -24,7 +24,7 @@ interface CodeMonikerSyntaxNode {
   children: CodeMonikerSyntaxNode[];
 }
 
-interface CodeMonikerSyntaxTree {
+export interface CodeMonikerSyntaxTree {
   file: string;
   language: string;
   focus: string;

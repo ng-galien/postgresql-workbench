@@ -1,0 +1,159 @@
+name: DAP Release
+
+on:
+  push:
+    tags:
+      - "dap-v*"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate standalone DAP release
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+      - name: Verify release commit and tag
+        run: |
+          git merge-base --is-ancestor "${GITHUB_SHA}" origin/main
+          version="$(node -p "require('./packages/postgresql-dap/package.json').version")"
+          test "${GITHUB_REF_NAME}" = "dap-v${version}"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: npm ci
+      - run: npm run check
+      - run: npm run build:dap
+      - run: npm run test:dap
+      - name: Start PostgreSQL integration fixture
+        run: npm run test:e2e:up
+      - name: Run PostgreSQL DAP integration tests
+        run: npm run test:e2e:dap
+      - name: Run DAP protocol tests from the packed npm artifact
+        run: npm run test:dap:package -- --e2e
+      - name: Stop PostgreSQL integration fixture
+        if: always()
+        run: npm run test:e2e:down
+      - name: Run EnterpriseDB pldebugger compatibility tests
+        run: npm run test:e2e:legacy
+
+  package-smoke:
+    name: Smoke npm DAP (${{ matrix.target }})
+    needs: validate
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-x64
+            runner: ubuntu-24.04
+          - target: darwin-arm64
+            runner: macos-15
+          - target: darwin-x64
+            runner: macos-15-intel
+          - target: win32-x64
+            runner: windows-2025
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: npm ci
+      - run: npm run test:dap:package
+
+  package:
+    name: Package standalone DAP
+    needs:
+      - validate
+      - package-smoke
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: npm ci
+      - name: Build npm tarball
+        run: |
+          mkdir -p artifacts
+          npm pack ./packages/postgresql-dap --pack-destination artifacts
+          cd artifacts
+          sha256sum ng-galien-postgresql-dap-*.tgz > SHA256SUMS
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: postgresql-dap-npm
+          path: artifacts
+          if-no-files-found: error
+
+  publish:
+    name: Publish standalone DAP to npm
+    needs: package
+    runs-on: ubuntu-24.04
+    environment: npm
+    permissions:
+      attestations: write
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org/
+          package-manager-cache: false
+      - name: Use npm with trusted publishing support
+        run: npm install --global npm@11.5.1
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: postgresql-dap-npm
+          path: artifacts
+      - name: Verify packaged artifact
+        run: sha256sum --check artifacts/SHA256SUMS
+      - name: Attest npm package provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: artifacts/ng-galien-postgresql-dap-*.tgz
+      - name: Configure first-publication npm authentication
+        env:
+          BOOTSTRAP_TOKEN: ${{ secrets.NPM_BOOTSTRAP_TOKEN }}
+        run: |
+          if test -n "${BOOTSTRAP_TOKEN}"; then
+            echo "NODE_AUTH_TOKEN=${BOOTSTRAP_TOKEN}" >> "${GITHUB_ENV}"
+          fi
+      - name: Publish validated package to npm
+        run: |
+          tarball=(artifacts/ng-galien-postgresql-dap-*.tgz)
+          package="$(node -p "require('./packages/postgresql-dap/package.json').name")"
+          version="$(node -p "require('./packages/postgresql-dap/package.json').version")"
+          local_integrity="$(node -e "const fs=require('node:fs');const c=require('node:crypto');process.stdout.write('sha512-'+c.createHash('sha512').update(fs.readFileSync(process.argv[1])).digest('base64'))" "${tarball[0]}")"
+          published_integrity="$(npm view "${package}@${version}" dist.integrity 2>/dev/null || true)"
+          if test -n "${published_integrity}"; then
+            test "${published_integrity}" = "${local_integrity}"
+            echo "${package}@${version} already matches the validated tarball"
+          else
+            npm publish "${tarball[0]}" --access public --provenance
+          fi
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="$(node -p "require('./packages/postgresql-dap/package.json').version")"
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            gh release upload "${GITHUB_REF_NAME}" \
+              artifacts/ng-galien-postgresql-dap-*.tgz \
+              artifacts/SHA256SUMS \
+              --clobber
+          else
+            gh release create "${GITHUB_REF_NAME}" \
+              artifacts/ng-galien-postgresql-dap-*.tgz \
+              artifacts/SHA256SUMS \
+              --verify-tag \
+              --title "PostgreSQL DAP ${version}" \
+              --generate-notes
+          fi

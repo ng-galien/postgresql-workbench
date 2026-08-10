@@ -112,7 +112,7 @@ jobs:
       - run: npm run test:e2e:legacy
 
   package-extension:
-    name: Package Extension (${{ matrix.target }})
+    name: Package Artifacts (${{ matrix.target }})
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -138,6 +138,7 @@ jobs:
             package-lock.json
             vscode-extension/package-lock.json
       - run: npm ci
+      - run: npm run test:dap:package
       - run: npm --prefix vscode-extension ci
       - run: npm --prefix vscode-extension run package
       - run: git diff --exit-code -- vscode-extension/THIRD_PARTY_NOTICES.md

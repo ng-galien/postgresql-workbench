@@ -73,7 +73,11 @@ describe("local Code Moniker transport", () => {
     expect(runtimeOptions).toHaveBeenCalledWith({ timeoutMs: 30_000 });
     expect(connect).toHaveBeenCalledWith(
       expect.objectContaining({ endpoint: daemon.endpoint, pid: daemon.pid }),
-      { clientName: "postgresql-workbench", timeoutMs: 30_000 },
+      {
+        clientName: "postgresql-workbench",
+        expectedWorkspaceRoots: ["/workspace"],
+        timeoutMs: 30_000,
+      },
     );
 
     await session.dispose();

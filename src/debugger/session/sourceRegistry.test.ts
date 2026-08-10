@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canonicalSourceUris } from "./sourceRegistry.js";
+import { canonicalSourceUris, standaloneSourceOid, standaloneSourceUri } from "./sourceRegistry.js";
 
 const SYMBOL =
   "code+moniker://./srcset:test/lang:sql/dir:public/dir:routine/module:demo%28integer%29/schema:public/function:demo%28integer%29";
@@ -16,8 +16,13 @@ describe("DAP Code Moniker source registry", () => {
     expect(canonicalSourceUris({ 42: DOCUMENT }).get(42)).toBe(DOCUMENT);
   });
 
-  it("rejects missing and non-Code-Moniker source identities", () => {
-    expect(() => canonicalSourceUris(undefined)).toThrow(/missing the canonical Code Moniker/);
+  it("accepts a missing indexed registry for a standalone DAP client", () => {
+    expect(canonicalSourceUris(undefined)).toEqual(new Map());
+    expect(standaloneSourceUri(42)).toBe("postgresql-dap://routine/42");
+    expect(standaloneSourceOid("postgresql-dap://routine/42")).toBe(42);
+  });
+
+  it("rejects non-Code-Moniker identities when an indexed registry is supplied", () => {
     expect(() => canonicalSourceUris({ 42: "postgresql://server/db/routine.sql" })).toThrow(
       /Invalid canonical Code Moniker/,
     );
