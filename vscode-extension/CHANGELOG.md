@@ -7,6 +7,12 @@
 - Fixed the Workbench tree header search action so VS Code view context is not
   mistaken for a text query; clicking it now reliably opens the indexed object
   picker
+- Fixed scratchpad commands to consume the actual TreeView item context, kept
+  unrelated selections from being mistaken for database contexts, and exposed
+  **Reveal Tests** on canonical `code+moniker` routine editors
+- Strengthened real VS Code integration coverage for view-title, inline
+  TreeView, and editor-title actions, including assertions that interactive
+  pickers remain open until the user completes or cancels them
 
 ### Standalone PostgreSQL DAP
 

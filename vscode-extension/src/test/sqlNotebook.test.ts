@@ -40,7 +40,7 @@ suite("SQL notebook integration", function () {
     return notebook;
   };
 
-  const scratchpadItems = async () => {
+  const scratchpadsNode = async () => {
     const root = await api.treeProvider.getChildren();
     const server = root.find((item) => item.kind === "server" && item.server.id === SERVER_ID);
     assert.ok(server);
@@ -52,8 +52,10 @@ suite("SQL notebook integration", function () {
       (item) => item.kind === "scratchpads",
     );
     assert.ok(scratchpads);
-    return api.treeProvider.getChildren(scratchpads);
+    return scratchpads;
   };
+
+  const scratchpadItems = async () => api.treeProvider.getChildren(await scratchpadsNode());
 
   suiteSetup(async function () {
     if (!(await pgAvailable())) this.skip();
@@ -151,6 +153,20 @@ suite("SQL notebook integration", function () {
     assert.strictEqual(api.connectionManager.activeServer?.id, SERVER_ID);
   });
 
+  test("creates a scratchpad from its real inline TreeView context", async () => {
+    const uri = await vscode.commands.executeCommand<vscode.Uri>(
+      NEW_SQL_NOTEBOOK_COMMAND,
+      await scratchpadsNode(),
+    );
+    assert.ok(uri);
+    notebookUris.push(uri);
+    const notebook = vscode.workspace.notebookDocuments.find(
+      (candidate) => candidate.uri.toString() === uri.toString(),
+    );
+    assert.ok(notebook);
+    assert.strictEqual(notebook.metadata.serverId, SERVER_ID);
+  });
+
   test("lists, opens, renames, and deletes a scratchpad from the Workbench model", async () => {
     const notebook = await createNotebook();
     const originalUri = notebook.uri;
@@ -173,6 +189,28 @@ suite("SQL notebook integration", function () {
       /Notebook integration PostgreSQL · testdb/u,
     );
     assert.strictEqual(item.command?.command, OPEN_SQL_NOTEBOOK_COMMAND);
+
+    const headerCreation = vscode.commands.executeCommand<vscode.Uri>(
+      NEW_SQL_NOTEBOOK_COMMAND,
+      item,
+    );
+    let headerCreationSettled = false;
+    void headerCreation.then(
+      () => {
+        headerCreationSettled = true;
+      },
+      () => {
+        headerCreationSettled = true;
+      },
+    );
+    await delay(100);
+    assert.strictEqual(
+      headerCreationSettled,
+      false,
+      "An unrelated selected TreeItem should leave the header database picker open",
+    );
+    await vscode.commands.executeCommand("workbench.action.closeQuickOpen");
+    assert.strictEqual(await headerCreation, undefined);
 
     const invalidUri = vscode.Uri.from({
       scheme: SQL_NOTEBOOK_SCHEME,
@@ -199,7 +237,7 @@ suite("SQL notebook integration", function () {
     assert.strictEqual(await closeNotebookTabs(originalUri), true);
     const openedUri = await vscode.commands.executeCommand<vscode.Uri>(
       OPEN_SQL_NOTEBOOK_COMMAND,
-      entry,
+      item,
     );
     assert.strictEqual(openedUri.toString(), originalUri.toString());
     assert.ok(
@@ -216,7 +254,7 @@ suite("SQL notebook integration", function () {
     notebookUris.push(expectedRenamedUri);
     const renamedUri = await vscode.commands.executeCommand<vscode.Uri>(
       RENAME_SQL_NOTEBOOK_COMMAND,
-      entry,
+      item,
       requestedName,
     );
     assert.ok(renamedUri);

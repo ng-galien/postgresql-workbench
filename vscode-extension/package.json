@@ -476,7 +476,7 @@
       "editor/title": [
         {
           "command": "postgresql-workbench.revealRoutineTests",
-          "when": "resourceScheme == plpgsql",
+          "when": "resourceScheme == code+moniker",
           "group": "navigation@10"
         }
       ],

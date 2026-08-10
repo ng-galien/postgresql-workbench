@@ -144,6 +144,40 @@ suite("pgTAP Test Explorer integration", function () {
       },
     );
     assert.strictEqual(revealed, true, "The routine command should reveal its pgTAP tests");
+
+    const routineUri = overloads[0].uri as vscode.Uri;
+    assert.strictEqual(
+      routineUri.scheme,
+      "code+moniker",
+      "The editor title action should be contributed for canonical indexed sources",
+    );
+    const extension = vscode.extensions.getExtension(EXT_ID);
+    assert.ok(extension);
+    const packageJson = extension.packageJSON as {
+      contributes?: {
+        menus?: {
+          "editor/title"?: Array<{ command: string; when?: string }>;
+        };
+      };
+    };
+    assert.ok(
+      packageJson.contributes?.menus?.["editor/title"]?.some(
+        (item) =>
+          item.command === "postgresql-workbench.revealRoutineTests" &&
+          item.when === "resourceScheme == code+moniker",
+      ),
+      "The canonical routine editor should expose its Reveal Tests action",
+    );
+    const routineDocument = await vscode.workspace.openTextDocument(routineUri);
+    await vscode.window.showTextDocument(routineDocument, { preview: false });
+    assert.strictEqual(
+      await vscode.commands.executeCommand<boolean>(
+        "postgresql-workbench.revealRoutineTests",
+        routineUri,
+      ),
+      true,
+      "The editor title URI context should resolve through the active canonical routine",
+    );
   });
 
   test("refreshes discovery when workspace test patterns change", async () => {

@@ -799,7 +799,8 @@ function registerGraphWorkbenchCommands(options: WorkbenchCommandOptions): void 
     ),
     vscode.commands.registerCommand(
       "postgresql-workbench.revealRoutineTests",
-      async (item?: FunctionItem) => {
+      async (context?: unknown) => {
+        const item = routineTreeContext(context);
         const revealed = item
           ? await coverage.revealRoutine(item.serverId, item.oid)
           : await coverage.revealActiveRoutine();
@@ -812,6 +813,14 @@ function registerGraphWorkbenchCommands(options: WorkbenchCommandOptions): void 
       },
     ),
   );
+}
+
+function routineTreeContext(context: unknown): Pick<FunctionItem, "serverId" | "oid"> | undefined {
+  if (!context || typeof context !== "object") return undefined;
+  const candidate = context as { serverId?: unknown; oid?: unknown };
+  return typeof candidate.serverId === "string" && typeof candidate.oid === "number"
+    ? { serverId: candidate.serverId, oid: candidate.oid }
+    : undefined;
 }
 
 function showCockpitObjectActions(

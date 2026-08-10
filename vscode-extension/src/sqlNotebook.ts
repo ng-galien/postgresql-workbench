@@ -95,7 +95,7 @@ export function registerSqlNotebook(
     }),
     vscode.commands.registerCommand(
       OPEN_SQL_NOTEBOOK_COMMAND,
-      async (target?: SqlNotebookEntry | vscode.Uri | string) => {
+      async (target?: SqlNotebookCommandTarget) => {
         const entry = await selectSqlNotebook(workspace, target, "Open a SQL scratchpad");
         if (!entry) return undefined;
         if (entry.error) {
@@ -109,7 +109,7 @@ export function registerSqlNotebook(
     ),
     vscode.commands.registerCommand(
       RENAME_SQL_NOTEBOOK_COMMAND,
-      async (target?: SqlNotebookEntry | vscode.Uri | string, requestedName?: string) => {
+      async (target?: SqlNotebookCommandTarget, requestedName?: string) => {
         const entry = await selectSqlNotebook(workspace, target, "Rename a SQL scratchpad");
         if (!entry) return undefined;
         const name =
@@ -126,7 +126,7 @@ export function registerSqlNotebook(
     ),
     vscode.commands.registerCommand(
       DELETE_SQL_NOTEBOOK_COMMAND,
-      async (target?: SqlNotebookEntry | vscode.Uri | string) => {
+      async (target?: SqlNotebookCommandTarget) => {
         const entry = await selectSqlNotebook(workspace, target, "Delete a SQL scratchpad");
         if (!entry) return false;
         const choice = await vscode.window.showWarningMessage(
@@ -141,7 +141,7 @@ export function registerSqlNotebook(
     vscode.commands.registerCommand(REFRESH_SQL_NOTEBOOKS_COMMAND, () => workspace.refresh()),
     vscode.commands.registerCommand(
       DUPLICATE_SQL_NOTEBOOK_COMMAND,
-      async (target?: SqlNotebookEntry | vscode.Uri | string) => {
+      async (target?: SqlNotebookCommandTarget) => {
         const entry = await selectSqlNotebook(workspace, target, "Duplicate a SQL scratchpad");
         if (!entry) return undefined;
         const content = await vscode.workspace.fs.readFile(entry.uri);
@@ -151,7 +151,7 @@ export function registerSqlNotebook(
     ),
     vscode.commands.registerCommand(
       EXPORT_SQL_NOTEBOOK_COMMAND,
-      async (target?: SqlNotebookEntry | vscode.Uri | string) => {
+      async (target?: SqlNotebookCommandTarget) => {
         const entry = await selectSqlNotebook(workspace, target, "Export a SQL scratchpad");
         if (!entry) return false;
         const destination = await vscode.window.showSaveDialog({
@@ -236,6 +236,12 @@ interface SqlNotebookPick extends vscode.QuickPickItem {
   entry: SqlNotebookEntry;
 }
 
+type SqlNotebookCommandTarget =
+  | SqlNotebookEntry
+  | vscode.Uri
+  | string
+  | { entry: SqlNotebookEntry };
+
 interface SqlNotebookServerPick extends vscode.QuickPickItem {
   server: ServerConfig;
 }
@@ -268,18 +274,20 @@ async function pickNotebookServer(
 function notebookServerId(target: unknown): string | undefined {
   if (typeof target === "string") return target;
   if (!target || typeof target !== "object") return undefined;
-  const candidate = target as { id?: unknown; server?: { id?: unknown }; serverId?: unknown };
-  if (typeof candidate.serverId === "string") return candidate.serverId;
-  if (typeof candidate.server?.id === "string") return candidate.server.id;
-  return typeof candidate.id === "string" ? candidate.id : undefined;
+  const candidate = target as { kind?: unknown; server?: { id?: unknown } };
+  if (candidate.kind !== "databaseSource" && candidate.kind !== "scratchpads") return undefined;
+  return typeof candidate.server?.id === "string" ? candidate.server.id : undefined;
 }
 
 async function selectSqlNotebook(
   workspace: SqlNotebookWorkspace,
-  target: SqlNotebookEntry | vscode.Uri | string | undefined,
+  target: SqlNotebookCommandTarget | undefined,
   placeHolder: string,
 ): Promise<SqlNotebookEntry | undefined> {
-  if (target) return workspace.entry(target);
+  if (target) {
+    const entryTarget = typeof target === "object" && "entry" in target ? target.entry : target;
+    return workspace.entry(entryTarget);
+  }
   const entries = await workspace.list();
   if (entries.length === 0) {
     await vscode.window.showInformationMessage("No SQL scratchpads found.");

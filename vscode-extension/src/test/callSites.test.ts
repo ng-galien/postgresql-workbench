@@ -244,9 +244,13 @@ suite("Command call sites (registered server)", function () {
       "postgres",
     );
 
+    const serverItem = (await api.treeProvider.getChildren()).find(
+      (item) => item.kind === "server" && item.server.id === SERVER_ID,
+    );
+    assert.ok(serverItem, "The inline connection action should receive its ServerItem context");
     const ok = await vscode.commands.executeCommand(
       "postgresql-workbench.connectServer",
-      SERVER_ID,
+      serverItem,
     );
     assert.strictEqual(ok, true, "connectServer should succeed");
   });
@@ -477,7 +481,17 @@ suite("Command call sites (registered server)", function () {
       searchButton.command,
       treeContext,
     );
+    let searchSettled = false;
+    void searchFromHeader.then(
+      () => {
+        searchSettled = true;
+      },
+      () => {
+        searchSettled = true;
+      },
+    );
     await delay(100);
+    assert.strictEqual(searchSettled, false, "A real header click should keep its picker open");
     await vscode.commands.executeCommand("workbench.action.closeQuickOpen");
     assert.strictEqual(
       await searchFromHeader,
