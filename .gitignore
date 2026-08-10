@@ -1,0 +1,16 @@
+node_modules/
+dist/
+*.js.map
+vscode-extension/node_modules/
+vscode-extension/dist/
+vscode-extension/out/
+vscode-extension/runtime/
+vscode-extension/.vscode-test/
+*.vsix
+*.vsix.sha256
+.env
+.DS_Store
+.vscode/
+.idea/
+test-workspace/
+private/

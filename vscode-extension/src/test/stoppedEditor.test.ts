@@ -1,0 +1,245 @@
+import * as assert from "node:assert";
+import * as vscode from "vscode";
+import { PlpgsqlInlineValuesProvider } from "../plpgsqlInlineValues.js";
+import {
+  delay,
+  EXT_ID,
+  pgAvailable,
+  pgConfig,
+  startPlpgsqlSession,
+  stopActivePlpgsqlSession,
+  waitSessionEnd,
+} from "./testUtils.js";
+
+async function extensionSyntaxParser() {
+  const extension = vscode.extensions.getExtension(EXT_ID)!;
+  const api = extension.isActive ? extension.exports : await extension.activate();
+  return api.workbenchIndex.syntaxParser();
+}
+
+suite("Stopped-frame editor and inline values", function () {
+  this.timeout(60_000);
+
+  suiteSetup(async function () {
+    if (!(await pgAvailable())) this.skip();
+    const ext = vscode.extensions.getExtension(EXT_ID)!;
+    if (!ext.isActive) await ext.activate();
+  });
+
+  teardown(async () => {
+    await stopActivePlpgsqlSession();
+  });
+
+  test("editor shown on stop matches frame.source.path and inline values provider fires", async () => {
+    const inlineValueCalls: string[] = [];
+    const spy = vscode.languages.registerInlineValuesProvider(
+      { scheme: "code+moniker" },
+      {
+        provideInlineValues(doc) {
+          inlineValueCalls.push(doc.uri.toString());
+          return [];
+        },
+      },
+    );
+
+    try {
+      const session = await startPlpgsqlSession(pgConfig("SELECT test_simple(1, 'diag')"));
+      await delay(6000); // entry stop + editor reveal
+
+      const tid = (await session.customRequest("threads")).threads[0].id;
+      const stack = await session.customRequest("stackTrace", { threadId: tid });
+      const frame = stack.stackFrames[0];
+      const framePath: string = frame?.source?.path ?? "<none>";
+
+      const active = vscode.window.activeTextEditor?.document.uri.toString() ?? "<no editor>";
+
+      assert.notStrictEqual(framePath, "<none>", "Frame should carry a source path");
+      assert.strictEqual(
+        active,
+        framePath,
+        "Editor shown on stop must match frame.source.path exactly (execution pointer + inlays depend on it)",
+      );
+      assert.ok(
+        inlineValueCalls.includes(framePath),
+        `Inline values provider was never called for the stopped document (calls: ${JSON.stringify(inlineValueCalls)})`,
+      );
+
+      // The REAL provider must produce RESOLVED inline texts on the real
+      // virtual document — guards against analysis failing on
+      // pg_get_functiondef formatting AND against value resolution breaking.
+      const editor = vscode.window.activeTextEditor!;
+      const fullRange = new vscode.Range(
+        0,
+        0,
+        editor.document.lineCount - 1,
+        editor.document.lineAt(editor.document.lineCount - 1).text.length,
+      );
+      // Real context, as VS Code provides it: frame id + stopped location.
+      const stoppedLine0 = frame.line - 1; // DAP lines are 1-based
+      const inlays = await new PlpgsqlInlineValuesProvider(
+        extensionSyntaxParser,
+      ).provideInlineValues(editor.document, fullRange, {
+        frameId: frame.id,
+        stoppedLocation: new vscode.Range(stoppedLine0, 0, stoppedLine0, 0),
+      } as vscode.InlineValueContext);
+      assert.ok(
+        inlays.length > 0,
+        "Real inline values provider must return inline values for the stopped virtual document",
+      );
+      const texts = inlays
+        .filter((v): v is vscode.InlineValueText => v instanceof vscode.InlineValueText)
+        .map((v) => v.text);
+      // EXACT inlay multiset at entry stop of test_simple(1, 'diag') — current
+      // values on every occurrence plus parameters on the signature line:
+      //   signature (line 1):        a = 1, b = diag
+      //   DECLARE result/counter:    result = NULL, counter = 0
+      //   counter := a + 1;          counter = 0, a = 1   (not executed yet)
+      //   result := b || … counter:  result = NULL, b = diag, counter = 0
+      //   RETURN result;             result = NULL
+      assert.deepStrictEqual(
+        [...texts].sort(),
+        [
+          "a = 1",
+          "a = 1",
+          "b = diag",
+          "b = diag",
+          "counter = 0",
+          "counter = 0",
+          "counter = 0",
+          "result = NULL",
+          "result = NULL",
+          "result = NULL",
+        ],
+        `Exact entry inlay multiset mismatch, got: ${texts.join(" | ")}`,
+      );
+    } finally {
+      spy.dispose();
+    }
+  });
+
+  test("full walk: every stop of test_simple is coherent, through termination", async function () {
+    this.timeout(90_000);
+    const session = await startPlpgsqlSession(pgConfig("SELECT test_simple(1, 'walk')"));
+    await delay(6000);
+
+    async function readState(): Promise<{ line: number; counter: string; result: string }> {
+      const tid = (await session.customRequest("threads")).threads[0].id;
+      const stack = await session.customRequest("stackTrace", { threadId: tid });
+      const state = {
+        line: stack.stackFrames[0].line as number,
+        counter: "<none>",
+        result: "<none>",
+      };
+      const scopes = await session.customRequest("scopes", {
+        frameId: stack.stackFrames[0].id,
+      });
+      for (const scope of scopes.scopes) {
+        const vars = await session.customRequest("variables", {
+          variablesReference: scope.variablesReference,
+        });
+        for (const v of vars.variables) {
+          if (v.name === "counter") state.counter = v.value;
+          if (v.name === "result") state.result = v.value;
+        }
+      }
+      return state;
+    }
+
+    // Entry: declarations ran, first statement (line 9) has not.
+    assert.deepStrictEqual(await readState(), { line: 9, counter: "0", result: "NULL" });
+
+    const tid = (await session.customRequest("threads")).threads[0].id;
+    const trajectory = [
+      { line: 10, counter: "2", result: "NULL" }, // counter := a + 1 executed
+      { line: 11, counter: "2", result: "walk - 2" }, // result := … executed
+    ];
+    for (const expected of trajectory) {
+      await session.customRequest("next", { threadId: tid });
+      await delay(1500);
+      assert.deepStrictEqual(await readState(), expected);
+    }
+
+    // Stepping RETURN terminates the session cleanly.
+    const ended = waitSessionEnd(15_000);
+    await session.customRequest("next", { threadId: tid });
+    await ended;
+  });
+
+  test("record variable produces a resolved inlay on the stopped document", async () => {
+    const session = await startPlpgsqlSession(pgConfig("SELECT test_record_var()"));
+    await delay(6000);
+
+    const tid = (await session.customRequest("threads")).threads[0].id;
+    // Step twice so rec.id/rec.name are assigned before reading values.
+    for (let i = 0; i < 2; i++) {
+      await session.customRequest("next", { threadId: tid });
+      await delay(1500);
+    }
+
+    const editor = vscode.window.activeTextEditor;
+    assert.ok(editor, "Stopped document should be shown");
+    const fullRange = new vscode.Range(
+      0,
+      0,
+      editor.document.lineCount - 1,
+      editor.document.lineAt(editor.document.lineCount - 1).text.length,
+    );
+    const inlays = await new PlpgsqlInlineValuesProvider(extensionSyntaxParser).provideInlineValues(
+      editor.document,
+      fullRange,
+      {} as vscode.InlineValueContext,
+    );
+    const texts = inlays
+      .filter((v): v is vscode.InlineValueText => v instanceof vscode.InlineValueText)
+      .map((v) => v.text);
+    assert.ok(
+      texts.some((t) => t.startsWith("rec = ")),
+      `Expected a resolved 'rec = …' inlay, got: ${texts.join(" | ") || "(none)"}`,
+    );
+
+    const ended = waitSessionEnd();
+    await vscode.debug.stopDebugging(session);
+    await ended.catch(() => {});
+  });
+
+  test("frame source path byte-matches the shared readable document URI", async () => {
+    const session = await startPlpgsqlSession({
+      ...pgConfig("SELECT test_simple(2, 'scoped')"),
+      server: "localhost:5433/testdb:postgres",
+    });
+    await delay(6000);
+
+    const tid = (await session.customRequest("threads")).threads[0].id;
+    const stack = await session.customRequest("stackTrace", { threadId: tid });
+    const framePath: string = stack.stackFrames[0]?.source?.path ?? "<none>";
+
+    assert.strictEqual(vscode.Uri.parse(framePath, true).scheme, "code+moniker");
+    const extension = vscode.extensions.getExtension(EXT_ID)!;
+    const api = extension.isActive ? extension.exports : await extension.activate();
+    const descriptor = api.workbenchIndex.sourceDescriptorForDocumentUri(
+      vscode.Uri.parse(framePath),
+    );
+    assert.ok(descriptor, `Frame path must resolve through the indexed Code Moniker registry`);
+    assert.strictEqual(descriptor.name, "test_simple");
+    const identity = api.workbenchIndex.routineSymbol(descriptor.serverId, descriptor.oid)?.uri;
+    assert.ok(identity, "Expected the indexed routine identity");
+    const expected = api.workbenchIndex.documentUri(identity)?.toString();
+    assert.ok(expected, "Expected the shared readable document URI");
+
+    assert.strictEqual(
+      framePath,
+      expected,
+      "DAP source path must byte-match the URI the extension opens from the tree/CodeLens",
+    );
+    assert.strictEqual(
+      vscode.window.activeTextEditor?.document.uri.toString(),
+      expected,
+      "Editor shown on stop must be the virtual document",
+    );
+
+    // Explicit termination — lingering pldbgapi sessions destabilize later tests.
+    const ended = waitSessionEnd();
+    await vscode.debug.stopDebugging(session);
+    await ended.catch(() => {});
+  });
+});

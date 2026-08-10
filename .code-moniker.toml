@@ -1,0 +1,385 @@
+default_rules = true
+
+[aliases]
+typescript = "uri ~ 'lang:ts/**'"
+code_moniker_syntax_factory = "kind = 'imports_symbol' AND target.segment('module') = 'codeMonikerSyntax' AND target.segment('path') = 'createCodeMonikerSyntaxParser'"
+code_moniker_daemon_lifecycle = "kind = 'imports_symbol' AND target.segment('module') = 'localCodeMoniker' AND (target.segment('path') = 'connectLocalCodeMoniker' OR target.segment('path') = 'ensureLocalCodeMonikerWorkspace')"
+syntax_provider_owner = "source.segment('module') = 'localCodeMonikerSyntax' OR source.segment('module') = 'workbenchIndexController' OR source ~ '**/dir:e2e/**' OR source.segment('module') = 'codeMonikerSyntax.test' OR source.segment('module') = 'localCodeMoniker.test'"
+architectural_dependency = "kind = 'imports_symbol' OR kind = 'imports_module' OR kind = 'uses_type' OR kind = 'calls' OR kind = 'method_call' OR kind = 'instantiates' OR kind = 'extends' OR kind = 'implements'"
+extension_local_target = "target ~ '**/dir:vscode-extension/dir:src/**'"
+workbench_webview_source = "source ~ '**/dir:vscode-extension/dir:src/dir:workbenchGraph/dir:webview/**'"
+workbench_webview_target = "target ~ '**/dir:vscode-extension/dir:src/dir:workbenchGraph/dir:webview/**'"
+workbench_graph_protocol_target = "target ~ '**/dir:vscode-extension/dir:src/dir:workbenchGraph/module:protocol' OR target ~ '**/dir:vscode-extension/dir:src/dir:workbenchGraph/module:protocol/**'"
+workbench_shared_presentation_target = "target.segment('module') = 'postgresPresentation' AND target.name = 'postgresVisual'"
+connection_service_target = "target.segment('module') = 'connectionService' AND target.segment('path') = 'ConnectionService'"
+connection_service_owner = "source.segment('module') = 'connectionManager' OR source.segment('module') = 'connectionManager.test'"
+extension_entry_target = "target.segment('module') = 'extension'"
+extension_entry_owner = "source.segment('module') = 'extension' OR source.segment('module') = 'extension.test' OR source ~ '**/dir:vscode-extension/dir:src/dir:test/**'"
+sql_notebook_model_source = "source.segment('module') = 'sqlNotebookModel'"
+sql_notebook_runtime_target = "target.segment('module') = 'sqlNotebook' OR target.segment('module') = 'sqlNotebookConnection' OR target.segment('module') = 'sqlNotebookResultHost' OR target.segment('module') = 'sqlResultSession' OR target.segment('module') = 'sqlSelectionExecution' OR target.segment('module') = 'connectionManager'"
+postgres_ddl_sync_core_source = "source.segment('module') = 'postgresDdlSync'"
+postgres_ddl_sync_runtime_target = "target.segment('module') = 'localCodeMoniker' OR target.segment('module') = 'codeMonikerRuntime' OR target.segment('module') = 'postgresCatalog' OR target.segment('module') = 'postgresSourceProvider'"
+analysis_source = "source ~ '**/lang:ts/dir:src/dir:analysis/**'"
+workbench_core_target = "target ~ '**/lang:ts/dir:src/dir:workbench/**'"
+
+[profiles.smells]
+enable = ["\\.smell-"]
+
+[profiles.architecture]
+enable = [
+  "code-moniker-syntax-provider-owned-by-runtime-boundary",
+  "workbench-webview-stays-behind-protocol",
+  "connection-service-owned-by-connection-manager",
+  "extension-entry-is-not-a-service",
+  "sql-notebook-model-remains-passive",
+  "postgres-ddl-sync-core-remains-pure",
+  "analysis-does-not-depend-on-workbench-runtime",
+]
+
+[[ts.refs.where]]
+id = "workbench-webview-stays-behind-protocol"
+severity = "error"
+expr = "$workbench_webview_source AND $architectural_dependency AND $extension_local_target => $workbench_webview_target OR $workbench_graph_protocol_target OR $workbench_shared_presentation_target"
+message = "Workbench webview code may depend on local UI modules, the graph protocol, and postgresVisual; it must not consume Extension Host controllers."
+rationale = "The React/Zustand webview is a separate runtime. PostgreSQL connections, Code Moniker sessions, VS Code state, tree coordination, and command execution stay in the Extension Host and cross this boundary through the typed graph protocol. postgresVisual is the sole explicitly shared pure presentation mapping."
+
+[[ts.refs.where]]
+id = "connection-service-owned-by-connection-manager"
+severity = "error"
+expr = "$connection_service_target => $connection_service_owner"
+message = "Consume PostgreSQL transport through ConnectionManager; ConnectionService is its private construction adapter."
+rationale = "ConnectionManager owns the active DatabaseContext, connection events, reconnect state, and dedicated-client factory. Letting feature controllers consume ConnectionService directly would create competing connection lifecycles."
+
+[[ts.refs.where]]
+id = "extension-entry-is-not-a-service"
+severity = "error"
+expr = "$architectural_dependency AND $extension_entry_target => $extension_entry_owner"
+message = "Product modules must not import the extension entry point; receive explicit collaborators from activation wiring."
+rationale = "extension.ts is the composition root and command-registration boundary. Importing it from a feature would turn the exported extension API into a service locator and invert the activation dependency direction."
+
+[[ts.refs.where]]
+id = "sql-notebook-model-remains-passive"
+severity = "error"
+expr = "$sql_notebook_model_source AND $architectural_dependency => NOT $sql_notebook_runtime_target"
+message = "sqlNotebookModel owns serialization and binding value objects, not connections, execution, or result-session lifecycle."
+rationale = "The notebook file and renderer message contract must remain usable without a live PostgreSQL connection or VS Code controller. Execution belongs to sqlNotebook, dedicated connection helpers, and result-session hosts."
+
+[[ts.refs.where]]
+id = "postgres-ddl-sync-core-remains-pure"
+severity = "error"
+expr = "$postgres_ddl_sync_core_source AND $architectural_dependency => NOT $postgres_ddl_sync_runtime_target"
+message = "postgresDdlSync must remain pure DDL SQL and notification reduction; runtime orchestration belongs outside it."
+rationale = "The core DDL unit builds provisioning SQL, validates the support schema, and coalesces notifications. Catalog reads, Code Moniker publication, session lifecycle, and incremental source mutation are coordinated by postgresSourceProvider and the Extension Host controller."
+
+[[ts.refs.where]]
+id = "analysis-does-not-depend-on-workbench-runtime"
+severity = "error"
+expr = "$analysis_source AND $architectural_dependency => NOT $workbench_core_target"
+message = "The shared analysis layer depends on the Workbench runtime; move the runtime adapter outward to restore workbench -> analysis direction."
+rationale = "SyntaxParser is the shared semantic contract consumed by Workbench and debugger features. Runtime adapters that connect Code Moniker sessions live outside analysis so the dependency direction remains workbench/runtime -> analysis."
+
+[[views]]
+id = "postgres-workbench-boundaries"
+title = "PostgreSQL Workbench boundaries"
+scope = "."
+intent = "Review Workbench ownership, dependency direction, lifecycle coupling, and operational boundaries before changing extension activation, PostgreSQL contexts, indexing, graph, notebooks, or DDL synchronization."
+summary = """
+The Extension Host is the composition runtime. ConnectionManager owns the active PostgreSQL
+DatabaseContext; WorkbenchIndexController owns the Code Moniker session and per-context semantic
+registries; tree and graph units project indexed state; notebook units own durable scratchpads,
+dedicated executions, and bounded result sessions; DDL synchronization is split between pure SQL
+construction and an Extension Host listener/controller. The React/Zustand graph webview crosses
+back to the host only through the typed protocol.
+"""
+
+[[views.boundaries]]
+id = "activation"
+owns = [
+  "extension activation and disposal",
+  "command registration",
+  "construction and wiring of long-lived controllers",
+  "public extension API assembly",
+]
+forbids = [
+  "being imported as a service locator by product modules",
+  "owning feature persistence or semantic caches",
+]
+forbid_rules = ["extension-entry-is-not-a-service"]
+rationale = "Activation chooses implementations and binds VS Code commands; feature state remains in the controller that defines its lifecycle."
+symbols = [
+  "module:extension/function:activate(context:vscode.ExtensionContext)",
+  "module:extension/interface:PlpgsqlExtensionApi",
+]
+rules = ["extension-entry-is-not-a-service"]
+
+[[views.boundaries]]
+id = "database-context"
+owns = [
+  "saved server configuration and secrets",
+  "active DatabaseContext identity",
+  "shared interactive connection state",
+  "dedicated PostgreSQL client construction",
+  "connection change events",
+]
+forbids = [
+  "feature-owned ConnectionService lifecycles",
+  "semantic index or notebook result ownership",
+]
+forbid_rules = ["connection-service-owned-by-connection-manager"]
+rationale = "ServerStore persists identities and credentials; ConnectionManager is the single live connection facade and emits the context changes consumed by indexing and presentation."
+symbols = [
+  "module:connectionManager/class:ConnectionManager",
+  "module:connectionService/class:ConnectionService",
+  "module:serverStore/class:ServerStore",
+  "module:serverStore/interface:ServerConfig",
+]
+rules = ["connection-service-owned-by-connection-manager"]
+
+[[views.boundaries]]
+id = "semantic-index"
+owns = [
+  "Code Moniker daemon and client session",
+  "PostgreSQL catalog projection into virtual SQL sources",
+  "per-DatabaseContext indexed registries and snapshots",
+  "symbol, relation, source, and graph query facade",
+  "publication and invalidation of PostgreSQL sources",
+]
+forbids = [
+  "presentation navigation state",
+  "notebook persistence and result-session state",
+  "secondary SQL or PL/pgSQL syntax providers",
+]
+forbid_rules = ["code-moniker-syntax-provider-owned-by-runtime-boundary"]
+rationale = "WorkbenchIndexController is the Extension Host owner of semantic state; the src/workbench units provide catalog, source-publication, and local-client contracts beneath it."
+symbols = [
+  "module:workbenchIndexController/class:WorkbenchIndexController",
+  "module:localCodeMoniker/class:LocalCodeMonikerSession",
+  "module:postgresCatalog/function:readPostgresCatalog(client:CatalogQueryClient,identity:PostgresCatalogIdentity)",
+  "module:postgresSourceProvider/function:changedPostgresResources(state:PostgresSourceProviderState,objects:readonlyPostgresDdlObject[])",
+]
+rules = ["code-moniker-syntax-provider-owned-by-runtime-boundary"]
+
+[[views.boundaries]]
+id = "tree-and-graph"
+owns = [
+  "Workbench tree projection and item presentation",
+  "graph host navigation and snapshot validation",
+  "typed host-webview protocol",
+  "shared pure PostgreSQL visual identities",
+  "React/Zustand graph interaction state",
+  "tree and graph selection synchronization",
+]
+forbids = [
+  "PostgreSQL transport construction",
+  "Code Moniker daemon ownership",
+  "webview imports of Extension Host controllers",
+  "webview dependencies on shared presentation behavior other than postgresVisual",
+]
+forbid_rules = [
+  "workbench-webview-stays-behind-protocol",
+  "code-moniker-syntax-provider-owned-by-runtime-boundary",
+]
+rationale = "Tree and graph are projections of index snapshots. The host validates context and performs actions; the webview renders and manipulates protocol values."
+symbols = [
+  "module:workbenchTreeProvider/class:WorkbenchTreeProvider",
+  "module:workbenchGraphView/class:WorkbenchGraphView",
+  "module:treeSync/class:WorkbenchGraphTreeSync",
+  "module:protocol/type:WorkbenchGraphHostMessage",
+  "module:postgresPresentation/function:postgresVisual(kind:string)",
+  "module:store/interface:CockpitStore",
+]
+rules = ["workbench-webview-stays-behind-protocol"]
+
+[[views.boundaries]]
+id = "sql-notebooks"
+owns = [
+  "notebook file and renderer message contracts",
+  "scratchpad workspace persistence",
+  "binding snapshots and reconnect decisions",
+  "dedicated execution connections",
+  "cursor-backed result sessions and bounded renderer hosting",
+]
+forbids = [
+  "reuse of the shared interactive PostgreSQL client for notebook execution",
+  "connection lifecycle inside the serialized notebook model",
+  "semantic index ownership",
+]
+forbid_rules = ["sql-notebook-model-remains-passive"]
+rationale = "Durable notebook values, VS Code orchestration, PostgreSQL execution, and result navigation have separate owners so saved scratchpads do not retain live runtime state."
+symbols = [
+  "module:sqlNotebook/function:registerSqlNotebook(context:vscode.ExtensionContext,connections:ConnectionManager,classifyResult:ResultClassifier)",
+  "module:sqlNotebookModel/interface:SqlNotebookFile",
+  "module:sqlNotebookWorkspace/class:SqlNotebookWorkspace",
+  "module:sqlNotebookConnection/function:createDedicatedNotebookClient(provider:DedicatedNotebookClientProvider,serverId:string)",
+  "module:sqlResultSession/class:SqlResultSession",
+  "module:sqlNotebookResultHost/class:SqlNotebookResultHost",
+]
+rules = ["sql-notebook-model-remains-passive"]
+
+[[views.boundaries]]
+id = "persistence-and-configuration"
+owns = [
+  "global saved server identities",
+  "secret password storage",
+  "workspace active-server selection",
+  "workspace scratchpad files",
+  "workspace graph perspectives",
+  "global DDL-sync defaults with per-DatabaseContext overrides",
+]
+forbids = [
+  "persisting live clients, cursors, daemon sessions, or index snapshots",
+  "ambiguous DDL-sync precedence",
+]
+rationale = "Each durable value has an explicit VS Code scope; runtime handles remain memory-owned and DDL-sync configuration reports whether settings or a connection override supplied each value."
+symbols = [
+  "module:serverStore/class:ServerStore",
+  "module:sqlNotebookWorkspace/class:SqlNotebookWorkspace",
+  "module:workbenchDdlSyncConfiguration/function:resolveWorkbenchDdlSyncConfiguration(server:ServerConfig,defaults:WorkbenchDdlSyncDefaults)",
+  "module:workbenchGraphView/class:WorkbenchGraphView/method:savePerspective(state:CockpitPerspectiveState)",
+]
+
+[[views.boundaries]]
+id = "ddl-synchronization"
+owns = [
+  "support-schema validation and provisioning SQL",
+  "DDL notification reduction",
+  "per-server listener lifecycle and retry state",
+  "incremental refresh handoff to the semantic index",
+]
+forbids = [
+  "runtime and catalog dependencies in the pure DDL core",
+  "implicit provisioning",
+  "DDL listener ownership in tree or graph presentation",
+]
+forbid_rules = ["postgres-ddl-sync-core-remains-pure"]
+rationale = "src/workbench/postgresDdlSync is deterministic core logic; WorkbenchDdlSyncController owns privileged provisioning commands, LISTEN state, and index refresh coordination."
+symbols = [
+  "module:postgresDdlSync/function:buildWorkbenchDdlProvisioningSql(supportSchema:string)",
+  "module:postgresDdlSync/function:coalescePostgresDdlNotifications(notifications:readonlyPostgresDdlNotification[])",
+  "module:workbenchDdlSync/class:WorkbenchDdlSyncController",
+  "module:workbenchDdlSyncConfiguration/function:resolveWorkbenchDdlSyncConfiguration(server:ServerConfig,defaults:WorkbenchDdlSyncDefaults)",
+]
+rules = ["postgres-ddl-sync-core-remains-pure"]
+
+[[views.gotchas]]
+id = "runtime-analysis-direction"
+rationale = "LocalCodeMonikerSyntaxRuntime now lives at the src runtime boundary. The blocking rule prevents shared analysis from importing Workbench runtime types and guards against reintroducing the former directory cycle."
+symbols = [
+  "module:localCodeMonikerSyntax/class:LocalCodeMonikerSyntaxRuntime",
+  "module:localCodeMoniker/class:LocalCodeMonikerSession",
+]
+rules = ["analysis-does-not-depend-on-workbench-runtime"]
+check = "code_moniker_rules action=run profile=architecture report=true limit=200"
+
+[[views.gotchas]]
+id = "lifecycle-concentration"
+rationale = "All smell rules are blocking errors. Activation and interactive connection commands have been decomposed. Narrow source-level exceptions remain for stateful protocol/lifecycle owners; WorkbenchIndexController and WorkbenchGraphView carry explicit technical debt because their snapshot-bound capability surfaces are not yet split."
+symbols = [
+  "module:workbenchIndexController/class:WorkbenchIndexController",
+  "module:workbenchGraphView/class:WorkbenchGraphView",
+  "module:workbenchDdlSync/class:WorkbenchDdlSyncController",
+  "module:PlpgsqlDebugSession/class:PlpgsqlDebugSession",
+]
+rules = [
+  "ts.function.smell-long-callable",
+  "ts.method.smell-long-callable",
+  "ts.constructor.smell-long-callable",
+  "smell-large-class",
+  "smell-method-size-disharmony",
+]
+check = "code_moniker_rules action=run profile=smells report=true limit=200"
+
+[[views.gotchas]]
+id = "test-coverage-is-layered"
+rationale = "Unit tests cover pure models and host controllers, while the e2e Workbench tests exercise catalog publication, Code Moniker indexing, DDL notifications, and source-resource updates. Some test imports are not linked into semantic callees, so a zero-callee test graph is a coverage limit rather than evidence of no test."
+symbols = [
+  "module:workbenchIndexController.test/class:FakeConnections",
+  "module:workbenchGraphView.test/function:graphView()",
+  "module:sqlResultSession.test/class:FakeCursorReader",
+  "module:workbench-ddl-sync.test/function:applyNotificationsFromCodeMoniker()",
+]
+check = "npm test && npm run test:e2e:run"
+
+[[ts.function.where]]
+id = "name-camelcase"
+severity = "error"
+expr = "$camel OR $ts_callback OR ((moniker ~ '**/dir:workbenchGraph/dir:webview/**' OR moniker ~ '**/dir:sqlNotebookRenderer/**') AND name =~ ^[A-Z][A-Za-z0-9]*$)"
+message = "Functions use camelCase; React components in the Workbench webview use PascalCase. Rename `{name}`."
+rationale = "PascalCase is part of the React component contract and allows the hooks linter to identify stateful components without weakening naming rules outside the webview."
+
+[[ts.shape.annotation.where]]
+id = "no-comment-inside-callable"
+severity = "error"
+expr = "parent.shape != 'callable'"
+message = "Move this explanation into naming or extracted code, outside the function."
+rationale = "Comments inside functions hide executable intent and can mask gaps in line coverage. Functions should remain understandable through their names, structure, and tests."
+
+[[ts.function.where]]
+id = "smell-long-callable"
+severity = "error"
+expr = "lines <= 300"
+message = "This callable is unusually long; verify that it still represents one coherent responsibility."
+rationale = "Callables above this emergency bound deserve review for a concrete ownership or control-flow seam. The generous threshold avoids encouraging artificial indirection; this remains a review signal, not an architectural boundary."
+
+[[ts.method.where]]
+id = "smell-long-callable"
+severity = "error"
+expr = "lines <= 300"
+message = "This callable is unusually long; verify that it still represents one coherent responsibility."
+rationale = "Callables above this emergency bound deserve review for a concrete ownership or control-flow seam. The generous threshold avoids encouraging artificial indirection; this remains a review signal, not an architectural boundary."
+
+[[ts.constructor.where]]
+id = "smell-long-callable"
+severity = "error"
+expr = "lines <= 300"
+message = "This callable is unusually long; verify that it still represents one coherent responsibility."
+rationale = "Callables above this emergency bound deserve review for a concrete ownership or control-flow seam. The generous threshold avoids encouraging artificial indirection; this remains a review signal, not an architectural boundary."
+
+[[ts.function.where]]
+id = "smell-long-parameter-list"
+severity = "error"
+expr = "count(param) <= 6"
+message = "This callable has a long parameter list; check whether the parameters form a stable concept."
+rationale = "Long parameter lists can reveal missing abstractions or excessive responsibility, but adapters and protocol handlers may legitimately need them."
+
+[[ts.method.where]]
+id = "smell-long-parameter-list"
+severity = "error"
+expr = "count(param) <= 6"
+message = "This callable has a long parameter list; check whether the parameters form a stable concept."
+rationale = "Long parameter lists can reveal missing abstractions or excessive responsibility, but adapters and protocol handlers may legitimately need them."
+
+[[ts.constructor.where]]
+id = "smell-long-parameter-list"
+severity = "error"
+expr = "count(param) <= 6"
+message = "This callable has a long parameter list; check whether the parameters form a stable concept."
+rationale = "Long parameter lists can reveal missing abstractions or excessive responsibility, but adapters and protocol handlers may legitimately need them."
+
+[[ts.class.where]]
+id = "smell-large-class"
+severity = "error"
+expr = "count(method) <= 20 AND count(field) <= 30"
+message = "This class has a large surface; verify that its responsibilities remain cohesive."
+rationale = "Large classes often accumulate unrelated responsibilities. The TypeScript class domain and its native method and field collections deliberately exclude interfaces and type declarations from this implementation-oriented signal."
+
+[[ts.class.where]]
+id = "smell-method-size-disharmony"
+severity = "error"
+expr = "lines <= 300 OR count(method) < 6 OR cv(method, lines) <= 1.0"
+message = "Method sizes vary strongly inside this class; inspect whether one method carries disproportionate responsibility."
+rationale = "A strong size imbalance can expose orchestration or domain logic concentrated in one method. Classes of at most 300 lines are excluded because their distributions are too small to make this signal useful."
+
+[[ts.class.where]]
+id = "smell-balanced-method-fanout"
+severity = "error"
+expr = "count(method) < 6 OR gini(method, fan_out(each)) <= 0.7"
+message = "Outgoing dependencies are concentrated in a small part of this class."
+rationale = "Concentrated fan-out can identify methods that coordinate too many collaborators. The TypeScript class domain deliberately excludes interfaces because signatures have no executable coordination to review; this remains only a navigation signal."
+
+[[ts.refs.where]]
+id = "code-moniker-syntax-provider-owned-by-runtime-boundary"
+severity = "error"
+expr = "($code_moniker_syntax_factory OR $code_moniker_daemon_lifecycle) => $syntax_provider_owner"
+message = "Create the Code Moniker syntax provider only in the Workbench or DAP runtime boundary."
+rationale = "Feature visitors receive SyntaxParser or narrower business ports; they never create clients, daemons, or parallel AST providers."

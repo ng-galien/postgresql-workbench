@@ -1,0 +1,46 @@
+.postgres-source-view {
+  min-width: max-content;
+  padding: 8px 0 16px;
+  color: var(--vscode-editor-foreground);
+  background: transparent;
+  font-family: var(--vscode-editor-font-family);
+  font-size: var(--vscode-editor-font-size);
+  line-height: 1.5;
+  tab-size: 2;
+}
+
+.postgres-source-line {
+  display: grid;
+  grid-template-columns: 42px minmax(max-content, 1fr);
+  min-height: 1.5em;
+}
+
+.postgres-source-line-number {
+  padding-right: 8px;
+  color: var(--vscode-editorLineNumber-foreground);
+  text-align: right;
+  user-select: none;
+}
+
+.postgres-source-line-code {
+  padding-right: 16px;
+  color: inherit;
+  background: var(--vscode-editor-background);
+  font: inherit;
+  white-space: pre;
+}
+
+.postgres-source-token {
+  color: var(--postgres-token-light, var(--vscode-editor-foreground));
+  background: transparent;
+}
+
+body.vscode-dark .postgres-source-token,
+body.vscode-high-contrast .postgres-source-token {
+  color: var(--postgres-token-dark, var(--vscode-editor-foreground));
+}
+
+.postgres-source-view ::selection {
+  color: var(--vscode-editor-selectionForeground, inherit);
+  background: var(--vscode-editor-selectionBackground);
+}

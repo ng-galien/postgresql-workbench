@@ -1,0 +1,96 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="620" viewBox="0 0 900 620">
+  <rect width="900" height="620" fill="#f4f5f7"/>
+  <style>
+    .card { fill: #fff; stroke: #d8dce3; stroke-width: 2; }
+    .mark { fill: none; stroke: #182230; stroke-linecap: round; stroke-linejoin: round; }
+    .solid { fill: #182230; }
+    .label { fill: #182230; font: 600 18px ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .note { fill: #667085; font: 14px ui-monospace, SFMono-Regular, Menlo, monospace; }
+  </style>
+
+  <!-- A: literal parenthesis ears -->
+  <g transform="translate(30 30)">
+    <rect class="card" width="260" height="260" rx="24"/>
+    <g transform="translate(50 30)">
+      <path class="mark" stroke-width="15" d="M52 34 C8 62 8 140 52 168"/>
+      <path class="mark" stroke-width="15" d="M108 34 C152 62 152 140 108 168"/>
+      <circle class="solid" cx="62" cy="84" r="7"/>
+      <circle class="solid" cx="98" cy="84" r="7"/>
+      <path class="mark" stroke-width="14" d="M80 104 V158 C80 178 96 184 110 171"/>
+    </g>
+    <text class="label" x="20" y="226">A  ( elephant )</text>
+    <text class="note" x="20" y="248">literal / friendly</text>
+  </g>
+
+  <!-- B: semicolon trunk -->
+  <g transform="translate(320 30)">
+    <rect class="card" width="260" height="260" rx="24"/>
+    <g transform="translate(50 30)">
+      <path class="mark" stroke-width="18" d="M50 34 C4 62 8 142 54 170"/>
+      <path class="mark" stroke-width="18" d="M110 34 C156 62 152 142 106 170"/>
+      <circle class="solid" cx="80" cy="84" r="9"/>
+      <path class="mark" stroke-width="18" d="M80 119 V158 C80 178 97 184 112 169"/>
+    </g>
+    <text class="label" x="20" y="226">B  ( ; )</text>
+    <text class="note" x="20" y="248">SQL semicolon</text>
+  </g>
+
+  <!-- C: compact ASCII wordmark -->
+  <g transform="translate(610 30)">
+    <rect class="card" width="260" height="260" rx="24"/>
+    <g transform="translate(40 50)">
+      <path class="mark" stroke-width="16" d="M44 16 C5 42 5 116 44 142"/>
+      <circle class="solid" cx="70" cy="66" r="8"/>
+      <path class="mark" stroke-width="16" d="M90 76 V130 C90 148 106 152 120 140"/>
+      <circle class="solid" cx="110" cy="66" r="8"/>
+      <path class="mark" stroke-width="16" d="M136 16 C175 42 175 116 136 142"/>
+    </g>
+    <text class="label" x="20" y="226">C  (•;•)</text>
+    <text class="note" x="20" y="248">compact glyph</text>
+  </g>
+
+  <!-- D: ears become a function call -->
+  <g transform="translate(30 330)">
+    <rect class="card" width="260" height="260" rx="24"/>
+    <g transform="translate(50 30)">
+      <path class="mark" stroke-width="13" d="M46 26 C6 55 6 145 46 174"/>
+      <path class="mark" stroke-width="13" d="M114 26 C154 55 154 145 114 174"/>
+      <path class="mark" stroke-width="13" d="M55 58 C69 45 91 45 105 58"/>
+      <circle class="solid" cx="62" cy="87" r="6"/>
+      <circle class="solid" cx="98" cy="87" r="6"/>
+      <path class="mark" stroke-width="13" d="M80 106 V158 Q80 180 101 168"/>
+    </g>
+    <text class="label" x="20" y="226">D  fn(…)</text>
+    <text class="note" x="20" y="248">function / technical</text>
+  </g>
+
+  <!-- E: elephant as a single terminal-like stroke -->
+  <g transform="translate(320 330)">
+    <rect class="card" width="260" height="260" rx="24"/>
+    <g transform="translate(45 34)">
+      <path class="mark" stroke-width="17" d="M47 28 C10 50 6 123 40 158 C54 173 65 166 70 150"/>
+      <path class="mark" stroke-width="17" d="M123 28 C160 50 164 123 130 158 C116 173 105 166 100 150"/>
+      <circle class="solid" cx="65" cy="82" r="7"/>
+      <circle class="solid" cx="105" cy="82" r="7"/>
+      <path class="mark" stroke-width="17" d="M85 103 V158 Q85 180 108 169"/>
+    </g>
+    <text class="label" x="20" y="226">E  monoline</text>
+    <text class="note" x="20" y="248">strong at 16 px</text>
+  </g>
+
+  <!-- F: prompt arrow hidden in the trunk -->
+  <g transform="translate(610 330)">
+    <rect class="card" width="260" height="260" rx="24"/>
+    <g transform="translate(45 32)">
+      <path class="mark" stroke-width="15" d="M49 30 C8 56 8 138 49 168"/>
+      <path class="mark" stroke-width="15" d="M121 30 C162 56 162 138 121 168"/>
+      <circle class="solid" cx="68" cy="82" r="7"/>
+      <circle class="solid" cx="102" cy="82" r="7"/>
+      <path class="mark" stroke-width="14" d="M60 111 H85"/>
+      <path class="mark" stroke-width="14" d="M84 111 L105 132 L84 153"/>
+      <path class="mark" stroke-width="14" d="M105 132 V166 Q105 181 120 170"/>
+    </g>
+    <text class="label" x="20" y="226">F  =&gt; trunk</text>
+    <text class="note" x="20" y="248">query prompt</text>
+  </g>
+</svg>

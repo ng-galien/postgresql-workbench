@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "code-moniker": {
+      "args": [
+        "mcp",
+        "/Users/alexandreboyer/dev/projects/postgresql-workbench",
+        "--transport",
+        "stdio",
+        "--live-refresh",
+        "auto"
+      ],
+      "command": "/Users/alexandreboyer/.cargo/bin/code-moniker",
+      "env": {},
+      "type": "stdio"
+    }
+  }
+}

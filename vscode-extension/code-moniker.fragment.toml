@@ -1,0 +1,5 @@
+fragment = "vscode-extension"
+enabled = true
+
+[aliases]
+artifact = "uri ~ '**/lang:ts/dir:vscode-extension/**'"

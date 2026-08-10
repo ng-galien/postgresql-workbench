@@ -1,0 +1,26 @@
+services:
+  postgres:
+    build:
+      context: .
+    image: postgresql-workbench-demo:pg17
+    container_name: postgresql-workbench-demo
+    ports:
+      - "5434:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: demo
+    volumes:
+      # Mount files individually — replacing the whole directory would drop the
+      # image's own init scripts, including the one that adds plugin_debugger
+      # to shared_preload_libraries.
+      - ./init/01-extension.sql:/docker-entrypoint-initdb.d/90-extension.sql:ro
+      - ./init/02-classics.sql:/docker-entrypoint-initdb.d/91-classics.sql:ro
+      - ./init/03-shop.sql:/docker-entrypoint-initdb.d/92-shop.sql:ro
+      - ./init/04-pgtap.sql:/docker-entrypoint-initdb.d/93-pgtap.sql:ro
+      - ./init/05-commerce.sql:/docker-entrypoint-initdb.d/94-commerce.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d demo"]
+      interval: 2s
+      timeout: 5s
+      retries: 10

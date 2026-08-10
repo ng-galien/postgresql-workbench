@@ -1,0 +1,5 @@
+fragment = "e2e"
+enabled = true
+
+[aliases]
+artifact = "uri ~ '**/lang:ts/dir:e2e/**' OR uri ~ '**/lang:sql/dir:e2e/**'"

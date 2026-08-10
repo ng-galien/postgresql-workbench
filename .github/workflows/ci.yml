@@ -1,0 +1,196 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  CODE_MONIKER_REF: 391414ae9298c34d46e6f66c47834c656078486b
+
+jobs:
+  biome:
+    name: Biome
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - run: npm run check
+
+  typecheck:
+    name: Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            vscode-extension/package-lock.json
+      - run: npm ci
+      - run: npm --prefix vscode-extension ci
+      - run: npx tsc --noEmit
+      - run: npm --prefix vscode-extension run compile
+
+  unit:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            vscode-extension/package-lock.json
+      - run: npm ci
+      - run: npm --prefix vscode-extension ci
+      - run: npm test
+
+  integration:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CODE_MONIKER_CHECKOUT: ${{ github.workspace }}/code-moniker-runtime
+    services:
+      postgres:
+        image: galien0xffffff/postgres-debugger:17
+        ports:
+          - 5433:5432
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: testdb
+        options: >-
+          --health-cmd "pg_isready -U postgres -d testdb"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: ng-galien/code-moniker
+          ref: ${{ env.CODE_MONIKER_REF }}
+          path: code-moniker-runtime
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            vscode-extension/package-lock.json
+            code-moniker-runtime/packages/client/package-lock.json
+      - run: sudo apt-get update
+      - run: sudo apt-get install -y postgresql-client xvfb
+      - run: npm ci
+      - run: npm --prefix vscode-extension ci
+      - name: Build pinned local Code Moniker npm packages
+        run: npm --prefix vscode-extension run prepare:code-moniker:local
+      - run: npm run build
+      - name: Wait for PostgreSQL
+        env:
+          PGPASSWORD: postgres
+        run: |
+          for _ in $(seq 1 30); do
+            if pg_isready -h 127.0.0.1 -p 5433 -U postgres -d testdb; then
+              exit 0
+            fi
+            sleep 2
+          done
+          exit 1
+      - name: Initialize PostgreSQL debugger fixtures
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h 127.0.0.1 -p 5433 -U postgres -d testdb -v ON_ERROR_STOP=1 -f e2e/init/01-extension.sql
+          psql -h 127.0.0.1 -p 5433 -U postgres -d testdb -v ON_ERROR_STOP=1 -f e2e/init/02-test-functions.sql
+          psql -h 127.0.0.1 -p 5433 -U postgres -d testdb -v ON_ERROR_STOP=1 -f demo/init/03-shop.sql
+      - name: Run DAP integration tests
+        run: npm run test:e2e:run
+      - name: Run VS Code extension integration tests
+        run: xvfb-run -a npm --prefix vscode-extension test
+      - name: Run extension tests on minimum supported VS Code
+        run: xvfb-run -a npm --prefix vscode-extension run test:min-vscode
+      - name: Upload VS Code test logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: vscode-test-logs
+          path: |
+            vscode-extension/.vscode-test/user-data/logs/**
+            vscode-extension/.vscode-test/user-data/**/*.log
+            /home/runner/.config/Code/logs/**
+          if-no-files-found: ignore
+
+  legacy-compatibility:
+    name: EnterpriseDB pldebugger Compatibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - run: npm run test:e2e:legacy
+
+  package-extension:
+    name: Package Extension (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-x64
+            runner: ubuntu-24.04
+          - target: darwin-arm64
+            runner: macos-15
+          - target: darwin-x64
+            runner: macos-15-intel
+          - target: win32-x64
+            runner: windows-2025
+    env:
+      CODE_MONIKER_CHECKOUT: ${{ github.workspace }}/code-moniker-runtime
+      CODE_MONIKER_TARGET: ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: ng-galien/code-moniker
+          ref: ${{ env.CODE_MONIKER_REF }}
+          path: code-moniker-runtime
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            vscode-extension/package-lock.json
+            code-moniker-runtime/packages/client/package-lock.json
+      - run: npm ci
+      - run: npm --prefix vscode-extension ci
+      - run: npm --prefix vscode-extension run prepare:code-moniker:local
+      - run: npm --prefix vscode-extension run package
+      - run: git diff --exit-code -- vscode-extension/THIRD_PARTY_NOTICES.md
+      - name: Generate validated artifact checksum
+        run: npm --prefix vscode-extension run checksum:package
+      - name: Upload VSIX artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: postgresql-workbench-vsix-${{ matrix.target }}
+          path: |
+            vscode-extension/postgresql-workbench-*-${{ matrix.target }}.vsix
+            vscode-extension/postgresql-workbench-*-${{ matrix.target }}.vsix.sha256
+          if-no-files-found: error

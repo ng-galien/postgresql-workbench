@@ -1,0 +1,14 @@
+CREATE OR REPLACE FUNCTION public.test_simple(a integer, b text)
+ RETURNS text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  result text;
+  counter int := 0;
+BEGIN
+  counter := a + 1;
+  result := b || ' - ' || counter::text;
+  RETURN result;
+END;
+$function$
+

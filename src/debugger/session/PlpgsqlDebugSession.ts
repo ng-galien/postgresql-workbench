@@ -1,0 +1,1474 @@
+import * as crypto from "node:crypto";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+import {
+  BreakpointEvent,
+  Event,
+  InitializedEvent,
+  LoggingDebugSession,
+  OutputEvent,
+  Scope,
+  Source,
+  StackFrame,
+  StoppedEvent,
+  TerminatedEvent,
+  Thread,
+} from "@vscode/debugadapter";
+import type { DebugProtocol } from "@vscode/debugprotocol";
+import { Client, type ClientConfig } from "pg";
+import { plpgsqlRoutineBodyStartLine } from "../../analysis/plpgsqlDocument.js";
+import type { SyntaxParser } from "../../analysis/syntaxTree.js";
+import {
+  analyzeFunction,
+  type PlRecordField,
+  type PlSourceAnalysis,
+} from "../../functionSource.js";
+import {
+  clampDebugResultRows,
+  createDebugResultContext,
+  DEBUG_RESULT_EVENT,
+  DEBUG_RESULT_LIMITS,
+  DEBUG_RESULT_STATUS_EVENT,
+  type DebugResult,
+  type DebugResultContext,
+  type DebugResultError,
+  type DebugResultPending,
+  type DebugResultSource,
+} from "../launch/debugResult.js";
+import {
+  DEBUG_SESSION_STATUS_EVENT,
+  type DebugSessionRuntimeState,
+  type DebugSessionSource,
+  type DebugSessionStatus,
+} from "../launch/debugSessionStatus.js";
+import type { DebugLaunchRoutineArgument, DebugLaunchRoutineTarget } from "../launch/index.js";
+import {
+  DebugLaunchError,
+  type PreparedDebugLaunch,
+  prepareDebugLaunch,
+  startDebugTarget,
+} from "../launch/startDebugLaunch.js";
+import type { PlApiFunctionDef, PostgresDebugger } from "../postgres/index.js";
+import { DebugSessionLifecycle } from "./DebugSessionLifecycle.js";
+import { canonicalSourceUris } from "./sourceRegistry.js";
+
+const logFile = path.join(os.tmpdir(), "postgresql-workbench.log");
+const log = (msg: string) =>
+  fs.appendFileSync(logFile, `${new Date().toISOString()} [adapter] ${msg}\n`);
+
+const THREAD_ID = 1;
+
+function inferType(value: unknown): string {
+  if (value === null) return "null";
+  if (typeof value === "number") return Number.isInteger(value) ? "integer" : "numeric";
+  if (typeof value === "boolean") return "boolean";
+  if (typeof value === "string") return "text";
+  if (Array.isArray(value)) return "array";
+  return "record";
+}
+
+interface LaunchRequestArguments extends DebugProtocol.LaunchRequestArguments {
+  name?: string;
+  host: string;
+  port: number;
+  database: string;
+  user: string;
+  password: string;
+  sql?: string;
+  routine?: DebugLaunchRoutineTarget;
+  routineArgs?: DebugLaunchRoutineArgument[];
+  ssl?: boolean | "require" | "prefer" | "disable";
+  /** Max time to wait for the target to hit the entry breakpoint (default 30s). */
+  attachTimeoutMs?: number;
+  /** Whether to expose the entry suspension before running to another breakpoint. */
+  stopOnEntry?: boolean;
+  /** Maximum result rows retained for display. Hard-clamped to the adapter safety range. */
+  resultMaxRows?: number;
+  resultLabel?: string;
+  resultSource?: DebugResultSource;
+  sourceUris: Record<string, string>;
+}
+
+const DEFAULT_ATTACH_TIMEOUT_MS = 30_000;
+
+/**
+ * Cleanup/shutdown timing budget. The phases run sequentially, so
+ * SHUTDOWN_BUDGET_MS (the hard exit deadline in main.ts) intentionally cuts
+ * cleanup short on SIGTERM — raise it if you raise the phase timeouts.
+ */
+export const TIMEOUTS = {
+  /** pldbg_abort_target on an idle listener */
+  ABORT_MS: 2_000,
+  /** waiting for the target query to drain after abort/terminate */
+  TARGET_DRAIN_MS: 3_000,
+  /** closing the pg clients */
+  CLOSE_MS: 1_000,
+  /** grace for a step command to settle after the target query ends */
+  STEP_SETTLE_GRACE_MS: 750,
+  /** hard process-exit deadline on SIGTERM/SIGINT */
+  SHUTDOWN_BUDGET_MS: 2_000,
+} as const;
+
+/** Resolve with the promise's value, or undefined once `ms` elapses — never rejects. */
+function withTimeout<T>(promise: Promise<T> | undefined, ms: number): Promise<T | undefined> {
+  if (!promise) return Promise.resolve(undefined);
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(undefined), ms);
+    timer.unref?.();
+    promise.then(
+      (v) => {
+        clearTimeout(timer);
+        resolve(v);
+      },
+      () => {
+        clearTimeout(timer);
+        resolve(undefined);
+      },
+    );
+  });
+}
+
+function isConnectionLostError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  const code = (err as { code?: string })?.code ?? "";
+  return (
+    code === "ECONNRESET" ||
+    code === "57P01" ||
+    code === "57P02" ||
+    msg.includes("Connection terminated") ||
+    msg.includes("terminating connection")
+  );
+}
+
+function fallbackResultLabel(args: LaunchRequestArguments, query: string): string {
+  const named = typeof args.name === "string" ? args.name.replace(/^Debug\s+/i, "").trim() : "";
+  return args.resultLabel?.trim() || named || query;
+}
+
+interface DebugResultLifecycle {
+  id: string;
+  timestamp: string;
+  context: DebugResultContext;
+  pending: DebugResultPending;
+  succeed(): void;
+  fail(error: unknown): void;
+}
+
+function createDebugResultLifecycle(
+  args: LaunchRequestArguments,
+  query: string,
+  sessionSuffix: string,
+  onError: (event: DebugResultError) => void,
+): DebugResultLifecycle {
+  const id = `${sessionSuffix}-${Date.now()}`;
+  const timestamp = new Date().toISOString();
+  const context = createDebugResultContext(
+    fallbackResultLabel(args, query),
+    query,
+    args.resultSource,
+  );
+  const startedAt = Date.now();
+  let settled = false;
+  return {
+    id,
+    timestamp,
+    context,
+    pending: { id, status: "pending", ...context, timestamp },
+    succeed() {
+      settled = true;
+    },
+    fail(error) {
+      if (settled) return;
+      settled = true;
+      const failure = error instanceof Error ? error : new Error(String(error));
+      onError({
+        id,
+        status: "error",
+        ...context,
+        message: failure.message.slice(0, DEBUG_RESULT_LIMITS.MAX_ERROR_CHARS),
+        durationMs: Math.max(0, Date.now() - startedAt),
+        timestamp,
+      });
+    },
+  };
+}
+
+interface CachedSource {
+  funcDef: PlApiFunctionDef;
+  analysis: PlSourceAnalysis;
+  /** Lines before the body in pg_get_functiondef output — used to map pldbgapi line numbers */
+  bodyLineOffset: number;
+}
+
+interface BreakpointInfo {
+  /** Conditional breakpoint expression (F4) */
+  condition?: string;
+  /** Logpoint message template with {var} interpolation (F5) */
+  logMessage?: string;
+}
+
+// The DAP framework requires one stateful session owner for protocol ordering and request handlers;
+// parsing, PostgreSQL access, source registration, and launch orchestration already live in helpers.
+// code-moniker: ignore[smell-large-class]
+export class PlpgsqlDebugSession extends LoggingDebugSession {
+  private listenerExecutor!: PostgresDebugger;
+  private targetClient!: Client;
+  private sourceCache = new Map<number, CachedSource>();
+  private frameAnalyses = new Map<number, PlSourceAnalysis>();
+  private selectedFrameAnalysis: PlSourceAnalysis | undefined;
+  private entryOid: number = 0;
+  private stopOnEntry = true;
+  private targetQueryPromise: Promise<void> | undefined;
+  private expandableVars = new Map<number, DebugProtocol.Variable[]>();
+  private nextVarRef = 10;
+  /** Resolves when the target has hit the global breakpoint and is ready for stepping. */
+  private targetReady!: Promise<void>;
+  private resolveTargetReady!: () => void;
+  /** Active breakpoints per OID — maps body line to breakpoint info (condition/logMessage) */
+  private activeBreakpoints = new Map<number, Map<number, BreakpointInfo>>();
+  /** Active exception breakpoint filters */
+  private exceptionFilters = new Set<string>();
+  /** Cached variables for completions (updated on variablesRequest/evaluateRequest) */
+  private lastKnownVariables: import("../postgres/index.js").PlApiStackVariable[] = [];
+  /** Unique per-session suffix for application_name — keeps concurrent sessions from interfering. */
+  private sessionSuffix = crypto.randomBytes(4).toString("hex");
+  /** Connection config kept for the auxiliary connection used to terminate blocked backends. */
+  private pgConfig: ClientConfig | undefined;
+  /** Backend pid of the target connection — non-zero only while its query runs. */
+  private targetPid = 0;
+  /** Settles (never rejects) when the target query ends — reused by every step command. */
+  private targetEndSignal: Promise<void> | undefined;
+  /** setBreakpoints requests received before the listener session was ready — replayed after attach (latest request per source wins). */
+  private pendingBreakpointRequests = new Map<
+    string,
+    Array<{ id: number; line: number; condition?: string; logMessage?: string }>
+  >();
+  /** Function breakpoints arrive before launch in the normal DAP sequence. */
+  private pendingFunctionBreakpoints: Array<{ id: number; name: string }> = [];
+  private nextBreakpointId = 1;
+  private readonly lifecycle = new DebugSessionLifecycle();
+  private cleanupPromise: Promise<void> | undefined;
+  private terminationPromise: Promise<void> | undefined;
+  private terminatedEventSent = false;
+  private preparedLaunch: PreparedDebugLaunch | undefined;
+  private listenerPid = 0;
+  private targetBackendPid = 0;
+  private entrySource: DebugSessionSource | undefined;
+  private sourceUris = new Map<number, string>();
+  private sourceOids = new Map<string, number>();
+
+  constructor(private readonly syntaxParser: () => Promise<SyntaxParser>) {
+    super("postgresql-workbench-debug.log");
+  }
+
+  protected initializeRequest(
+    response: DebugProtocol.InitializeResponse,
+    _args: DebugProtocol.InitializeRequestArguments,
+  ): void {
+    response.body = {
+      supportsConfigurationDoneRequest: true,
+      supportsFunctionBreakpoints: true,
+      supportsConditionalBreakpoints: true,
+      supportsStepBack: false,
+      supportsSetVariable: true,
+      supportsRestartFrame: false,
+      supportsGotoTargetsRequest: false,
+      supportsCompletionsRequest: true,
+      supportsStepInTargetsRequest: true,
+      supportsValueFormattingOptions: true,
+      supportsEvaluateForHovers: true,
+    };
+    (response.body as any).supportsInlineValues = true;
+    (response.body as any).supportsLogPoints = true;
+    response.body.exceptionBreakpointFilters = [
+      { filter: "all", label: "All Exceptions", default: false },
+      { filter: "raise", label: "RAISE EXCEPTION", default: true },
+    ];
+    this.sendResponse(response);
+    this.sendEvent(new InitializedEvent());
+  }
+
+  protected async launchRequest(
+    response: DebugProtocol.LaunchResponse,
+    args: LaunchRequestArguments,
+  ): Promise<void> {
+    log(
+      `launchRequest host=${args.host} port=${args.port} db=${args.database} user=${args.user} passwordSet=${Boolean(args.password)}`,
+    );
+    if (this.lifecycle.state !== "idle") {
+      this.sendErrorResponse(
+        response,
+        5,
+        `Cannot launch while the debug session is ${this.lifecycle.state}`,
+      );
+      return;
+    }
+    this.lifecycle.transition("preparing");
+    this.stopOnEntry = args.stopOnEntry !== false;
+    this.sendLifecycleOutput("Preparing PL/pgSQL debug session");
+    this.sendSessionStatus("preparing", {
+      query: args.sql,
+      routine:
+        args.routine?.oid !== undefined
+          ? {
+              oid: args.routine.oid,
+              schema: args.routine.schema,
+              name: args.routine.name,
+              kind: args.routine.kind,
+            }
+          : undefined,
+    });
+
+    this.targetReady = new Promise((resolve) => {
+      this.resolveTargetReady = resolve;
+    });
+
+    try {
+      const prepared = await prepareDebugLaunch(
+        args,
+        this.sessionSuffix,
+        {
+          listenerReady: (debuggerBackend) => {
+            this.listenerExecutor = debuggerBackend;
+          },
+          targetClientReady: (client) => {
+            this.targetClient = client;
+          },
+          replayFunctionBreakpoints: async () => {
+            if (this.pendingFunctionBreakpoints.length > 0) {
+              await this.replayPendingFunctionBreakpoints();
+            }
+          },
+          listenerError: (error) => log(`listener client error: ${error.message}`),
+          targetError: (error) => log(`target client error: ${error.message}`),
+          notice: (severity, message) => {
+            this.sendEvent(new OutputEvent(`[${severity}] ${message}\n`, "console"));
+          },
+        },
+        await this.syntaxParser(),
+      );
+      this.startPreparedTarget(response, args, prepared);
+    } catch (err) {
+      const code = err instanceof DebugLaunchError ? err.responseCode : 5;
+      const message = `Failed to start debug session: ${err instanceof Error ? err.message : String(err)}`;
+      await this.terminateSession(message, true, false);
+      this.sendErrorResponse(response, code, message);
+      if (!this.terminatedEventSent) {
+        this.terminatedEventSent = true;
+        this.sendEvent(new TerminatedEvent());
+      }
+    }
+  }
+
+  private startPreparedTarget(
+    response: DebugProtocol.LaunchResponse,
+    args: LaunchRequestArguments,
+    prepared: PreparedDebugLaunch,
+  ): void {
+    this.preparedLaunch = prepared;
+    this.pgConfig = prepared.pgConfig;
+    this.entryOid = prepared.execution.entryOid;
+    this.sourceUris = canonicalSourceUris(args.sourceUris);
+    this.sourceOids = new Map([...this.sourceUris].map(([oid, symbolUri]) => [symbolUri, oid]));
+    if (!this.sourceUris.has(this.entryOid)) {
+      throw new Error(`Code Moniker source URI is missing for routine OID ${this.entryOid}`);
+    }
+    this.targetPid = prepared.targetPid;
+    this.targetBackendPid = prepared.targetPid;
+    this.listenerPid = prepared.debuggerBackend.getBackendPid();
+    const resultLifecycle = createDebugResultLifecycle(
+      args,
+      prepared.execution.queryText,
+      this.sessionSuffix,
+      (event) => this.sendEvent(new Event(DEBUG_RESULT_STATUS_EVENT, event)),
+    );
+
+    log("launch: target connected, sending response");
+    this.sendResponse(response);
+    this.sendEvent(new Event(DEBUG_RESULT_STATUS_EVENT, resultLifecycle.pending));
+    this.lifecycle.transition("waitingForTarget");
+    this.sendSessionStatus("waitingForTarget");
+    this.sendLifecycleOutput(
+      `Waiting for ${prepared.execution.queryText.slice(0, 120)} to reach the debug entry`,
+    );
+
+    const running = startDebugTarget(
+      prepared,
+      {
+        attachTimeoutMs: args.attachTimeoutMs ?? DEFAULT_ATTACH_TIMEOUT_MS,
+        resultId: resultLifecycle.id,
+        resultLabel: resultLifecycle.context.label,
+        resultSource: resultLifecycle.context.source,
+        resultTimestamp: resultLifecycle.timestamp,
+        maxResultRows: clampDebugResultRows(args.resultMaxRows),
+      },
+      (result) => {
+        resultLifecycle.succeed();
+        this.sendEvent(new Event(DEBUG_RESULT_EVENT, result));
+        this.sendEvent(new OutputEvent(`${this.formatDebugResultSummary(result)}\n`, "console"));
+      },
+      (error) => {
+        resultLifecycle.fail(error);
+        if (!isConnectionLostError(error)) {
+          this.sendEvent(new OutputEvent(`Target SQL error: ${error.message}\n`, "stderr"));
+        }
+      },
+      () => {
+        this.targetPid = 0;
+      },
+    );
+    this.targetQueryPromise = running.query;
+    this.targetEndSignal = running.query;
+
+    running.ready
+      .then(async () => {
+        log("launch: target hit breakpoint — ready");
+        if (this.lifecycle.state !== "waitingForTarget") {
+          this.resolveTargetReady();
+          return;
+        }
+        this.lifecycle.transition("suspended");
+        this.entrySource = await this.currentStopSource().catch(() => undefined);
+        this.sendLifecycleOutput(`Attached to PostgreSQL backend ${prepared.targetPid}`);
+        this.resolveTargetReady();
+      })
+      .catch(async (err) => {
+        log(`launch: waitForTarget failed — ${err}`);
+        resultLifecycle.fail(err);
+        await this.terminateSession(
+          `Launch failed: ${err instanceof Error ? err.message : String(err)}`,
+          true,
+        );
+        this.resolveTargetReady();
+      });
+  }
+
+  protected async setBreakPointsRequest(
+    response: DebugProtocol.SetBreakpointsResponse,
+    args: DebugProtocol.SetBreakpointsArguments,
+  ): Promise<void> {
+    response.body = { breakpoints: [] };
+    const sourcePath = args.source?.path ?? "";
+    const requested = (args.breakpoints ?? []).map((bp) => ({
+      id: this.nextBreakpointId++,
+      line: bp.line,
+      condition: bp.condition,
+      logMessage: bp.logMessage,
+    }));
+
+    if (!this.listenerExecutor) {
+      this.pendingBreakpointRequests.set(sourcePath, requested);
+      for (const bp of requested) {
+        response.body.breakpoints.push({ id: bp.id, verified: false, line: bp.line });
+      }
+      this.sendResponse(response);
+      return;
+    }
+
+    try {
+      response.body.breakpoints = await this.applyBreakpoints(sourcePath, requested);
+      this.sendResponse(response);
+    } catch (err) {
+      log(`setBreakPointsRequest: error — ${err}`);
+      for (const bp of requested) {
+        response.body.breakpoints.push({ id: bp.id, verified: false, line: bp.line });
+      }
+      this.sendResponse(response);
+      await this.handlePossibleConnectionLoss(err);
+    }
+  }
+
+  /** Apply a full breakpoint set for one source — shared by setBreakPointsRequest and the pending-breakpoint replay. */
+  private async applyBreakpoints(
+    sourcePath: string,
+    breakpoints: Array<{ id: number; line: number; condition?: string; logMessage?: string }>,
+  ): Promise<DebugProtocol.Breakpoint[]> {
+    const oid = this.sourceOids.get(sourcePath);
+    if (!oid) throw new Error(`Unknown Code Moniker source URI: ${sourcePath}`);
+
+    const cached = oid ? await this.getSource(oid) : null;
+    const bodyOffset = cached?.bodyLineOffset ?? 0;
+    const steppable = cached?.analysis.steppableLines;
+
+    const results: DebugProtocol.Breakpoint[] = [];
+    const newBodyLines = new Map<number, BreakpointInfo>();
+    const serverBodyLines = new Set(
+      (await this.listenerExecutor.getBreakpoints())
+        .filter((breakpoint) => breakpoint.oid === oid && breakpoint.line > 0)
+        .map((breakpoint) => breakpoint.line),
+    );
+
+    for (const bp of breakpoints) {
+      const bodyLine = bp.line - bodyOffset;
+
+      if (bodyLine < 1 || (steppable && !steppable.has(bodyLine))) {
+        results.push({ id: bp.id, verified: false, line: bp.line });
+        continue;
+      }
+
+      const ok =
+        serverBodyLines.has(bodyLine) || (await this.listenerExecutor.setBreakpoint(oid, bodyLine));
+      if (ok) {
+        serverBodyLines.add(bodyLine);
+        newBodyLines.set(bodyLine, {
+          condition: bp.condition,
+          logMessage: bp.logMessage,
+        });
+      }
+      results.push({ id: bp.id, verified: ok, line: bp.line });
+    }
+
+    const prevLines = this.activeBreakpoints.get(oid);
+    const linesToReconcile = new Set([...serverBodyLines, ...(prevLines ? prevLines.keys() : [])]);
+    for (const line of linesToReconcile) {
+      if (!newBodyLines.has(line)) {
+        await this.listenerExecutor.dropBreakpoint(oid, line);
+      }
+    }
+    this.activeBreakpoints.set(oid, newBodyLines);
+
+    return results;
+  }
+
+  /** Replay setBreakpoints requests that arrived before the listener session was ready. */
+  private async replayPendingBreakpoints(): Promise<void> {
+    const pending = [...this.pendingBreakpointRequests.entries()];
+    for (const [sourcePath, breakpoints] of pending) {
+      try {
+        const results = await this.applyBreakpoints(sourcePath, breakpoints);
+        if (this.pendingBreakpointRequests.get(sourcePath) === breakpoints) {
+          this.pendingBreakpointRequests.delete(sourcePath);
+        }
+        for (const bp of results) {
+          this.sendEvent(new BreakpointEvent("changed", bp as DebugProtocol.Breakpoint));
+        }
+      } catch (err) {
+        log(`replayPendingBreakpoints: error for ${sourcePath} — ${err}`);
+      }
+    }
+  }
+
+  /**
+   * Shared shape for read-only DAP handlers: bail out with the pre-set empty
+   * response body when no session exists, and on error send that body, log,
+   * and terminate the session if the connection was lost.
+   * The caller pre-sets `response.body` to its empty default; `fn` fills it
+   * and must NOT send the response itself.
+   */
+  private async guarded(
+    name: string,
+    response: DebugProtocol.Response,
+    fn: () => Promise<void>,
+  ): Promise<void> {
+    if (!this.listenerExecutor) {
+      this.sendResponse(response);
+      return;
+    }
+    try {
+      await fn();
+      this.sendResponse(response);
+    } catch (err) {
+      log(`${name}: error — ${err}`);
+      this.sendResponse(response);
+      await this.handlePossibleConnectionLoss(err);
+    }
+  }
+
+  /** Terminate the session if the error indicates a lost connection/session — otherwise do nothing. */
+  private async handlePossibleConnectionLoss(err: unknown): Promise<void> {
+    if (!isConnectionLostError(err) || !this.listenerExecutor) return;
+    log("connection lost — terminating session");
+    await this.terminateSession("PostgreSQL connection lost — debug session ended", true);
+  }
+
+  protected async setFunctionBreakPointsRequest(
+    response: DebugProtocol.SetFunctionBreakpointsResponse,
+    args: DebugProtocol.SetFunctionBreakpointsArguments,
+  ): Promise<void> {
+    const requested = (args.breakpoints ?? []).map((bp) => ({
+      id: this.nextBreakpointId++,
+      name: bp.name,
+    }));
+
+    if (!this.listenerExecutor) {
+      this.pendingFunctionBreakpoints = requested;
+      response.body = {
+        breakpoints: requested.map((bp) => ({
+          id: bp.id,
+          verified: false,
+          message: "Waiting for the debug session to start",
+        })),
+      };
+      this.sendResponse(response);
+      return;
+    }
+
+    response.body = { breakpoints: await this.applyFunctionBreakpoints(requested) };
+    this.sendResponse(response);
+  }
+
+  private async applyFunctionBreakpoints(
+    requested: Array<{ id: number; name: string }>,
+  ): Promise<DebugProtocol.Breakpoint[]> {
+    const breakpoints: DebugProtocol.Breakpoint[] = [];
+    for (const bp of requested) {
+      const parts = bp.name.split(".");
+      const schema = parts.length >= 2 ? parts[0] : "public";
+      const funcName = parts.length >= 2 ? parts[1] : parts[0];
+
+      try {
+        const callArgs = await this.listenerExecutor.getCallArgs(schema, funcName);
+        if (callArgs.length > 0) {
+          const oid = callArgs[0].oid;
+          if (oid !== this.entryOid) {
+            await this.listenerExecutor.setGlobalBreakpoint(oid);
+          }
+          breakpoints.push({
+            id: bp.id,
+            verified: true,
+            message: `${schema}.${funcName} (oid ${oid})`,
+          });
+        } else {
+          breakpoints.push({
+            id: bp.id,
+            verified: false,
+            message: `Function not found: ${bp.name}`,
+          });
+        }
+      } catch (err) {
+        breakpoints.push({
+          id: bp.id,
+          verified: false,
+          message: `Error: ${err instanceof Error ? err.message : String(err)}`,
+        });
+      }
+    }
+    return breakpoints;
+  }
+
+  private async replayPendingFunctionBreakpoints(): Promise<void> {
+    const pending = this.pendingFunctionBreakpoints;
+    this.pendingFunctionBreakpoints = [];
+    const results = await this.applyFunctionBreakpoints(pending);
+    for (const breakpoint of results) {
+      this.sendEvent(new BreakpointEvent("changed", breakpoint));
+    }
+  }
+
+  protected setExceptionBreakPointsRequest(
+    response: DebugProtocol.SetExceptionBreakpointsResponse,
+    args: DebugProtocol.SetExceptionBreakpointsArguments,
+  ): void {
+    this.exceptionFilters = new Set(args.filters);
+    response.body = {};
+    this.sendResponse(response);
+  }
+
+  protected async configurationDoneRequest(
+    response: DebugProtocol.ConfigurationDoneResponse,
+    _args: DebugProtocol.ConfigurationDoneArguments,
+  ): Promise<void> {
+    this.sendResponse(response);
+
+    log("configurationDone: waiting for targetReady");
+    await this.targetReady;
+    log(`configurationDone: targetReady resolved, listenerExecutor=${!!this.listenerExecutor}`);
+    if (!this.listenerExecutor) return;
+
+    if (this.pendingBreakpointRequests.size > 0) {
+      await this.replayPendingBreakpoints();
+    }
+
+    if (this.stopOnEntry) {
+      log("configurationDone: sending StoppedEvent(entry)");
+      this.sendStoppedAndReset("entry", this.entrySource);
+      return;
+    }
+
+    if (this.lifecycle.beginExecution()) {
+      this.sendSessionStatus("resuming");
+      await this.safeStep(() => this.listenerExecutor.stepContinue(), "breakpoint");
+    }
+  }
+
+  protected threadsRequest(response: DebugProtocol.ThreadsResponse): void {
+    log("threadsRequest received");
+    response.body = {
+      threads: [new Thread(THREAD_ID, "PL/pgSQL")],
+    };
+    this.sendResponse(response);
+  }
+
+  protected async stackTraceRequest(
+    response: DebugProtocol.StackTraceResponse,
+    _args: DebugProtocol.StackTraceArguments,
+  ): Promise<void> {
+    response.body = { stackFrames: [], totalFrames: 0 };
+    await this.guarded("stackTraceRequest", response, async () => {
+      const frames = await this.listenerExecutor.getStack();
+
+      const stackFrames: StackFrame[] = [];
+      this.frameAnalyses.clear();
+      for (const frame of frames) {
+        const cached = await this.getSource(frame.oid);
+        if (cached) this.frameAnalyses.set(frame.level, cached.analysis);
+        const funcDef = cached?.funcDef;
+        const symbolUri = this.sourceUris.get(frame.oid);
+        const source =
+          funcDef && symbolUri
+            ? new Source(`${funcDef.schema}.${funcDef.name}`, symbolUri, 0)
+            : undefined;
+
+        const absLine = frame.line + (cached?.bodyLineOffset ?? 0);
+        stackFrames.push(
+          new StackFrame(frame.level, funcDef?.name ?? `<oid:${frame.oid}>`, source, absLine),
+        );
+      }
+
+      response.body = {
+        stackFrames,
+        totalFrames: stackFrames.length,
+      };
+    });
+  }
+
+  protected scopesRequest(
+    response: DebugProtocol.ScopesResponse,
+    args: DebugProtocol.ScopesArguments,
+  ): void {
+    this.selectedFrameAnalysis = this.frameAnalyses.get(args.frameId);
+    response.body = {
+      scopes: [new Scope("Arguments", 1, false), new Scope("Local Variables", 2, false)],
+    };
+    this.sendResponse(response);
+  }
+
+  protected async variablesRequest(
+    response: DebugProtocol.VariablesResponse,
+    args: DebugProtocol.VariablesArguments,
+  ): Promise<void> {
+    const scopeRef = args.variablesReference;
+
+    if (this.expandableVars.has(scopeRef)) {
+      response.body = { variables: this.expandableVars.get(scopeRef)! };
+      this.sendResponse(response);
+      return;
+    }
+
+    response.body = { variables: [] };
+    await this.guarded("variablesRequest", response, async () => {
+      const vars = await this.listenerExecutor.getVariables();
+      this.lastKnownVariables = vars;
+
+      const filtered =
+        scopeRef === 1
+          ? vars.filter((v) => v.isArg)
+          : scopeRef === 2
+            ? vars.filter((v) => !v.isArg)
+            : vars;
+
+      const byName = new Map<string, (typeof filtered)[number]>();
+      for (const v of filtered) {
+        const existing = byName.get(v.value.name);
+        if (!existing || (existing.value.value === "NULL" && v.value.value !== "NULL")) {
+          byName.set(v.value.name, v);
+        }
+      }
+      const unique = [...byName.values()];
+
+      response.body = {
+        variables: unique.map((v) => {
+          return this.buildVariable(
+            v.value.name,
+            this.displayValue(v.value),
+            v.value.type,
+            this.selectedFrameAnalysis?.recordFields.get(v.value.name),
+          );
+        }),
+      };
+    });
+  }
+
+  protected async sourceRequest(
+    response: DebugProtocol.SourceResponse,
+    args: DebugProtocol.SourceArguments,
+  ): Promise<void> {
+    const sourcePath = args.source?.path;
+    const oid = sourcePath ? this.sourceOids.get(sourcePath) : undefined;
+    if (!sourcePath || oid === undefined) {
+      this.sendErrorResponse(response, 9, "Unknown Code Moniker source URI");
+      return;
+    }
+    const cached = await this.getSource(oid);
+    if (!cached) {
+      this.sendErrorResponse(response, 9, `Source is unavailable for ${sourcePath}`);
+      return;
+    }
+    response.body = {
+      content: cached.funcDef.source,
+    };
+    this.sendResponse(response);
+  }
+
+  /**
+   * stepInTargets: tell the client which function calls on this line
+   * can be stepped into.
+   */
+  protected async stepInTargetsRequest(
+    response: DebugProtocol.StepInTargetsResponse,
+    args: DebugProtocol.StepInTargetsArguments,
+  ): Promise<void> {
+    response.body = { targets: [] };
+    await this.guarded("stepInTargetsRequest", response, async () => {
+      const frames = await this.listenerExecutor.getStack();
+      const selectedFrame = frames.find((f) => f.level === args.frameId) ?? frames[0];
+      const cached = selectedFrame ? await this.getSource(selectedFrame.oid) : null;
+      const targets: DebugProtocol.StepInTarget[] = [];
+
+      if (cached && selectedFrame) {
+        const calls = cached.analysis.functionCalls.filter((c) => c.line === selectedFrame.line);
+        calls.forEach((call, idx) => {
+          targets.push({ id: idx + 1, label: call.name });
+        });
+      }
+
+      response.body = { targets };
+    });
+  }
+
+  protected async continueRequest(
+    response: DebugProtocol.ContinueResponse,
+    _args: DebugProtocol.ContinueArguments,
+  ): Promise<void> {
+    log("continueRequest received");
+    await this.runExecutionRequest(
+      response,
+      () => this.listenerExecutor.stepContinue(),
+      "breakpoint",
+      "continue",
+    );
+  }
+
+  protected async nextRequest(
+    response: DebugProtocol.NextResponse,
+    _args: DebugProtocol.NextArguments,
+  ): Promise<void> {
+    await this.runExecutionRequest(
+      response,
+      () => this.listenerExecutor.stepOver(),
+      "step",
+      "step over",
+    );
+  }
+
+  protected async stepInRequest(
+    response: DebugProtocol.StepInResponse,
+    _args: DebugProtocol.StepInArguments,
+  ): Promise<void> {
+    await this.runExecutionRequest(
+      response,
+      () => this.listenerExecutor.stepInto(),
+      "step",
+      "step into",
+    );
+  }
+
+  protected async stepOutRequest(
+    response: DebugProtocol.StepOutResponse,
+    _args: DebugProtocol.StepOutArguments,
+  ): Promise<void> {
+    await this.runExecutionRequest(
+      response,
+      () => this.listenerExecutor.stepContinue(),
+      "step",
+      "step out",
+    );
+  }
+
+  protected async evaluateRequest(
+    response: DebugProtocol.EvaluateResponse,
+    args: DebugProtocol.EvaluateArguments,
+  ): Promise<void> {
+    const expr = args.expression;
+    try {
+      const vars = await this.listenerExecutor.getVariables();
+      this.lastKnownVariables = vars;
+      const resolved = this.resolveExpression(expr, vars);
+      if (resolved) {
+        const built = this.buildVariable(expr, resolved.value, resolved.type);
+        response.body = {
+          result: built.value,
+          variablesReference: built.variablesReference,
+        };
+      } else if (args.context === "repl") {
+        try {
+          const result = await this.listenerExecutor.evaluateSql(expr);
+          response.body = {
+            result: this.formatQueryResult(result),
+            variablesReference: 0,
+          };
+        } catch (err) {
+          response.body = {
+            result: `Error: ${err instanceof Error ? err.message : String(err)}`,
+            variablesReference: 0,
+          };
+        }
+      } else {
+        response.body = {
+          result: `<unknown: ${expr}>`,
+          variablesReference: 0,
+        };
+      }
+    } catch (err) {
+      response.body = {
+        result: `<error evaluating: ${expr}>`,
+        variablesReference: 0,
+      };
+      this.sendResponse(response);
+      await this.handlePossibleConnectionLoss(err);
+      return;
+    }
+    this.sendResponse(response);
+  }
+
+  protected async completionsRequest(
+    response: DebugProtocol.CompletionsResponse,
+    args: DebugProtocol.CompletionsArguments,
+  ): Promise<void> {
+    const targets: DebugProtocol.CompletionItem[] = [];
+    const text = args.text.slice(0, args.column);
+    const prefix = text.split(/\s/).pop()?.toLowerCase() ?? "";
+
+    const seen = new Set<string>();
+    for (const v of this.lastKnownVariables) {
+      if (seen.has(v.value.name)) continue;
+      seen.add(v.value.name);
+      if (!prefix || v.value.name.toLowerCase().startsWith(prefix)) {
+        targets.push({ label: v.value.name, type: "variable", text: v.value.name });
+      }
+    }
+
+    for (const kw of ["SELECT", "WHERE", "AND", "OR", "NOT", "IS", "NULL", "TRUE", "FALSE"]) {
+      if (!prefix || kw.toLowerCase().startsWith(prefix)) {
+        targets.push({ label: kw, type: "keyword" });
+      }
+    }
+
+    response.body = { targets };
+    this.sendResponse(response);
+  }
+
+  protected async setVariableRequest(
+    response: DebugProtocol.SetVariableResponse,
+    args: DebugProtocol.SetVariableArguments,
+  ): Promise<void> {
+    try {
+      const target = this.lastKnownVariables.find((v) => v.value.name === args.name);
+
+      if (!target) {
+        this.sendErrorResponse(response, 100, `Variable not found: ${args.name}`);
+        return;
+      }
+
+      const stack = await this.listenerExecutor.getStack();
+      const currentLine = stack[0]?.line ?? 0;
+
+      const ok = await this.listenerExecutor.depositValue(target.varNo, currentLine, args.value);
+      if (!ok) {
+        this.sendErrorResponse(response, 101, `Failed to set ${args.name}`);
+        return;
+      }
+
+      const updated = await this.listenerExecutor.getVariables();
+      const u = updated.find((v) => v.value.name === args.name);
+      const displayValue = u ? this.displayValue(u.value) : args.value;
+
+      const built = this.buildVariable(args.name, displayValue, target.value.type);
+      response.body = {
+        value: built.value,
+        type: target.value.type,
+        variablesReference: built.variablesReference,
+      };
+      this.sendResponse(response);
+    } catch (err) {
+      this.sendErrorResponse(
+        response,
+        102,
+        `Error setting variable: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      await this.handlePossibleConnectionLoss(err);
+    }
+  }
+
+  protected async disconnectRequest(
+    response: DebugProtocol.DisconnectResponse,
+    _args: DebugProtocol.DisconnectArguments,
+  ): Promise<void> {
+    await this.terminateSession("Debug session disconnected", false, false);
+    this.sendResponse(response);
+  }
+
+  /** External shutdown entry point (SIGTERM/SIGINT/stdin close) — cleans up and never throws. */
+  public async shutdown(): Promise<void> {
+    await this.terminateSession("Debug adapter stopped", false, false).catch(() => {});
+  }
+
+  private async cleanup(): Promise<void> {
+    if (this.cleanupPromise) return this.cleanupPromise;
+    this.cleanupPromise = this.cleanupResources();
+    return this.cleanupPromise;
+  }
+
+  private async cleanupResources(): Promise<void> {
+    const listener = this.listenerExecutor;
+    const target = this.targetClient;
+    this.listenerExecutor = undefined!;
+    this.targetClient = undefined!;
+    target?.removeAllListeners("notice");
+
+    if (listener?.isBusy()) {
+      await this.terminateBackends([listener.getBackendPid(), this.targetPid].filter(Boolean));
+    } else if (listener) {
+      try {
+        await withTimeout(listener.abort(), TIMEOUTS.ABORT_MS);
+      } catch {}
+    }
+    await withTimeout(this.targetQueryPromise, TIMEOUTS.TARGET_DRAIN_MS);
+    await withTimeout(
+      Promise.all([listener?.close().catch(() => {}), target?.end().catch(() => {})]),
+      TIMEOUTS.CLOSE_MS,
+    );
+    this.sourceCache.clear();
+    this.frameAnalyses.clear();
+    this.selectedFrameAnalysis = undefined;
+    this.activeBreakpoints.clear();
+  }
+
+  /** Terminate PostgreSQL backends via a short-lived auxiliary connection — never touches the (possibly blocked) session connections. */
+  private async terminateBackends(pids: number[]): Promise<void> {
+    if (!this.pgConfig || pids.length === 0) return;
+    const aux = new Client({
+      ...this.pgConfig,
+      application_name: `plpgsql_dap_aux_${this.sessionSuffix}`,
+      connectionTimeoutMillis: 5_000,
+    });
+    try {
+      await aux.connect();
+      log(`cleanup: pg_terminate_backend(${pids.join(", ")})`);
+      await aux.query("SELECT pg_terminate_backend(p) FROM unnest($1::int[]) AS p", [pids]);
+    } catch (err) {
+      log(`cleanup: auxiliary connection failed — ${err}`);
+    } finally {
+      await aux.end().catch(() => {});
+    }
+  }
+
+  private sendLifecycleOutput(message: string, failed = false): void {
+    this.sendEvent(new OutputEvent(`[PL/pgSQL] ${message}\n`, failed ? "stderr" : "console"));
+  }
+
+  private sendSessionStatus(
+    state: DebugSessionRuntimeState,
+    overrides: Partial<DebugSessionStatus> = {},
+  ): void {
+    const execution = this.preparedLaunch?.execution;
+    const status: DebugSessionStatus = {
+      sessionId: this.sessionSuffix,
+      state,
+      timestamp: new Date().toISOString(),
+      ...(execution ? { routine: execution.routine, query: execution.queryText } : {}),
+      ...(this.listenerPid > 0 ? { listenerPid: this.listenerPid } : {}),
+      ...(this.targetBackendPid > 0 ? { targetPid: this.targetBackendPid } : {}),
+      ...overrides,
+    };
+    this.sendEvent(new Event(DEBUG_SESSION_STATUS_EVENT, status));
+  }
+
+  private async currentStopSource(): Promise<DebugSessionSource | undefined> {
+    if (!this.listenerExecutor) return undefined;
+    const frame = (await this.listenerExecutor.getStack())[0];
+    if (!frame) return undefined;
+    return this.sourceForPosition(frame.oid, frame.line);
+  }
+
+  private async sourceForPosition(
+    oid: number,
+    bodyLine: number,
+  ): Promise<DebugSessionSource | undefined> {
+    const cached = await this.getSource(oid);
+    if (!cached) return undefined;
+    const symbolUri = this.sourceUris.get(oid);
+    if (!symbolUri) return undefined;
+    return {
+      name: `${cached.funcDef.schema}.${cached.funcDef.name}`,
+      path: symbolUri,
+      line: bodyLine + cached.bodyLineOffset,
+    };
+  }
+
+  private async terminateSession(
+    message: string,
+    failed: boolean,
+    emitTerminated = true,
+  ): Promise<void> {
+    if (this.terminationPromise) return this.terminationPromise;
+    if (!this.lifecycle.beginTermination()) return;
+
+    this.terminationPromise = (async () => {
+      this.sendSessionStatus("terminating", { message });
+      this.sendLifecycleOutput(message, failed);
+      await this.cleanup();
+      this.lifecycle.finishTermination(failed);
+      this.sendSessionStatus(failed ? "failed" : "terminated", { message });
+      if (emitTerminated && !this.terminatedEventSent) {
+        this.terminatedEventSent = true;
+        this.sendEvent(new TerminatedEvent());
+      }
+    })();
+    return this.terminationPromise;
+  }
+
+  private async runExecutionRequest(
+    response: DebugProtocol.Response,
+    stepFn: () => Promise<import("../postgres/index.js").PlApiStep | null>,
+    reason: string,
+    command: string,
+  ): Promise<void> {
+    if (!this.listenerExecutor || !this.lifecycle.beginExecution()) {
+      this.sendErrorResponse(
+        response,
+        103,
+        `Cannot ${command} while the debug session is ${this.lifecycle.state}`,
+      );
+      return;
+    }
+    this.sendSessionStatus("resuming");
+    this.sendResponse(response);
+    await this.safeStep(stepFn, reason);
+  }
+
+  private async safeStep(
+    stepFn: () => Promise<import("../postgres/index.js").PlApiStep | null>,
+    reason: string,
+  ): Promise<void> {
+    log(`safeStep: starting (reason=${reason})`);
+    if (!this.listenerExecutor) return;
+    try {
+      let step = await this.runStepCommand(stepFn);
+      while (step && step.oid !== 0) {
+        const bpInfo = this.getBreakpointInfo(step.oid, step.line);
+        const source =
+          (await this.currentStopSource().catch(() => undefined)) ??
+          (await this.sourceForPosition(step.oid, step.line).catch(() => undefined));
+
+        if (bpInfo?.logMessage || bpInfo?.condition) {
+          const vars = await this.listenerExecutor.getVariables();
+          this.lastKnownVariables = vars;
+
+          if (bpInfo.logMessage) {
+            this.emitLogpoint(bpInfo.logMessage, vars);
+            step = await this.runStepCommand(() => this.listenerExecutor.stepContinue());
+            continue;
+          }
+
+          if (bpInfo.condition) {
+            const condMet = await this.evaluateCondition(bpInfo.condition, vars);
+            if (!condMet) {
+              step = await this.runStepCommand(() => this.listenerExecutor.stepContinue());
+              continue;
+            }
+          }
+        }
+
+        if (this.exceptionFilters.size > 0) {
+          const cached = await this.getSource(step.oid);
+          if (cached) {
+            const handler = cached.analysis.exceptionHandlers.find(
+              (eh) => step!.line === eh.startLine,
+            );
+            if (handler) {
+              const shouldStop =
+                this.exceptionFilters.has("all") ||
+                (this.exceptionFilters.has("raise") &&
+                  handler.conditions.some((c) => c === "others" || c.includes("exception")));
+              if (shouldStop) {
+                this.sendEvent(
+                  new OutputEvent(
+                    `Exception caught: ${handler.conditions.join(", ")}\n`,
+                    "console",
+                  ),
+                );
+                this.sendStoppedAndReset("exception", source);
+                return;
+              }
+            }
+          }
+        }
+
+        this.sendStoppedAndReset(reason, source);
+        return;
+      }
+      log("safeStep: step returned null/oid=0 — terminating");
+      await this.terminateSession("Execution completed", false);
+    } catch (err) {
+      log(`safeStep: error — ${err}`);
+      await this.terminateSession(
+        `Debug command failed: ${err instanceof Error ? err.message : String(err)}`,
+        true,
+      );
+    }
+  }
+
+  /**
+   * Run a step command, racing it against the end of the target query.
+   * A step command blocks the listener connection while the target runs; when the
+   * target finishes, pldbgapi can leave the command hanging for ~10s before failing.
+   * Detecting the target's completion directly makes end-of-function immediate.
+   * (PostgresDebugger tracks the in-flight blocking command via isBusy() for cleanup().)
+   */
+  private async runStepCommand(
+    stepFn: () => Promise<import("../postgres/index.js").PlApiStep | null>,
+  ): Promise<import("../postgres/index.js").PlApiStep | null> {
+    const stepPromise = stepFn();
+    stepPromise.catch(() => {});
+    if (!this.targetEndSignal) return stepPromise;
+
+    let graceTimer: NodeJS.Timeout | undefined;
+    const targetEnd: Promise<null> = this.targetEndSignal.then(
+      () =>
+        new Promise((r) => {
+          graceTimer = setTimeout(() => r(null), TIMEOUTS.STEP_SETTLE_GRACE_MS);
+          graceTimer.unref?.();
+        }),
+    );
+    try {
+      return await Promise.race([stepPromise, targetEnd]);
+    } finally {
+      if (graceTimer) clearTimeout(graceTimer);
+    }
+  }
+
+  private getBreakpointInfo(oid: number, bodyLine: number): BreakpointInfo | undefined {
+    return this.activeBreakpoints.get(oid)?.get(bodyLine);
+  }
+
+  private async evaluateCondition(
+    condition: string,
+    vars: import("../postgres/index.js").PlApiStackVariable[],
+  ): Promise<boolean> {
+    try {
+      let sql = condition;
+      for (const v of vars) {
+        const re = new RegExp(`\\b${v.value.name}\\b`, "g");
+        const val =
+          v.value.value.toUpperCase() === "NULL"
+            ? "NULL"
+            : `'${v.value.value.replace(/'/g, "''")}'`;
+        sql = sql.replace(re, val);
+      }
+      const result = await this.listenerExecutor.evaluateSql(`SELECT (${sql})::boolean AS result`);
+      return result.rows[0]?.result === true;
+    } catch {
+      return true;
+    }
+  }
+
+  private emitLogpoint(
+    template: string,
+    vars: import("../postgres/index.js").PlApiStackVariable[],
+  ): void {
+    const message = template.replace(/\{(\w+)\}/g, (_, name) => {
+      const v = vars.find((v) => v.value.name === name);
+      if (!v) return `{${name}}`;
+      return this.displayValue(v.value);
+    });
+    this.sendEvent(new OutputEvent(`${message}\n`, "console"));
+  }
+
+  private sendStoppedAndReset(reason: string, source?: DebugSessionSource): void {
+    if (this.lifecycle.state === "resuming") {
+      this.lifecycle.transition("suspended");
+    }
+    this.expandableVars.clear();
+    this.nextVarRef = 10;
+    this.sendEvent(new StoppedEvent(reason, THREAD_ID));
+    this.sendSessionStatus("suspended", { source });
+  }
+
+  private displayValue(v: import("../postgres/index.js").PlApiValue): string {
+    return v.pretty && v.pretty !== v.value ? v.pretty : v.value;
+  }
+
+  private formatQueryResult(result: import("pg").QueryResult): string {
+    if (result.rows.length === 0) return "(no rows)";
+    if (result.rows.length === 1 && result.fields.length === 1) {
+      return this.formatQueryResultCell(Object.values(result.rows[0])[0]);
+    }
+    const cols = result.fields.map((f) => f.name);
+    const lines = [cols.join(" | ")];
+    lines.push(cols.map((c) => "-".repeat(c.length)).join("-+-"));
+    for (const row of result.rows.slice(0, 50)) {
+      lines.push(cols.map((c) => this.formatQueryResultCell(row[c])).join(" | "));
+    }
+    if (result.rows.length > 50) lines.push(`... (${result.rows.length} rows total)`);
+    return lines.join("\n");
+  }
+
+  private formatQueryResultCell(value: unknown): string {
+    if (value === null || value === undefined) return "NULL";
+    if (typeof value === "object") return JSON.stringify(value);
+    return String(value);
+  }
+
+  private formatDebugResultSummary(result: DebugResult): string {
+    if (
+      result.rowCount === 1 &&
+      result.columns.length === 1 &&
+      result.rows.length === 1 &&
+      !result.truncated
+    ) {
+      return `SQL result:\n${result.rows[0][0]?.value ?? "NULL"}`;
+    }
+    if (result.columns.length === 0 || result.rowCount === 0) {
+      return `SQL result: ${result.command} — ${result.rowCount} rows`;
+    }
+    const dimensions = `${result.rowCount} rows × ${result.columns.length} columns`;
+    const preview = result.truncated
+      ? ` — showing ${result.capturedRowCount} rows (truncated)`
+      : "";
+    return `SQL result: ${dimensions}${preview}`;
+  }
+
+  /**
+   * Resolve an expression against current variables.
+   * Supports: exact name, dotted access (rec.field), array indexing (arr[0]).
+   */
+  private resolveExpression(
+    expr: string,
+    vars: import("../postgres/index.js").PlApiStackVariable[],
+  ): { value: string; type: string } | null {
+    const v = vars.find((v) => v.value.name === expr);
+    if (v) {
+      return { value: this.displayValue(v.value), type: v.value.type };
+    }
+
+    const dotMatch = expr.match(/^(\w+)\.(\w+)$/);
+    if (dotMatch) {
+      const parent = vars.find((v) => v.value.name === dotMatch[1]);
+      if (parent) {
+        try {
+          const parsed = JSON.parse(parent.value.pretty || parent.value.value);
+          if (parsed && typeof parsed === "object" && dotMatch[2] in parsed) {
+            return {
+              value: JSON.stringify(parsed[dotMatch[2]]),
+              type: inferType(parsed[dotMatch[2]]),
+            };
+          }
+        } catch {}
+      }
+    }
+
+    const arrMatch = expr.match(/^(\w+)\[(\d+)\]$/);
+    if (arrMatch) {
+      const arrVar = vars.find((v) => v.value.name === arrMatch[1]);
+      if (arrVar) {
+        try {
+          const parsed = JSON.parse(arrVar.value.pretty || arrVar.value.value);
+          if (Array.isArray(parsed)) {
+            const idx = Number(arrMatch[2]);
+            if (idx >= 0 && idx < parsed.length) {
+              return { value: JSON.stringify(parsed[idx]), type: inferType(parsed[idx]) };
+            }
+          }
+        } catch {}
+      }
+    }
+
+    return null;
+  }
+
+  private buildVariable(
+    name: string,
+    value: string,
+    type: string,
+    recordFields?: PlRecordField[],
+    evaluateName = name,
+  ): DebugProtocol.Variable {
+    if (value === "NULL" || value === "") {
+      return { name, value, type, variablesReference: 0, evaluateName };
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(value);
+    } catch {
+      return { name, value, type, variablesReference: 0, evaluateName };
+    }
+
+    if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const ref = this.nextVarRef++;
+      const hints = new Map(recordFields?.map((field) => [field.name, field.type]));
+      const children = Object.entries(parsed as Record<string, unknown>).map(([k, v]) => {
+        return this.buildVariable(
+          k,
+          JSON.stringify(v),
+          hints.get(k) ?? inferType(v),
+          undefined,
+          `${evaluateName}.${k}`,
+        );
+      });
+      this.expandableVars.set(ref, children);
+      return {
+        name,
+        value: children.length > 0 ? "{…}" : "{}",
+        type,
+        variablesReference: ref,
+        evaluateName,
+      };
+    }
+
+    if (Array.isArray(parsed)) {
+      const ref = this.nextVarRef++;
+      const children = parsed.map((elem, idx) =>
+        this.buildVariable(
+          `[${idx}]`,
+          JSON.stringify(elem),
+          inferType(elem),
+          undefined,
+          `${evaluateName}[${idx}]`,
+        ),
+      );
+      this.expandableVars.set(ref, children);
+      return {
+        name,
+        value: children.length > 0 ? "[…]" : "[]",
+        type,
+        variablesReference: ref,
+        evaluateName,
+      };
+    }
+
+    return { name, value: String(parsed), type, variablesReference: 0, evaluateName };
+  }
+
+  private async getSource(oid: number): Promise<CachedSource | null> {
+    if (this.sourceCache.has(oid)) {
+      return this.sourceCache.get(oid)!;
+    }
+    const funcDef = await this.listenerExecutor.getFunctionDef(oid);
+    if (!funcDef) return null;
+
+    const parser = await this.syntaxParser();
+    const [analysis, bodyLineOffset] = await Promise.all([
+      analyzeFunction(funcDef.body, parser),
+      plpgsqlRoutineBodyStartLine(funcDef.source, parser),
+    ]);
+    if (bodyLineOffset === undefined) {
+      throw new Error(`Cannot locate the PL/pgSQL body of routine OID ${oid}.`);
+    }
+    const cached: CachedSource = { funcDef, analysis, bodyLineOffset };
+    this.sourceCache.set(oid, cached);
+    return cached;
+  }
+}

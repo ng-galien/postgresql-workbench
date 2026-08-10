@@ -1,0 +1,8 @@
+pre-commit:
+  piped: true
+  jobs:
+    - name: biome
+      glob: "*.{ts,js,json}"
+      run: npx biome check --write {staged_files} && git add {staged_files}
+    - name: typecheck
+      run: npx tsc --noEmit && npm --prefix vscode-extension run compile

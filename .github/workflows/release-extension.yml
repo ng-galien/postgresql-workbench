@@ -1,0 +1,207 @@
+name: Extension Release
+
+on:
+  push:
+    tags:
+      - "extension-v*"
+
+permissions:
+  contents: read
+
+env:
+  CODE_MONIKER_REF: 391414ae9298c34d46e6f66c47834c656078486b
+
+jobs:
+  validate:
+    name: Validate extension release
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: ng-galien/code-moniker
+          ref: ${{ env.CODE_MONIKER_REF }}
+          path: code-moniker-runtime
+
+      - name: Verify release commit and tag
+        run: |
+          git merge-base --is-ancestor "${GITHUB_SHA}" origin/main
+          version="$(node -p "require('./vscode-extension/package.json').version")"
+          test "${GITHUB_REF_NAME}" = "extension-v${version}"
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            vscode-extension/package-lock.json
+            code-moniker-runtime/packages/client/package-lock.json
+
+      - run: npm ci
+      - run: npm --prefix vscode-extension ci
+      - name: Build pinned local Code Moniker npm packages
+        env:
+          CODE_MONIKER_CHECKOUT: ${{ github.workspace }}/code-moniker-runtime
+        run: npm --prefix vscode-extension run prepare:code-moniker:local
+
+      - run: npm run check
+      - run: npm run typecheck
+      - run: npm test
+
+      - name: Install integration test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb
+
+      - name: Start PostgreSQL integration fixture
+        run: npm run test:e2e:up
+      - name: Run PostgreSQL DAP integration tests
+        run: npm run test:e2e:run
+      - name: Run VS Code extension integration tests
+        env:
+          CODE_MONIKER_CHECKOUT: ${{ github.workspace }}/code-moniker-runtime
+        run: xvfb-run -a npm --prefix vscode-extension test
+      - name: Run extension tests on minimum supported VS Code
+        env:
+          CODE_MONIKER_CHECKOUT: ${{ github.workspace }}/code-moniker-runtime
+        run: xvfb-run -a npm --prefix vscode-extension run test:min-vscode
+      - name: Stop PostgreSQL integration fixture
+        if: always()
+        run: npm run test:e2e:down
+      - name: Run EnterpriseDB pldebugger compatibility tests
+        run: npm run test:e2e:legacy
+
+  package-extension:
+    name: Package extension (${{ matrix.target }})
+    needs: validate
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-x64
+            runner: ubuntu-24.04
+          - target: darwin-arm64
+            runner: macos-15
+          - target: darwin-x64
+            runner: macos-15-intel
+          - target: win32-x64
+            runner: windows-2025
+    env:
+      CODE_MONIKER_CHECKOUT: ${{ github.workspace }}/code-moniker-runtime
+      CODE_MONIKER_TARGET: ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: ng-galien/code-moniker
+          ref: ${{ env.CODE_MONIKER_REF }}
+          path: code-moniker-runtime
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            vscode-extension/package-lock.json
+            code-moniker-runtime/packages/client/package-lock.json
+      - run: npm ci
+      - run: npm --prefix vscode-extension ci
+      - run: npm --prefix vscode-extension run prepare:code-moniker:local
+      - run: npm --prefix vscode-extension run package
+      - run: git diff --exit-code -- vscode-extension/THIRD_PARTY_NOTICES.md
+      - name: Generate validated artifact checksum
+        run: npm --prefix vscode-extension run checksum:package
+      - name: Upload target VSIX
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: marketplace-vsix-${{ matrix.target }}
+          path: |
+            vscode-extension/postgresql-workbench-*-${{ matrix.target }}.vsix
+            vscode-extension/postgresql-workbench-*-${{ matrix.target }}.vsix.sha256
+          if-no-files-found: error
+
+  release:
+    name: Create extension release
+    needs:
+      - validate
+      - package-extension
+    runs-on: ubuntu-24.04
+    permissions:
+      attestations: write
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: marketplace-vsix-*
+          path: vscode-extension
+          merge-multiple: true
+      - name: Verify complete platform set
+        working-directory: vscode-extension
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          for target in linux-x64 darwin-arm64 darwin-x64 win32-x64; do
+            test -f "postgresql-workbench-${version}-${target}.vsix"
+            test -f "postgresql-workbench-${version}-${target}.vsix.sha256"
+          done
+      - name: Attest VSIX build provenance
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4
+        with:
+          subject-path: vscode-extension/postgresql-workbench-*.vsix
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="$(node -p "require('./vscode-extension/package.json').version")"
+          awk -v heading="## [" -v version="${version}" '
+            index($0, heading version "]") == 1 { capture = 1; next }
+            capture && /^## \[/ { exit }
+            capture { print }
+          ' vscode-extension/CHANGELOG.md > /tmp/release-notes.md
+          test -s /tmp/release-notes.md
+          gh release create "${GITHUB_REF_NAME}" \
+            vscode-extension/postgresql-workbench-*.vsix \
+            vscode-extension/postgresql-workbench-*.vsix.sha256 \
+            --verify-tag \
+            --title "PostgreSQL Workbench ${version}" \
+            --notes-file /tmp/release-notes.md
+      - name: Upload combined Marketplace artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: marketplace-vsix
+          path: vscode-extension/postgresql-workbench-*.vsix
+          if-no-files-found: error
+
+  publish-marketplace:
+    name: Publish to Visual Studio Marketplace
+    needs: release
+    runs-on: ubuntu-24.04
+    environment: marketplace
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: vscode-extension/package-lock.json
+      - run: npm --prefix vscode-extension ci
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: marketplace-vsix
+          path: vscode-extension
+      - name: Publish validated platform VSIX files
+        working-directory: vscode-extension
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: |
+          test -n "${VSCE_PAT}"
+          for vsix in postgresql-workbench-*.vsix; do
+            npx --no-install vsce publish --packagePath "${vsix}"
+          done

@@ -1,0 +1,181 @@
+# AGENTS.md
+
+## Project Overview
+
+PL/pgSQL Debug Adapter Protocol (DAP) server — a standalone TypeScript implementation ported from the IntelliJ plugin [idea-plpgdebugger](https://github.com/ng-galien/idea-plpgdebugger).
+
+The original plugin (Kotlin/JVM) integrates with IntelliJ's XDebugger framework. This project extracts the core debugging logic into a language-agnostic DAP server that can be consumed by any DAP client (VS Code, Neovim, Emacs, etc.).
+
+Ported from [idea-plpgdebugger](https://github.com/ng-galien/idea-plpgdebugger) (Kotlin/JVM): PostgreSQL debugger commands with 2-pass variable resolution, call and function-source analysis through Code Moniker syntax trees, and the DAP session.
+
+### pldebugger compatibility
+
+Works with **any** pldebugger (EDB standard, Debian/RPM packages, or the [ng-galien fork](https://github.com/ng-galien/pldebugger)). The 2-pass variable resolution does JSON conversion in SQL (`to_json`/`to_jsonb` via UNION ALL), not in the C extension. The fork's `print-vars` branch improves fallback for exotic types.
+
+## Documentation Policy
+
+- All repository documentation MUST be written in English.
+- This includes Markdown files, user guides, design documents, release notes, changelogs, and operational instructions.
+- Keep code identifiers, protocol names, SQL identifiers, and quoted external terminology unchanged.
+- Do not add bilingual sections. Translate any non-English documentation encountered in a file being edited.
+
+## Build Commands
+
+```bash
+# Install dependencies
+npm install
+
+# Build TypeScript
+npm run build
+
+# Watch mode
+npm run watch
+
+# Run the DAP server (stdio)
+npm start
+
+# Lint + format (biome replaces eslint + prettier)
+npm run check
+npm run check:fix
+
+# Run unit tests
+npm test
+
+# Package VS Code extension (.vsix)
+npm run package:ext
+
+# Run e2e tests (requires Docker)
+npm run test:e2e        # Full cycle: up + run + down
+npm run test:e2e:up     # Start PostgreSQL container
+npm run test:e2e:run    # Run e2e tests
+npm run test:e2e:down   # Stop and cleanup
+npm run test:e2e:legacy # DAP compatibility with unpatched EnterpriseDB v1.9
+```
+
+## CI and Extension Releases
+
+- `.github/workflows/ci.yml` runs on pull requests targeting `main` and on
+  manual dispatch. It checks Biome, both TypeScript projects, unit tests,
+  PostgreSQL 17 integration tests, VS Code integration tests, minimum supported
+  VS Code compatibility, upstream EnterpriseDB pldebugger compatibility, and
+  the packaged VSIX contents.
+- `.github/workflows/release-extension.yml` runs only for
+  `extension-v<version>` tags. The tag MUST match the version in
+  `vscode-extension/package.json`, and the tagged commit MUST belong to the
+  history of `main`.
+- The release workflow reruns the complete release gate, builds one VSIX,
+  validates it, attaches that exact artifact and its SHA-256 checksum to the
+  GitHub Release, generates a GitHub build-provenance attestation, then publishes
+  the same artifact to Visual Studio Marketplace.
+- Marketplace publication reads `VSCE_PAT` from the protected GitHub
+  `marketplace` environment. That environment requires explicit approval and
+  accepts only `extension-v*` tags. Never expose or commit this secret.
+- Every external action in `.github/workflows/` MUST be pinned to a full commit
+  SHA. Keep the human-readable major version in a trailing comment.
+- `.github/dependabot.yml` checks GitHub Actions weekly and opens pull requests
+  that update pinned SHAs and their version comments. Review and merge these
+  updates through the normal CI path; do not auto-merge action upgrades.
+- Azure DevOps global PATs stop working on December 1, 2026. Until the
+  authentication strategy is migrated, manual upload of the validated GitHub
+  Release artifact is the fallback.
+- Follow `RELEASING.md` for the authoritative preparation, CI, tagging,
+  publishing, recovery, and post-release verification procedure.
+
+## Architecture
+
+```
+src/
+  main.ts              # Entry point — runs DAP session over stdio
+  debugger/            # Debugger module; public DAP, launch, and PostgreSQL facades
+    index.ts            # Public DAP surface
+    launch/             # Launch contract and target orchestration
+    postgres/           # pldbgapi backend and variable resolution
+    session/            # Internal DAP session implementation
+  analysis/            # Code Moniker syntax boundary and shared SQL/PL/pgSQL helpers
+  callParser.ts        # SQL calls and definitions from Code Moniker syntax trees
+  functionSource.ts    # PL/pgSQL variables, lines, exceptions, and calls from syntax trees
+  deps.ts              # Shared semantic helpers for debugger analysis
+  __fixtures__/        # SQL test fixtures
+  *.test.ts            # Unit tests (vitest) — includes sqlCodeLensProvider tests
+
+e2e/
+  docker-compose.yml   # PostgreSQL with pldbgapi (galien0xffffff/postgres-debugger:17)
+  init/                # SQL init scripts (extension + test functions)
+  e2e.test.ts          # Integration tests against real PostgreSQL
+
+vscode-extension/      # VS Code extension (full-featured, see below)
+```
+
+### Debug Flow
+
+1. Client sends `launch` request with PostgreSQL connection info and SQL call
+2. `callParser.parseCall()` parses the SQL to extract schema/routine/args
+3. `PostgresDebugger` creates listener session via `pldbg_create_listener()`
+4. Sets global breakpoint on target function OID
+5. Target SQL executed on separate connection in background
+6. `PostgresDebugger.waitForTarget()` blocks until breakpoint hit
+7. Step commands (`stepOver`, `stepInto`, `stepContinue`) drive execution
+8. Stack frames, variables, and breakpoints reported back via DAP events
+
+### DAP Protocol Ordering (critical)
+
+- `InitializedEvent` MUST be sent from `initializeRequest`, not `launchRequest` — VS Code sends `setBreakpoints` and `configurationDone` only after receiving it
+- `launchRequest` MUST return (sendResponse) BEFORE `waitForTarget()` — otherwise `configurationDone` is never sent and the session deadlocks
+- `waitForTarget()` runs asynchronously via `targetReady` Promise, resolved when the target hits the global breakpoint
+- `configurationDoneRequest` awaits `targetReady` before deciding stop-on-entry vs continue
+- Guard `if (!this.listenerExecutor)` in `setBreakPointsRequest` — VS Code may send breakpoints before launch completes
+- `resolveDebugConfiguration` must pass through configs with inline
+  `host`+`password` (for tests and synthetic launch configurations) without
+  requiring ConnectionManager. Never commit real database credentials in
+  `launch.json`.
+
+### Key Technical Details
+
+- NEVER set `statement_timeout` on the listener connection — `waitForTarget()` and `pldbg_continue()` block by design and will be killed
+- Code Moniker is the only SQL and PL/pgSQL syntax provider. Feature modules receive the shared `SyntaxParser` contract and must never start their own daemon or import another parser.
+- Step commands catch errors gracefully when function execution finishes (pldbgapi throws "select() failed waiting for target").
+- Variable resolution UNION ALL query uses explicit column aliases (`AS name`, etc.) — positional `Object.values()` is unreliable with PostgreSQL.
+- E2e tests use port 5433 to avoid conflicts with local PostgreSQL.
+
+## Dependencies
+
+- **@vscode/debugadapter** + **@vscode/debugprotocol** — DAP protocol implementation + types
+- **pg** — PostgreSQL client for Node.js
+- **vitest** — Test framework
+
+## VS Code Extension
+
+The `vscode-extension/` is a full-featured VS Code extension:
+- ConnectionManager (servers, secrets, auto-reconnect, SQLTools/pgsql import)
+- TreeView (servers → schemas → functions), CodeLens ("Debug" on CREATE/SELECT/CALL)
+- FileSystemProvider for exact canonical `code+moniker://` symbol URIs (breakpoints on virtual source)
+- Semantic tokens (variables, params, types, dollar quoting)
+- Inline values during debug, RAISE NOTICE → Debug Console
+- esbuild bundles both extension.ts and ../src/main.ts (DAP server)
+- Imports from ../src/ work via esbuild (not tsc rootDir — removed)
+
+## Testing
+
+### DAP protocol tests (`e2e/dap-client.test.ts`)
+- Uses `@vscode/debugadapter-testsupport` `DebugClient` — talks directly to DAP server via stdio, no VS Code needed
+- Pattern: `Promise.all([dc.launch(args), dc.configurationSequence(), dc.waitForEvent("stopped")])` — all three must run concurrently
+- `waitForEvent` must be registered BEFORE the action that triggers the event (or in `Promise.all` with it)
+- Multi-step sequences suffer from orphaned pldbgapi sessions between tests — `dc.stop()` doesn't fully clean up
+
+### Legacy pldebugger compatibility (`e2e/legacy-compat.test.ts`)
+- Builds the unpatched EnterpriseDB v1.9 source at pinned commit `ff0db43` on PostgreSQL 17
+- Upstream omits `PLPGSQL_DTYPE_REC`, `ROW`, and `RECFIELD`; this is supported degradation, not a failure
+- The contract requires scalar inspection and stepping to remain functional and unsupported composites to return cleanly without DAP errors
+
+### VS Code extension tests (`vscode-extension/src/test/`)
+- Uses `@vscode/test-cli` + `@vscode/test-electron` — runs tests inside a real VS Code instance
+- Config: `vscode-extension/.vscode-test.mjs`, Mocha TDD UI (`suite`/`test`/`suiteSetup`/`teardown`, NOT `describe`/`it`/`beforeEach`/`afterEach`)
+- `vscode.debug.startDebugging()` returns false if `resolveDebugConfiguration` returns undefined
+
+## Important Notes
+
+- Biome enforces: template literals over concat, `Number.isNaN` over `isNaN`, no assignment in expressions, no `void` in union types (use `biome-ignore` for VS Code's `EventEmitter<T | undefined | void>`)
+- PostgreSQL server must have `pldbgapi` extension and `shared_preload_libraries = 'plugin_debugger'`
+- Works with standard EDB pldebugger — the ng-galien fork is optional (better composite type fallback)
+- Biome for lint+format, Lefthook for pre-commit (biome fix → typecheck DAP + extension in parallel)
+- Node.js 22+ required
