@@ -191,5 +191,5 @@ jobs:
         run: |
           test -n "${VSCE_PAT}"
           for vsix in postgresql-workbench-*.vsix; do
-            npx --no-install vsce publish --packagePath "${vsix}"
+            npx --no-install vsce publish --skip-duplicate --packagePath "${vsix}"
           done

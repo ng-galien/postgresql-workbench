@@ -1,6 +1,29 @@
 # Changelog
 
-## Unreleased
+## [1.0.0] - 2026-08-10
+
+First Marketplace release of PostgreSQL Workbench: one VS Code extension for
+exploring, querying, testing, covering, and debugging PostgreSQL development
+databases.
+
+### PostgreSQL Workbench
+
+- Added a unified connection tree organized by server and database context,
+  with indexed Sources and persistent SQL Scratchpads
+- Added the PostgreSQL Cockpit: searchable dependency graphs with upstream and
+  downstream expansion, relation filters, source inspection, pins, and saved
+  perspectives
+- Added persistent SQL notebooks with explicit database bindings, dedicated
+  execution clients, sortable and paged result grids, structured value
+  inspection, and bounded TSV export
+- Added opt-in structural DDL synchronization through PostgreSQL event triggers
+  and a dedicated LISTEN/NOTIFY client, using incremental Code Moniker source
+  replacement with an explicit full-refresh fallback
+- Added indexed source navigation for schemas, tables, views, routines,
+  constraints, and triggers while preserving visible tree state during
+  incremental refreshes
+- Added a generated documentation site with focused Cockpit, scratchpad,
+  coverage, debugger, DAP, command, and settings guides
 
 ### Autonomous Code Moniker runtime
 
@@ -8,12 +31,12 @@
   Workbench VSIX so database indexing requires no adjacent source checkout
 - Added platform, protocol, executable, and checksum validation before the
   Workbench starts or joins a workspace daemon
-- Staged the runtime from the published npm package layout, with local npm
-  tarballs as the pre-publication development source
+- Staged the runtime exclusively from the published npm packages locked by the
+  extension lockfile
 - Added native Linux x64, macOS ARM64, macOS x64, and Windows x64 VSIX build
   matrices with host/target mismatch rejection
-- Replaced external ZIP tooling with portable Node verification and recorded
-  local npm tarball checksums as runtime provenance
+- Replaced external ZIP tooling with portable Node verification and validated
+  the staged package metadata and native binary checksum before packaging
 
 ### PostgreSQL Workbench routine comparison
 
@@ -40,10 +63,6 @@
 - Added PostgreSQL, legacy debugger, and real VS Code integration coverage for
   success, failure, cancellation, cleanup, source mapping, and pgTAP state
   isolation
-
-## [1.0.0] - 2026-07-26
-
-First marketplace release. Focus: session reliability and day-one ergonomics.
 
 ### Compatibility and variable inspection
 

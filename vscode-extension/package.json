@@ -16,9 +16,13 @@
     "type": "git",
     "url": "https://github.com/ng-galien/postgresql-workbench"
   },
-  "homepage": "https://github.com/ng-galien/postgresql-workbench#readme",
+  "homepage": "https://ng-galien.github.io/postgresql-workbench/",
   "bugs": {
     "url": "https://github.com/ng-galien/postgresql-workbench/issues"
+  },
+  "overrides": {
+    "diff": "8.0.3",
+    "serialize-javascript": "7.1.0"
   },
   "icon": "icons/plpgsql-icon.png",
   "galleryBanner": {

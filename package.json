@@ -2,6 +2,14 @@
   "name": "postgresql-workbench",
   "version": "0.1.0",
   "description": "PostgreSQL development workbench for VS Code with SQL notebooks, schema exploration, testing, coverage, and PL/pgSQL debugging",
+  "homepage": "https://ng-galien.github.io/postgresql-workbench/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ng-galien/postgresql-workbench.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ng-galien/postgresql-workbench/issues"
+  },
   "engines": {
     "node": ">=22.0.0"
   },
@@ -13,8 +21,8 @@
     "typecheck": "tsc --noEmit && npm --prefix vscode-extension run compile",
     "watch": "node scripts/clean-dap.mjs && tsc -w",
     "start": "node dist/main.js",
-    "check": "biome check src/ vscode-extension/src/ e2e/",
-    "check:fix": "biome check --write src/ vscode-extension/src/ e2e/",
+    "check": "biome check src/ vscode-extension/src/ e2e/ site/ scripts/build-site.mjs scripts/dev-site.mjs",
+    "check:fix": "biome check --write src/ vscode-extension/src/ e2e/ site/ scripts/build-site.mjs scripts/dev-site.mjs",
     "test": "vitest run --exclude e2e/ --exclude vscode-extension/src/test/ && npm --prefix vscode-extension run test:scripts",
     "test:e2e:up": "cd e2e && docker compose up -d --build --wait",
     "test:e2e:run": "npm run build:dap && vitest run e2e/ --exclude e2e/legacy-compat.test.ts --fileParallelism=false",
@@ -28,7 +36,9 @@
     "test:e2e:legacy:down": "cd e2e && docker compose -f docker-compose.legacy.yml down -v",
     "test:e2e:legacy": "node scripts/run-e2e.mjs legacy",
     "package:ext": "npm --prefix vscode-extension run package",
-    "marketplace:media": "node scripts/marketplace-media.mjs"
+    "marketplace:media": "node scripts/marketplace-media.mjs",
+    "site:build": "node scripts/build-site.mjs",
+    "site:dev": "node scripts/dev-site.mjs"
   },
   "dependencies": {
     "@vscode/debugadapter": "^1.68.0",
@@ -41,6 +51,7 @@
     "@types/pg": "^8.11.10",
     "@vscode/debugadapter-testsupport": "^1.68.0",
     "lefthook": "^2.1.4",
+    "marked": "^18.0.9",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"
   },

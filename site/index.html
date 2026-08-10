@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="PostgreSQL Workbench for VS Code: explore schemas, query data, run pgTAP tests with coverage, and debug PL/pgSQL."
+    />
+    <meta name="theme-color" content="#f7f9fa" />
+    <meta property="og:title" content="PostgreSQL Workbench for VS Code" />
+    <meta
+      property="og:description"
+      content="Explore schemas, query data, run pgTAP tests with coverage, and debug PL/pgSQL without leaving VS Code."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://ng-galien.github.io/postgresql-workbench/" />
+    <meta property="og:image" content="https://ng-galien.github.io/postgresql-workbench/assets/cockpit.png" />
+    <link rel="canonical" href="https://ng-galien.github.io/postgresql-workbench/" />
+    <title>PostgreSQL Workbench for VS Code</title>
+    <link rel="icon" href="assets/icon.png" />
+    <link rel="stylesheet" href="styles.css" />
+    <script src="site.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <header class="site-header">
+      <a class="brand" href="#top" aria-label="PostgreSQL Workbench home">
+        <img src="assets/icon.png" alt="" width="40" height="40" />
+        <span class="brand-name">PostgreSQL Workbench</span>
+      </a>
+      <nav aria-label="Primary navigation">
+        <a href="#features">Features</a>
+        <a href="#quick-start">Quick start</a>
+        <a href="#documentation">Documentation</a>
+      </nav>
+      <a
+        class="header-action"
+        href="https://marketplace.visualstudio.com/items?itemName=ng-galien.postgresql-workbench"
+      >Install extension</a>
+    </header>
+
+    <main id="main">
+      <section class="hero" id="top" aria-labelledby="hero-title">
+        <div class="hero-copy reveal">
+          <p class="eyebrow">PostgreSQL development, connected</p>
+          <h1 id="hero-title">Build, test, and debug PostgreSQL without leaving VS Code.</h1>
+          <p class="hero-summary">
+            Explore live schemas, query real data, run pgTAP with native coverage, and
+            step through PL/pgSQL in one coherent workbench.
+          </p>
+          <div class="hero-actions">
+            <a
+              class="button button-primary"
+              href="https://marketplace.visualstudio.com/items?itemName=ng-galien.postgresql-workbench"
+            >Install for VS Code</a>
+            <a class="button button-secondary" href="#quick-start">Start locally</a>
+          </div>
+          <p class="hero-note">For local, Docker, and self-hosted development databases.</p>
+        </div>
+
+        <figure class="hero-media reveal" data-delay="1">
+          <img
+            src="assets/cockpit.gif"
+            alt="PostgreSQL Cockpit exploring the relationships around a database table"
+            width="1080"
+            height="612"
+            fetchpriority="high"
+          />
+        </figure>
+      </section>
+
+      <section class="proof-strip" aria-label="Main capabilities">
+        <p>Schema graph</p>
+        <p>SQL notebooks</p>
+        <p>pgTAP coverage</p>
+        <p>PL/pgSQL debugger</p>
+      </section>
+
+      <section class="feature-intro" id="features">
+        <p class="eyebrow">One database context</p>
+        <h2>From architecture to execution, without breaking your flow.</h2>
+      </section>
+
+      <section class="feature feature-wide reveal">
+        <div class="feature-copy">
+          <p class="feature-number">01</p>
+          <h3>Understand the schema before changing it.</h3>
+          <p>
+            Focus any PostgreSQL object, expand upstream and downstream relations, pin
+            important nodes, and save perspectives that preserve your working context.
+          </p>
+          <a href="docs/cockpit.html">Explore the Workbench</a>
+        </div>
+        <img
+          src="assets/cockpit.png"
+          alt="PostgreSQL Cockpit architecture graph and source inspector"
+          width="1080"
+          height="612"
+          loading="lazy"
+        />
+      </section>
+
+      <section class="feature feature-split reveal">
+        <div class="feature-copy">
+          <p class="feature-number">02</p>
+          <h3>Keep useful SQL close to the database it belongs to.</h3>
+          <p>
+            Persistent scratchpads retain an explicit database binding. Run multiple
+            statements, page through bounded results, sort columns, inspect structured
+            values, and export safe previews.
+          </p>
+        </div>
+        <img
+          src="assets/notebook.gif"
+          alt="SQL notebook running a query and displaying a PostgreSQL result grid"
+          width="1080"
+          height="612"
+          loading="lazy"
+        />
+      </section>
+
+      <section class="feature feature-split feature-reverse reveal">
+        <div class="feature-copy">
+          <p class="feature-number">03</p>
+          <h3>See what your pgTAP suite really executes.</h3>
+          <p>
+            Discover tests in the native VS Code Test Explorer, run selected suites,
+            and inspect PL/pgSQL statement and branch coverage directly in the editor.
+          </p>
+        </div>
+        <img
+          src="assets/coverage.gif"
+          alt="pgTAP tests running with PL/pgSQL coverage in VS Code"
+          width="1080"
+          height="612"
+          loading="lazy"
+        />
+      </section>
+
+      <section class="feature feature-wide feature-dark reveal">
+        <div class="feature-copy">
+          <p class="feature-number">04</p>
+          <h3>Debug PL/pgSQL with the controls you already know.</h3>
+          <p>
+            Set breakpoints, step across nested calls, inspect records, arrays, and JSON,
+            change variables, and evaluate SQL from the Debug Console.
+          </p>
+          <a href="docs/debugger.html">Debugger requirements</a>
+        </div>
+        <img
+          src="assets/debugger.gif"
+          alt="PL/pgSQL debug session with variables and source code in VS Code"
+          width="1080"
+          height="612"
+          loading="lazy"
+        />
+      </section>
+
+      <section class="quick-start" id="quick-start" aria-labelledby="quick-start-title">
+        <div class="quick-start-heading reveal">
+          <p class="eyebrow">A debug-ready database in minutes</p>
+          <h2 id="quick-start-title">Start where you are.</h2>
+          <p>
+            Connect an existing development database, or let the extension start a
+            local PostgreSQL container with the debugger already installed.
+          </p>
+        </div>
+
+        <ol class="steps reveal" data-delay="1">
+          <li>
+            <span class="step-number">1</span>
+            <div>
+              <h3>Install the extension</h3>
+              <p>Get PostgreSQL Workbench from the Visual Studio Marketplace.</p>
+            </div>
+          </li>
+          <li>
+            <span class="step-number">2</span>
+            <div>
+              <h3>Open the Workbench</h3>
+              <p>Add your server, or run <strong>Start Local Debug Database (Docker)</strong>.</p>
+            </div>
+          </li>
+          <li>
+            <span class="step-number">3</span>
+            <div>
+              <h3>Index and work</h3>
+              <p>Explore Sources, open a scratchpad, run tests, or start debugging.</p>
+            </div>
+          </li>
+        </ol>
+
+        <div class="command reveal" data-delay="2">
+          <div class="command-label">
+            <span>Manual Docker alternative</span>
+            <button type="button" data-copy="docker-command">Copy</button>
+          </div>
+          <pre id="docker-command"><code>docker run -d --name pg-debug \
+  -p 127.0.0.1:5432:5432 \
+  -e POSTGRES_PASSWORD=postgres \
+  galien0xffffff/postgres-debugger:17</code></pre>
+          <p>Disposable local credentials: database, user, and password are <code>postgres</code>.</p>
+        </div>
+      </section>
+
+      <section class="documentation" id="documentation" aria-labelledby="docs-title">
+        <div class="documentation-heading reveal">
+          <p class="eyebrow">Documentation</p>
+          <h2 id="docs-title">Understand the behavior, not just the buttons.</h2>
+          <p>
+            Task-oriented guides are written once in Markdown and rendered here as
+            navigable HTML. The command and settings reference comes from the manifest.
+          </p>
+        </div>
+        <nav class="guide-index guide-index-landing" aria-label="Documentation guides">
+          <a href="docs/cockpit.html"><span class="guide-index-number">01</span><strong class="guide-index-title">Workbench Cockpit</strong><p class="guide-index-description">Controls, relations, index, and annotated interface map.</p></a>
+          <a href="docs/notebooks.html"><span class="guide-index-number">02</span><strong class="guide-index-title">SQL scratchpads</strong><p class="guide-index-description">Bindings, paging, result values, and export.</p></a>
+          <a href="docs/testing-coverage.html"><span class="guide-index-number">03</span><strong class="guide-index-title">pgTAP and coverage</strong><p class="guide-index-description">Discovery, calculation model, permissions, and limits.</p></a>
+          <a href="docs/debugger.html"><span class="guide-index-number">04</span><strong class="guide-index-title">PL/pgSQL debugger</strong><p class="guide-index-description">Server setup, rich values, sessions, and limitations.</p></a>
+          <a href="docs/dap.html"><span class="guide-index-number">05</span><strong class="guide-index-title">Standalone DAP</strong><p class="guide-index-description">Protocol contract for other editors and clients.</p></a>
+          <a href="docs/reference.html"><span class="guide-index-number">06</span><strong class="guide-index-title">Complete reference</strong><p class="guide-index-description">Commands and settings generated from the extension.</p></a>
+        </nav>
+      </section>
+
+      <section class="final-cta reveal">
+        <img src="assets/icon.png" alt="" width="88" height="88" loading="lazy" />
+        <p class="eyebrow">PostgreSQL Workbench</p>
+        <h2>Keep the database in the development loop.</h2>
+        <div class="hero-actions">
+          <a
+            class="button button-primary"
+            href="https://marketplace.visualstudio.com/items?itemName=ng-galien.postgresql-workbench"
+          >Install for VS Code</a>
+          <a class="button button-secondary" href="https://github.com/ng-galien/postgresql-workbench">View on GitHub</a>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <p>PostgreSQL Workbench · MIT License</p>
+      <div class="footer-links">
+        <a href="https://github.com/ng-galien/postgresql-workbench">GitHub</a>
+        <a href="https://marketplace.visualstudio.com/items?itemName=ng-galien.postgresql-workbench">Marketplace</a>
+      </div>
+    </footer>
+  </body>
+</html>

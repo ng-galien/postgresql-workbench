@@ -1,6 +1,7 @@
 # PostgreSQL Workbench
 
 [![Visual Studio Marketplace](https://img.shields.io/badge/VS%20Marketplace-install-007ACC?logo=visualstudiocode)](https://marketplace.visualstudio.com/items?itemName=ng-galien.postgresql-workbench)
+[![Documentation](https://img.shields.io/badge/documentation-GitHub%20Pages-1f6f4f)](https://ng-galien.github.io/postgresql-workbench/)
 [![GitHub Release](https://img.shields.io/github/v/release/ng-galien/postgresql-workbench?display_name=tag&sort=semver)](https://github.com/ng-galien/postgresql-workbench/releases/latest)
 [![CI](https://github.com/ng-galien/postgresql-workbench/actions/workflows/ci.yml/badge.svg)](https://github.com/ng-galien/postgresql-workbench/actions/workflows/ci.yml)
 [![Docker pulls](https://img.shields.io/docker/pulls/galien0xffffff/postgres-debugger?logo=docker)](https://hub.docker.com/r/galien0xffffff/postgres-debugger)
@@ -12,6 +13,9 @@ PL/pgSQL debugging into one VS Code extension. Its standalone
 [Debug Adapter Protocol](https://microsoft.github.io/debug-adapter-protocol/)
 server remains usable from other DAP clients such as Neovim and Emacs.
 
+Read the [PostgreSQL Workbench documentation](https://ng-galien.github.io/postgresql-workbench/)
+for feature guides, setup instructions, and the complete command and settings reference.
+
 ## Architecture
 
 ```
@@ -19,9 +23,7 @@ postgresql-workbench/
 ├── src/                  # DAP server (TypeScript, stdio)
 ├── vscode-extension/     # VS Code extension (first-party client)
 ├── e2e/                  # Integration tests (Docker + PostgreSQL)
-├── demo/                 # Demo container + sample functions to debug
-└── docs/
-    └── DESIGN.md         # Current technical contract and +1/+2 roadmap
+└── demo/                 # Demo container + sample functions to debug
 ```
 
 The DAP server communicates with PostgreSQL via `pldbgapi` (the PostgreSQL debugger API) using two connections: a **listener** that controls the debugger, and a **target** that executes the user's SQL.
@@ -81,7 +83,6 @@ npm --prefix vscode-extension run package
 ## VS Code Extension
 
 See [vscode-extension/README.md](vscode-extension/README.md) for usage and features.
-See [docs/DESIGN.md](docs/DESIGN.md) for the current technical contract and roadmap.
 
 The extension also provides a pgTAP Test Explorer and native PL/pgSQL
 statement/branch coverage. Coverage uses a dedicated transactional runner and

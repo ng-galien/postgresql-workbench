@@ -1,6 +1,7 @@
 # PostgreSQL Workbench
 
 [![Visual Studio Marketplace](https://img.shields.io/badge/VS%20Marketplace-install-007ACC?logo=visualstudiocode)](https://marketplace.visualstudio.com/items?itemName=ng-galien.postgresql-workbench)
+[![Documentation](https://img.shields.io/badge/documentation-GitHub%20Pages-1f6f4f)](https://ng-galien.github.io/postgresql-workbench/)
 [![GitHub Release](https://img.shields.io/github/v/release/ng-galien/postgresql-workbench?display_name=tag&sort=semver)](https://github.com/ng-galien/postgresql-workbench/releases/latest)
 [![CI](https://github.com/ng-galien/postgresql-workbench/actions/workflows/ci.yml/badge.svg)](https://github.com/ng-galien/postgresql-workbench/actions/workflows/ci.yml)
 [![Docker pulls](https://img.shields.io/docker/pulls/galien0xffffff/postgres-debugger?logo=docker)](https://hub.docker.com/r/galien0xffffff/postgres-debugger)
@@ -11,6 +12,10 @@ schema, query real data, test routines, inspect coverage, and debug PL/pgSQL
 without switching tools.
 
 Built for your **development database**: local PostgreSQL, Docker, or self-hosted.
+
+Open the [documentation site](https://ng-galien.github.io/postgresql-workbench/)
+for focused guides to the Cockpit, SQL scratchpads, pgTAP coverage, the debugger,
+the standalone DAP server, and the complete command and settings reference.
 
 ## See the Workbench in action
 

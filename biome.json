@@ -1,8 +1,16 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.4.9/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.5.5/schema.json",
   "files": {
-    "includes": ["src/**", "vscode-extension/src/**", "e2e/**"],
-    "experimentalScannerIgnores": ["dist/", "node_modules/"]
+    "includes": [
+      "src/**",
+      "vscode-extension/src/**",
+      "e2e/**",
+      "site/**",
+      "scripts/build-site.mjs",
+      "scripts/dev-site.mjs",
+      "!!**/dist/",
+      "!!**/node_modules/"
+    ]
   },
   "formatter": {
     "indentStyle": "space",
@@ -16,9 +24,14 @@
       "semicolons": "always"
     }
   },
+  "html": {
+    "parser": {
+      "interpolation": true
+    }
+  },
   "linter": {
     "rules": {
-      "recommended": true,
+      "preset": "recommended",
       "correctness": {
         "noUnusedVariables": "warn",
         "noUnusedImports": "error"

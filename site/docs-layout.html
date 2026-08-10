@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="{{description}}" />
+    <meta name="theme-color" content="#f7f9fa" />
+    <meta property="og:title" content="{{title}} · PostgreSQL Workbench" />
+    <meta property="og:description" content="{{description}}" />
+    <meta property="og:type" content="article" />
+    <meta property="og:url" content="{{canonicalUrl}}" />
+    <meta property="og:image" content="https://ng-galien.github.io/postgresql-workbench/assets/cockpit.png" />
+    <link rel="canonical" href="{{canonicalUrl}}" />
+    <title>{{title}} · PostgreSQL Workbench</title>
+    <link rel="icon" href="../assets/icon.png" />
+    <link rel="stylesheet" href="../styles.css" />
+    <script src="../site.js" defer></script>
+  </head>
+  <body class="docs-page">
+    <a class="skip-link" href="#main">Skip to content</a>
+    <header class="site-header">
+      <a class="brand" href="../index.html" aria-label="PostgreSQL Workbench home">
+        <img src="../assets/icon.png" alt="" width="40" height="40" />
+        <span class="brand-name">PostgreSQL Workbench</span>
+      </a>
+      <nav aria-label="Primary navigation">
+        <a href="index.html">Documentation</a>
+        <a href="reference.html">Reference</a>
+        <a href="https://github.com/ng-galien/postgresql-workbench">GitHub</a>
+      </nav>
+      <a class="header-action" href="https://marketplace.visualstudio.com/items?itemName=ng-galien.postgresql-workbench">Install extension</a>
+    </header>
+
+    <main id="main" class="docs-shell">
+      <aside class="guide-nav" aria-label="Documentation guides">{{guideNavigation}}</aside>
+      <article class="docs-article">
+        <p class="docs-breadcrumb"><a href="index.html">Documentation</a> / {{title}}</p>
+        <p class="eyebrow">{{eyebrow}}</p>
+        {{content}}
+      </article>
+      <aside class="page-toc" aria-label="On this page">
+        <p>On this page</p>
+        {{tableOfContents}}
+      </aside>
+    </main>
+
+    <footer>
+      <p>PostgreSQL Workbench · {{title}}</p>
+      <div class="footer-links"><a href="index.html">All guides</a><a href="https://github.com/ng-galien/postgresql-workbench/issues">Feedback</a></div>
+    </footer>
+  </body>
+</html>

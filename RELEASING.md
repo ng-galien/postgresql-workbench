@@ -156,7 +156,8 @@ must change, bump the version and create a new tag.
 
 The `publish-marketplace` job starts only after the GitHub Release job succeeds.
 It downloads `marketplace-vsix` and publishes each exact platform VSIX with
-`vsce publish`.
+`vsce publish`. Already published platform artifacts are skipped, so rerunning a
+partially successful Marketplace job does not require a new build or version.
 
 ### Authentication
 
@@ -278,9 +279,11 @@ After publication:
 
 1. verify the version, changelog, Marketplace link, badges, and images on the
    public Marketplace page;
-2. install the Marketplace version in a clean VS Code profile;
-3. complete the manual smoke test;
-4. confirm the GitHub Release VSIX and Marketplace version are identical in
+2. verify the [documentation site](https://ng-galien.github.io/postgresql-workbench/)
+   matches the released extension and that its feature media and reference links load;
+3. install the Marketplace version in a clean VS Code profile;
+4. complete the manual smoke test;
+5. confirm the GitHub Release VSIX and Marketplace version are identical in
    version and expected behavior;
-5. verify the GitHub build-provenance attestation;
-6. retain the SHA-256 file as the integrity checksum for the published artifact.
+6. verify the GitHub build-provenance attestation;
+7. retain the SHA-256 file as the integrity checksum for the published artifact.
