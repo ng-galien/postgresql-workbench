@@ -76,7 +76,8 @@ jobs:
         run: npm run test:e2e:run
       - name: Run VS Code extension integration tests
         run: xvfb-run -a npm --prefix vscode-extension test
-      - name: Run extension tests on minimum supported VS Code
+      - name: Smoke-test extension on minimum supported VS Code
+        timeout-minutes: 3
         run: xvfb-run -a npm --prefix vscode-extension run test:min-vscode
       - name: Upload VS Code test logs
         if: always()

@@ -2,7 +2,7 @@ import { defineConfig } from "@vscode/test-cli";
 
 export default defineConfig({
   label: "cross-platform-activation-smoke",
-  files: "dist/**/smoke/**/*.smoke.js",
+  files: "dist/smoke/**/*.smoke.cjs",
   workspaceFolder: "./test-workspace",
   launchArgs:
     process.platform === "darwin"

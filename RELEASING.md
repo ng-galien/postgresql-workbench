@@ -48,7 +48,7 @@ release and artifact-handling actions.
 | `Biome` | Installs root dependencies and runs `npm run check`. |
 | `Type Check` | Type-checks the DAP server and the VS Code extension. |
 | `Unit Tests` | Runs the root Vitest suite. |
-| `Integration Tests` | Starts `galien0xffffff/postgres-debugger:17`, loads the E2E and demo fixtures, runs the DAP tests, the real VS Code integration suite, and the suite on VS Code 1.109.0. |
+| `Integration Tests` | Starts `galien0xffffff/postgres-debugger:17`, loads the E2E and demo fixtures, runs the DAP tests and the real VS Code integration suite, then activates the extension and Code Moniker in a focused smoke test on the minimum supported VS Code 1.109.0. |
 | `EnterpriseDB pldebugger Compatibility` | Builds and tests against the pinned unpatched EnterpriseDB pldebugger implementation. |
 | `Package Extension` | Builds the four native production VSIX files, validates their contents and executables, and uploads one target-specific CI artifact per platform. |
 
