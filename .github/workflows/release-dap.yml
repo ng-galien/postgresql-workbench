@@ -12,6 +12,7 @@ jobs:
   validate:
     name: Validate standalone DAP release
     runs-on: ubuntu-24.04
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -45,6 +46,7 @@ jobs:
     name: Smoke npm DAP (${{ matrix.target }})
     needs: validate
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -57,6 +59,8 @@ jobs:
             runner: macos-15-intel
           - target: win32-x64
             runner: windows-2025
+    env:
+      CODE_MONIKER_TARGET: ${{ matrix.target }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7

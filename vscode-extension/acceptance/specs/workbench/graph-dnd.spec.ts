@@ -9,7 +9,7 @@ test.describe
     test("phase 1 — opens the graph from a TreeView drop", async ({ workbench, cockpit }) => {
       await test.step("connect and index the demo database through the Workbench UI", async () => {
         await workbench.addServer(demoConnectionUrl, server);
-        await workbench.reindexActiveDatabase(server, database);
+        await workbench.ensureActiveDatabaseIndexed(server, database);
         await expect(workbench.tree.item(/^shop/)).toBeVisible();
       });
 

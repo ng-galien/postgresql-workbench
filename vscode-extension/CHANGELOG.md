@@ -11,7 +11,8 @@
   window reload instead of leaving VS Code on a missing-file editor
 - Added separate Playwright acceptance journeys for graph interactions and
   stale virtual-source cleanup, including stable command-ID infrastructure for
-  window reloads
+  window reloads; the shared-instance campaign now runs in CI and the extension
+  release gate
 - Fixed Marketplace showcase GIF URLs in packaged VSIX metadata and added a
   packaging guard for all four published media links
 - Removed SQL scratchpad creation from the no-connection welcome state;
@@ -31,6 +32,8 @@
 - Added the independently publishable `@ng-galien/postgresql-dap` package, its
   package validation and real PostgreSQL smoke tests, and a dedicated `dap-v*`
   release workflow
+- Separated standalone DAP smoke tests from extension packaging across the
+  platform matrix and made npm invocation portable on Windows runners
 - Reduced the standalone DAP dependency on Code Moniker to lazy, stateless
   SQL/PL/pgSQL parsing on demand; it no longer manages a workspace daemon,
   indexes sources, or requires Code Moniker URIs

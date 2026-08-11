@@ -21,10 +21,24 @@ export class WorkbenchPage {
     await expect(this.tree.item(expectedServer)).toContainText("connected", { timeout: 5_000 });
   }
 
-  async reindexActiveDatabase(server: RegExp, database: RegExp): Promise<void> {
+  async ensureServer(connectionUrl: string, expectedServer: RegExp): Promise<void> {
+    await this.tree.open();
+    const existing = this.tree.item(expectedServer);
+    if (await existing.isVisible()) {
+      await expect(existing).toContainText("connected", { timeout: 5_000 });
+      return;
+    }
+    await this.addServer(connectionUrl, expectedServer);
+  }
+
+  async ensureActiveDatabaseIndexed(server: RegExp, database: RegExp): Promise<void> {
     await this.tree.open();
     await this.tree.expandPath([server, database]);
     const sources = this.tree.item(/^Sources/);
+    if (await sources.getByText("available", { exact: true }).isVisible()) {
+      await this.tree.expand(/^Sources/);
+      return;
+    }
     await expect(sources).toContainText("not-indexed", { timeout: 5_000 });
     await sources.locator(".monaco-tl-contents").click();
     await expect(sources).toContainText(/indexing|available/, { timeout: 5_000 });

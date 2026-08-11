@@ -49,6 +49,7 @@ readability.
 ## Run
 
 ```bash
+npm run test:acceptance
 npm run test:acceptance:graph-dnd
 npm run test:acceptance:source-tab-cleanup
 ```

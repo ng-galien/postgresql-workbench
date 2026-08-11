@@ -8,7 +8,7 @@ on:
 jobs:
   biome:
     name: Biome
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
@@ -21,7 +21,7 @@ jobs:
 
   typecheck:
     name: Type Check
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
@@ -38,7 +38,7 @@ jobs:
 
   unit:
     name: Unit Tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
@@ -54,7 +54,7 @@ jobs:
 
   integration:
     name: Integration Tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -95,7 +95,7 @@ jobs:
 
   legacy-compatibility:
     name: EnterpriseDB pldebugger Compatibility
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -111,9 +111,68 @@ jobs:
       - run: npm --prefix vscode-extension run stage:code-moniker
       - run: npm run test:e2e:legacy
 
-  package-extension:
-    name: Package Artifacts (${{ matrix.target }})
+  workbench-acceptance:
+    name: Workbench Acceptance
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            vscode-extension/package-lock.json
+      - run: sudo apt-get update
+      - run: sudo apt-get install -y xvfb
+      - run: npm ci
+      - run: npm --prefix vscode-extension ci
+      - name: Run real Workbench UI journeys
+        run: xvfb-run -a npm --prefix vscode-extension run test:acceptance
+      - name: Upload Playwright evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: workbench-acceptance-results
+          path: vscode-extension/test-results/**
+          if-no-files-found: ignore
+      - name: Stop acceptance database fixture
+        if: always()
+        run: docker compose -f demo/docker-compose.yml down -v
+
+  package-dap:
+    name: Smoke standalone DAP (${{ matrix.target }})
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-x64
+            runner: ubuntu-24.04
+          - target: darwin-arm64
+            runner: macos-15
+          - target: darwin-x64
+            runner: macos-15-intel
+          - target: win32-x64
+            runner: windows-2025
+    env:
+      CODE_MONIKER_TARGET: ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - run: npm run test:dap:package
+
+  package-extension:
+    name: Package extension (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -138,7 +197,6 @@ jobs:
             package-lock.json
             vscode-extension/package-lock.json
       - run: npm ci
-      - run: npm run test:dap:package
       - run: npm --prefix vscode-extension ci
       - run: npm --prefix vscode-extension run package
       - run: git diff --exit-code -- vscode-extension/THIRD_PARTY_NOTICES.md

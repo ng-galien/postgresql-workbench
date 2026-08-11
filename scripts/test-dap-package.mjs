@@ -9,11 +9,18 @@ const repositoryRoot = resolve(scriptDirectory, "..");
 const packageRoot = resolve(repositoryRoot, "packages", "postgresql-dap");
 const manifest = JSON.parse(readFileSync(resolve(packageRoot, "package.json"), "utf8"));
 const temporaryRoot = mkdtempSync(resolve(tmpdir(), "postgresql-dap-package-"));
-const npm = process.platform === "win32" ? "npm.cmd" : "npm";
+const npmExecPath = process.env.npm_execpath;
+
+if (!npmExecPath) {
+  throw new Error("npm_execpath is required; run this smoke test through npm");
+}
+
+function runNpm(args, options) {
+  return execFileSync(process.execPath, [npmExecPath, ...args], options);
+}
 
 try {
-  const packOutput = execFileSync(
-    npm,
+  const packOutput = runNpm(
     ["pack", packageRoot, "--json", "--pack-destination", temporaryRoot],
     { cwd: repositoryRoot, encoding: "utf8" },
   );
@@ -40,8 +47,7 @@ try {
     `${JSON.stringify({ name: "postgresql-dap-package-smoke", private: true }, null, 2)}\n`,
   );
   writeFileSync(resolve(consumer, "smoke.sql"), "SELECT 1;\n");
-  execFileSync(
-    npm,
+  runNpm(
     ["install", "--ignore-scripts", "--no-audit", "--no-fund", tarball],
     { cwd: consumer, stdio: "inherit" },
   );
@@ -55,7 +61,7 @@ try {
     "postgresql-dap.js",
   );
   const installedCommand = ["exec", "--offline", "--", "postgresql-dap"];
-  const version = execFileSync(npm, [...installedCommand, "--version"], {
+  const version = runNpm([...installedCommand, "--version"], {
     cwd: consumer,
     encoding: "utf8",
     timeout: 10_000,
@@ -64,7 +70,7 @@ try {
     throw new Error(`Packaged DAP reported version ${version}, expected ${manifest.version}`);
   }
 
-  const runtimeCheck = execFileSync(npm, [...installedCommand, "--check-code-moniker"], {
+  const runtimeCheck = runNpm([...installedCommand, "--check-code-moniker"], {
     cwd: consumer,
     encoding: "utf8",
     timeout: 60_000,

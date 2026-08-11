@@ -10,11 +10,13 @@ test.describe("Workbench virtual source cleanup", () => {
     cockpit,
     vscode,
   }) => {
-    await workbench.addServer(demoConnectionUrl, server);
-    await workbench.reindexActiveDatabase(server, database);
+    await workbench.ensureServer(demoConnectionUrl, server);
+    await workbench.ensureActiveDatabaseIndexed(server, database);
     await workbench.openCockpit();
     await cockpit.waitUntilOpen();
     await workbench.tree.expandPath([server, database, /^Sources/, /^shop/]);
+    await workbench.tree.collapse(/^shop/);
+    await workbench.tree.expand(/^shop/);
     await workbench.tree.select(/^address/);
     await expect(cockpit.node("address")).toHaveAttribute("data-graph-role", "focus", {
       timeout: 5_000,

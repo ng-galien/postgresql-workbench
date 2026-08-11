@@ -45,6 +45,15 @@ export class WorkbenchTree {
     await expect(item).toHaveAttribute("aria-expanded", "true", { timeout: 5_000 });
   }
 
+  async collapse(label: RegExp): Promise<void> {
+    const item = this.item(label);
+    await item.waitFor({ state: "visible", timeout: 5_000 });
+    await item.scrollIntoViewIfNeeded();
+    if ((await item.getAttribute("aria-expanded")) !== "true") return;
+    await item.locator(".monaco-tl-twistie").click();
+    await expect(item).toHaveAttribute("aria-expanded", "false", { timeout: 5_000 });
+  }
+
   async expandPath(labels: RegExp[]): Promise<void> {
     for (const label of labels) await this.expand(label);
   }
