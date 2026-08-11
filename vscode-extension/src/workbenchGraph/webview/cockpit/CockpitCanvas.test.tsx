@@ -14,6 +14,9 @@ interface CockpitStoreMockState {
   hoveredIdentity: string | null;
   hover: ReturnType<typeof vi.fn>;
   pathIdentities: string[];
+  treeDragPayload: null;
+  clearTreeDrag: ReturnType<typeof vi.fn>;
+  frameRequest: number;
 }
 
 const reactFlow = vi.hoisted(() => ({
@@ -33,6 +36,9 @@ const cockpitStore = vi.hoisted(() => ({
     hoveredIdentity: null,
     hover: vi.fn(),
     pathIdentities: [],
+    treeDragPayload: null,
+    clearTreeDrag: vi.fn(),
+    frameRequest: 0,
   } as CockpitStoreMockState,
 }));
 
@@ -63,12 +69,16 @@ vi.mock("./transport.js", () => ({
   setPinnedSymbol: vi.fn(),
 }));
 
+vi.mock("../vscodeApi.js", () => ({
+  vscode: { postMessage: vi.fn() },
+}));
+
 vi.mock("./store.js", () => ({
   useCockpitStore: (selector: (state: typeof cockpitStore.state) => unknown) =>
     selector(cockpitStore.state),
 }));
 
-import { CockpitCanvas } from "./CockpitCanvas.js";
+import { CockpitCanvas, hasWorkbenchTreeDrag } from "./CockpitCanvas.js";
 
 afterEach(() => {
   reactFlow.props = null;
@@ -105,9 +115,18 @@ describe("Cockpit canvas node dragging", () => {
       neighborhoods: {},
     };
 
-    renderToStaticMarkup(<CockpitCanvas recenterToken={Number.NaN} />);
+    renderToStaticMarkup(<CockpitCanvas frameRequest="0:0" />);
 
     expect(reactFlow.props?.nodes).toHaveLength(1);
     expect(reactFlow.props?.onNodesChange).toBe(reactFlow.onNodesChange);
+  });
+
+  it("recognizes the native VS Code TreeView transfer used by the host bridge", () => {
+    expect(
+      hasWorkbenchTreeDrag({
+        types: ["application/vnd.code.tree.postgresql-workbench-connections"],
+      } as unknown as DataTransfer),
+    ).toBe(true);
+    expect(hasWorkbenchTreeDrag({ types: ["text/plain"] } as unknown as DataTransfer)).toBe(false);
   });
 });

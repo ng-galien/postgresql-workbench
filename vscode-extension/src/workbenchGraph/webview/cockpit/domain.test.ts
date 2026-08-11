@@ -3,7 +3,9 @@ import type { CodeMonikerSymbol } from "../../../../../src/workbench/localCodeMo
 import type { CockpitNeighborhood } from "../../protocol.js";
 import {
   hiddenCount,
+  installNeighborhood,
   installPinnedNodes,
+  refreshExploration,
   revealNeighbors,
   shortestPath,
   startExploration,
@@ -152,4 +154,65 @@ describe("cockpit exploration domain", () => {
     expect(shortestPath(edges, "a", "c")).toEqual(["a", "b", "c"]);
     expect(shortestPath(edges, "c", "a")).toEqual(["c", "b", "a"]);
   });
+
+  it("refreshes loaded neighborhoods while retaining their revealed breadth and pins", () => {
+    const source = neighborhood("orders", 0, 5);
+    let current = startExploration(emptyExplorationForTest(), source, presentations(source));
+    current = togglePinned(current, source.outgoing[0].symbol.uri);
+    const refreshed = neighborhood("orders", 0, 4);
+    const next = refreshExploration(
+      current,
+      [
+        {
+          previousIdentity: source.focus.uri,
+          neighborhood: refreshed,
+          presentations: presentations(refreshed),
+        },
+      ],
+      {},
+      new Set([refreshed.focus.uri, ...refreshed.outgoing.map(({ symbol }) => symbol.uri)]),
+      refreshed.focus.uri,
+      new Set([source.outgoing[0].symbol.uri]),
+    );
+
+    expect(next.neighborhoods[refreshed.focus.uri].revealed.outgoing).toBe(3);
+    expect(next.nodes[source.outgoing[0].symbol.uri]?.pinned).toBe(true);
+    expect(hiddenCount(next, refreshed.focus.uri, "outgoing")).toBe(1);
+  });
+
+  it("rebuilds shared edges after every refreshed catalog has been installed", () => {
+    const upstream = neighborhood("orders", 0, 1);
+    const downstream = neighborhood("invoice", 1, 0);
+    downstream.focus = upstream.outgoing[0].symbol;
+    downstream.incoming[0].symbol = upstream.focus;
+    let current = startExploration(emptyExplorationForTest(), upstream, presentations(upstream));
+    current = installNeighborhood(current, downstream, presentations(downstream));
+    current.neighborhoods[downstream.focus.uri].revealed = { incoming: 0, outgoing: 0 };
+
+    const next = refreshExploration(
+      current,
+      [
+        {
+          previousIdentity: upstream.focus.uri,
+          neighborhood: upstream,
+          presentations: presentations(upstream),
+        },
+        {
+          previousIdentity: downstream.focus.uri,
+          neighborhood: downstream,
+          presentations: presentations(downstream),
+        },
+      ],
+      {},
+      new Set([upstream.focus.uri, downstream.focus.uri]),
+      upstream.focus.uri,
+      new Set([downstream.focus.uri]),
+    );
+
+    expect(next.edges[`${upstream.focus.uri}->${downstream.focus.uri}`]).toBeDefined();
+  });
 });
+
+function emptyExplorationForTest() {
+  return { focusIdentity: null, nodes: {}, edges: {}, neighborhoods: {} };
+}

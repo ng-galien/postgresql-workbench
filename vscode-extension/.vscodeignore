@@ -2,6 +2,9 @@
 .vscode-test*
 .vscode-smoke.mjs
 .vscode-showcase.mjs
+acceptance/**
+playwright.acceptance.config.ts
+test-results/**
 test-workspace/**
 src/**
 node_modules/**

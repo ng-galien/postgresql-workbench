@@ -1,4 +1,5 @@
 import type { CodeMonikerSymbol } from "../../../src/workbench/localCodeMoniker.js";
+import type { WorkbenchGraphDragPayload } from "./dragAndDrop.js";
 
 export type CockpitDirection = "incoming" | "outgoing";
 
@@ -91,7 +92,26 @@ export interface CockpitFocusPayload {
     presentation: WorkbenchGraphIdentityPresentation;
   }>;
   preview?: WorkbenchGraphSourcePreview;
+  sourceVisible?: boolean;
+  sourcePinned?: boolean;
   perspective?: CockpitPerspective;
+}
+
+export interface CockpitRefreshPayload {
+  session: CockpitSession;
+  focusIdentity: string | null;
+  neighborhoods: Array<{
+    previousIdentity: string;
+    neighborhood: CockpitNeighborhood;
+    presentations: Record<string, WorkbenchGraphIdentityPresentation>;
+  }>;
+  identityRemap: Record<string, string>;
+  presentations: Record<string, WorkbenchGraphIdentityPresentation>;
+  validIdentities: string[];
+  pinnedIdentities: string[];
+  preview: WorkbenchGraphSourcePreview | null;
+  sourceVisible?: boolean;
+  sourcePinned?: boolean;
 }
 
 export interface WorkbenchGraphRenderedCard {
@@ -129,8 +149,16 @@ export interface WorkbenchGraphRenderEvidence {
 
 export type WorkbenchGraphHostMessage =
   | { type: "databaseContextInvalidated"; message: string }
-  | { type: "cockpitSession"; session: CockpitSession }
+  | {
+      type: "cockpitSession";
+      session: CockpitSession;
+      sourceVisible?: boolean;
+      sourcePinned?: boolean;
+    }
   | { type: "cockpitFocus"; payload: CockpitFocusPayload }
+  | { type: "cockpitRefresh"; payload: CockpitRefreshPayload }
+  | { type: "cockpitDropRejected"; message: string }
+  | { type: "cockpitTreeDragStatus"; payload: WorkbenchGraphDragPayload | null }
   | {
       type: "cockpitNeighborhood";
       requestId: number;
@@ -139,7 +167,7 @@ export type WorkbenchGraphHostMessage =
       neighborhood: CockpitNeighborhood;
       presentations: Record<string, WorkbenchGraphIdentityPresentation>;
     }
-  | { type: "cockpitPreview"; preview: WorkbenchGraphSourcePreview }
+  | { type: "cockpitPreview"; preview: WorkbenchGraphSourcePreview; pinned?: boolean }
   | { type: "cockpitPerspectives"; perspectives: CockpitPerspective[] }
   | { type: "scopeError"; message: string }
   | {
@@ -163,9 +191,18 @@ export type WorkbenchGraphWebviewMessage =
     }
   | { type: "search"; requestId: number; query: string }
   | { type: "inspect"; symbolUri: string }
+  | { type: "dismissPreview" }
+  | { type: "pinPreview"; symbolUri: string; pinned: boolean }
+  | { type: "resolveTreeDrag" }
+  | { type: "clearTreeDrag" }
+  | { type: "dropTreeSource" }
   | { type: "open"; symbolUri: string }
   | { type: "actions"; symbolUri: string }
   | { type: "pin"; symbolUri: string; pinned: boolean }
+  | {
+      type: "dropSource";
+      payload: WorkbenchGraphDragPayload;
+    }
   | { type: "savePerspective"; state: CockpitPerspectiveState }
   | { type: "loadPerspective"; name: string }
   | { type: "deletePerspective"; name: string }

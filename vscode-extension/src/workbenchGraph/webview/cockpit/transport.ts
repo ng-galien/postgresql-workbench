@@ -11,6 +11,10 @@ export function inspectSymbol(symbolUri: string): void {
   vscode.postMessage({ type: "inspect", symbolUri });
 }
 
+export function dismissSource(): void {
+  vscode.postMessage({ type: "dismissPreview" });
+}
+
 export function openSymbol(symbolUri: string): void {
   vscode.postMessage({ type: "open", symbolUri });
 }

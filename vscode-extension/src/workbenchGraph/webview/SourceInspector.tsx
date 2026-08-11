@@ -12,9 +12,13 @@ import { vscode } from "./vscodeApi.js";
 function SourceInspector({
   preview,
   onClose,
+  pinned,
+  onPinnedChange,
 }: {
   preview: WorkbenchGraphSourcePreview;
   onClose: () => void;
+  pinned: boolean;
+  onPinnedChange(pinned: boolean): void;
 }) {
   const fallback = useMemo<HighlightedPostgresSource>(
     () => plainPostgresSource(preview.lines),
@@ -49,6 +53,15 @@ function SourceInspector({
           {file}
         </span>
         <span className="source-actions">
+          <button
+            type="button"
+            title={pinned ? "Unpin source preview" : "Pin source preview"}
+            aria-label={pinned ? "Unpin source preview" : "Pin source preview"}
+            aria-pressed={pinned}
+            onClick={() => onPinnedChange(!pinned)}
+          >
+            {pinned ? "●" : "○"}
+          </button>
           <button
             type="button"
             title="Open definition in the editor"

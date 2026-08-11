@@ -394,8 +394,12 @@ button:disabled {
   overflow: hidden;
 }
 
-.cockpit-main.with-inspector {
+.cockpit-main.with-inspector.placement-side {
   grid-template-columns: minmax(0, 1fr) var(--inspector-width, 360px);
+}
+
+.cockpit-main.with-inspector.placement-bottom {
+  grid-template-rows: minmax(280px, 1fr) var(--inspector-height, 320px);
 }
 
 .cockpit-canvas {
@@ -403,6 +407,44 @@ button:disabled {
   min-width: 0;
   min-height: 0;
   background: var(--vscode-editor-background);
+}
+
+.cockpit-canvas.is-drop-accepted,
+.cockpit-canvas.is-drop-rejected {
+  outline: 2px solid var(--vscode-focusBorder);
+  outline-offset: -3px;
+}
+
+.cockpit-canvas.is-drop-rejected {
+  outline-color: var(--vscode-inputValidation-errorBorder, var(--vscode-errorForeground));
+}
+
+.cockpit-drop-feedback {
+  position: absolute;
+  z-index: 70;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  max-width: min(420px, calc(100% - 48px));
+  gap: 4px;
+  border: 1px solid var(--vscode-focusBorder);
+  border-radius: 6px;
+  padding: 12px 16px;
+  color: var(--vscode-foreground);
+  background: var(--vscode-editorWidget-background);
+  box-shadow: 0 10px 32px color-mix(in srgb, var(--vscode-widget-shadow, #000) 42%, transparent);
+  text-align: center;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.cockpit-drop-feedback[data-drop-availability="unsupported"] {
+  border-color: var(--vscode-inputValidation-errorBorder, var(--vscode-errorForeground));
+}
+
+.cockpit-drop-feedback span {
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.82em;
 }
 
 .react-flow__background pattern circle {
@@ -556,6 +598,12 @@ button:disabled {
   padding: 2px 5px;
   color: var(--vscode-descriptionForeground);
   font-size: 0.7em;
+}
+
+.node-actions .node-source-toggle.is-active,
+.node-actions .node-source-toggle[aria-pressed="true"] {
+  color: var(--vscode-button-foreground);
+  background: var(--vscode-button-background);
 }
 
 .node-expansions {
@@ -743,6 +791,9 @@ button:disabled {
 }
 
 .cockpit-empty {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
   display: grid;
   height: 100%;
   place-items: center;
@@ -753,6 +804,7 @@ button:disabled {
     transparent 1px
   );
   background-size: 20px 20px;
+  pointer-events: none;
 }
 
 .cockpit-empty > div {
@@ -793,12 +845,19 @@ button:disabled {
   background: var(--cockpit-panel);
 }
 
+.cockpit-inspector.placement-bottom {
+  grid-row: 2;
+  width: 100%;
+  border-top: 1px solid var(--cockpit-line);
+  border-left: 0;
+}
+
 .inspector-resize-handle {
   position: absolute;
   z-index: 30;
   top: 0;
   bottom: 0;
-  left: -5px;
+  left: 0;
   width: 9px;
   height: auto;
   margin: 0;
@@ -811,10 +870,27 @@ button:disabled {
   position: absolute;
   top: 0;
   bottom: 0;
-  left: 4px;
+  left: 0;
   width: 1px;
   content: "";
   background: transparent;
+}
+
+.cockpit-inspector.placement-bottom .inspector-resize-handle {
+  right: 0;
+  bottom: auto;
+  left: 0;
+  width: auto;
+  height: 9px;
+  cursor: row-resize;
+}
+
+.cockpit-inspector.placement-bottom .inspector-resize-handle::after {
+  right: 0;
+  bottom: auto;
+  left: 0;
+  width: auto;
+  height: 1px;
 }
 
 .inspector-resize-handle:hover::after,
@@ -834,10 +910,31 @@ button:disabled {
 }
 
 .cockpit-inspector .source-inspector {
-  flex: 0 1 auto;
-  min-height: 180px;
-  max-height: 70%;
+  flex: 1 1 0;
+  min-height: 280px;
+  max-height: none;
   border-left: 0;
+}
+
+.inspector-tools {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+.cockpit-inspector.placement-bottom .source-inspector {
+  width: 100%;
+  min-height: 0;
+}
+
+.cockpit-inspector.placement-bottom .inspector-tools {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 0.45fr);
+  max-height: 104px;
+  overflow: auto;
+}
+
+.cockpit-inspector.placement-bottom .inspector-tools > .path-finder:first-child {
+  grid-column: 1 / -1;
 }
 
 .hidden-neighbors,
@@ -1125,22 +1222,9 @@ button:disabled {
     display: none;
   }
 
-  .cockpit-main.with-inspector {
-    grid-template-columns: 1fr;
-  }
-
-  .cockpit-inspector {
-    position: absolute;
-    right: 0;
-    bottom: 0;
-    left: 0;
-    height: min(48vh, 460px);
-    border-top: 1px solid var(--cockpit-line);
-    border-left: 0;
-  }
-
-  .inspector-resize-handle {
-    display: none;
+  .cockpit-main.with-inspector.placement-bottom {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(280px, 1fr) var(--inspector-height, 320px);
   }
 }
 

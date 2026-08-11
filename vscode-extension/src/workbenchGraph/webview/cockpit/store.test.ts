@@ -248,3 +248,132 @@ describe("Workbench graph cockpit perspectives", () => {
     expect(exploration.nodes[orphanedPin.uri]).toBeUndefined();
   });
 });
+
+describe("Workbench graph Source panel", () => {
+  const session = {
+    renderId: 20,
+    serverId: "server",
+    database: "demo",
+    revision: "revision",
+    generation: 1,
+    breadcrumbs: [],
+    canBack: false,
+    canForward: false,
+    perspectives: [],
+    searchFacets: { schemas: ["shop"], kinds: ["table"] },
+  };
+  const symbol = (name: string) => ({
+    uri: `sql:table:${name}`,
+    file: `${name}.sql`,
+    name,
+    kind: "table",
+    signature: "",
+  });
+  const neighborhood = (name: string) => ({
+    focus: symbol(name),
+    incoming: [],
+    outgoing: [],
+    totals: { incoming: 0, outgoing: 0 },
+    unresolved: 0,
+    limited: false,
+  });
+  const preview = (name: string) => ({
+    symbolUri: `sql:table:${name}`,
+    title: name,
+    kind: "table",
+    file: `${name}.sql`,
+    firstLine: 1,
+    lastLine: 1,
+    lines: [{ number: 1, text: `create table ${name} ();` }],
+  });
+
+  it("opens only on explicit inspection, follows focus while unpinned, and locks while pinned", () => {
+    useCockpitStore.setState({
+      session: null,
+      exploration: emptyExploration(),
+      preview: null,
+      sourceVisible: false,
+      sourcePinned: false,
+    });
+
+    useCockpitStore.getState().receive({
+      type: "cockpitFocus",
+      payload: {
+        session,
+        neighborhood: neighborhood("address"),
+        presentations: {},
+        preview: preview("address"),
+      },
+    });
+    expect(useCockpitStore.getState().sourceVisible).toBe(false);
+
+    useCockpitStore.getState().receive({ type: "cockpitPreview", preview: preview("address") });
+    expect(useCockpitStore.getState().sourceVisible).toBe(true);
+    expect(useCockpitStore.getState().preview?.title).toBe("address");
+
+    useCockpitStore.getState().receive({
+      type: "cockpitFocus",
+      payload: {
+        session: { ...session, renderId: 21 },
+        neighborhood: neighborhood("product"),
+        presentations: {},
+        preview: preview("product"),
+      },
+    });
+    expect(useCockpitStore.getState().preview?.title).toBe("product");
+
+    useCockpitStore.getState().setSourcePinned(true);
+    useCockpitStore.getState().receive({
+      type: "cockpitFocus",
+      payload: {
+        session: { ...session, renderId: 22 },
+        neighborhood: neighborhood("warehouse"),
+        presentations: {},
+        preview: preview("warehouse"),
+      },
+    });
+    expect(useCockpitStore.getState().preview?.title).toBe("product");
+
+    useCockpitStore.getState().dismissPreview();
+    expect(useCockpitStore.getState().sourceVisible).toBe(false);
+    expect(useCockpitStore.getState().sourcePinned).toBe(false);
+  });
+
+  it("preserves Source on a landing and clears a pin whose DDL was invalidated", () => {
+    useCockpitStore.setState({
+      session,
+      exploration: emptyExploration(),
+      preview: preview("address"),
+      sourceVisible: true,
+      sourcePinned: true,
+    });
+
+    useCockpitStore.getState().receive({
+      type: "cockpitSession",
+      session: { ...session, renderId: 23 },
+      sourceVisible: true,
+      sourcePinned: true,
+    });
+    expect(useCockpitStore.getState().sourceVisible).toBe(true);
+    expect(useCockpitStore.getState().sourcePinned).toBe(true);
+    expect(useCockpitStore.getState().preview?.title).toBe("address");
+
+    useCockpitStore.getState().receive({
+      type: "cockpitRefresh",
+      payload: {
+        session: { ...session, renderId: 24 },
+        focusIdentity: null,
+        neighborhoods: [],
+        identityRemap: {},
+        presentations: {},
+        validIdentities: [],
+        pinnedIdentities: [],
+        preview: null,
+        sourceVisible: false,
+        sourcePinned: false,
+      },
+    });
+    expect(useCockpitStore.getState().sourceVisible).toBe(false);
+    expect(useCockpitStore.getState().sourcePinned).toBe(false);
+  });
+});

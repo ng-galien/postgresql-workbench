@@ -57,6 +57,7 @@ import type { SqlNotebookWorkspace } from "./sqlNotebookWorkspace.js";
 import { executeSqlSelection, prepareSqlSelection } from "./sqlSelectionExecution.js";
 import { WorkbenchDdlSyncController } from "./workbenchDdlSync.js";
 import { WorkbenchGraphTreeSync } from "./workbenchGraph/treeSync.js";
+import { registerWorkbenchGraphDropBridge } from "./workbenchGraphDropBridge.js";
 import { WorkbenchGraphView } from "./workbenchGraphView.js";
 import { WorkbenchIndexController } from "./workbenchIndexController.js";
 import {
@@ -66,6 +67,7 @@ import {
   type WorkbenchObjectActionId,
   type WorkbenchObjectActionSurface,
 } from "./workbenchObjectActions.js";
+import { WorkbenchTreeDragAndDropController } from "./workbenchTreeDragAndDrop.js";
 import type { WorkbenchObjectModel } from "./workbenchTreeModel.js";
 import {
   FunctionItem,
@@ -1385,6 +1387,9 @@ export function activate(context: vscode.ExtensionContext): PlpgsqlExtensionApi 
   let treeProvider: WorkbenchTreeProvider;
   let connectionTreeProvider: WorkbenchTreeProvider;
   let graphTreeSync: WorkbenchGraphTreeSync;
+  const workbenchTreeDragAndDrop = new WorkbenchTreeDragAndDropController((payload) =>
+    workbenchGraph.previewTreeDrop(payload),
+  );
   const workbenchGraph = new WorkbenchGraphView({
     extensionUri: context.extensionUri,
     index: workbenchIndex,
@@ -1396,8 +1401,10 @@ export function activate(context: vscode.ExtensionContext): PlpgsqlExtensionApi 
     selectInTree: (object) => graphTreeSync.revealObject(object),
     workspaceState: context.workspaceState,
     collectRenderEvidence: context.extensionMode === vscode.ExtensionMode.Test,
+    treeDragPayload: (consume) => workbenchTreeDragAndDrop.activePayload(consume),
   });
-  context.subscriptions.push(workbenchGraph);
+  context.subscriptions.push(workbenchTreeDragAndDrop, workbenchGraph);
+  registerWorkbenchGraphDropBridge(context, workbenchGraph);
   const coverageTests = new PgTapTestController({
     connections: cm,
     output: out,
@@ -1517,6 +1524,7 @@ export function activate(context: vscode.ExtensionContext): PlpgsqlExtensionApi 
   const workbenchTree = vscode.window.createTreeView("postgresql-workbench-connections", {
     treeDataProvider: treeProvider,
     showCollapseAll: true,
+    dragAndDropController: workbenchTreeDragAndDrop,
   });
   graphTreeSync = new WorkbenchGraphTreeSync(
     workbenchTree,
@@ -1539,6 +1547,11 @@ export function activate(context: vscode.ExtensionContext): PlpgsqlExtensionApi 
     cm.onServerChanged(() => {
       graphTreeSync.invalidateDatabaseContext();
       workbenchGraph.invalidateDatabaseContext();
+    }),
+    workbenchIndex.onDidChangeState((state) => {
+      if (state.status === "available" && state.result) {
+        void workbenchGraph.refreshSnapshot(state.result);
+      }
     }),
     vscode.debug.onDidStartDebugSession((session) => {
       if (session.type === "postgresql-workbench") {

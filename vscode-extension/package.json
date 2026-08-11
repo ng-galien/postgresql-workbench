@@ -1033,6 +1033,8 @@
     "test:notebook": "npm run pretest && vscode-test --fail-zero --run dist/vscode-extension/src/test/sqlNotebook.test.js",
     "test:call-sites": "npm run pretest && vscode-test --fail-zero --run dist/vscode-extension/src/test/callSites.test.js",
     "test:min-vscode": "npm run pretest && node scripts/run-vscode-test.mjs --timeout-ms 90000 -- --config .vscode-smoke.mjs --code-version 1.109.0 --fail-zero",
+    "test:acceptance:typecheck": "tsc -p acceptance/tsconfig.json",
+    "test:acceptance:graph-dnd": "npm run build:production && npm run test:acceptance:typecheck && playwright test --config playwright.acceptance.config.ts acceptance/specs/workbench/graph-dnd.spec.ts",
     "package": "npm run build:production && node scripts/package-local.mjs && npm run verify:package",
     "verify:package": "node scripts/verify-code-moniker-vsix.mjs",
     "checksum:package": "node scripts/checksum-file.mjs",
@@ -1053,6 +1055,7 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@types/mocha": "^10.0.10",
     "@types/pg": "^8.18.0",
     "@types/pg-cursor": "^2.7.2",

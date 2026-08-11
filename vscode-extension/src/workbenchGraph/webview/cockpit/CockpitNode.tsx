@@ -7,9 +7,10 @@ import { cockpitZoomLevel } from "./zoom.js";
 export interface CockpitNodeData extends Record<string, unknown> {
   node: CockpitNodeModel;
   role: "focus" | "neighbor" | "pinned";
+  sourceActive: boolean;
   hidden: { incoming: number; outgoing: number };
   onFocus(identity: string): void;
-  onInspect(identity: string): void;
+  onToggleSource(identity: string): void;
   onOpen(identity: string): void;
   onActions(identity: string): void;
   onPin(identity: string): void;
@@ -67,23 +68,22 @@ export function CockpitNode({
         role="toolbar"
         aria-label={`Actions for ${node.presentation.label}`}
       >
-        {role !== "focus" && (
-          <button
-            type="button"
-            className="nodrag"
-            title="Show indexed SQL in the Source Inspector"
-            onClick={() => data.onInspect(node.identity)}
-          >
-            Source
-          </button>
-        )}
+        <button
+          type="button"
+          className={`nodrag node-source-toggle${data.sourceActive ? " is-active" : ""}`}
+          title={data.sourceActive ? "Hide DDL preview" : "Preview DDL in the Cockpit"}
+          aria-pressed={data.sourceActive}
+          onClick={() => data.onToggleSource(node.identity)}
+        >
+          DDL
+        </button>
         <button
           type="button"
           className="nodrag"
-          title="Open indexed SQL in the editor"
+          title="Open the indexed definition in the editor"
           onClick={() => data.onOpen(node.identity)}
         >
-          Editor
+          Open ↗
         </button>
         {role !== "focus" && (
           <button

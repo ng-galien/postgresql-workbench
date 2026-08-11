@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import type { WorkbenchGraphSourcePreview } from "../../protocol.js";
 import { SourceInspector } from "../SourceInspector.js";
 import { useCockpitStore } from "./store.js";
@@ -7,11 +7,34 @@ import { VisiblePathPicker } from "./VisiblePathPicker.js";
 interface CockpitInspectorProps {
   preview: WorkbenchGraphSourcePreview;
   onClose(): void;
+  placement: "side" | "bottom";
   width: number;
-  onResize(width: number): void;
+  height: number;
+  onResizeWidth(width: number): void;
+  onResizeHeight(height: number): void;
+  pinned: boolean;
+  onPinnedChange(pinned: boolean): void;
 }
 
-export function CockpitInspector({ preview, onClose, width, onResize }: CockpitInspectorProps) {
+export function clampInspectorWidth(width: number, availableWidth: number): number {
+  return Math.max(360, Math.min(560, availableWidth * 0.45, width));
+}
+
+export function clampInspectorHeight(height: number, availableHeight: number): number {
+  return Math.max(240, Math.min(560, availableHeight * 0.55, height));
+}
+
+export function CockpitInspector({
+  preview,
+  onClose,
+  placement,
+  width,
+  height,
+  onResizeWidth,
+  onResizeHeight,
+  pinned,
+  onPinnedChange,
+}: CockpitInspectorProps) {
   const exploration = useCockpitStore((state) => state.exploration);
   const reveal = useCockpitStore((state) => state.reveal);
   const focusIdentity = exploration.focusIdentity;
@@ -23,81 +46,149 @@ export function CockpitInspector({ preview, onClose, width, onResize }: CockpitI
     ? catalog.value.outgoing.slice(catalog.revealed.outgoing, catalog.revealed.outgoing + 3)
     : [];
   return (
-    <aside className="cockpit-inspector">
-      <InspectorResizeHandle width={width} onResize={onResize} />
-      <SourceInspector preview={preview} onClose={onClose} />
-      {(hiddenIncoming.length > 0 || hiddenOutgoing.length > 0) && (
-        <section className="hidden-neighbors" aria-label="Hidden neighbors">
-          <header>
-            <strong>Hidden neighbors</strong>
-            <span className="hidden-neighbor-hint">ranked by degree of interest</span>
-          </header>
-          {hiddenIncoming.length > 0 && (
-            <NeighborPreview
-              label="upstream"
-              names={hiddenIncoming.map((neighbor) => neighbor.symbol.name)}
-              count={Math.max(
-                0,
-                (catalog?.value.totals.incoming ?? 0) - (catalog?.revealed.incoming ?? 0),
-              )}
-              onReveal={() => focusIdentity && reveal(focusIdentity, "incoming")}
-            />
-          )}
-          {hiddenOutgoing.length > 0 && (
-            <NeighborPreview
-              label="dependencies"
-              names={hiddenOutgoing.map((neighbor) => neighbor.symbol.name)}
-              count={Math.max(
-                0,
-                (catalog?.value.totals.outgoing ?? 0) - (catalog?.revealed.outgoing ?? 0),
-              )}
-              onReveal={() => focusIdentity && reveal(focusIdentity, "outgoing")}
-            />
-          )}
-        </section>
-      )}
-      <VisiblePathPicker />
+    <aside
+      className={`cockpit-inspector placement-${placement}`}
+      data-inspector-placement={placement}
+    >
+      <InspectorResizeHandle
+        placement={placement}
+        width={width}
+        height={height}
+        onResizeWidth={onResizeWidth}
+        onResizeHeight={onResizeHeight}
+      />
+      <SourceInspector
+        preview={preview}
+        onClose={onClose}
+        pinned={pinned}
+        onPinnedChange={onPinnedChange}
+      />
+      <div className="inspector-tools">
+        {(hiddenIncoming.length > 0 || hiddenOutgoing.length > 0) && (
+          <section className="hidden-neighbors" aria-label="Hidden neighbors">
+            <header>
+              <strong>Hidden neighbors</strong>
+              <span className="hidden-neighbor-hint">ranked by degree of interest</span>
+            </header>
+            {hiddenIncoming.length > 0 && (
+              <NeighborPreview
+                label="upstream"
+                names={hiddenIncoming.map((neighbor) => neighbor.symbol.name)}
+                count={Math.max(
+                  0,
+                  (catalog?.value.totals.incoming ?? 0) - (catalog?.revealed.incoming ?? 0),
+                )}
+                onReveal={() => focusIdentity && reveal(focusIdentity, "incoming")}
+              />
+            )}
+            {hiddenOutgoing.length > 0 && (
+              <NeighborPreview
+                label="dependencies"
+                names={hiddenOutgoing.map((neighbor) => neighbor.symbol.name)}
+                count={Math.max(
+                  0,
+                  (catalog?.value.totals.outgoing ?? 0) - (catalog?.revealed.outgoing ?? 0),
+                )}
+                onReveal={() => focusIdentity && reveal(focusIdentity, "outgoing")}
+              />
+            )}
+          </section>
+        )}
+        <VisiblePathPicker />
+      </div>
     </aside>
   );
 }
 
 function InspectorResizeHandle({
+  placement,
   width,
-  onResize,
+  height,
+  onResizeWidth,
+  onResizeHeight,
 }: {
+  placement: "side" | "bottom";
   width: number;
-  onResize(width: number): void;
+  height: number;
+  onResizeWidth(width: number): void;
+  onResizeHeight(height: number): void;
 }) {
-  const drag = useRef<{ x: number; width: number } | null>(null);
-  const resize = (next: number) =>
-    onResize(Math.max(280, Math.min(window.innerWidth * 0.55, next)));
+  const drag = useRef<{ coordinate: number; size: number } | null>(null);
+  const resizeWidth = useCallback(
+    (next: number) => {
+      const availableWidth =
+        document.querySelector<HTMLElement>(".cockpit-main")?.clientWidth ?? window.innerWidth;
+      onResizeWidth(clampInspectorWidth(next, availableWidth));
+    },
+    [onResizeWidth],
+  );
+  const resizeHeight = useCallback(
+    (next: number) => {
+      const availableHeight =
+        document.querySelector<HTMLElement>(".cockpit-main")?.clientHeight ?? window.innerHeight;
+      onResizeHeight(clampInspectorHeight(next, availableHeight));
+    },
+    [onResizeHeight],
+  );
+  useEffect(() => {
+    const move = (event: PointerEvent) => {
+      if (!drag.current) return;
+      if (placement === "side") {
+        resizeWidth(drag.current.size + drag.current.coordinate - event.clientX);
+      } else {
+        resizeHeight(drag.current.size + drag.current.coordinate - event.clientY);
+      }
+    };
+    const stop = () => {
+      drag.current = null;
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", stop);
+    window.addEventListener("pointercancel", stop);
+    return () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", stop);
+      window.removeEventListener("pointercancel", stop);
+    };
+  }, [placement, resizeHeight, resizeWidth]);
+  const size = placement === "side" ? width : height;
+  const main = document.querySelector<HTMLElement>(".cockpit-main");
+  const maximum =
+    placement === "side"
+      ? Math.round(
+          clampInspectorWidth(Number.POSITIVE_INFINITY, main?.clientWidth ?? window.innerWidth),
+        )
+      : Math.round(
+          clampInspectorHeight(Number.POSITIVE_INFINITY, main?.clientHeight ?? window.innerHeight),
+        );
   return (
     <hr
       className="inspector-resize-handle"
       aria-label="Resize source inspector"
-      aria-orientation="vertical"
-      aria-valuemin={280}
-      aria-valuemax={Math.round(window.innerWidth * 0.55)}
-      aria-valuenow={Math.round(width)}
+      aria-orientation={placement === "side" ? "vertical" : "horizontal"}
+      aria-valuemin={placement === "side" ? 360 : 240}
+      aria-valuemax={maximum}
+      aria-valuenow={Math.round(size)}
       tabIndex={0}
       onPointerDown={(event) => {
-        drag.current = { x: event.clientX, width };
-        event.currentTarget.setPointerCapture(event.pointerId);
-      }}
-      onPointerMove={(event) => {
-        if (drag.current) resize(drag.current.width + drag.current.x - event.clientX);
-      }}
-      onPointerUp={(event) => {
-        drag.current = null;
-        event.currentTarget.releasePointerCapture(event.pointerId);
-      }}
-      onPointerCancel={() => {
-        drag.current = null;
+        event.preventDefault();
+        drag.current = {
+          coordinate: placement === "side" ? event.clientX : event.clientY,
+          size,
+        };
       }}
       onKeyDown={(event) => {
-        if (event.key === "ArrowLeft" || event.key === "ArrowRight") event.preventDefault();
-        if (event.key === "ArrowLeft") resize(width + 20);
-        if (event.key === "ArrowRight") resize(width - 20);
+        const decrease = placement === "side" ? "ArrowRight" : "ArrowDown";
+        const increase = placement === "side" ? "ArrowLeft" : "ArrowUp";
+        if (event.key === decrease || event.key === increase) event.preventDefault();
+        if (event.key === increase) {
+          if (placement === "side") resizeWidth(size + 20);
+          else resizeHeight(size + 20);
+        }
+        if (event.key === decrease) {
+          if (placement === "side") resizeWidth(size - 20);
+          else resizeHeight(size - 20);
+        }
       }}
     />
   );

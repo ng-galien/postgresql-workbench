@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { WorkbenchGraphDragPayload } from "../../dragAndDrop.js";
 import type {
   CockpitDirection,
   CockpitPerspective,
@@ -14,6 +15,7 @@ import {
   emptyExploration,
   installNeighborhood,
   installPinnedNodes,
+  refreshExploration,
   restorePerspectiveExpansions,
   revealNeighbors,
   startExploration,
@@ -24,6 +26,8 @@ interface CockpitStore {
   session: CockpitSession | null;
   exploration: ExplorationModel;
   preview: WorkbenchGraphSourcePreview | null;
+  sourceVisible: boolean;
+  sourcePinned: boolean;
   searchQuery: string;
   searchRequestId: number;
   searchResults: WorkbenchGraphSearchResult[];
@@ -34,7 +38,10 @@ interface CockpitStore {
   selectedEdgeId: string | null;
   hoveredIdentity: string | null;
   pathIdentities: string[];
+  treeDragPayload: WorkbenchGraphDragPayload | null;
+  frameRequest: number;
   error: string | null;
+  dropError: string | null;
   expansionUndo: ExplorationModel[];
   expansionRedo: ExplorationModel[];
   receive(message: WorkbenchGraphHostMessage): void;
@@ -49,6 +56,8 @@ interface CockpitStore {
   hover(identity: string | null): void;
   setPath(identities: string[]): void;
   dismissPreview(): void;
+  setSourcePinned(pinned: boolean): void;
+  clearTreeDrag(): void;
   perspectiveState(): CockpitPerspectiveState | null;
 }
 
@@ -64,6 +73,8 @@ export const useCockpitStore = create<CockpitStore>((set, get) => ({
   session: null,
   exploration: emptyExploration(),
   preview: null,
+  sourceVisible: false,
+  sourcePinned: false,
   searchQuery: "",
   searchRequestId: 0,
   searchResults: [],
@@ -74,7 +85,10 @@ export const useCockpitStore = create<CockpitStore>((set, get) => ({
   selectedEdgeId: null,
   hoveredIdentity: null,
   pathIdentities: [],
+  treeDragPayload: null,
+  frameRequest: 0,
   error: null,
+  dropError: null,
   expansionUndo: [],
   expansionRedo: [],
   receive(message) {
@@ -83,6 +97,8 @@ export const useCockpitStore = create<CockpitStore>((set, get) => ({
         session: null,
         exploration: emptyExploration(),
         preview: null,
+        sourceVisible: false,
+        sourcePinned: false,
         searchQuery: "",
         searchRequestId: 0,
         searchResults: [],
@@ -91,7 +107,10 @@ export const useCockpitStore = create<CockpitStore>((set, get) => ({
         selectedEdgeId: null,
         hoveredIdentity: null,
         pathIdentities: [],
+        treeDragPayload: null,
+        frameRequest: 0,
         error: message.message,
+        dropError: null,
         expansionUndo: [],
         expansionRedo: [],
       });
@@ -120,21 +139,100 @@ export const useCockpitStore = create<CockpitStore>((set, get) => ({
       return;
     }
     if (message.type === "cockpitPreview") {
-      set({ preview: message.preview });
+      set((state) => ({
+        preview: message.preview,
+        sourceVisible: true,
+        sourcePinned: message.pinned ?? state.sourcePinned,
+      }));
+      return;
+    }
+    if (message.type === "cockpitDropRejected") {
+      set({ dropError: message.message, treeDragPayload: null });
+      return;
+    }
+    if (message.type === "cockpitTreeDragStatus") {
+      set({ treeDragPayload: message.payload, dropError: null });
+      return;
+    }
+    if (message.type === "cockpitRefresh") {
+      set((state) => {
+        const sourceVisible =
+          (message.payload.sourceVisible ?? state.sourceVisible) &&
+          message.payload.preview !== null;
+        const sourcePinned = sourceVisible
+          ? (message.payload.sourcePinned ?? state.sourcePinned)
+          : false;
+        const validIdentities = new Set(message.payload.validIdentities);
+        const pinnedIdentities = new Set(message.payload.pinnedIdentities);
+        const exploration = refreshExploration(
+          state.exploration,
+          message.payload.neighborhoods,
+          message.payload.identityRemap,
+          validIdentities,
+          message.payload.focusIdentity,
+          pinnedIdentities,
+        );
+        for (const [identity, presentation] of Object.entries(message.payload.presentations)) {
+          if (exploration.nodes[identity]) exploration.nodes[identity].presentation = presentation;
+        }
+        const positions = Object.fromEntries(
+          Object.entries(state.positions)
+            .map(
+              ([identity, position]) =>
+                [message.payload.identityRemap[identity] ?? identity, position] as const,
+            )
+            .filter(([identity]) => validIdentities.has(identity)),
+        );
+        const pathIdentities = state.pathIdentities
+          .map((identity) => message.payload.identityRemap[identity] ?? identity)
+          .filter((identity) => validIdentities.has(identity));
+        return {
+          session: message.payload.session,
+          exploration,
+          preview: sourceVisible ? message.payload.preview : state.preview,
+          sourceVisible,
+          sourcePinned,
+          searchQuery: "",
+          searchResults: [],
+          positions,
+          restoredExpansions: {},
+          selectedEdgeId:
+            state.selectedEdgeId && exploration.edges[state.selectedEdgeId]
+              ? state.selectedEdgeId
+              : null,
+          hoveredIdentity:
+            state.hoveredIdentity && validIdentities.has(state.hoveredIdentity)
+              ? state.hoveredIdentity
+              : null,
+          pathIdentities,
+          treeDragPayload: null,
+          expansionUndo: [],
+          expansionRedo: [],
+          error: null,
+        };
+      });
       return;
     }
     if (message.type === "cockpitSession") {
-      set({
-        session: message.session,
-        exploration: emptyExploration(),
-        preview: null,
-        restoredExpansions: {},
-        error: null,
+      set((state) => {
+        const sourceVisible = message.sourceVisible ?? state.sourceVisible;
+        return {
+          session: message.session,
+          exploration: emptyExploration(),
+          sourceVisible,
+          sourcePinned: sourceVisible ? (message.sourcePinned ?? state.sourcePinned) : false,
+          restoredExpansions: {},
+          error: null,
+        };
       });
       return;
     }
     if (message.type === "cockpitFocus") {
       set((state) => {
+        const sourceVisible = message.payload.sourceVisible ?? state.sourceVisible;
+        const sourcePinned = sourceVisible
+          ? (message.payload.sourcePinned ?? state.sourcePinned)
+          : false;
         const perspective = message.payload.perspective;
         let exploration = startExploration(
           perspective ? emptyExploration() : state.exploration,
@@ -148,7 +246,10 @@ export const useCockpitStore = create<CockpitStore>((set, get) => ({
         return {
           session: message.payload.session,
           exploration,
-          preview: message.payload.preview ?? null,
+          preview:
+            sourceVisible && !sourcePinned ? (message.payload.preview ?? null) : state.preview,
+          sourceVisible,
+          sourcePinned,
           relationFilters: perspective?.state.relationFilters ?? state.relationFilters,
           radius: perspective?.state.radius ?? state.radius,
           restoredExpansions,
@@ -156,6 +257,8 @@ export const useCockpitStore = create<CockpitStore>((set, get) => ({
           selectedEdgeId: null,
           hoveredIdentity: null,
           pathIdentities: [],
+          treeDragPayload: null,
+          frameRequest: state.frameRequest + 1,
           expansionUndo: [],
           expansionRedo: [],
           error: null,
@@ -244,7 +347,13 @@ export const useCockpitStore = create<CockpitStore>((set, get) => ({
     set({ pathIdentities });
   },
   dismissPreview() {
-    set({ preview: null });
+    set({ sourceVisible: false, sourcePinned: false });
+  },
+  setSourcePinned(sourcePinned) {
+    set({ sourcePinned });
+  },
+  clearTreeDrag() {
+    set({ treeDragPayload: null, dropError: null });
   },
   perspectiveState() {
     const state = get();

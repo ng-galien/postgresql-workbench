@@ -4,12 +4,14 @@ import type {
   CodeMonikerIdentityGraphResult,
   CodeMonikerSymbol,
 } from "../../src/workbench/localCodeMoniker.js";
+import type { WorkbenchGraphDragPayload } from "./workbenchGraph/dragAndDrop.js";
 import { GraphNavigation } from "./workbenchGraph/navigation.js";
 import { WorkbenchGraphPanel } from "./workbenchGraph/panel.js";
 import type {
   CockpitNeighborhood,
   CockpitPerspective,
   CockpitPerspectiveState,
+  CockpitRefreshPayload,
   CockpitSession,
   WorkbenchGraphBreadcrumb,
   WorkbenchGraphHostMessage,
@@ -58,6 +60,7 @@ export interface WorkbenchGraphViewOptions {
   selectInTree?: (object: WorkbenchObjectModel, snapshot: WorkbenchSnapshot) => Promise<unknown>;
   workspaceState?: vscode.Memento;
   collectRenderEvidence?: boolean;
+  treeDragPayload?: (consume: boolean) => WorkbenchGraphDragPayload | undefined;
 }
 
 // Explicit debt exception: this host controller still coordinates navigation/session state,
@@ -78,6 +81,15 @@ export class WorkbenchGraphView implements vscode.Disposable {
   private searchSequence = 0;
   private readonly counts = new Map<string, { incoming: number; outgoing: number }>();
   private readonly pinnedIdentities = new Set<string>();
+  private readonly loadedNeighborhoods = new Map<string, CodeMonikerSymbol>();
+  private readonly knownSymbols = new Map<string, CodeMonikerSymbol>();
+  private currentFocus?: CodeMonikerSymbol;
+  private previewSymbol?: CodeMonikerSymbol;
+  private sourceVisible = false;
+  private sourcePinned = false;
+  private pendingSnapshot?: WorkbenchSnapshot;
+  private refreshRun?: Promise<boolean>;
+  private operationTail: Promise<void> = Promise.resolve();
   private readonly acknowledgements: WorkbenchGraphAck[] = [];
   private webviewRenderSequence = 0;
   private disposed = false;
@@ -86,6 +98,7 @@ export class WorkbenchGraphView implements vscode.Disposable {
   private readonly showActions: WorkbenchGraphViewOptions["showActions"];
   private readonly selectInTree: NonNullable<WorkbenchGraphViewOptions["selectInTree"]>;
   private readonly workspaceState: vscode.Memento | undefined;
+  private readonly treeDragPayload: NonNullable<WorkbenchGraphViewOptions["treeDragPayload"]>;
 
   constructor(options: WorkbenchGraphViewOptions) {
     this.index = options.index;
@@ -93,6 +106,7 @@ export class WorkbenchGraphView implements vscode.Disposable {
     this.showActions = options.showActions;
     this.selectInTree = options.selectInTree ?? (async () => undefined);
     this.workspaceState = options.workspaceState;
+    this.treeDragPayload = options.treeDragPayload ?? (() => undefined);
     this.panel = new WorkbenchGraphPanel(
       options.extensionUri,
       (message) => this.receive(message),
@@ -134,6 +148,7 @@ export class WorkbenchGraphView implements vscode.Disposable {
   }
 
   async open(object: WorkbenchObjectModel, snapshot: WorkbenchSnapshot): Promise<boolean> {
+    if (this.refreshRun) await this.refreshRun;
     if (this.disposed) return false;
     const changed = this.setContext(
       { serverId: object.serverId, database: object.database },
@@ -153,6 +168,7 @@ export class WorkbenchGraphView implements vscode.Disposable {
     database: WorkbenchDatabaseIdentity,
     snapshot: WorkbenchSnapshot,
   ): Promise<boolean> {
+    if (this.refreshRun) await this.refreshRun;
     if (this.disposed) return false;
     this.setContext(database, snapshot);
     this.panel.ensure(database.database);
@@ -168,6 +184,7 @@ export class WorkbenchGraphView implements vscode.Disposable {
     schema: string,
     snapshot: WorkbenchSnapshot,
   ): Promise<boolean> {
+    if (this.refreshRun) await this.refreshRun;
     if (this.disposed) return false;
     this.setContext(database, snapshot);
     this.panel.ensure(database.database);
@@ -179,6 +196,7 @@ export class WorkbenchGraphView implements vscode.Disposable {
   }
 
   async focusNode(prefix: string): Promise<boolean> {
+    if (this.refreshRun) await this.refreshRun;
     if (!this.snapshot || !this.database || !prefix) return false;
     const checkpoint = this.navigation.snapshot();
     if (this.navigation.current !== prefix) this.navigation.push(prefix);
@@ -191,12 +209,14 @@ export class WorkbenchGraphView implements vscode.Disposable {
     object: WorkbenchObjectModel,
     snapshot: WorkbenchSnapshot,
   ): Promise<boolean> {
+    if (this.refreshRun) await this.refreshRun;
     if (!this.panel.current || this.disposed) return false;
     if (!this.matchesContext(object, snapshot)) return this.open(object, snapshot);
     return this.focusNode(object.symbolUri);
   }
 
   async syncSchemaFromTree(schema: string, snapshot: WorkbenchSnapshot): Promise<boolean> {
+    if (this.refreshRun) await this.refreshRun;
     if (!this.panel.current || !this.database || !this.sameSnapshot(snapshot)) return false;
     const prefix = schemaLandingIdentity(this.index.indexedSymbols, this.database, schema);
     if (!prefix) return false;
@@ -205,6 +225,286 @@ export class WorkbenchGraphView implements vscode.Disposable {
     const result = await this.showLanding(prefix, schema);
     if (!result) this.navigation.restore(checkpoint);
     return result;
+  }
+
+  async acceptTreeDrop(payload: WorkbenchGraphDragPayload): Promise<void> {
+    this.treeDragPayload(true);
+    if (payload.availability === "unsupported") {
+      if (!this.panel.current) await vscode.window.showInformationMessage(payload.reason);
+      return;
+    }
+    if (this.refreshRun) await this.refreshRun;
+    const result = this.index.state.result;
+    if (
+      this.index.state.status !== "available" ||
+      !result ||
+      result.serverId !== payload.serverId ||
+      result.database !== payload.database
+    ) {
+      await this.rejectTreeDrop("This object is not part of the active indexed database context.");
+      return;
+    }
+    const object = buildWorkbenchObjects(this.index.indexedSymbols, {
+      serverId: result.serverId,
+      database: result.database,
+    }).find(
+      (candidate) =>
+        candidate.symbolUri === payload.symbolUri && candidate.sourceUri === payload.sourceUri,
+    );
+    if (!object) {
+      await this.rejectTreeDrop(
+        "This Sources item is not available in the current database index.",
+      );
+      return;
+    }
+    const focused = this.panel.current
+      ? await this.syncObjectFromTree(object, result)
+      : await this.open(object, result);
+    if (!focused) {
+      await this.rejectTreeDrop("The selected PostgreSQL object could not be opened in the graph.");
+      return;
+    }
+    await this.selectInTree(object, result);
+  }
+
+  previewTreeDrop(payload: WorkbenchGraphDragPayload | null): void {
+    void this.panel.post({ type: "cockpitTreeDragStatus", payload });
+  }
+
+  reveal(): void {
+    this.panel.reveal();
+  }
+
+  async refreshSnapshot(snapshot: WorkbenchSnapshot): Promise<boolean> {
+    if (!this.database || !this.panel.current || this.sameSnapshot(snapshot)) return false;
+    this.pendingSnapshot = snapshot;
+    if (this.refreshRun) return this.refreshRun;
+    const run = this.drainSnapshotRefreshes();
+    this.refreshRun = run;
+    try {
+      return await run;
+    } finally {
+      if (this.refreshRun === run) this.refreshRun = undefined;
+    }
+  }
+
+  private async drainSnapshotRefreshes(): Promise<boolean> {
+    let refreshed = false;
+    while (this.pendingSnapshot) {
+      const snapshot = this.pendingSnapshot;
+      this.pendingSnapshot = undefined;
+      refreshed = (await this.applySnapshotRefresh(snapshot)) || refreshed;
+    }
+    return refreshed;
+  }
+
+  private async applySnapshotRefresh(snapshot: WorkbenchSnapshot): Promise<boolean> {
+    return this.runExclusive(() => this.applySnapshotRefreshNow(snapshot));
+  }
+
+  private async applySnapshotRefreshNow(snapshot: WorkbenchSnapshot): Promise<boolean> {
+    const database = this.database;
+    if (!database || !this.panel.current || this.sameSnapshot(snapshot)) return false;
+    const result = this.index.state.result;
+    if (
+      this.index.state.status !== "available" ||
+      !result ||
+      result.serverId !== database.serverId ||
+      result.database !== database.database
+    ) {
+      return false;
+    }
+    const sequence = ++this.loadSequence;
+    const previousFocus = this.currentFocus;
+    this.counts.clear();
+    this.searchSequence += 1;
+    if (!previousFocus) {
+      this.snapshot = snapshot;
+      const currentPreviewSymbol = this.previewSymbol
+        ? this.resolveCurrentSymbol(this.previewSymbol)
+        : undefined;
+      const sourcePreview = currentPreviewSymbol
+        ? await this.index.graphSourcePreview(currentPreviewSymbol.uri, snapshot)
+        : undefined;
+      this.previewSymbol = currentPreviewSymbol;
+      if (this.sourceVisible && (!currentPreviewSymbol || !sourcePreview)) {
+        this.sourceVisible = false;
+        this.sourcePinned = false;
+      }
+      const preview = sourcePreview ? sourcePreviewPresentation(sourcePreview) : null;
+      const session = this.createSession(this.session?.breadcrumbs ?? [], this.session?.schemaHint);
+      this.session = session;
+      const refreshMessage: WorkbenchGraphHostMessage = {
+        type: "cockpitRefresh",
+        payload: {
+          session,
+          focusIdentity: null,
+          neighborhoods: [],
+          identityRemap: {},
+          presentations: {},
+          validIdentities: buildWorkbenchObjects(this.index.indexedSymbols, database).map(
+            (object) => object.symbolUri,
+          ),
+          pinnedIdentities: [],
+          preview,
+          sourceVisible: this.sourceVisible,
+          sourcePinned: this.sourcePinned,
+        },
+      };
+      this.lastMessage = {
+        type: "cockpitSession",
+        session,
+        sourceVisible: this.sourceVisible,
+        sourcePinned: this.sourcePinned,
+      };
+      await this.panel.post(refreshMessage);
+      return true;
+    }
+    try {
+      const remapped = new Map<string, CodeMonikerSymbol>();
+      for (const [previousIdentity, symbol] of this.knownSymbols) {
+        const current = this.resolveCurrentSymbol(symbol);
+        if (current) remapped.set(previousIdentity, current);
+      }
+      const currentFocus = this.resolveCurrentSymbol(previousFocus);
+      if (!currentFocus) {
+        const currentPreviewSymbol = this.previewSymbol
+          ? this.resolveCurrentSymbol(this.previewSymbol)
+          : undefined;
+        const sourcePreview = currentPreviewSymbol
+          ? await this.index.graphSourcePreview(currentPreviewSymbol.uri, snapshot)
+          : undefined;
+        this.previewSymbol = currentPreviewSymbol;
+        if (this.sourceVisible && (!currentPreviewSymbol || !sourcePreview)) {
+          this.sourceVisible = false;
+          this.sourcePinned = false;
+        }
+        const schema = previousFocus.postgres?.schema;
+        const prefix = schema
+          ? schemaLandingIdentity(this.index.indexedSymbols, database, schema)
+          : undefined;
+        const landing = prefix ?? databaseLandingIdentity(this.index.indexedSymbols, database);
+        if (!landing) return false;
+        this.snapshot = snapshot;
+        this.navigation.replace(landing);
+        const shown = await this.showLanding(landing, prefix ? schema : undefined);
+        if (shown && this.sourceVisible && sourcePreview) {
+          await this.panel.post({
+            type: "cockpitPreview",
+            preview: sourcePreviewPresentation(sourcePreview),
+            pinned: this.sourcePinned,
+          });
+        }
+        return shown;
+      }
+      remapped.set(previousFocus.uri, currentFocus);
+      const neighborhoods: CockpitRefreshPayload["neighborhoods"] = [];
+      const identityRemap: Record<string, string> = {};
+      const nextLoaded = new Map<string, CodeMonikerSymbol>();
+      for (const [previousIdentity, previousSymbol] of this.loadedNeighborhoods) {
+        const symbol = remapped.get(previousIdentity) ?? this.resolveCurrentSymbol(previousSymbol);
+        if (!symbol) continue;
+        const source = await this.index.graphFocus(symbol.uri, snapshot);
+        if (sequence !== this.loadSequence) return false;
+        const neighborhood = neighborhoodFromGraph(source, database, this.index.indexedSymbols);
+        this.rememberCounts(source);
+        const presentations = presentationsForSymbols(
+          neighborhoodSymbols(neighborhood),
+          database,
+          (sourceUri) => this.index.objectOrigin(sourceUri),
+        );
+        identityRemap[previousIdentity] = symbol.uri;
+        nextLoaded.set(symbol.uri, symbol);
+        neighborhoods.push({ previousIdentity, neighborhood, presentations });
+      }
+      for (const [previousIdentity, symbol] of remapped) {
+        identityRemap[previousIdentity] = symbol.uri;
+      }
+      await this.index.assertGraphSnapshot(snapshot);
+      if (sequence !== this.loadSequence) return false;
+      this.loadedNeighborhoods.clear();
+      for (const [identity, symbol] of nextLoaded) this.loadedNeighborhoods.set(identity, symbol);
+      this.currentFocus = currentFocus;
+      this.snapshot = snapshot;
+      const focusNeighborhood = neighborhoods.find(
+        ({ neighborhood }) => neighborhood.focus.uri === currentFocus.uri,
+      );
+      if (focusNeighborhood) this.graph = initialCockpitGraph(focusNeighborhood.neighborhood);
+      if (currentFocus.uri !== previousFocus.uri) this.navigation.replace(currentFocus.uri);
+      const validIdentities = buildWorkbenchObjects(this.index.indexedSymbols, database).map(
+        (object) => object.symbolUri,
+      );
+      const validSet = new Set(validIdentities);
+      for (const identity of [...this.pinnedIdentities]) {
+        const mapped = identityRemap[identity] ?? identity;
+        this.pinnedIdentities.delete(identity);
+        if (validSet.has(mapped)) this.pinnedIdentities.add(mapped);
+      }
+      this.knownSymbols.clear();
+      this.rememberSymbols([
+        ...remapped.values(),
+        ...neighborhoods.flatMap(({ neighborhood }) => neighborhoodSymbols(neighborhood)),
+      ]);
+      this.presentations = presentationsForSymbols(
+        [...this.knownSymbols.values()],
+        database,
+        (sourceUri) => this.index.objectOrigin(sourceUri),
+      );
+      const currentPreviewSymbol = this.previewSymbol
+        ? this.resolveCurrentSymbol(this.previewSymbol)
+        : undefined;
+      const sourcePreview = currentPreviewSymbol
+        ? await this.index.graphSourcePreview(currentPreviewSymbol.uri, snapshot)
+        : undefined;
+      if (sequence !== this.loadSequence) return false;
+      this.previewSymbol = currentPreviewSymbol;
+      if (this.sourceVisible && (!currentPreviewSymbol || !sourcePreview)) {
+        this.sourceVisible = false;
+        this.sourcePinned = false;
+      }
+      const preview = sourcePreview ? sourcePreviewPresentation(sourcePreview) : null;
+      const session = this.createSession(
+        cockpitBreadcrumbs(currentFocus, database, this.index.indexedSymbols),
+      );
+      this.session = session;
+      const refreshMessage: WorkbenchGraphHostMessage = {
+        type: "cockpitRefresh",
+        payload: {
+          session,
+          focusIdentity: currentFocus.uri,
+          neighborhoods,
+          identityRemap,
+          presentations: this.presentations,
+          validIdentities,
+          pinnedIdentities: [...this.pinnedIdentities],
+          preview,
+          sourceVisible: this.sourceVisible,
+          sourcePinned: this.sourcePinned,
+        },
+      };
+      const replayNeighborhood = focusNeighborhood?.neighborhood;
+      if (replayNeighborhood) {
+        const pinned = this.pinnedForFocus(undefined, this.presentations);
+        this.lastMessage = {
+          type: "cockpitFocus",
+          payload: {
+            session,
+            neighborhood: replayNeighborhood,
+            presentations: this.presentations,
+            pinned,
+            preview: preview ?? undefined,
+            sourceVisible: this.sourceVisible,
+            sourcePinned: this.sourcePinned,
+          },
+        };
+      }
+      this.panel.setTitle(this.presentations[currentFocus.uri]?.label ?? currentFocus.name);
+      await this.panel.post(refreshMessage);
+      return true;
+    } catch (error) {
+      if (sequence === this.loadSequence && !this.pendingSnapshot) this.postError(error);
+      return false;
+    }
   }
 
   async back(): Promise<boolean> {
@@ -216,6 +516,7 @@ export class WorkbenchGraphView implements vscode.Disposable {
   }
 
   async openNodeDefinition(symbolUri: string): Promise<boolean> {
+    if (this.refreshRun) await this.refreshRun;
     const object = this.objectFor(symbolUri);
     if (!object || !this.snapshot) return false;
     try {
@@ -254,6 +555,13 @@ export class WorkbenchGraphView implements vscode.Disposable {
       this.pinnedIdentities.clear();
       this.presentations = {};
       this.graph = undefined;
+      this.currentFocus = undefined;
+      this.previewSymbol = undefined;
+      this.sourceVisible = false;
+      this.sourcePinned = false;
+      this.loadedNeighborhoods.clear();
+      this.knownSymbols.clear();
+      this.pendingSnapshot = undefined;
       this.loadSequence += 1;
       this.searchSequence += 1;
     }
@@ -298,9 +606,17 @@ export class WorkbenchGraphView implements vscode.Disposable {
       schemaHint,
     );
     this.graph = emptyGraph(prefix);
+    this.currentFocus = undefined;
+    this.loadedNeighborhoods.clear();
+    this.knownSymbols.clear();
     this.presentations = {};
     this.session = session;
-    this.lastMessage = { type: "cockpitSession", session };
+    this.lastMessage = {
+      type: "cockpitSession",
+      session,
+      sourceVisible: this.sourceVisible,
+      sourcePinned: this.sourcePinned,
+    };
     this.panel.setTitle(`${schemaHint ? `${schemaHint} · ` : ""}${this.database.database}`);
     await this.panel.post(this.lastMessage);
     return true;
@@ -310,34 +626,48 @@ export class WorkbenchGraphView implements vscode.Disposable {
     symbol: CodeMonikerSymbol,
     perspective?: CockpitPerspective,
   ): Promise<boolean> {
+    return this.runExclusive(() => this.showFocusNow(symbol, perspective));
+  }
+
+  private async showFocusNow(
+    symbol: CodeMonikerSymbol,
+    perspective?: CockpitPerspective,
+  ): Promise<boolean> {
     const snapshot = this.snapshot;
     const database = this.database;
     const panel = this.panel.current;
     if (!snapshot || !database || !panel) return false;
     const sequence = ++this.loadSequence;
     try {
-      const [source, sourcePreview] = await Promise.all([
-        this.index.graphFocus(symbol.uri, snapshot),
-        this.index.graphSourcePreview(symbol.uri, snapshot),
-      ]);
-      await this.index.assertGraphSnapshot(snapshot);
+      const loaded = await this.loadGraphObject(symbol, snapshot);
       if (sequence !== this.loadSequence || panel !== this.panel.current) return false;
-      const neighborhood = neighborhoodFromGraph(source, database, this.index.indexedSymbols);
-      this.rememberCounts(source);
+      const { neighborhood, presentations, preview } = loaded;
       const symbols = neighborhoodSymbols(neighborhood);
-      const presentations = presentationsForSymbols(symbols, database, (sourceUri) =>
-        this.index.objectOrigin(sourceUri),
-      );
       const pinned = this.pinnedForFocus(perspective, presentations);
+      this.knownSymbols.clear();
+      this.rememberSymbols(symbols);
+      this.rememberSymbols(pinned.map(({ symbol }) => symbol));
       const breadcrumbs = cockpitBreadcrumbs(symbol, database, this.index.indexedSymbols);
       const session = this.createSession(breadcrumbs);
       this.graph = initialCockpitGraph(neighborhood);
+      this.currentFocus = symbol;
+      if (!this.sourcePinned) this.previewSymbol = preview ? symbol : undefined;
+      this.loadedNeighborhoods.clear();
+      this.loadedNeighborhoods.set(symbol.uri, symbol);
       this.presentations = presentations;
       this.session = session;
-      const preview = sourcePreview ? sourcePreviewPresentation(sourcePreview) : undefined;
       this.lastMessage = {
         type: "cockpitFocus",
-        payload: { session, neighborhood, presentations, pinned, preview, perspective },
+        payload: {
+          session,
+          neighborhood,
+          presentations,
+          pinned,
+          preview,
+          perspective,
+          sourceVisible: this.sourceVisible,
+          sourcePinned: this.sourcePinned,
+        },
       };
       this.panel.setTitle(presentations[symbol.uri]?.label ?? symbol.name);
       await this.panel.post(this.lastMessage);
@@ -376,6 +706,7 @@ export class WorkbenchGraphView implements vscode.Disposable {
   }
 
   private async stepHistory(delta: -1 | 1): Promise<boolean> {
+    if (this.refreshRun) await this.refreshRun;
     const checkpoint = this.navigation.snapshot();
     const target = this.navigation.move(delta);
     if (!target) return false;
@@ -387,7 +718,7 @@ export class WorkbenchGraphView implements vscode.Disposable {
   private receive(message: WorkbenchGraphWebviewMessage): void {
     switch (message.type) {
       case "ready":
-        if (this.lastMessage) void this.panel.post(this.lastMessage);
+        void this.replayWebviewState();
         break;
       case "focus":
         void this.focusNode(message.prefix);
@@ -402,10 +733,60 @@ export class WorkbenchGraphView implements vscode.Disposable {
         void this.sendNeighborhood(message);
         break;
       case "search":
-        this.search(message.query, message.requestId);
+        void this.search(message.query, message.requestId);
         break;
       case "inspect":
         void this.inspect(message.symbolUri);
+        break;
+      case "dismissPreview":
+        this.previewSymbol = undefined;
+        this.sourceVisible = false;
+        this.sourcePinned = false;
+        if (this.lastMessage?.type === "cockpitFocus") {
+          this.lastMessage = {
+            ...this.lastMessage,
+            payload: {
+              ...this.lastMessage.payload,
+              preview: undefined,
+              sourceVisible: false,
+              sourcePinned: false,
+            },
+          };
+        } else if (this.lastMessage?.type === "cockpitSession") {
+          this.lastMessage = {
+            ...this.lastMessage,
+            sourceVisible: false,
+            sourcePinned: false,
+          };
+        }
+        break;
+      case "pinPreview":
+        this.sourcePinned = message.pinned;
+        if (message.pinned) {
+          this.previewSymbol = this.index.indexedSymbols.find(
+            (candidate) => candidate.uri === message.symbolUri,
+          );
+        }
+        if (this.lastMessage?.type === "cockpitFocus") {
+          this.lastMessage = {
+            ...this.lastMessage,
+            payload: { ...this.lastMessage.payload, sourcePinned: this.sourcePinned },
+          };
+        } else if (this.lastMessage?.type === "cockpitSession") {
+          this.lastMessage = { ...this.lastMessage, sourcePinned: this.sourcePinned };
+        }
+        break;
+      case "resolveTreeDrag":
+        void this.panel.post({
+          type: "cockpitTreeDragStatus",
+          payload: this.treeDragPayload(false) ?? null,
+        });
+        break;
+      case "clearTreeDrag":
+        this.treeDragPayload(true);
+        break;
+      case "dropTreeSource":
+        void this.dropActiveTreeSource();
         break;
       case "open":
         void this.openNodeDefinition(message.symbolUri);
@@ -416,6 +797,9 @@ export class WorkbenchGraphView implements vscode.Disposable {
       case "pin":
         if (message.pinned) this.pinnedIdentities.add(message.symbolUri);
         else this.pinnedIdentities.delete(message.symbolUri);
+        break;
+      case "dropSource":
+        void this.acceptTreeDrop(message.payload);
         break;
       case "savePerspective":
         void this.savePerspective(message.state);
@@ -443,12 +827,21 @@ export class WorkbenchGraphView implements vscode.Disposable {
   private async sendNeighborhood(
     message: Extract<WorkbenchGraphWebviewMessage, { type: "requestNeighborhood" }>,
   ): Promise<void> {
+    return this.runExclusive(() => this.sendNeighborhoodNow(message));
+  }
+
+  private async sendNeighborhoodNow(
+    message: Extract<WorkbenchGraphWebviewMessage, { type: "requestNeighborhood" }>,
+  ): Promise<void> {
+    if (this.refreshRun) await this.refreshRun;
     const snapshot = this.snapshot;
     const database = this.database;
     if (!snapshot || !database) return;
     try {
       const source = await this.index.graphFocus(message.symbolUri, snapshot);
       const neighborhood = neighborhoodFromGraph(source, database, this.index.indexedSymbols);
+      this.loadedNeighborhoods.set(neighborhood.focus.uri, neighborhood.focus);
+      this.rememberSymbols(neighborhoodSymbols(neighborhood));
       this.rememberCounts(source);
       const symbols = neighborhoodSymbols(neighborhood);
       const presentations = presentationsForSymbols(symbols, database, (sourceUri) =>
@@ -467,22 +860,94 @@ export class WorkbenchGraphView implements vscode.Disposable {
     }
   }
 
+  private async dropActiveTreeSource(): Promise<void> {
+    const payload = this.treeDragPayload(true);
+    if (!payload) {
+      await this.panel.post({
+        type: "cockpitDropRejected",
+        message: "The dragged Sources item is no longer available. Start the drag again.",
+      });
+      return;
+    }
+    if (payload.availability === "unsupported") {
+      await this.panel.post({ type: "cockpitDropRejected", message: payload.reason });
+      return;
+    }
+    await this.acceptTreeDrop(payload);
+  }
+
+  private async rejectTreeDrop(message: string): Promise<void> {
+    if (this.panel.current) {
+      await this.panel.post({ type: "cockpitDropRejected", message });
+      return;
+    }
+    await vscode.window.showWarningMessage(message);
+  }
+
   private async inspect(symbolUri: string): Promise<void> {
+    if (this.refreshRun) await this.refreshRun;
+    return this.runExclusive(() => this.inspectNow(symbolUri));
+  }
+
+  private async inspectNow(symbolUri: string): Promise<void> {
     const snapshot = this.snapshot;
     if (!snapshot) return;
+    const symbol = this.index.indexedSymbols.find((candidate) => candidate.uri === symbolUri);
     const preview = await this.index.graphSourcePreview(symbolUri, snapshot);
     if (!preview) return;
+    this.previewSymbol = symbol;
+    this.sourceVisible = true;
+    if (symbol) this.rememberSymbols([symbol]);
     const presentation = sourcePreviewPresentation(preview);
-    await this.panel.post({ type: "cockpitPreview", preview: presentation });
+    if (this.lastMessage?.type === "cockpitFocus") {
+      this.lastMessage = {
+        ...this.lastMessage,
+        payload: { ...this.lastMessage.payload, preview: presentation },
+      };
+    }
+    await this.panel.post({
+      type: "cockpitPreview",
+      preview: presentation,
+      pinned: this.sourcePinned,
+    });
+  }
+
+  private async replayWebviewState(): Promise<void> {
+    if (this.lastMessage) await this.panel.post(this.lastMessage);
+    if (this.sourceVisible && this.previewSymbol) await this.inspect(this.previewSymbol.uri);
+  }
+
+  private async loadGraphObject(symbol: CodeMonikerSymbol, snapshot: WorkbenchSnapshot) {
+    const database = this.database;
+    if (!database) throw new Error("The PostgreSQL Cockpit has no active database context.");
+    const [source, sourcePreview] = await Promise.all([
+      this.index.graphFocus(symbol.uri, snapshot),
+      this.index.graphSourcePreview(symbol.uri, snapshot),
+    ]);
+    await this.index.assertGraphSnapshot(snapshot);
+    const neighborhood = neighborhoodFromGraph(source, database, this.index.indexedSymbols);
+    this.rememberCounts(source);
+    const presentations = presentationsForSymbols(
+      neighborhoodSymbols(neighborhood),
+      database,
+      (sourceUri) => this.index.objectOrigin(sourceUri),
+    );
+    return {
+      neighborhood,
+      presentations,
+      preview: sourcePreview ? sourcePreviewPresentation(sourcePreview) : undefined,
+    };
   }
 
   private async actions(symbolUri: string): Promise<void> {
+    if (this.refreshRun) await this.refreshRun;
     const object = this.objectFor(symbolUri);
     if (!object || !this.snapshot) return;
     await this.showActions(object, this.snapshot);
   }
 
-  private search(query: string, requestId: number): void {
+  private async search(query: string, requestId: number): Promise<void> {
+    if (this.refreshRun) await this.refreshRun;
     const database = this.database;
     const snapshot = this.snapshot;
     const normalized = query.trim();
@@ -593,6 +1058,7 @@ export class WorkbenchGraphView implements vscode.Disposable {
   }
 
   private async loadPerspective(name: string): Promise<void> {
+    if (this.refreshRun) await this.refreshRun;
     const perspective = this.readPerspectives().find((item) => item.name === name);
     if (!perspective) return;
     this.pinnedIdentities.clear();
@@ -619,6 +1085,33 @@ export class WorkbenchGraphView implements vscode.Disposable {
     return symbol && this.database ? workbenchObjectFromSymbol(symbol, this.database) : undefined;
   }
 
+  private resolveCurrentSymbol(previous: CodeMonikerSymbol): CodeMonikerSymbol | undefined {
+    const direct = this.index.indexedSymbols.find((candidate) => candidate.uri === previous.uri);
+    if (direct) return direct;
+    const descriptor = previous.postgres;
+    if (!descriptor) return undefined;
+    return this.index.indexedSymbols.find(
+      (candidate) =>
+        candidate.postgres?.serverId === descriptor.serverId &&
+        candidate.postgres.database === descriptor.database &&
+        candidate.postgres.documentKind === descriptor.documentKind &&
+        candidate.postgres.oid === descriptor.oid,
+    );
+  }
+
+  private rememberSymbols(symbols: Iterable<CodeMonikerSymbol>): void {
+    for (const symbol of symbols) this.knownSymbols.set(symbol.uri, symbol);
+  }
+
+  private runExclusive<T>(operation: () => Promise<T>): Promise<T> {
+    const run = this.operationTail.then(operation, operation);
+    this.operationTail = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
+
   private postError(error: unknown): void {
     const message = error instanceof Error ? error.message : String(error);
     this.lastMessage = { type: "scopeError", message };
@@ -631,6 +1124,13 @@ export class WorkbenchGraphView implements vscode.Disposable {
     this.graph = undefined;
     this.session = undefined;
     this.presentations = {};
+    this.currentFocus = undefined;
+    this.previewSymbol = undefined;
+    this.sourceVisible = false;
+    this.sourcePinned = false;
+    this.loadedNeighborhoods.clear();
+    this.knownSymbols.clear();
+    this.pendingSnapshot = undefined;
     this.navigation.clear();
     this.lastMessage = undefined;
     this.loadSequence += 1;

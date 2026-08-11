@@ -4,6 +4,8 @@
     "includes": [
       "src/**",
       "vscode-extension/src/**",
+      "vscode-extension/acceptance/**",
+      "vscode-extension/playwright.acceptance.config.ts",
       "e2e/**",
       "site/**",
       "scripts/build-site.mjs",

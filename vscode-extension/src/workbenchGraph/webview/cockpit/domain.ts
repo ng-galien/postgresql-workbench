@@ -119,6 +119,100 @@ export function installPinnedNodes(
   return pruneExploration(next);
 }
 
+export function refreshExploration(
+  exploration: ExplorationModel,
+  refreshes: ReadonlyArray<{
+    previousIdentity: string;
+    neighborhood: CockpitNeighborhood;
+    presentations: Record<string, WorkbenchGraphIdentityPresentation>;
+  }>,
+  identityRemap: Readonly<Record<string, string>>,
+  validIdentities: ReadonlySet<string>,
+  focusIdentity: string | null,
+  pinnedIdentities: ReadonlySet<string>,
+): ExplorationModel {
+  let next = remapExploration(exploration, identityRemap);
+  next.focusIdentity = focusIdentity;
+  for (const [identity, node] of Object.entries(next.nodes)) {
+    if (!validIdentities.has(identity)) delete next.nodes[identity];
+    else node.pinned = pinnedIdentities.has(identity);
+  }
+  for (const [id, edge] of Object.entries(next.edges)) {
+    if (!next.nodes[edge.source] || !next.nodes[edge.target]) delete next.edges[id];
+  }
+  const revealed = new Map<string, { incoming: number; outgoing: number }>();
+  const refreshedIdentities = new Set(refreshes.map(({ neighborhood }) => neighborhood.focus.uri));
+  for (const refresh of refreshes) {
+    const identity = refresh.neighborhood.focus.uri;
+    const current = next.neighborhoods[identity];
+    revealed.set(identity, current?.revealed ?? { incoming: 0, outgoing: 0 });
+  }
+  for (const [id, edge] of Object.entries(next.edges)) {
+    if (refreshedIdentities.has(edge.source) || refreshedIdentities.has(edge.target)) {
+      delete next.edges[id];
+    }
+  }
+  for (const refresh of refreshes) {
+    const identity = refresh.neighborhood.focus.uri;
+    next = installNeighborhood(next, refresh.neighborhood, refresh.presentations);
+    next.neighborhoods[identity].revealed = { incoming: 0, outgoing: 0 };
+  }
+  for (const refresh of refreshes) {
+    const identity = refresh.neighborhood.focus.uri;
+    const previous = revealed.get(identity) ?? { incoming: 0, outgoing: 0 };
+    for (const direction of ["incoming", "outgoing"] as const) {
+      const amount = Math.min(previous[direction], refresh.neighborhood[direction].length);
+      if (amount > 0) next = revealNeighbors(next, identity, direction, amount);
+    }
+  }
+  if (focusIdentity && !next.nodes[focusIdentity]) {
+    const focusRefresh = refreshes.find(
+      ({ neighborhood }) => neighborhood.focus.uri === focusIdentity,
+    );
+    if (focusRefresh) {
+      next = startExploration(next, focusRefresh.neighborhood, focusRefresh.presentations);
+    }
+  }
+  for (const identity of Object.keys(next.nodes)) {
+    if (identity === focusIdentity || next.nodes[identity].pinned) continue;
+    const linked = Object.values(next.edges).some(
+      (edge) => edge.source === identity || edge.target === identity,
+    );
+    if (!linked) delete next.nodes[identity];
+  }
+  return next;
+}
+
+function remapExploration(
+  exploration: ExplorationModel,
+  identityRemap: Readonly<Record<string, string>>,
+): ExplorationModel {
+  const next = cloneExploration(exploration);
+  const remap = (identity: string) => identityRemap[identity] ?? identity;
+  next.focusIdentity = next.focusIdentity ? remap(next.focusIdentity) : null;
+  next.nodes = Object.fromEntries(
+    Object.entries(next.nodes).map(([identity, node]) => {
+      const mapped = remap(identity);
+      return [mapped, { ...node, identity: mapped }];
+    }),
+  );
+  next.edges = Object.fromEntries(
+    Object.values(next.edges).map((edge) => {
+      const source = remap(edge.source);
+      const target = remap(edge.target);
+      const id = edgeId(source, target);
+      return [id, { ...edge, id, source, target }];
+    }),
+  );
+  next.neighborhoods = Object.fromEntries(
+    Object.entries(next.neighborhoods).map(([identity, neighborhood]) => [
+      remap(identity),
+      neighborhood,
+    ]),
+  );
+  return next;
+}
+
 export function revealNeighbors(
   exploration: ExplorationModel,
   identity: string,

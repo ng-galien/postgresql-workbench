@@ -15,6 +15,7 @@ import { CockpitNode, type CockpitNodeData } from "./CockpitNode.js";
 function data(role: CockpitNodeData["role"], hasCockpitActions = false): CockpitNodeData {
   return {
     role,
+    sourceActive: false,
     hidden: { incoming: 0, outgoing: 0 },
     node: {
       identity: "table:warehouse",
@@ -32,7 +33,7 @@ function data(role: CockpitNodeData["role"], hasCockpitActions = false): Cockpit
       pinned: role === "pinned",
     },
     onFocus: vi.fn(),
-    onInspect: vi.fn(),
+    onToggleSource: vi.fn(),
     onOpen: vi.fn(),
     onActions: vi.fn(),
     onPin: vi.fn(),
@@ -45,14 +46,15 @@ describe("SQL Cockpit node actions", () => {
     xyflow.zoom = 1;
   });
 
-  it("keeps a focused generic object limited to the explicit editor action", () => {
+  it("keeps the Source toggle available on the focused object", () => {
     const html = renderToStaticMarkup(<CockpitNode data={data("focus")} />);
 
     expect(html).toContain('aria-label="warehouse, PostgreSQL table"');
     expect(html).toContain('class="node-drag-handle" aria-hidden="true"');
     expect(html).toContain('title="Drag to reposition"');
-    expect(html).toContain(">Editor</button>");
-    expect(html).not.toContain(">Source</button>");
+    expect(html).toContain('title="Preview DDL in the Cockpit" aria-pressed="false"');
+    expect(html).toContain(">DDL</button>");
+    expect(html).toContain(">Open ↗</button>");
     expect(html).not.toContain(">Pin</button>");
     expect(html).not.toContain("More routine actions");
   });
@@ -60,10 +62,20 @@ describe("SQL Cockpit node actions", () => {
   it("offers source, editor and pin controls on a generic neighbor without an overflow menu", () => {
     const html = renderToStaticMarkup(<CockpitNode data={data("neighbor")} />);
 
-    expect(html).toContain('class="nodrag" title="Show indexed SQL in the Source Inspector"');
-    expect(html).toContain('class="nodrag" title="Open indexed SQL in the editor"');
+    expect(html).toContain('class="nodrag node-source-toggle"');
+    expect(html).toContain('title="Preview DDL in the Cockpit" aria-pressed="false"');
+    expect(html).toContain('class="nodrag" title="Open the indexed definition in the editor"');
     expect(html).toContain('class="nodrag" title="Keep visible while navigating"');
     expect(html).not.toContain("More routine actions");
+  });
+
+  it("marks the Source toggle active while this node is inspected", () => {
+    const nodeData = data("focus");
+    nodeData.sourceActive = true;
+    const html = renderToStaticMarkup(<CockpitNode data={nodeData} />);
+
+    expect(html).toContain("node-source-toggle is-active");
+    expect(html).toContain('title="Hide DDL preview" aria-pressed="true"');
   });
 
   it("reserves the overflow menu for routines with secondary actions", () => {

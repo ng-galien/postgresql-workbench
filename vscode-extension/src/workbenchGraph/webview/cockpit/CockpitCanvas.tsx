@@ -8,8 +8,16 @@ import {
   type ReactFlowInstance,
   useNodesState,
 } from "@xyflow/react";
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  parseWorkbenchGraphDrag,
+  WORKBENCH_GRAPH_OBJECT_MIME,
+  WORKBENCH_GRAPH_UNSUPPORTED_MIME,
+  WORKBENCH_TREE_MIME,
+  type WorkbenchGraphDragPayload,
+} from "../../dragAndDrop.js";
 import { relationColor } from "../graph/relationPresentation.js";
+import { vscode } from "../vscodeApi.js";
 import { CockpitEdge, type CockpitEdgeData } from "./CockpitEdge.js";
 import { CockpitNode, type CockpitNodeData } from "./CockpitNode.js";
 import { reconcileControlledNodes } from "./controlledNodes.js";
@@ -18,6 +26,7 @@ import { layoutCockpit } from "./layout.js";
 import { useCockpitStore } from "./store.js";
 import {
   debugSymbol,
+  dismissSource,
   focusSymbol,
   inspectSymbol,
   openSymbol,
@@ -28,7 +37,7 @@ import {
 const NODE_TYPES = { cockpit: CockpitNode };
 const EDGE_TYPES = { cockpit: CockpitEdge };
 
-export function CockpitCanvas({ recenterToken }: { recenterToken: number }) {
+export function CockpitCanvas({ frameRequest }: { frameRequest: string }) {
   const exploration = useCockpitStore((state) => state.exploration);
   const filters = useCockpitStore((state) => state.relationFilters);
   const positions = useCockpitStore((state) => state.positions);
@@ -40,7 +49,16 @@ export function CockpitCanvas({ recenterToken }: { recenterToken: number }) {
   const hoveredIdentity = useCockpitStore((state) => state.hoveredIdentity);
   const hover = useCockpitStore((state) => state.hover);
   const pathIdentities = useCockpitStore((state) => state.pathIdentities);
+  const treeDragPayload = useCockpitStore((state) => state.treeDragPayload);
+  const clearTreeDrag = useCockpitStore((state) => state.clearTreeDrag);
+  const sourceVisible = useCockpitStore((state) => state.sourceVisible);
+  const preview = useCockpitStore((state) => state.preview);
+  const dismissPreview = useCockpitStore((state) => state.dismissPreview);
   const flow = useRef<ReactFlowInstance<Node<CockpitNodeData>, Edge<CockpitEdgeData>> | null>(null);
+  const [dropFeedback, setDropFeedback] = useState<WorkbenchGraphDragPayload | null>(null);
+  const treeDragRequested = useRef(false);
+  const canvasElement = useRef<HTMLElement | null>(null);
+  const [flowReady, setFlowReady] = useState(0);
   const positionCache = useRef<Record<string, { x: number; y: number }>>({});
   const layoutFocus = useRef<string | null>(null);
   const controlledLayout = useRef({
@@ -98,6 +116,17 @@ export function CockpitCanvas({ recenterToken }: { recenterToken: number }) {
     },
     [exploration.nodes, pin],
   );
+  const onToggleSource = useCallback<CockpitNodeData["onToggleSource"]>(
+    (identity) => {
+      if (sourceVisible && preview?.symbolUri === identity) {
+        dismissPreview();
+        dismissSource();
+      } else {
+        inspectSymbol(identity);
+      }
+    },
+    [dismissPreview, preview?.symbolUri, sourceVisible],
+  );
   const flowNodes = useMemo(() => {
     const base: Array<Node<CockpitNodeData>> = nodes.map((node) => {
       const role =
@@ -110,12 +139,13 @@ export function CockpitCanvas({ recenterToken }: { recenterToken: number }) {
         data: {
           node,
           role,
+          sourceActive: sourceVisible && preview?.symbolUri === node.identity,
           hidden: {
             incoming: hiddenCount(exploration, node.identity, "incoming"),
             outgoing: hiddenCount(exploration, node.identity, "outgoing"),
           },
           onFocus: focusSymbol,
-          onInspect: inspectSymbol,
+          onToggleSource,
           onOpen: openSymbol,
           onActions: debugSymbol,
           onPin,
@@ -130,7 +160,18 @@ export function CockpitCanvas({ recenterToken }: { recenterToken: number }) {
       };
     });
     return base;
-  }, [exploration, hoveredIdentity, laidOut, nodes, onExpand, pathSet, onPin]);
+  }, [
+    exploration,
+    hoveredIdentity,
+    laidOut,
+    nodes,
+    onExpand,
+    onPin,
+    onToggleSource,
+    pathSet,
+    preview?.symbolUri,
+    sourceVisible,
+  ]);
   const [controlledNodes, setControlledNodes, onNodesChange] =
     useNodesState<Node<CockpitNodeData>>(flowNodes);
   useEffect(() => {
@@ -190,14 +231,80 @@ export function CockpitCanvas({ recenterToken }: { recenterToken: number }) {
   );
 
   useEffect(() => {
-    if (!Number.isFinite(recenterToken)) return;
-    if (!exploration.focusIdentity || !flow.current) return;
+    if (flowReady < 1 || frameRequest.length === 0 || !flow.current) return;
     frameNeighborhood(flow.current);
-  }, [exploration.focusIdentity, frameNeighborhood, recenterToken]);
+  }, [flowReady, frameNeighborhood, frameRequest]);
 
-  if (!exploration.focusIdentity) return <CockpitEmpty />;
+  useEffect(() => {
+    const element = canvasElement.current;
+    if (!element || flowReady < 1) return;
+    let timer: number | undefined;
+    const observer = new ResizeObserver(() => {
+      if (timer !== undefined) window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        if (flow.current) frameNeighborhood(flow.current);
+      }, 80);
+    });
+    observer.observe(element);
+    return () => {
+      observer.disconnect();
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [flowReady, frameNeighborhood]);
+
+  const activeDropFeedback = dropFeedback ?? treeDragPayload;
+
   return (
-    <div className="cockpit-canvas" data-cockpit-focus={exploration.focusIdentity}>
+    <section
+      ref={canvasElement}
+      aria-label="PostgreSQL graph canvas"
+      className={[
+        "cockpit-canvas",
+        activeDropFeedback?.availability === "accepted" ? "is-drop-accepted" : "",
+        activeDropFeedback?.availability === "unsupported" ? "is-drop-rejected" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      data-cockpit-focus={exploration.focusIdentity ?? undefined}
+      onDragOver={(event) => {
+        const nativeTreeDrag = hasWorkbenchTreeDrag(event.dataTransfer);
+        const payload = graphDragPayload(event.dataTransfer, !nativeTreeDrag);
+        if (!payload && !nativeTreeDrag) return;
+        event.preventDefault();
+        if (payload) setDropFeedback(payload);
+        if (nativeTreeDrag && !treeDragRequested.current) {
+          treeDragRequested.current = true;
+          vscode.postMessage({ type: "resolveTreeDrag" });
+        }
+        const resolved = payload ?? treeDragPayload;
+        event.dataTransfer.dropEffect = resolved?.availability === "unsupported" ? "none" : "copy";
+      }}
+      onDragLeave={(event) => {
+        if (event.currentTarget.contains(event.relatedTarget as globalThis.Node | null)) return;
+        setDropFeedback(null);
+        clearTreeDrag();
+        treeDragRequested.current = false;
+        vscode.postMessage({ type: "clearTreeDrag" });
+      }}
+      onDrop={(event) => {
+        event.preventDefault();
+        const directPayload = graphDragPayload(event.dataTransfer);
+        const nativeTreeDrag = hasWorkbenchTreeDrag(event.dataTransfer);
+        const payload = directPayload ?? treeDragPayload;
+        setDropFeedback(null);
+        clearTreeDrag();
+        treeDragRequested.current = false;
+        if (payload?.availability !== "accepted") {
+          vscode.postMessage({ type: "clearTreeDrag" });
+          return;
+        }
+        if (nativeTreeDrag && !directPayload) {
+          vscode.postMessage({ type: "dropTreeSource" });
+        } else {
+          vscode.postMessage({ type: "dropSource", payload });
+        }
+      }}
+    >
       <ReactFlow
         nodes={controlledNodes}
         edges={flowEdges}
@@ -211,7 +318,7 @@ export function CockpitCanvas({ recenterToken }: { recenterToken: number }) {
         zoomOnDoubleClick={false}
         onInit={(instance) => {
           flow.current = instance;
-          if (exploration.focusIdentity) frameNeighborhood(instance);
+          setFlowReady((value) => value + 1);
         }}
         onNodeDragStop={(_, node) => {
           positionCache.current[node.id] = node.position;
@@ -230,8 +337,69 @@ export function CockpitCanvas({ recenterToken }: { recenterToken: number }) {
       >
         <Background variant={BackgroundVariant.Dots} gap={20} size={1} />
       </ReactFlow>
-    </div>
+      {!exploration.focusIdentity && <CockpitEmpty />}
+      {activeDropFeedback && (
+        <div
+          className="cockpit-drop-feedback"
+          role="status"
+          aria-live="polite"
+          data-drop-availability={activeDropFeedback.availability}
+        >
+          <strong>
+            {activeDropFeedback.availability === "accepted"
+              ? `Open ${activeDropFeedback.label}`
+              : "Cannot add this item"}
+          </strong>
+          <span>
+            {activeDropFeedback.availability === "accepted"
+              ? "Drop to focus this object in the graph."
+              : activeDropFeedback.reason}
+          </span>
+        </div>
+      )}
+    </section>
   );
+}
+
+export function hasWorkbenchTreeDrag(dataTransfer: DataTransfer): boolean {
+  return [...dataTransfer.types].some((type) => type.toLocaleLowerCase() === WORKBENCH_TREE_MIME);
+}
+
+export function graphDragPayload(
+  dataTransfer: DataTransfer,
+  allowTypeFallback = false,
+): WorkbenchGraphDragPayload | undefined {
+  for (const mime of [WORKBENCH_GRAPH_OBJECT_MIME, WORKBENCH_GRAPH_UNSUPPORTED_MIME]) {
+    const value = dataTransfer.getData(mime);
+    const payload = parseWorkbenchGraphDrag(value);
+    if (payload) return payload;
+  }
+  const plain = parseWorkbenchGraphDrag(dataTransfer.getData("text/plain"));
+  if (plain) return plain;
+  if (allowTypeFallback) {
+    const types = new Set([...dataTransfer.types].map((type) => type.toLocaleLowerCase()));
+    if (types.has(WORKBENCH_GRAPH_UNSUPPORTED_MIME)) {
+      return {
+        version: 1,
+        availability: "unsupported",
+        label: "Sources item",
+        reason: "This item is not a graph-projectable PostgreSQL object.",
+      };
+    }
+    if (types.has(WORKBENCH_GRAPH_OBJECT_MIME)) {
+      return {
+        version: 1,
+        availability: "accepted",
+        serverId: "",
+        database: "",
+        sourceUri: "",
+        symbolUri: "",
+        kind: "table",
+        label: "PostgreSQL object",
+      };
+    }
+  }
+  return undefined;
 }
 
 function CockpitEmpty() {
@@ -242,8 +410,9 @@ function CockpitEmpty() {
         <span className="empty-kicker">{session?.database ?? "PostgreSQL"} cockpit</span>
         <h1>Explore the database.</h1>
         <p>
-          Use the search above or select an item in Sources. Search a schema directly, then combine
-          filters such as <code>schema:name</code> and <code>type:table</code>.
+          Use the search above, select an item in Sources, or drag a table, view, routine, or
+          trigger here. Search a schema directly, then combine filters such as{" "}
+          <code>schema:name</code> and <code>type:table</code>.
         </p>
       </div>
     </section>
