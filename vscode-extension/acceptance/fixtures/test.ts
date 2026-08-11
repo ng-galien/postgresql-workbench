@@ -20,21 +20,27 @@ export const test = base.extend<AcceptanceFixtures, AcceptanceWorkerFixtures>({
     // biome-ignore lint/correctness/noEmptyPattern: Playwright requires fixture arguments to use object destructuring.
     async ({}, use) => {
       const demo = startDemoDatabase();
-      await use(undefined);
-      demo.stop();
+      try {
+        await use(undefined);
+      } finally {
+        demo.stop();
+      }
     },
     { scope: "worker", auto: true },
   ],
   vscode: [
     async ({ demoDatabase: _demoDatabase }, use) => {
       const instance = await launchVSCode();
-      await use(instance);
-      await instance.dispose();
+      try {
+        await use(instance);
+      } finally {
+        await instance.dispose();
+      }
     },
     { scope: "worker" },
   ],
   workbench: async ({ vscode }, use) => {
-    await use(new WorkbenchPage(vscode.page));
+    await use(new WorkbenchPage(vscode.page, vscode.resizeWindow));
   },
   cockpit: async ({ vscode }, use) => {
     await use(new CockpitPage(vscode.page));

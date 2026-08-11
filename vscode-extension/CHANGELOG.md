@@ -11,8 +11,10 @@
   window reload instead of leaving VS Code on a missing-file editor
 - Added separate Playwright acceptance journeys for graph interactions and
   stale virtual-source cleanup, including stable command-ID infrastructure for
-  window reloads; the shared-instance campaign now runs in CI and the extension
-  release gate
+  window reloads; the shared-instance campaign now prepares VS Code before the
+  worker, waits for each complete extension activation, resizes the native
+  Electron window, and guarantees Docker, tracing, profile, and process cleanup
+  across local, CI, and extension release runs
 - Fixed Marketplace showcase GIF URLs in packaged VSIX metadata and added a
   packaging guard for all four published media links
 - Fixed the Windows Workbench runtime handshake when Code Moniker registers a

@@ -1671,6 +1671,8 @@ export function activate(context: vscode.ExtensionContext): PlpgsqlExtensionApi 
 
   registerDiagnosticsAndReconnect(context, cm, workbenchIndex, out);
 
+  acceptanceControl?.markReady();
+
   return {
     connectionManager: cm,
     workbenchTreeProvider: treeProvider,

@@ -6,9 +6,16 @@ export class WorkbenchPage {
   readonly quickInput: QuickInput;
   readonly tree: WorkbenchTree;
 
-  constructor(readonly page: Page) {
+  constructor(
+    readonly page: Page,
+    private readonly resizeNativeWindow: (width: number, height: number) => Promise<void>,
+  ) {
     this.quickInput = new QuickInput(page);
     this.tree = new WorkbenchTree(page);
+  }
+
+  async resizeWindow(width: number, height: number): Promise<void> {
+    await this.resizeNativeWindow(width, height);
   }
 
   async addServer(connectionUrl: string, expectedServer: RegExp): Promise<void> {

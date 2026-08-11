@@ -11,12 +11,26 @@ export function startDemoDatabase(): { stop(): void } {
     .split(/\r?\n/)
     .includes("postgres");
   if (running) return { stop() {} };
-  compose(["up", "-d", "--build", "--wait"]);
+  try {
+    compose(["up", "-d", "--build", "--wait"]);
+  } catch (error) {
+    stopDemoDatabase(true);
+    throw error;
+  }
   return {
     stop() {
-      if (process.env.PGWB_ACCEPTANCE_KEEP_DEMO !== "1") compose(["down", "-v"]);
+      stopDemoDatabase(false);
     },
   };
+}
+
+function stopDemoDatabase(bestEffort: boolean): void {
+  if (process.env.PGWB_ACCEPTANCE_KEEP_DEMO === "1") return;
+  try {
+    compose(["down", "-v"]);
+  } catch (error) {
+    if (!bestEffort) throw error;
+  }
 }
 
 function compose(args: string[], capture = false): string {

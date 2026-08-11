@@ -38,7 +38,7 @@ test.describe
       cockpit,
     }) => {
       await cockpit.waitUntilOpen();
-      await workbench.page.setViewportSize({ width: 1_440, height: 900 });
+      await workbench.resizeWindow(1_440, 900);
 
       await test.step("drop product into the open Cockpit exactly like selecting it", async () => {
         await workbench.tree.open();
@@ -130,7 +130,7 @@ test.describe
       cockpit,
     }, testInfo) => {
       await cockpit.waitUntilOpen();
-      await workbench.page.setViewportSize({ width: 1_440, height: 900 });
+      await workbench.resizeWindow(1_440, 900);
 
       await test.step("open Source from the address node and verify its side geometry", async () => {
         await cockpit.showSource("product");
@@ -194,7 +194,7 @@ test.describe
       cockpit,
     }, testInfo) => {
       await cockpit.waitUntilOpen();
-      await workbench.page.setViewportSize({ width: 1_100, height: 850 });
+      await workbench.resizeWindow(1_100, 850);
       await cockpit.showSource("product_availability");
 
       await test.step("use the full bottom width without collapsing SQL", async () => {
@@ -216,7 +216,7 @@ test.describe
             message: "Dragging the bottom Source divider must resize panel height",
           })
           .toBeGreaterThan(initial.inspector.height + 35);
-        await workbench.page.setViewportSize({ width: 1_100, height: 700 });
+        await workbench.resizeWindow(1_100, 700);
         await expect
           .poll(
             async () => {
