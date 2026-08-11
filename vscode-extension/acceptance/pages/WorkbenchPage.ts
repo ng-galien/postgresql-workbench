@@ -9,6 +9,7 @@ export class WorkbenchPage {
   constructor(
     readonly page: Page,
     private readonly resizeNativeWindow: (width: number, height: number) => Promise<void>,
+    private readonly resetNativeWorkbench: () => Promise<void>,
   ) {
     this.quickInput = new QuickInput(page);
     this.tree = new WorkbenchTree(page);
@@ -18,8 +19,16 @@ export class WorkbenchPage {
     await this.resizeNativeWindow(width, height);
   }
 
+  async reset(): Promise<void> {
+    await this.resetNativeWorkbench();
+    await expect(
+      this.page.locator(".editor-group-container .tabs-container .tab:visible"),
+    ).toHaveCount(0, { timeout: 5_000 });
+    await this.resizeWindow(1_440, 900);
+    await this.tree.collapseAll();
+  }
+
   async addServer(connectionUrl: string, expectedServer: RegExp): Promise<void> {
-    await this.tree.open();
     const addServer = this.tree.item(/^(Add an existing server|Add Server)/);
     await addServer.waitFor({ state: "visible", timeout: 5_000 });
     await addServer.click();
@@ -29,7 +38,6 @@ export class WorkbenchPage {
   }
 
   async ensureServer(connectionUrl: string, expectedServer: RegExp): Promise<void> {
-    await this.tree.open();
     const existing = this.tree.item(expectedServer);
     if (await existing.isVisible()) {
       await expect(existing).toContainText("connected", { timeout: 5_000 });
@@ -39,7 +47,6 @@ export class WorkbenchPage {
   }
 
   async ensureActiveDatabaseIndexed(server: RegExp, database: RegExp): Promise<void> {
-    await this.tree.open();
     await this.tree.expandPath([server, database]);
     const sources = this.tree.item(/^Sources/);
     if (await sources.getByText("available", { exact: true }).isVisible()) {
@@ -47,14 +54,13 @@ export class WorkbenchPage {
       return;
     }
     await expect(sources).toContainText("not-indexed", { timeout: 5_000 });
-    await sources.locator(".monaco-tl-contents").click();
+    await sources.click();
     await expect(sources).toContainText(/indexing|available/, { timeout: 5_000 });
     await expect(sources).toContainText("available", { timeout: 30_000 });
     await this.tree.expand(/^Sources/);
   }
 
   async openCockpit(): Promise<void> {
-    await this.tree.open();
     await this.tree.clickHeaderAction(/Open PostgreSQL Cockpit/i);
   }
 

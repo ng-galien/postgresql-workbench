@@ -9,12 +9,21 @@
   draggable at low zoom
 - Closed clean virtual PostgreSQL source tabs that cannot be resolved after a
   window reload instead of leaving VS Code on a missing-file editor
-- Added separate Playwright acceptance journeys for graph interactions and
-  stale virtual-source cleanup, including stable command-ID infrastructure for
-  window reloads; the shared-instance campaign now prepares VS Code before the
-  worker, waits for each complete extension activation, resizes the native
-  Electron window, and guarantees Docker, tracing, profile, and process cleanup
-  across local, CI, and extension release runs
+- Fixed SQL scratchpad Markdown cells so they no longer display PostgreSQL
+  binding controls reserved for executable code cells
+- Executed multi-statement scratchpad cells sequentially on one PostgreSQL
+  client, rendered only statements that return rows, and replaced internal
+  stack traces with structured SQL syntax and PostgreSQL diagnostics
+- Added separate Playwright journeys for graph interactions, SQL notebooks, and
+  stale virtual-source cleanup; the notebook journey verifies VS Code cell
+  kinds through the public API, renders Markdown, executes single and
+  multi-statement queries, checks silent statements, and inspects result and
+  error renderers
+- Hardened the shared Playwright instance with explicit extension readiness,
+  stable VS Code command IDs, native Electron window selection and resizing,
+  per-scenario editor and TreeView reset, fail-fast single-instance execution,
+  and guaranteed Docker, tracing, profile, and process cleanup across local,
+  CI, and extension release runs
 - Fixed Marketplace showcase GIF URLs in packaged VSIX metadata and added a
   packaging guard for all four published media links
 - Fixed the Windows Workbench runtime handshake when Code Moniker registers a

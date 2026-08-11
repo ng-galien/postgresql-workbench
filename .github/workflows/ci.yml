@@ -52,8 +52,30 @@ jobs:
       - run: npm --prefix vscode-extension ci
       - run: npm test
 
-  integration:
-    name: Integration Tests
+  dap-integration:
+    name: DAP Integration
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - name: Start PostgreSQL integration fixture
+        run: npm run test:e2e:up
+      - name: Run DAP integration tests
+        run: npm run test:e2e:run
+      - name: Stop PostgreSQL integration fixture
+        if: always()
+        run: npm run test:e2e:down
+
+  vscode-integration:
+    name: VS Code Integration
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -69,29 +91,41 @@ jobs:
       - run: sudo apt-get install -y xvfb
       - run: npm ci
       - run: npm --prefix vscode-extension ci
-      - run: npm run build
-      - name: Start PostgreSQL integration fixture
+      - name: Start PostgreSQL fixture
         run: npm run test:e2e:up
-      - name: Run DAP integration tests
-        run: npm run test:e2e:run
-      - name: Run VS Code extension integration tests
-        run: xvfb-run -a npm --prefix vscode-extension test
-      - name: Smoke-test extension on minimum supported VS Code
-        timeout-minutes: 3
-        run: xvfb-run -a npm --prefix vscode-extension run test:min-vscode
-      - name: Upload VS Code test logs
+      - run: xvfb-run -a npm --prefix vscode-extension test
+      - name: Upload logs
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: vscode-test-logs
+          name: vscode-integration-logs
           path: |
             vscode-extension/.vscode-test/user-data/logs/**
             vscode-extension/.vscode-test/user-data/**/*.log
             /home/runner/.config/Code/logs/**
           if-no-files-found: ignore
-      - name: Stop PostgreSQL integration fixture
+      - name: Stop PostgreSQL fixture
         if: always()
         run: npm run test:e2e:down
+
+  vscode-compatibility:
+    name: VS Code Compatibility
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            vscode-extension/package-lock.json
+      - run: sudo apt-get update
+      - run: sudo apt-get install -y xvfb
+      - run: npm ci
+      - run: npm --prefix vscode-extension ci
+      - run: xvfb-run -a npm --prefix vscode-extension run test:min-vscode
 
   legacy-compatibility:
     name: EnterpriseDB pldebugger Compatibility
@@ -112,7 +146,7 @@ jobs:
       - run: npm run test:e2e:legacy
 
   workbench-acceptance:
-    name: Workbench Acceptance
+    name: Playwright
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -128,13 +162,13 @@ jobs:
       - run: sudo apt-get install -y xvfb
       - run: npm ci
       - run: npm --prefix vscode-extension ci
-      - name: Run real Workbench UI journeys
+      - name: Run Playwright
         run: xvfb-run -a -s "-screen 0 1600x1000x24" npm --prefix vscode-extension run test:acceptance
       - name: Upload Playwright evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: workbench-acceptance-results
+          name: playwright-results
           path: vscode-extension/test-results/**
           if-no-files-found: ignore
       - name: Stop acceptance database fixture

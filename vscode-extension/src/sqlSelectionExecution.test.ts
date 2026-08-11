@@ -22,7 +22,15 @@ function fakeClient(outcome: "success" | "error"): Client {
     query(query: Query<never>) {
       queueMicrotask(() => {
         if (outcome === "error") {
-          query.emit("error", new Error("relation missing_table does not exist"));
+          query.emit(
+            "error",
+            Object.assign(new Error("relation missing_table does not exist"), {
+              code: "42P01",
+              detail: "The relation was referenced by the selected statement.",
+              hint: "Check the schema-qualified relation name.",
+              position: "15",
+            }),
+          );
           return;
         }
         const result = {
@@ -128,6 +136,10 @@ describe("SQL selection execution", () => {
       id: "sql-2",
       status: "error",
       message: "relation missing_table does not exist",
+      code: "42P01",
+      detail: "The relation was referenced by the selected statement.",
+      hint: "Check the schema-qualified relation name.",
+      position: "15",
     });
     expect(failedEntries.map((entry) => ("status" in entry ? entry.status : "success"))).toEqual([
       "pending",

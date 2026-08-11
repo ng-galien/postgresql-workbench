@@ -1,10 +1,11 @@
 import { TextDecoder, TextEncoder } from "node:util";
 import * as vscode from "vscode";
-import type { SqlResultExecutionKind } from "../../src/analysis/sqlStatements.js";
+import type { SqlExecutionPlan, SqlExecutionStatement } from "../../src/analysis/sqlStatements.js";
 import {
   clampDebugResultRows,
   DEBUG_RESULT_LIMITS,
   type DebugResult,
+  type DebugResultError,
   type DebugResultStatus,
 } from "../../src/debugger/launch/index.js";
 import type { ConnectionManager } from "./connectionManager.js";
@@ -26,6 +27,7 @@ import {
   resolveNotebookBinding,
   SQL_NOTEBOOK_RESULT_MIME,
   SQL_NOTEBOOK_TYPE,
+  type SqlNotebookErrorPayload,
   type SqlNotebookFile,
   type SqlNotebookMetadata,
   type SqlNotebookResultPayload,
@@ -53,15 +55,15 @@ export const RECONNECT_SQL_NOTEBOOK_COMMAND = "postgresql-workbench.reconnectSql
 export const USE_SQL_NOTEBOOK_BINDING_AS_ACTIVE_COMMAND =
   "postgresql-workbench.useSqlNotebookBindingAsActive";
 
-type ResultClassifier = (sql: string) => Promise<SqlResultExecutionKind>;
+type ResultPlanner = (sql: string) => Promise<SqlExecutionPlan>;
 
 export function registerSqlNotebook(
   context: vscode.ExtensionContext,
   connections: ConnectionManager,
-  classifyResult: ResultClassifier,
+  planResult: ResultPlanner,
 ): SqlNotebookWorkspace {
   const serializer = new SqlNotebookSerializer();
-  const controller = new SqlNotebookController(connections, classifyResult);
+  const controller = new SqlNotebookController(connections, planResult);
   const statusProvider = new SqlNotebookStatusProvider(connections);
   const fileSystem = new SqlNotebookFileSystemProvider(context.globalStorageUri);
   const workspace = new SqlNotebookWorkspace(fileSystem);
@@ -424,7 +426,7 @@ class SqlNotebookController implements vscode.Disposable {
 
   constructor(
     private readonly connections: ConnectionManager,
-    private readonly classifyResult: ResultClassifier,
+    private readonly planResult: ResultPlanner,
   ) {
     this.controller = vscode.notebooks.createNotebookController(
       "postgresql-workbench.sql",
@@ -507,27 +509,32 @@ class SqlNotebookController implements vscode.Disposable {
       return;
     }
 
-    const classification = await this.classifyResult(sql);
-    if (classification === "multiple-statements" || classification === "unclassifiable") {
-      await execution.replaceOutput(
-        errorOutput(
-          classification === "multiple-statements"
-            ? "Use one PostgreSQL statement per notebook cell."
-            : "This SQL cell could not be classified safely.",
-        ),
-      );
+    const plan = await this.planResult(sql);
+    if (plan.status === "empty") {
+      await execution.clearOutput();
+      execution.end(true, Date.now());
+      return;
+    }
+    if (plan.status !== "ready") {
+      await execution.replaceOutput(errorOutput(planErrorPayload(plan)));
       execution.end(false, Date.now());
       return;
     }
 
     const settings = sqlResultSettings();
-    if (classification === "paged-query") {
+    const [singleStatement] = plan.statements;
+    if (plan.statements.length === 1 && singleStatement?.resultKind === "paged-query") {
       try {
-        const payload = await this.executePagedCell(cell, sql, settings, binding.snapshot);
+        const payload = await this.executePagedCell(
+          cell,
+          singleStatement.sql,
+          settings,
+          binding.snapshot,
+        );
         await execution.replaceOutput(resultOutput(payload));
         execution.end(true, Date.now());
       } catch (error) {
-        await execution.replaceOutput(errorOutput(errorMessage(error)));
+        await execution.replaceOutput(errorOutput(executionErrorPayload(error)));
         execution.end(false, Date.now());
         if (error instanceof DedicatedNotebookConnectionError) {
           await this.offerConnectionRecovery(cell.notebook, error);
@@ -537,23 +544,40 @@ class SqlNotebookController implements vscode.Disposable {
     }
 
     try {
-      await withDedicatedNotebookClient(this.connections, binding.server.id, async (client) => {
-        let capturedResult: DebugResult | undefined;
+      const outcome = await this.executeStatementPlan(cell, plan.statements, settings, binding);
+      await execution.replaceOutput(outcome.outputs);
+      execution.end(outcome.success, Date.now());
+    } catch (error) {
+      await execution.replaceOutput(errorOutput(executionErrorPayload(error)));
+      execution.end(false, Date.now());
+      if (error instanceof DedicatedNotebookConnectionError) {
+        await this.offerConnectionRecovery(cell.notebook, error);
+      }
+    }
+  }
+
+  private executeStatementPlan(
+    cell: vscode.NotebookCell,
+    statements: readonly SqlExecutionStatement[],
+    settings: SqlResultSettings,
+    binding: Extract<NotebookBinding, { status: "bound" }>,
+  ): Promise<{ outputs: vscode.NotebookCellOutput[]; success: boolean }> {
+    return withDedicatedNotebookClient(this.connections, binding.server.id, async (client) => {
+      const outputs: vscode.NotebookCellOutput[] = [];
+      for (const [index, statement] of statements.entries()) {
         const result = await executeSqlSelection(
           client,
           {
             status: "ready",
-            sql,
+            sql: statement.sql,
             source: {
               name: cell.notebook.uri.path.split("/").at(-1) ?? "SQL notebook",
               uri: cell.notebook.uri.toString(),
-              line: 1,
+              line: statement.line,
             },
           },
           {
-            add: (entry) => {
-              capturedResult = entry;
-            },
+            add: (_entry: DebugResult) => {},
             addStatus: (_entry: DebugResultStatus) => {},
           },
           {
@@ -563,32 +587,22 @@ class SqlNotebookController implements vscode.Disposable {
         );
 
         if ("status" in result) {
-          let message: string;
-          if (result.status === "multiple-statements") {
-            message = "Use one PostgreSQL statement per notebook cell.";
-          } else if (result.status === "unclassifiable") {
-            message = "This SQL cell could not be classified safely.";
-          } else {
-            message = "message" in result ? result.message : "SQL execution failed.";
-          }
-          await execution.replaceOutput(errorOutput(message));
-          execution.end(false, Date.now());
-          return;
+          const error =
+            result.status === "error"
+              ? debugResultErrorPayload(result, statements.length > 1 ? index + 1 : undefined)
+              : executionErrorPayload(
+                  new Error("The SQL execution plan became invalid before execution."),
+                  statements.length > 1 ? index + 1 : undefined,
+                );
+          outputs.push(errorOutput(error));
+          return { outputs, success: false };
         }
-
-        const successful = capturedResult ?? result;
-        await execution.replaceOutput(
-          resultOutput(sqlNotebookResultPayload(successful, binding.snapshot)),
-        );
-        execution.end(true, Date.now());
-      });
-    } catch (error) {
-      await execution.replaceOutput(errorOutput(errorMessage(error)));
-      execution.end(false, Date.now());
-      if (error instanceof DedicatedNotebookConnectionError) {
-        await this.offerConnectionRecovery(cell.notebook, error);
+        if (result.columns.length > 0) {
+          outputs.push(resultOutput(sqlNotebookResultPayload(result, binding.snapshot)));
+        }
       }
-    }
+      return { outputs, success: true };
+    });
   }
 
   private async executePagedCell(
@@ -623,7 +637,9 @@ class SqlNotebookController implements vscode.Disposable {
   private async showError(cell: vscode.NotebookCell, message: string): Promise<void> {
     const execution = this.controller.createNotebookCellExecution(cell);
     execution.start(Date.now());
-    await execution.replaceOutput(errorOutput(message));
+    await execution.replaceOutput(
+      errorOutput(notebookErrorPayload("connection", "Database binding unavailable", message)),
+    );
     execution.end(false, Date.now());
   }
 
@@ -696,7 +712,10 @@ class SqlNotebookStatusProvider
     this.subscription = connections.onChanged(() => this.changed.fire());
   }
 
-  provideCellStatusBarItems(cell: vscode.NotebookCell): vscode.NotebookCellStatusBarItem {
+  provideCellStatusBarItems(
+    cell: vscode.NotebookCell,
+  ): vscode.NotebookCellStatusBarItem | undefined {
+    if (cell.kind === vscode.NotebookCellKind.Markup) return undefined;
     const binding = resolveNotebookBinding(
       notebookMetadata(cell.notebook.metadata),
       this.connections.servers,
@@ -777,8 +796,11 @@ async function notebookFromTarget(target: unknown): Promise<vscode.NotebookDocum
   return undefined;
 }
 
-function errorOutput(message: string): vscode.NotebookCellOutput {
-  return new vscode.NotebookCellOutput([vscode.NotebookCellOutputItem.error(new Error(message))]);
+function errorOutput(payload: SqlNotebookErrorPayload): vscode.NotebookCellOutput {
+  return new vscode.NotebookCellOutput([
+    vscode.NotebookCellOutputItem.json(payload, SQL_NOTEBOOK_RESULT_MIME),
+    vscode.NotebookCellOutputItem.text(errorSummary(payload)),
+  ]);
 }
 
 function resultOutput(payload: SqlNotebookResultPayload): vscode.NotebookCellOutput {
@@ -797,6 +819,101 @@ function resultSummary(result: SqlNotebookResultPayload): string {
     : `${result.rowCount ?? result.capturedRowCount} row${result.rowCount === 1 ? "" : "s"}`;
   const truncation = result.truncated ? " · preview truncated" : "";
   return `${result.command} · ${rows} · ${result.durationMs} ms${truncation}`;
+}
+
+function errorSummary(error: SqlNotebookErrorPayload): string {
+  const statement = error.statement ? ` · statement ${error.statement}` : "";
+  const code = error.code ? ` · ${error.code}` : "";
+  return `${error.title}${statement}${code}: ${error.message}`;
+}
+
+function planErrorPayload(
+  plan: Exclude<SqlExecutionPlan, { status: "ready" } | { status: "empty" }>,
+): SqlNotebookErrorPayload {
+  if (plan.status === "syntax-error") {
+    const location =
+      plan.line !== undefined
+        ? ` at line ${plan.line}${plan.column !== undefined ? `, column ${plan.column}` : ""}`
+        : "";
+    return {
+      version: 1,
+      type: "error",
+      category: "syntax",
+      title: "SQL syntax error",
+      message: `The SQL parser found invalid syntax${location}.`,
+      ...(plan.line !== undefined ? { line: plan.line } : {}),
+      ...(plan.column !== undefined ? { column: plan.column } : {}),
+    };
+  }
+  return notebookErrorPayload(
+    "execution",
+    "SQL analysis failed",
+    `The SQL parser could not analyze this cell: ${plan.message}`,
+  );
+}
+
+function debugResultErrorPayload(
+  error: DebugResultError,
+  statement?: number,
+): SqlNotebookErrorPayload {
+  const isPostgres = Boolean(error.code && /^[0-9A-Z]{5}$/u.test(error.code));
+  return {
+    version: 1,
+    type: "error",
+    category: isPostgres ? "postgresql" : "execution",
+    title: isPostgres ? "PostgreSQL error" : "SQL execution error",
+    message: error.message,
+    ...(statement ? { statement } : {}),
+    ...(error.code ? { code: error.code } : {}),
+    ...(error.detail ? { detail: error.detail } : {}),
+    ...(error.hint ? { hint: error.hint } : {}),
+    ...(error.position ? { position: error.position } : {}),
+  };
+}
+
+function executionErrorPayload(error: unknown, statement?: number): SqlNotebookErrorPayload {
+  if (error instanceof DedicatedNotebookConnectionError) {
+    return {
+      ...notebookErrorPayload("connection", "PostgreSQL connection error", error.message),
+      ...(statement ? { statement } : {}),
+    };
+  }
+  const source = error && typeof error === "object" ? (error as Record<string, unknown>) : {};
+  const code = stringErrorField(source, "code");
+  const isPostgres = Boolean(code && /^[0-9A-Z]{5}$/u.test(code));
+  return {
+    version: 1,
+    type: "error",
+    category: isPostgres ? "postgresql" : "execution",
+    title: isPostgres ? "PostgreSQL error" : "SQL execution error",
+    message: errorMessage(error),
+    ...(statement ? { statement } : {}),
+    ...(code ? { code } : {}),
+    ...optionalErrorField(source, "detail"),
+    ...optionalErrorField(source, "hint"),
+    ...optionalErrorField(source, "position"),
+  };
+}
+
+function notebookErrorPayload(
+  category: SqlNotebookErrorPayload["category"],
+  title: string,
+  message: string,
+): SqlNotebookErrorPayload {
+  return { version: 1, type: "error", category, title, message };
+}
+
+function optionalErrorField<K extends "detail" | "hint" | "position">(
+  source: Record<string, unknown>,
+  key: K,
+): Partial<Pick<SqlNotebookErrorPayload, K>> {
+  const value = stringErrorField(source, key);
+  return value ? ({ [key]: value } as Pick<SqlNotebookErrorPayload, K>) : {};
+}
+
+function stringErrorField(source: Record<string, unknown>, key: string): string | undefined {
+  const value = source[key];
+  return typeof value === "string" && value.trim() ? value : undefined;
 }
 
 interface SqlResultSettings {

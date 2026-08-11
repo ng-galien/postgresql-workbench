@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { classifySqlResultExecution, classifySqlStatementCount } from "./sqlStatements.js";
+import {
+  classifySqlResultExecution,
+  classifySqlStatementCount,
+  planSqlResultExecution,
+} from "./sqlStatements.js";
 import type { SyntaxNode, SyntaxParser, SyntaxTree } from "./syntaxTree.js";
 
 function node(kind: string, children: SyntaxNode[] = []): SyntaxNode {
@@ -77,5 +81,61 @@ describe("SQL result execution classification", () => {
     await expect(
       classifySqlResultExecution("SELECT 1", parserWith([node("SelectStmt")], { truncated: true })),
     ).resolves.toBe("unclassifiable");
+  });
+
+  it("builds an ordered execution plan from exact top-level statement ranges", async () => {
+    const source = "SELECT 1;\nCREATE TEMP TABLE silent(id int);\nSELECT 2;";
+    const secondStart = source.indexOf("CREATE");
+    const thirdStart = source.lastIndexOf("SELECT");
+    const wrapper = (
+      statement: SyntaxNode,
+      start: number,
+      end: number,
+      line: number,
+    ): SyntaxNode => ({
+      ...node("toplevel_stmt", [statement]),
+      byteRange: [start, end],
+      start: { line, column: 1 },
+      end: { line, column: end - start + 1 },
+    });
+    const parser: SyntaxParser = {
+      async parse() {
+        return {
+          ...(await parserWith([]).parse({ language: "sql", source })),
+          root: node("root", [
+            wrapper(node("SelectStmt"), 0, secondStart - 1, 1),
+            wrapper(node("CreateStmt"), secondStart, thirdStart - 1, 2),
+            wrapper(node("SelectStmt"), thirdStart, source.length, 3),
+          ]),
+        };
+      },
+    };
+
+    await expect(planSqlResultExecution(source, parser)).resolves.toEqual({
+      status: "ready",
+      statements: [
+        { sql: "SELECT 1;", resultKind: "paged-query", line: 1 },
+        { sql: "CREATE TEMP TABLE silent(id int);", resultKind: "non-paged", line: 2 },
+        { sql: "SELECT 2;", resultKind: "paged-query", line: 3 },
+      ],
+    });
+  });
+
+  it("returns structured syntax and analysis failures", async () => {
+    const errorNode = {
+      ...node("ERROR"),
+      error: true,
+      start: { line: 2, column: 11 },
+    };
+    await expect(
+      planSqlResultExecution("SELECT 1;\nSELECT +;", parserWith([errorNode], { hasError: true })),
+    ).resolves.toEqual({ status: "syntax-error", line: 2, column: 11 });
+    await expect(
+      planSqlResultExecution("SELECT 1", {
+        async parse() {
+          throw new Error("syntax runtime unavailable");
+        },
+      }),
+    ).resolves.toEqual({ status: "analysis-error", message: "syntax runtime unavailable" });
   });
 });

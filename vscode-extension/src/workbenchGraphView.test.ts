@@ -280,6 +280,73 @@ describe("Workbench graph database context invalidation", () => {
     view.dispose();
   });
 
+  it("waits for an active TreeView drop before closing the graph", async () => {
+    const database = { serverId: "server", database: "demo" };
+    const dropped = postgresSymbol("invoice", "table", 43);
+    const snapshot = { revision: "revision-1", generation: 1 };
+    let resolveFocus: ((value: ReturnType<typeof graph>) => void) | undefined;
+    const index = {
+      state: { status: "available", result: { ...snapshot, ...database } },
+      indexedSymbols: [dropped],
+      graphFocus: vi.fn(
+        () =>
+          new Promise<ReturnType<typeof graph>>((resolve) => {
+            resolveFocus = resolve;
+          }),
+      ),
+      graphSourcePreview: vi.fn(async () => undefined),
+      assertGraphSnapshot: vi.fn(async () => undefined),
+      objectOrigin: vi.fn(() => undefined),
+    };
+    const controller = new WorkbenchTreeDragAndDropController();
+    const droppedObject = {
+      symbolUri: dropped.uri,
+      sourceUri: dropped.file,
+      ...database,
+      schema: "shop",
+      oid: 43,
+      name: "invoice",
+      kind: "table" as const,
+      signature: "",
+      params: [],
+      plpgsql: false,
+    };
+    controller.handleDrag(
+      [{ kind: "object", object: droppedObject }] as never,
+      { set: vi.fn() } as never,
+    );
+    const view = new WorkbenchGraphView({
+      extensionUri: {} as never,
+      index: index as never,
+      openDefinition: async () => undefined,
+      showActions: async () => undefined,
+      treeDragPayload: (consume) => controller.activePayload(consume),
+    });
+    const payload = {
+      version: 1 as const,
+      availability: "accepted" as const,
+      serverId: database.serverId,
+      database: database.database,
+      sourceUri: dropped.file,
+      symbolUri: dropped.uri,
+      kind: "table" as const,
+      label: "shop.invoice",
+    };
+
+    const drop = view.acceptTreeDrop(payload);
+    await vi.waitFor(() => expect(resolveFocus).toBeTypeOf("function"));
+    const close = view.close();
+    await expect(view.acceptTreeDrop(payload)).resolves.toBeUndefined();
+    expect(view.currentScope).toBe(dropped.uri);
+
+    resolveFocus?.(graph(dropped));
+    await expect(drop).resolves.toBeUndefined();
+    await expect(close).resolves.toBeUndefined();
+    expect(view.currentScope).toBeUndefined();
+    controller.dispose();
+    view.dispose();
+  });
+
   it("finishes an engaged focus action before applying a newer DDL snapshot", async () => {
     const database = { serverId: "server", database: "demo" };
     const orders = postgresSymbol("orders", "table", 42);

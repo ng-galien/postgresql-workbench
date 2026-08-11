@@ -90,6 +90,8 @@ export class WorkbenchGraphView implements vscode.Disposable {
   private pendingSnapshot?: WorkbenchSnapshot;
   private refreshRun?: Promise<boolean>;
   private operationTail: Promise<void> = Promise.resolve();
+  private readonly activeTreeDrops = new Set<Promise<void>>();
+  private closing = false;
   private readonly acknowledgements: WorkbenchGraphAck[] = [];
   private webviewRenderSequence = 0;
   private disposed = false;
@@ -117,6 +119,10 @@ export class WorkbenchGraphView implements vscode.Disposable {
 
   get visible(): boolean {
     return this.panel.visible;
+  }
+
+  get isOpen(): boolean {
+    return this.panel.current !== undefined;
   }
 
   get currentModel(): CodeMonikerIdentityGraphResult | undefined {
@@ -227,8 +233,20 @@ export class WorkbenchGraphView implements vscode.Disposable {
     return result;
   }
 
-  async acceptTreeDrop(payload: WorkbenchGraphDragPayload): Promise<void> {
-    this.treeDragPayload(true);
+  acceptTreeDrop(payload: WorkbenchGraphDragPayload): Promise<void> {
+    if (this.closing || this.disposed) return Promise.resolve();
+    const activePayload = this.treeDragPayload(true);
+    if (!activePayload || !sameTreeDrag(activePayload, payload)) return Promise.resolve();
+    const run = this.acceptTreeDropNow(payload);
+    this.activeTreeDrops.add(run);
+    void run.then(
+      () => this.activeTreeDrops.delete(run),
+      () => this.activeTreeDrops.delete(run),
+    );
+    return run;
+  }
+
+  private async acceptTreeDropNow(payload: WorkbenchGraphDragPayload): Promise<void> {
     if (payload.availability === "unsupported") {
       if (!this.panel.current) await vscode.window.showInformationMessage(payload.reason);
       return;
@@ -537,9 +555,24 @@ export class WorkbenchGraphView implements vscode.Disposable {
     void this.panel.post(this.lastMessage);
   }
 
+  close(): Promise<void> {
+    this.closing = true;
+    return Promise.allSettled([...this.activeTreeDrops])
+      .then(() =>
+        this.runExclusive(async () => {
+          this.panel.dispose();
+          this.reset();
+        }),
+      )
+      .finally(() => {
+        this.closing = false;
+      });
+  }
+
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.closing = true;
     this.panel.dispose();
   }
 
@@ -861,7 +894,7 @@ export class WorkbenchGraphView implements vscode.Disposable {
   }
 
   private async dropActiveTreeSource(): Promise<void> {
-    const payload = this.treeDragPayload(true);
+    const payload = this.treeDragPayload(false);
     if (!payload) {
       await this.panel.post({
         type: "cockpitDropRejected",
@@ -1138,6 +1171,33 @@ export class WorkbenchGraphView implements vscode.Disposable {
     this.counts.clear();
     this.pinnedIdentities.clear();
   }
+}
+
+function sameTreeDrag(
+  active: WorkbenchGraphDragPayload,
+  requested: WorkbenchGraphDragPayload,
+): boolean {
+  if (
+    active.version !== requested.version ||
+    active.availability !== requested.availability ||
+    active.label !== requested.label
+  ) {
+    return false;
+  }
+  if (active.availability === "unsupported" || requested.availability === "unsupported") {
+    return (
+      active.availability === "unsupported" &&
+      requested.availability === "unsupported" &&
+      active.reason === requested.reason
+    );
+  }
+  return (
+    active.serverId === requested.serverId &&
+    active.database === requested.database &&
+    active.sourceUri === requested.sourceUri &&
+    active.symbolUri === requested.symbolUri &&
+    active.kind === requested.kind
+  );
 }
 
 function neighborhoodSymbols(neighborhood: CockpitNeighborhood): CodeMonikerSymbol[] {

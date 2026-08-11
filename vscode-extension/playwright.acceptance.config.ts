@@ -6,10 +6,11 @@ export default defineConfig({
   globalSetup: "./acceptance/globalSetup.ts",
   fullyParallel: false,
   workers: 1,
+  maxFailures: 1,
   timeout: 60_000,
   expect: { timeout: 5_000 },
   forbidOnly: Boolean(process.env.CI),
-  retries: process.env.CI ? 1 : 0,
+  retries: 0,
   reporter: process.env.CI
     ? [["list"], ["junit", { outputFile: "test-results/junit.xml" }]]
     : "list",

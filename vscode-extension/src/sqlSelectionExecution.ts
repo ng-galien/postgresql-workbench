@@ -103,12 +103,26 @@ export async function executeSqlSelection(
       status: "error",
       ...context,
       message: errorMessage(error).slice(0, DEBUG_RESULT_LIMITS.MAX_ERROR_CHARS),
+      ...postgresErrorFields(error),
       durationMs: Math.max(0, now() - startedAt),
       timestamp,
     };
     sink.addStatus(failure);
     return failure;
   }
+}
+
+function postgresErrorFields(
+  error: unknown,
+): Pick<DebugResultError, "code" | "detail" | "hint" | "position"> {
+  if (!error || typeof error !== "object") return {};
+  const source = error as Record<string, unknown>;
+  return Object.fromEntries(
+    (["code", "detail", "hint", "position"] as const).flatMap((key) => {
+      const value = source[key];
+      return typeof value === "string" && value.trim() ? [[key, value]] : [];
+    }),
+  );
 }
 
 function errorMessage(error: unknown): string {

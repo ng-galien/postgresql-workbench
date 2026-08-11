@@ -30,8 +30,10 @@ const object: WorkbenchObjectModel = {
 function fixture() {
   const item = { kind: "object", object } as PlpgsqlTreeItem;
   const reveal = vi.fn(async () => undefined);
+  let selectionListener: ((event: { selection: readonly PlpgsqlTreeItem[] }) => void) | undefined;
   const graph = {
     currentScope: "testdb",
+    isOpen: true,
     openDatabase: vi.fn(async () => true),
     syncSchemaFromTree: vi.fn(async () => true),
     syncObjectFromTree: vi.fn(async () => true),
@@ -39,13 +41,24 @@ function fixture() {
   const sync = new WorkbenchGraphTreeSync(
     {
       reveal,
-      onDidChangeSelection: vi.fn(),
+      onDidChangeSelection: vi.fn((listener) => {
+        selectionListener = listener;
+        return { dispose: vi.fn() };
+      }),
     } as never,
     { itemForObject: vi.fn(() => item) } as never,
     { state: snapshot } as never,
     graph as never,
   );
-  return { graph, item, reveal, sync };
+  return {
+    emitSelection(selection: readonly PlpgsqlTreeItem[]) {
+      selectionListener?.({ selection });
+    },
+    graph,
+    item,
+    reveal,
+    sync,
+  };
 }
 
 describe("Workbench graph and Sources tree synchronization", () => {
@@ -58,6 +71,17 @@ describe("Workbench graph and Sources tree synchronization", () => {
       focus: false,
       expand: true,
     });
+  });
+
+  it("does not retain a completed programmatic reveal as a future user selection", async () => {
+    const { emitSelection, graph, item, sync } = fixture();
+    sync.bind();
+
+    expect(await sync.revealObject(object)).toBe(true);
+    emitSelection([item]);
+    await vi.waitFor(() =>
+      expect(graph.syncObjectFromTree).toHaveBeenCalledWith(object, snapshot.result),
+    );
   });
 
   it("navigates a relation target to its canonical tree item and keeps the cockpit aligned", async () => {

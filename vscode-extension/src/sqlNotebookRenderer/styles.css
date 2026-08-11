@@ -52,6 +52,37 @@
   background: var(--vscode-editorWarning-background);
 }
 
+.result-error-badge {
+  color: var(--vscode-errorForeground);
+  background: var(--vscode-inputValidation-errorBackground);
+  border: 1px solid var(--vscode-inputValidation-errorBorder);
+}
+
+.sql-error {
+  border-color: var(--vscode-inputValidation-errorBorder, var(--vscode-errorForeground));
+}
+
+.sql-error-body {
+  padding: 10px 12px;
+}
+
+.sql-error-body p {
+  margin: 0 0 6px;
+}
+
+.sql-error-body p:last-child {
+  margin-bottom: 0;
+}
+
+.sql-error-message {
+  color: var(--vscode-errorForeground);
+  font-weight: 600;
+}
+
+.sql-error-location {
+  color: var(--vscode-descriptionForeground);
+}
+
 .copy-button {
   padding: 3px 8px;
   color: var(--vscode-button-secondaryForeground);

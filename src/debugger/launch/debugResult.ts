@@ -68,6 +68,10 @@ export interface DebugResultError extends DebugResultContext {
   id: string;
   status: "error";
   message: string;
+  code?: string;
+  detail?: string;
+  hint?: string;
+  position?: string;
   durationMs: number;
   timestamp: string;
 }

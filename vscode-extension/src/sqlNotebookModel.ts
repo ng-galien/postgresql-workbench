@@ -51,6 +51,23 @@ export interface SqlNotebookResultPayload {
   navigation?: SqlNotebookResultNavigation;
 }
 
+export interface SqlNotebookErrorPayload {
+  version: 1;
+  type: "error";
+  title: string;
+  message: string;
+  category: "syntax" | "postgresql" | "connection" | "execution";
+  statement?: number;
+  code?: string;
+  detail?: string;
+  hint?: string;
+  line?: number;
+  column?: number;
+  position?: string;
+}
+
+export type SqlNotebookOutputPayload = SqlNotebookResultPayload | SqlNotebookErrorPayload;
+
 export interface SqlNotebookResultNavigation {
   sessionId: string;
   mode: "paged" | "all";

@@ -4,18 +4,39 @@ import { readFile, rm } from "node:fs/promises";
 import * as vscode from "vscode";
 
 const RELOAD_WINDOW_COMMAND = "workbench.action.reloadWindow";
+const FOCUS_WORKBENCH_COMMAND = "postgresql-workbench-connections.focus";
+const INSPECT_ACTIVE_NOTEBOOK_COMMAND = "postgresql-workbench.acceptance.inspectActiveNotebook";
+const RESET_WORKBENCH_COMMAND = "postgresql-workbench.acceptance.resetWorkbench";
+const ACCEPTANCE_COMMANDS = new Set([
+  RELOAD_WINDOW_COMMAND,
+  FOCUS_WORKBENCH_COMMAND,
+  INSPECT_ACTIVE_NOTEBOOK_COMMAND,
+  RESET_WORKBENCH_COMMAND,
+]);
 
 export interface AcceptanceControl extends vscode.Disposable {
   markReady(): void;
 }
 
+export interface AcceptanceControlOptions {
+  resetWorkbench(): Promise<void> | void;
+}
+
 export function registerAcceptanceControl(
   context: vscode.ExtensionContext,
+  options: AcceptanceControlOptions,
 ): AcceptanceControl | undefined {
   const controlFile = process.env.POSTGRESQL_WORKBENCH_ACCEPTANCE_CONTROL_FILE;
   if (!controlFile || context.extensionMode === vscode.ExtensionMode.Production) return undefined;
   const readyFile = `${controlFile}.ready`;
   const activationId = randomUUID();
+
+  const markReady = (commandNonce?: string, result?: unknown) => {
+    writeFileSync(
+      readyFile,
+      JSON.stringify({ activationId, commandNonce, result, status: "ready" }),
+    );
+  };
 
   let pending = Promise.resolve();
   const consume = () => {
@@ -23,12 +44,56 @@ export function registerAcceptanceControl(
       .then(async () => {
         const instruction = JSON.parse(await readFile(controlFile, "utf8")) as {
           command?: unknown;
+          nonce?: unknown;
         };
         await rm(controlFile, { force: true });
-        if (instruction.command !== RELOAD_WINDOW_COMMAND) {
+        if (
+          typeof instruction.command !== "string" ||
+          !ACCEPTANCE_COMMANDS.has(instruction.command)
+        ) {
           throw new Error(`Unsupported acceptance command: ${String(instruction.command)}`);
         }
-        await vscode.commands.executeCommand(RELOAD_WINDOW_COMMAND);
+        if (typeof instruction.nonce !== "string") {
+          throw new Error("Acceptance command is missing its nonce");
+        }
+        if (instruction.command === INSPECT_ACTIVE_NOTEBOOK_COMMAND) {
+          const notebook = vscode.window.activeNotebookEditor?.notebook;
+          markReady(
+            instruction.nonce,
+            notebook && {
+              cells: [...notebook.getCells()].map((cell) => ({
+                kind:
+                  cell.kind === vscode.NotebookCellKind.Markup
+                    ? ("markup" as const)
+                    : ("code" as const),
+                languageId: cell.document.languageId,
+                outputs: cell.outputs.flatMap((output) => output.items.map((item) => item.mime)),
+                outputGroups: cell.outputs.map((output) => output.items.map((item) => item.mime)),
+                text: cell.document.getText(),
+              })),
+              notebookType: notebook.notebookType,
+              uri: notebook.uri.toString(),
+            },
+          );
+          return;
+        }
+        if (instruction.command === RESET_WORKBENCH_COMMAND) {
+          await vscode.commands.executeCommand("workbench.action.files.saveAll");
+          await options.resetWorkbench();
+          const tabs = vscode.window.tabGroups.all.flatMap((group) => group.tabs);
+          if (tabs.length > 0) await vscode.window.tabGroups.close(tabs, false);
+          await vscode.commands.executeCommand(FOCUS_WORKBENCH_COMMAND);
+          markReady(instruction.nonce, {
+            closedTabCount: tabs.length,
+            remainingTabCount: vscode.window.tabGroups.all.reduce(
+              (count, group) => count + group.tabs.length,
+              0,
+            ),
+          });
+          return;
+        }
+        await vscode.commands.executeCommand(instruction.command);
+        if (instruction.command !== RELOAD_WINDOW_COMMAND) markReady(instruction.nonce);
       })
       .catch((error: unknown) => {
         // biome-ignore lint/suspicious/noConsole: acceptance-only bridge failures must remain visible in extension-host logs.
@@ -38,7 +103,7 @@ export function registerAcceptanceControl(
   watchFile(controlFile, { interval: 50 }, consume);
   return {
     markReady() {
-      writeFileSync(readyFile, JSON.stringify({ activationId, status: "ready" }));
+      markReady();
     },
     dispose() {
       unwatchFile(controlFile, consume);

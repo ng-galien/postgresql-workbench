@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import {
-  classifySqlResultExecution,
   classifySqlStatementCount,
+  planSqlResultExecution,
 } from "../../src/analysis/sqlStatements.js";
 import type { SyntaxParser } from "../../src/analysis/syntaxTree.js";
 import { parseCall } from "../../src/callParser.js";
@@ -1376,7 +1376,10 @@ function registerDiagnosticsAndReconnect(
 export function activate(context: vscode.ExtensionContext): PlpgsqlExtensionApi {
   out.appendLine("activate() called");
 
-  const acceptanceControl = registerAcceptanceControl(context);
+  let resetAcceptanceWorkbench = () => {};
+  const acceptanceControl = registerAcceptanceControl(context, {
+    resetWorkbench: () => resetAcceptanceWorkbench(),
+  });
   if (acceptanceControl) context.subscriptions.push(acceptanceControl);
 
   const cm = new ConnectionManager(context, out);
@@ -1386,7 +1389,7 @@ export function activate(context: vscode.ExtensionContext): PlpgsqlExtensionApi 
   const workbenchDdlSync = new WorkbenchDdlSyncController(cm, workbenchIndex, out);
   context.subscriptions.push(workbenchDdlSync);
   const sqlNotebooks = registerSqlNotebook(context, cm, async (sql) =>
-    classifySqlResultExecution(sql, await workbenchIndex.syntaxParser()),
+    planSqlResultExecution(sql, await workbenchIndex.syntaxParser()),
   );
   let treeProvider: WorkbenchTreeProvider;
   let connectionTreeProvider: WorkbenchTreeProvider;
@@ -1536,6 +1539,12 @@ export function activate(context: vscode.ExtensionContext): PlpgsqlExtensionApi 
     workbenchIndex,
     workbenchGraph,
   );
+  resetAcceptanceWorkbench = async () => {
+    await workbenchGraph.close();
+    const [neutralRoot] = await treeProvider.getChildren();
+    if (neutralRoot) await graphTreeSync.resetSelection(neutralRoot);
+    graphTreeSync.invalidateDatabaseContext();
+  };
   const syncGraphFromTree = graphTreeSync.bind();
   const scheduleDebugSessionRefresh = () => {
     for (const delay of [100, 500, 2_000, 5_000]) {

@@ -1,244 +1,257 @@
 import { demoConnectionUrl } from "../../fixtures/demoDatabase";
 import { expect, test } from "../../fixtures/test";
+import type { CockpitPage } from "../../pages/CockpitPage";
+import type { WorkbenchPage } from "../../pages/WorkbenchPage";
 
 const server = /postgres@localhost:5434/;
 const database = /^demo/;
 
-test.describe
-  .serial("Workbench Cockpit TreeView journeys", () => {
-    test("phase 1 — opens the graph from a TreeView drop", async ({ workbench, cockpit }) => {
-      await test.step("connect and index the demo database through the Workbench UI", async () => {
-        await workbench.addServer(demoConnectionUrl, server);
-        await workbench.ensureActiveDatabaseIndexed(server, database);
-        await expect(workbench.tree.item(/^shop/)).toBeVisible();
-      });
+async function openCockpitFromTree(
+  workbench: WorkbenchPage,
+  cockpit: CockpitPage,
+  source: RegExp,
+  expectedFocus: string,
+): Promise<void> {
+  await workbench.ensureServer(demoConnectionUrl, server);
+  await workbench.ensureActiveDatabaseIndexed(server, database);
+  await workbench.tree.expandPath([server, database, /^Sources/, /^shop/]);
+  const item = workbench.tree.item(source);
+  await expect(item).toBeVisible({ timeout: 5_000 });
+  await workbench.dragTreeItemToEditor(item);
+  await cockpit.waitUntilOpen();
+  await expect(cockpit.node(expectedFocus)).toHaveAttribute("data-graph-role", "focus", {
+    timeout: 5_000,
+  });
+}
 
-      await test.step("drop shop.address into the editor area to open the Cockpit", async () => {
-        await workbench.tree.open();
-        await workbench.tree.expandPath([server, database, /^Sources/, /^shop/]);
-        const address = workbench.tree.item(/^address/);
-        await expect(address).toBeVisible({ timeout: 5_000 });
-        await workbench.dragTreeItemToEditor(address);
-        await cockpit.waitUntilOpen();
-        await expect(cockpit.object(/^address, PostgreSQL table\./i)).toBeVisible({
-          timeout: 5_000,
-        });
-        await expect(cockpit.node("address")).toHaveAttribute("data-graph-role", "focus");
-        await expect(cockpit.node("address").locator(".pin-flag")).toHaveCount(0);
-        await expect(cockpit.inspector).toBeHidden({ timeout: 5_000 });
-        await expect(cockpit.error).toBeHidden({ timeout: 5_000 });
-        await expect(
-          workbench.page.locator(".editor-group-container .tabs-container .tab"),
-        ).toHaveCount(1);
-      });
+test.describe("Workbench Cockpit TreeView journeys", () => {
+  test("phase 1 — opens the graph from a TreeView drop", async ({ workbench, cockpit }) => {
+    await test.step("prepare the indexed demo database through the Workbench UI", async () => {
+      await workbench.ensureServer(demoConnectionUrl, server);
+      await workbench.ensureActiveDatabaseIndexed(server, database);
+      await expect(workbench.tree.item(/^shop/)).toBeVisible();
     });
 
-    test("phase 1 — a later drop changes focus and preserves direct graph interactions", async ({
-      workbench,
-      cockpit,
-    }) => {
-      await cockpit.waitUntilOpen();
-      await workbench.resizeWindow(1_440, 900);
-
-      await test.step("drop product into the open Cockpit exactly like selecting it", async () => {
-        await workbench.tree.open();
-        await workbench.tree.expandPath([server, database, /^Sources/, /^shop/]);
-        const product = workbench.tree.item(/^product(?:\s|$)/);
-        await expect(product).toBeVisible({ timeout: 5_000 });
-        await cockpit.dragTreeItem(product);
-        await expect(cockpit.object(/^product, PostgreSQL table\./i)).toBeVisible({
-          timeout: 5_000,
-        });
-        await expect(cockpit.node("product")).toHaveAttribute("data-graph-role", "focus");
-        await expect(cockpit.node("product").locator(".pin-flag")).toHaveCount(0);
-        await expect(cockpit.node("address")).toHaveCount(0);
-        await expect(cockpit.inspector).toBeHidden({ timeout: 5_000 });
-        await expect(cockpit.error).toBeHidden({ timeout: 5_000 });
+    await test.step("drop shop.address into the editor area to open the Cockpit", async () => {
+      await openCockpitFromTree(workbench, cockpit, /^address/, "address");
+      await expect(cockpit.object(/^address, PostgreSQL table\./i)).toBeVisible({
+        timeout: 5_000,
       });
-
-      await test.step("reject a column without changing the current focus", async () => {
-        await workbench.tree.open();
-        await workbench.tree.expandPath([server, database, /^Sources/, /^shop/, /^address/]);
-        const column = workbench.tree.item(/^id/);
-        await expect(column).toBeVisible({ timeout: 5_000 });
-        await cockpit.previewRejectedTreeItem(column, /parent table/i);
-        await expect(cockpit.node("product")).toHaveAttribute("data-graph-role", "focus");
-      });
-
-      await test.step("apply a small bounded zoom, recenter, then reposition product", async () => {
-        await cockpit.recenter();
-        const initial = await cockpit.graphReadability();
-        expect(initial.nodesInsideCanvas).toBe(initial.nodeCount);
-        await cockpit.zoomByWheel(-120);
-        await expect
-          .poll(() => cockpit.zoom(), {
-            timeout: 5_000,
-            message: "A small mouse zoom must reach React Flow through the Cockpit surface",
-          })
-          .toBeGreaterThan(initial.zoom + 0.02);
-        const zoomed = await cockpit.zoom();
-        expect(zoomed).toBeLessThanOrEqual(initial.zoom + 0.3);
-        await cockpit.recenter();
-        await expect
-          .poll(() => cockpit.graphCenteringError(), { timeout: 5_000 })
-          .toBeLessThan(0.12);
-        await cockpit.expectNodeBodyNotToDrag("product", { x: 80, y: 45 });
-        await cockpit.repositionNode("product", { x: 90, y: 55 });
-      });
-
-      await test.step("keep a named, draggable card at the lowest semantic zoom", async () => {
-        for (let attempt = 0; attempt < 4 && (await cockpit.zoom()) >= 0.5; attempt += 1) {
-          await cockpit.zoomByWheel(300);
-        }
-        await expect
-          .poll(() => cockpit.zoom(), {
-            timeout: 5_000,
-            message: "Zooming out must switch the graph to its compact named cards",
-          })
-          .toBeLessThan(0.5);
-        await expect
-          .poll(() => cockpit.nodePresentation("product"), {
-            timeout: 5_000,
-            message: "The compact product card must be measured after React Flow updates it",
-          })
-          .toMatchObject({
-            compact: true,
-            name: "product",
-            nameVisible: true,
-            dragHandleVisible: true,
-          });
-        const compact = await cockpit.nodePresentation("product");
-        expect(compact.logicalWidth).toBeLessThanOrEqual(170);
-        expect(compact.logicalHeight).toBeLessThan(50);
-        expect(await cockpit.nodePortVerticalError("product")).toBeLessThanOrEqual(2);
-
-        for (let attempt = 0; attempt < 4 && (await cockpit.zoom()) < 0.5; attempt += 1) {
-          await cockpit.zoomByWheel(-300);
-        }
-        await expect
-          .poll(() => cockpit.zoom(), {
-            timeout: 5_000,
-            message: "The next interaction phase must resume with detailed graph cards",
-          })
-          .toBeGreaterThanOrEqual(0.5);
-        expect(await cockpit.nodePortVerticalError("product")).toBeLessThanOrEqual(2);
-      });
-    });
-
-    test("phase 2 — controls the side Source panel explicitly", async ({
-      workbench,
-      cockpit,
-    }, testInfo) => {
-      await cockpit.waitUntilOpen();
-      await workbench.resizeWindow(1_440, 900);
-
-      await test.step("open Source from the address node and verify its side geometry", async () => {
-        await cockpit.showSource("product");
-        await expect(cockpit.sourceBody).toContainText(/CREATE\s+TABLE/i, { timeout: 5_000 });
-        await expect
-          .poll(() => cockpit.inspectorPlacement(), {
-            timeout: 5_000,
-            message: "Source must use the side layout at the desktop width",
-          })
-          .toBe("side");
-        const initial = await cockpit.sourceViewGeometry();
-        expect(initial.inspector.width).toBeGreaterThanOrEqual(360);
-        expect(initial.inspector.height).toBeGreaterThanOrEqual(initial.main.height - 2);
-        expect(initial.sourceBody.height).toBeGreaterThanOrEqual(220);
-        expect(initial.fullyVisibleLines).toBeGreaterThanOrEqual(Math.min(8, initial.totalLines));
-        expect(initial.codeFontSize).toBeGreaterThanOrEqual(11);
-
-        await cockpit.resizeSourceWidth(70);
-        await expect
-          .poll(async () => (await cockpit.sourceViewGeometry()).inspector.width, {
-            timeout: 5_000,
-            message: "Dragging the side Source divider must resize the panel",
-          })
-          .toBeGreaterThan(initial.inspector.width + 25);
-        await expect
-          .poll(() => cockpit.graphCenteringError(), { timeout: 5_000 })
-          .toBeLessThan(0.12);
-        await testInfo.attach("source-view-side.png", {
-          body: await workbench.page.screenshot(),
-          contentType: "image/png",
-        });
-      });
-
-      await test.step("pin the preview, then return to follow mode", async () => {
-        await cockpit.pinSource();
-        await cockpit.focusNode("brand");
-        await expect(cockpit.inspector).toContainText(/product/i, { timeout: 5_000 });
-        await cockpit.unpinSource();
-        await cockpit.focusNode("product_availability");
-        await expect(cockpit.inspector).toContainText(/product_availability/i, { timeout: 5_000 });
-      });
-
-      await test.step("close Source and recover the full graph width", async () => {
-        const openCanvas = await cockpit.canvasGeometry();
-        await cockpit.closeSourceWithButton();
-        await expect(cockpit.ddlToggle("product_availability")).toHaveAttribute(
-          "aria-pressed",
-          "false",
-          { timeout: 5_000 },
-        );
-        const closedCanvas = await cockpit.canvasGeometry();
-        expect(closedCanvas.width).toBeGreaterThan(openCanvas.width + 300);
-        await expect
-          .poll(() => cockpit.graphCenteringError(), { timeout: 5_000 })
-          .toBeLessThan(0.12);
-      });
-    });
-
-    test("phase 2 — sizes and resizes the bottom Source panel", async ({
-      workbench,
-      cockpit,
-    }, testInfo) => {
-      await cockpit.waitUntilOpen();
-      await workbench.resizeWindow(1_100, 850);
-      await cockpit.showSource("product_availability");
-
-      await test.step("use the full bottom width without collapsing SQL", async () => {
-        await expect.poll(() => cockpit.inspectorPlacement(), { timeout: 5_000 }).toBe("bottom");
-        const geometry = await cockpit.sourceViewGeometry();
-        expect(Math.abs(geometry.inspector.width - geometry.main.width)).toBeLessThan(3);
-        expect(geometry.source.width / geometry.inspector.width).toBeGreaterThanOrEqual(0.98);
-        expect(geometry.sourceBody.height).toBeGreaterThanOrEqual(150);
-        expect(geometry.fullyVisibleLines).toBeGreaterThanOrEqual(Math.min(6, geometry.totalLines));
-        expect(geometry.codeFontSize).toBeGreaterThanOrEqual(11);
-      });
-
-      await test.step("resize the bottom panel vertically and recenter the remaining canvas", async () => {
-        const initial = await cockpit.sourceViewGeometry();
-        await cockpit.resizeSourceHeight(70);
-        await expect
-          .poll(async () => (await cockpit.sourceViewGeometry()).inspector.height, {
-            timeout: 5_000,
-            message: "Dragging the bottom Source divider must resize panel height",
-          })
-          .toBeGreaterThan(initial.inspector.height + 35);
-        await workbench.resizeWindow(1_100, 700);
-        await expect
-          .poll(
-            async () => {
-              const geometry = await cockpit.sourceViewGeometry();
-              return geometry.inspector.height / geometry.main.height;
-            },
-            {
-              timeout: 5_000,
-              message: "The bottom Source height must be clamped again after a viewport resize",
-            },
-          )
-          .toBeLessThanOrEqual(0.56);
-        await expect
-          .poll(() => cockpit.graphCenteringError(), { timeout: 5_000 })
-          .toBeLessThan(0.12);
-        await testInfo.attach("source-view-bottom.png", {
-          body: await workbench.page.screenshot(),
-          contentType: "image/png",
-        });
-      });
-
-      await cockpit.closeSourceWithEscape();
+      await expect(cockpit.node("address").locator(".pin-flag")).toHaveCount(0);
       await expect(cockpit.inspector).toBeHidden({ timeout: 5_000 });
+      await expect(cockpit.error).toBeHidden({ timeout: 5_000 });
+      await expect(
+        workbench.page.locator(".editor-group-container .tabs-container .tab"),
+      ).toHaveCount(1);
     });
   });
+
+  test("phase 1 — a later drop changes focus and preserves direct graph interactions", async ({
+    workbench,
+    cockpit,
+  }) => {
+    await test.step("open an independent address graph from the collapsed TreeView", async () => {
+      await openCockpitFromTree(workbench, cockpit, /^address/, "address");
+    });
+
+    await test.step("drop product into the open Cockpit exactly like selecting it", async () => {
+      await workbench.tree.expandPath([server, database, /^Sources/, /^shop/]);
+      const product = workbench.tree.item(/^product(?:\s|$)/);
+      await expect(product).toBeVisible({ timeout: 5_000 });
+      await cockpit.dragTreeItem(product);
+      await expect(cockpit.object(/^product, PostgreSQL table\./i)).toBeVisible({
+        timeout: 5_000,
+      });
+      await expect(cockpit.node("product")).toHaveAttribute("data-graph-role", "focus");
+      await expect(cockpit.node("product").locator(".pin-flag")).toHaveCount(0);
+      await expect(cockpit.node("address")).toHaveCount(0);
+      await expect(cockpit.inspector).toBeHidden({ timeout: 5_000 });
+      await expect(cockpit.error).toBeHidden({ timeout: 5_000 });
+    });
+
+    await test.step("reject a column without changing the current focus", async () => {
+      await workbench.tree.expandPath([server, database, /^Sources/, /^shop/, /^address/]);
+      const column = workbench.tree.item(/^id/);
+      await expect(column).toBeVisible({ timeout: 5_000 });
+      await cockpit.previewRejectedTreeItem(column, /parent table/i);
+      await expect(cockpit.node("product")).toHaveAttribute("data-graph-role", "focus");
+    });
+
+    await test.step("apply a small bounded zoom, recenter, then reposition product", async () => {
+      await cockpit.recenter();
+      const initial = await cockpit.graphReadability();
+      expect(initial.nodesInsideCanvas).toBe(initial.nodeCount);
+      await cockpit.zoomByWheel(-120);
+      await expect
+        .poll(() => cockpit.zoom(), {
+          timeout: 5_000,
+          message: "A small mouse zoom must reach React Flow through the Cockpit surface",
+        })
+        .toBeGreaterThan(initial.zoom + 0.02);
+      const zoomed = await cockpit.zoom();
+      expect(zoomed).toBeLessThanOrEqual(initial.zoom + 0.3);
+      await cockpit.recenter();
+      await expect.poll(() => cockpit.graphCenteringError(), { timeout: 5_000 }).toBeLessThan(0.12);
+      await cockpit.expectNodeBodyNotToDrag("product", { x: 80, y: 45 });
+      await cockpit.repositionNode("product", { x: 90, y: 55 });
+    });
+
+    await test.step("keep a named, draggable card at the lowest semantic zoom", async () => {
+      for (let attempt = 0; attempt < 4 && (await cockpit.zoom()) >= 0.5; attempt += 1) {
+        await cockpit.zoomByWheel(300);
+      }
+      await expect
+        .poll(() => cockpit.zoom(), {
+          timeout: 5_000,
+          message: "Zooming out must switch the graph to its compact named cards",
+        })
+        .toBeLessThan(0.5);
+      await expect
+        .poll(() => cockpit.nodePresentation("product"), {
+          timeout: 5_000,
+          message: "The compact product card must be measured after React Flow updates it",
+        })
+        .toMatchObject({
+          compact: true,
+          name: "product",
+          nameVisible: true,
+          dragHandleVisible: true,
+        });
+      const compact = await cockpit.nodePresentation("product");
+      expect(compact.logicalWidth).toBeLessThanOrEqual(170);
+      expect(compact.logicalHeight).toBeLessThan(50);
+      expect(await cockpit.nodePortVerticalError("product")).toBeLessThanOrEqual(2);
+
+      for (let attempt = 0; attempt < 4 && (await cockpit.zoom()) < 0.5; attempt += 1) {
+        await cockpit.zoomByWheel(-300);
+      }
+      await expect
+        .poll(() => cockpit.zoom(), {
+          timeout: 5_000,
+          message: "The next interaction phase must resume with detailed graph cards",
+        })
+        .toBeGreaterThanOrEqual(0.5);
+      expect(await cockpit.nodePortVerticalError("product")).toBeLessThanOrEqual(2);
+    });
+  });
+
+  test("phase 2 — controls the side Source panel explicitly", async ({
+    workbench,
+    cockpit,
+  }, testInfo) => {
+    await test.step("open an independent product graph", async () => {
+      await openCockpitFromTree(workbench, cockpit, /^product(?:\s|$)/, "product");
+    });
+
+    await test.step("open Source from the address node and verify its side geometry", async () => {
+      await cockpit.showSource("product");
+      await expect(cockpit.sourceBody).toContainText(/CREATE\s+TABLE/i, { timeout: 5_000 });
+      await expect
+        .poll(() => cockpit.inspectorPlacement(), {
+          timeout: 5_000,
+          message: "Source must use the side layout at the desktop width",
+        })
+        .toBe("side");
+      const initial = await cockpit.sourceViewGeometry();
+      expect(initial.inspector.width).toBeGreaterThanOrEqual(360);
+      expect(initial.inspector.height).toBeGreaterThanOrEqual(initial.main.height - 2);
+      expect(initial.sourceBody.height).toBeGreaterThanOrEqual(220);
+      expect(initial.fullyVisibleLines).toBeGreaterThanOrEqual(Math.min(8, initial.totalLines));
+      expect(initial.codeFontSize).toBeGreaterThanOrEqual(11);
+
+      await cockpit.resizeSourceWidth(70);
+      await expect
+        .poll(async () => (await cockpit.sourceViewGeometry()).inspector.width, {
+          timeout: 5_000,
+          message: "Dragging the side Source divider must resize the panel",
+        })
+        .toBeGreaterThan(initial.inspector.width + 25);
+      await expect.poll(() => cockpit.graphCenteringError(), { timeout: 5_000 }).toBeLessThan(0.12);
+      await testInfo.attach("source-view-side.png", {
+        body: await workbench.page.screenshot(),
+        contentType: "image/png",
+      });
+    });
+
+    await test.step("pin the preview, then return to follow mode", async () => {
+      await cockpit.pinSource();
+      await cockpit.focusNode("brand");
+      await expect(cockpit.inspector).toContainText(/product/i, { timeout: 5_000 });
+      await cockpit.unpinSource();
+      await cockpit.focusNode("product_availability");
+      await expect(cockpit.inspector).toContainText(/product_availability/i, { timeout: 5_000 });
+    });
+
+    await test.step("close Source and recover the full graph width", async () => {
+      const openCanvas = await cockpit.canvasGeometry();
+      await cockpit.closeSourceWithButton();
+      await expect(cockpit.ddlToggle("product_availability")).toHaveAttribute(
+        "aria-pressed",
+        "false",
+        { timeout: 5_000 },
+      );
+      const closedCanvas = await cockpit.canvasGeometry();
+      expect(closedCanvas.width).toBeGreaterThan(openCanvas.width + 300);
+      await expect.poll(() => cockpit.graphCenteringError(), { timeout: 5_000 }).toBeLessThan(0.12);
+    });
+  });
+
+  test("phase 2 — sizes and resizes the bottom Source panel", async ({
+    workbench,
+    cockpit,
+  }, testInfo) => {
+    await test.step("open an independent product availability graph", async () => {
+      await openCockpitFromTree(workbench, cockpit, /^product(?:\s|$)/, "product");
+      await cockpit.focusNode("product_availability");
+      await expect(cockpit.node("product_availability")).toHaveAttribute(
+        "data-graph-role",
+        "focus",
+        { timeout: 5_000 },
+      );
+    });
+    await workbench.resizeWindow(1_100, 850);
+    await cockpit.showSource("product_availability");
+
+    await test.step("use the full bottom width without collapsing SQL", async () => {
+      await expect.poll(() => cockpit.inspectorPlacement(), { timeout: 5_000 }).toBe("bottom");
+      const geometry = await cockpit.sourceViewGeometry();
+      expect(Math.abs(geometry.inspector.width - geometry.main.width)).toBeLessThan(3);
+      expect(geometry.source.width / geometry.inspector.width).toBeGreaterThanOrEqual(0.98);
+      expect(geometry.sourceBody.height).toBeGreaterThanOrEqual(150);
+      expect(geometry.fullyVisibleLines).toBeGreaterThanOrEqual(Math.min(6, geometry.totalLines));
+      expect(geometry.codeFontSize).toBeGreaterThanOrEqual(11);
+    });
+
+    await test.step("resize the bottom panel vertically and recenter the remaining canvas", async () => {
+      const initial = await cockpit.sourceViewGeometry();
+      await cockpit.resizeSourceHeight(70);
+      await expect
+        .poll(async () => (await cockpit.sourceViewGeometry()).inspector.height, {
+          timeout: 5_000,
+          message: "Dragging the bottom Source divider must resize panel height",
+        })
+        .toBeGreaterThan(initial.inspector.height + 35);
+      await workbench.resizeWindow(1_100, 700);
+      await expect
+        .poll(
+          async () => {
+            const geometry = await cockpit.sourceViewGeometry();
+            return geometry.inspector.height / geometry.main.height;
+          },
+          {
+            timeout: 5_000,
+            message: "The bottom Source height must be clamped again after a viewport resize",
+          },
+        )
+        .toBeLessThanOrEqual(0.56);
+      await expect.poll(() => cockpit.graphCenteringError(), { timeout: 5_000 }).toBeLessThan(0.12);
+      await testInfo.attach("source-view-bottom.png", {
+        body: await workbench.page.screenshot(),
+        contentType: "image/png",
+      });
+    });
+
+    await cockpit.closeSourceWithEscape();
+    await expect(cockpit.inspector).toBeHidden({ timeout: 5_000 });
+  });
+});

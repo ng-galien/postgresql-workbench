@@ -1,5 +1,6 @@
 import { test as base } from "@playwright/test";
 import { CockpitPage } from "../pages/CockpitPage";
+import { NotebookPage } from "../pages/NotebookPage";
 import { WorkbenchPage } from "../pages/WorkbenchPage";
 import { startDemoDatabase } from "./demoDatabase";
 import { launchVSCode, type VSCodeInstance } from "./vscode";
@@ -7,7 +8,7 @@ import { launchVSCode, type VSCodeInstance } from "./vscode";
 interface AcceptanceFixtures {
   workbench: WorkbenchPage;
   cockpit: CockpitPage;
-  evidence: undefined;
+  notebook: NotebookPage;
 }
 
 interface AcceptanceWorkerFixtures {
@@ -39,23 +40,26 @@ export const test = base.extend<AcceptanceFixtures, AcceptanceWorkerFixtures>({
     },
     { scope: "worker" },
   ],
-  workbench: async ({ vscode }, use) => {
-    await use(new WorkbenchPage(vscode.page, vscode.resizeWindow));
-  },
-  cockpit: async ({ vscode }, use) => {
-    await use(new CockpitPage(vscode.page));
-  },
-  evidence: [
-    async ({ vscode }, use, testInfo) => {
-      await use(undefined);
+  workbench: async ({ vscode }, use, testInfo) => {
+    const workbench = new WorkbenchPage(vscode.page, vscode.resizeWindow, vscode.resetWorkbenchUI);
+    await workbench.reset();
+    try {
+      await use(workbench);
+    } finally {
       if (testInfo.status !== testInfo.expectedStatus) {
         await vscode.page
           .screenshot({ path: testInfo.outputPath("failure.png"), fullPage: true })
           .catch(() => {});
       }
-    },
-    { auto: true },
-  ],
+      await workbench.reset();
+    }
+  },
+  cockpit: async ({ vscode }, use) => {
+    await use(new CockpitPage(vscode.page));
+  },
+  notebook: async ({ vscode }, use) => {
+    await use(new NotebookPage(vscode.page, vscode.inspectActiveNotebook));
+  },
 });
 
 export { expect } from "@playwright/test";

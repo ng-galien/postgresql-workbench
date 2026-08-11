@@ -27,7 +27,6 @@ test.describe("Workbench virtual source cleanup", () => {
     await expect(sourceTab).toBeVisible({ timeout: 5_000 });
 
     await vscode.executeInfrastructureCommand("workbench.action.reloadWindow");
-    await expect(workbench.page.locator(".monaco-workbench")).toBeVisible({ timeout: 30_000 });
     await expect(sourceTab).toHaveCount(0, { timeout: 30_000 });
     await expect(workbench.page.getByText(/file was not found/i)).toBeHidden({ timeout: 5_000 });
     await expect(workbench.page.getByRole("button", { name: "Create File" })).toBeHidden({

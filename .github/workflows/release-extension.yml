@@ -47,23 +47,23 @@ jobs:
 
       - name: Start PostgreSQL integration fixture
         run: npm run test:e2e:up
-      - name: Run PostgreSQL DAP integration tests
+      - name: DAP Integration
         run: npm run test:e2e:run
-      - name: Run VS Code extension integration tests
+      - name: VS Code Integration
         run: xvfb-run -a npm --prefix vscode-extension test
-      - name: Run real Workbench UI journeys
+      - name: Playwright
         run: xvfb-run -a -s "-screen 0 1600x1000x24" npm --prefix vscode-extension run test:acceptance
       - name: Upload Playwright evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: release-workbench-acceptance-results
+          name: release-playwright-results
           path: vscode-extension/test-results/**
           if-no-files-found: ignore
       - name: Stop acceptance database fixture
         if: always()
         run: docker compose -f demo/docker-compose.yml down -v
-      - name: Smoke-test extension on minimum supported VS Code
+      - name: VS Code Compatibility
         timeout-minutes: 3
         run: xvfb-run -a npm --prefix vscode-extension run test:min-vscode
       - name: Stop PostgreSQL integration fixture

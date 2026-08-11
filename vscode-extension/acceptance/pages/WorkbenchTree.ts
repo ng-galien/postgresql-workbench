@@ -3,37 +3,30 @@ import { expect, type Locator, type Page } from "@playwright/test";
 export class WorkbenchTree {
   constructor(private readonly page: Page) {}
 
-  async open(): Promise<void> {
-    const sidebarTitle = this.page.locator('[id="workbench.parts.sidebar"] .composite.title h2');
-    if (/PostgreSQL Workbench/i.test((await sidebarTitle.textContent().catch(() => "")) ?? "")) {
-      return;
-    }
-    const control = this.page
-      .locator(".activitybar")
-      .locator('[aria-label*="PostgreSQL Workbench"], [title*="PostgreSQL Workbench"]')
-      .first();
-    await control.waitFor({ state: "visible", timeout: 5_000 });
-    await control.click();
-    await sidebarTitle
-      .filter({ hasText: /PostgreSQL Workbench/i })
-      .waitFor({ state: "visible", timeout: 5_000 });
-  }
-
   item(label: RegExp): Locator {
-    return this.page.locator('[role="treeitem"]').filter({ hasText: label }).first();
+    return this.page.getByRole("treeitem").filter({ hasText: label }).first();
   }
 
   headerAction(label: RegExp): Locator {
-    return this.page
-      .locator('[id="workbench.parts.sidebar"] .composite.title')
-      .getByLabel(label)
-      .first();
+    return this.page.getByLabel(label).first();
   }
 
   async clickHeaderAction(label: RegExp): Promise<void> {
     const action = this.headerAction(label);
     await action.waitFor({ state: "visible", timeout: 5_000 });
     await action.click();
+  }
+
+  async collapseAll(): Promise<void> {
+    const action = this.headerAction(/^Collapse All$/);
+    await action.waitFor({ state: "visible", timeout: 5_000 });
+    if (await action.isEnabled()) await action.click();
+    await expect
+      .poll(() => this.page.locator('[role="treeitem"][aria-expanded="true"]:visible').count(), {
+        timeout: 5_000,
+        message: "The Workbench TreeView must be fully collapsed before the scenario starts",
+      })
+      .toBe(0);
   }
 
   async expand(label: RegExp): Promise<void> {
@@ -62,6 +55,6 @@ export class WorkbenchTree {
     const item = this.item(label);
     await item.waitFor({ state: "visible", timeout: 5_000 });
     await item.scrollIntoViewIfNeeded();
-    await item.locator(".monaco-tl-contents").click();
+    await item.click();
   }
 }

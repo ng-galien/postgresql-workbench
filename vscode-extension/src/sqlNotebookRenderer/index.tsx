@@ -1,9 +1,11 @@
 import { createRoot, type Root } from "react-dom/client";
 import type {
+  SqlNotebookOutputPayload,
   SqlNotebookRendererRequest,
   SqlNotebookRendererResponse,
   SqlNotebookResultPayload,
 } from "../sqlNotebookModel.js";
+import { SqlErrorView } from "./SqlErrorView.js";
 import { type SqlResultMessaging, SqlResultView } from "./SqlResultView.js";
 import styles from "./styles.css";
 
@@ -52,11 +54,13 @@ export function activate(context: RendererContext = {}): RendererApi {
 
       const root = createRoot(mount);
       roots.set(outputItem.id, root);
+      const payload = outputItem.json() as SqlNotebookOutputPayload;
       root.render(
-        <SqlResultView
-          payload={outputItem.json() as SqlNotebookResultPayload}
-          messaging={messaging}
-        />,
+        "type" in payload && payload.type === "error" ? (
+          <SqlErrorView payload={payload} />
+        ) : (
+          <SqlResultView payload={payload as SqlNotebookResultPayload} messaging={messaging} />
+        ),
       );
     },
     disposeOutputItem(outputId) {

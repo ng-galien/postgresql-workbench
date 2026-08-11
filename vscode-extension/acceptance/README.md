@@ -7,8 +7,8 @@ complete user-visible journeys.
 
 ## Structure
 
-- `fixtures/` owns external lifecycle: PostgreSQL demo, one isolated VS Code
-  instance per Playwright worker, traces, screenshots, and cleanup.
+- `fixtures/` owns external lifecycle: PostgreSQL demo, the isolated VS Code
+  instance, traces, screenshots, and cleanup.
 - `pages/` contains reusable UI vocabulary for VS Code, the Workbench TreeView,
   and Cockpit webviews. Selectors and physical pointer gestures belong here.
 - `specs/<feature>/` contains product acceptance scenarios phrased in user
@@ -20,18 +20,22 @@ business outcomes in the spec.
 
 ## Shared VS Code lifecycle
 
-The complete acceptance campaign runs with `workers: 1` and a worker-scoped
-VS Code fixture. VS Code and the demo database start once, all scenarios run in
-that same application instance, and teardown happens after the final scenario.
-Tests must reset only the product state they own (open editors, connections,
-graph focus, and fixture data); they must never relaunch VS Code as test setup.
-This keeps the suite fast while still exercising real Workbench UI gestures.
+The complete acceptance campaign runs with `workers: 1`, no retries, and one
+worker-scoped VS Code fixture. VS Code and the demo database start once, all
+successful scenarios run in that same application instance, and teardown
+happens after the final scenario. Playwright normally discards its worker after
+a failure, so the campaign is deliberately fail-fast (`maxFailures: 1`) rather
+than silently launching a second VS Code instance and rebuilding the database
+index for the remaining scenarios.
 
-Feature journeys may use a serial group when the intermediate state is itself
-part of the acceptance contract. The Cockpit campaign deliberately progresses
-from an empty graph to one source and then two sources, while keeping the same
-VS Code process. Each test name and step still describes one visible user
-outcome so failures remain attributable.
+Before and after every scenario, the harness saves and closes editors, waits
+for in-flight Workbench Graph operations, focuses the Workbench through its
+stable view command, restores the 1440x900 viewport, and collapses the TreeView.
+Connections and the database index remain campaign-scoped because they are
+expensive infrastructure, but every test reconstructs the UI state and product
+focus it needs. Tests must never rely on an editor, graph focus, expanded
+branch, or selection left by a previous scenario, and they must never relaunch
+VS Code as test setup.
 
 ## Timing and evidence
 
