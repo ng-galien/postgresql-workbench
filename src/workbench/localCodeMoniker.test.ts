@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const runtimeOptions = vi.hoisted(() => vi.fn());
 const connect = vi.hoisted(() => vi.fn());
+const launch = vi.hoisted(() => vi.fn());
+const stopOwned = vi.hoisted(() => vi.fn());
 const close = vi.hoisted(() => vi.fn());
 
 vi.mock("./codeMonikerRuntime.js", () => ({
@@ -38,12 +40,14 @@ vi.mock("node:module", () => ({
         forgetDaemon() {}
 
         connect = connect;
+        launch = launch;
+        stopOwned = stopOwned;
       },
     };
   },
 }));
 
-import { connectLocalCodeMoniker } from "./localCodeMoniker.js";
+import { connectLocalCodeMoniker, ensureLocalCodeMonikerWorkspace } from "./localCodeMoniker.js";
 
 beforeEach(() => {
   runtimeOptions.mockReset();
@@ -51,6 +55,8 @@ beforeEach(() => {
     close,
     onDidClose: () => () => undefined,
   });
+  launch.mockReset();
+  stopOwned.mockReset().mockResolvedValue(undefined);
   close.mockReset();
 });
 
@@ -82,5 +88,30 @@ describe("local Code Moniker transport", () => {
 
     await session.dispose();
     expect(close).toHaveBeenCalledOnce();
+  });
+
+  it("connects with the canonical workspace roots registered by a launched daemon", async () => {
+    const entry = {
+      endpoint: "ws://127.0.0.1:1234",
+      pid: 42,
+      token: "token",
+      workspace_roots: ["\\\\?\\D:\\workspace"],
+    };
+    launch.mockResolvedValue({ entry });
+
+    const session = await ensureLocalCodeMonikerWorkspace({
+      runtimePath: "/runtime",
+      workspaceRoots: ["d:\\workspace"],
+      timeoutMs: 30_000,
+    });
+
+    expect(connect).toHaveBeenCalledWith(entry, {
+      clientName: "postgresql-workbench",
+      expectedWorkspaceRoots: entry.workspace_roots,
+      timeoutMs: 30_000,
+    });
+
+    await session.dispose();
+    expect(stopOwned).toHaveBeenCalledOnce();
   });
 });

@@ -15,6 +15,8 @@
   release gate
 - Fixed Marketplace showcase GIF URLs in packaged VSIX metadata and added a
   packaging guard for all four published media links
+- Fixed the Windows Workbench runtime handshake when Code Moniker registers a
+  canonical extended-length workspace path
 - Removed SQL scratchpad creation from the no-connection welcome state;
   scratchpads remain scoped to an explicit database context
 - Fixed the Workbench tree header search action so VS Code view context is not

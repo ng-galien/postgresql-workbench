@@ -354,7 +354,7 @@ async function openLocalCodeMoniker(
   try {
     client = await runtime.connect(entry, {
       clientName: options.clientName ?? "postgresql-workbench",
-      expectedWorkspaceRoots: options.workspaceRoots,
+      expectedWorkspaceRoots: entry.workspace_roots,
       timeoutMs: options.timeoutMs,
     });
   } catch (error) {
@@ -369,7 +369,7 @@ async function openLocalCodeMoniker(
       entry = owned.entry;
       client = await runtime.connect(entry, {
         clientName: options.clientName ?? "postgresql-workbench",
-        expectedWorkspaceRoots: options.workspaceRoots,
+        expectedWorkspaceRoots: entry.workspace_roots,
         timeoutMs: options.timeoutMs,
       });
     } else if (owned) {
