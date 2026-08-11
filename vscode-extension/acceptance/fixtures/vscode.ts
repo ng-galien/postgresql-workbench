@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -12,6 +13,7 @@ const artifactsRoot = resolve(extensionRoot, "test-results", "acceptance-worker"
 export interface VSCodeInstance {
   app: ElectronApplication;
   page: Page;
+  executeInfrastructureCommand(command: "workbench.action.reloadWindow"): Promise<void>;
   dispose(): Promise<void>;
 }
 
@@ -23,6 +25,7 @@ export async function launchVSCode(): Promise<VSCodeInstance> {
   );
   const userDataDir = join(profileRoot, "user");
   const extensionsDir = join(profileRoot, "extensions");
+  const controlFile = join(profileRoot, "acceptance-command.json");
   const settingsPath = join(userDataDir, "User", "settings.json");
   rmSync(artifactsRoot, { recursive: true, force: true });
   mkdirSync(dirname(settingsPath), { recursive: true });
@@ -43,6 +46,10 @@ export async function launchVSCode(): Promise<VSCodeInstance> {
 
   const app = await electron.launch({
     executablePath,
+    env: {
+      ...process.env,
+      POSTGRESQL_WORKBENCH_ACCEPTANCE_CONTROL_FILE: controlFile,
+    },
     args: [
       "--disable-gpu-sandbox",
       "--disable-updates",
@@ -65,6 +72,9 @@ export async function launchVSCode(): Promise<VSCodeInstance> {
   return {
     app,
     page,
+    async executeInfrastructureCommand(command) {
+      writeFileSync(controlFile, JSON.stringify({ command, nonce: randomUUID() }));
+    },
     async dispose() {
       await app
         .context()

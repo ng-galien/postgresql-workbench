@@ -54,7 +54,7 @@ export function CockpitNode({
       >
         <span className="node-title">
           <span className="node-glyph">{postgresVisual(node.symbol.kind).glyph}</span>
-          <strong>{node.presentation.label}</strong>
+          <strong title={node.presentation.label}>{node.presentation.label}</strong>
           {role === "focus" && <span className="focus-flag">focus</span>}
           {node.pinned && <span className="pin-flag">⚑</span>}
         </span>

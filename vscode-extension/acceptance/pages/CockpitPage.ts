@@ -62,6 +62,12 @@ export class CockpitPage {
     await expect(source).toHaveAttribute("aria-pressed", "true", { timeout: 5_000 });
   }
 
+  async openIndexedDefinition(label: string): Promise<void> {
+    const open = this.node(label).getByRole("button", { name: /^Open/ });
+    await open.waitFor({ state: "visible", timeout: 5_000 });
+    await open.click();
+  }
+
   async focusNode(label: string): Promise<void> {
     const node = this.node(label).locator(".node-main");
     await node.waitFor({ state: "visible", timeout: 5_000 });
@@ -343,6 +349,38 @@ export class CockpitPage {
     await this.page.keyboard.up(process.platform === "darwin" ? "Meta" : "Control");
   }
 
+  async nodePresentation(label: string): Promise<{
+    logicalWidth: number;
+    logicalHeight: number;
+    compact: boolean;
+    name: string;
+    nameVisible: boolean;
+    dragHandleVisible: boolean;
+  }> {
+    return this.node(label).evaluate((card) => {
+      const viewport = document.querySelector<HTMLElement>(".react-flow__viewport");
+      const name = card.querySelector<HTMLElement>(".node-title strong");
+      const dragHandle = card.querySelector<HTMLElement>(".node-drag-handle");
+      const zoom = viewport
+        ? new DOMMatrixReadOnly(getComputedStyle(viewport).transform).a
+        : Number.NaN;
+      const rect = card.getBoundingClientRect();
+      const isVisible = (element: HTMLElement | null) => {
+        if (!element) return false;
+        const style = getComputedStyle(element);
+        return style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
+      };
+      return {
+        logicalWidth: rect.width / zoom,
+        logicalHeight: rect.height / zoom,
+        compact: card.classList.contains("zoom-compact"),
+        name: name?.textContent?.trim() ?? "",
+        nameVisible: isVisible(name),
+        dragHandleVisible: isVisible(dragHandle),
+      };
+    });
+  }
+
   async repositionNode(label: string, delta: { x: number; y: number }): Promise<void> {
     const card = this.node(label);
     const wrapper = card.locator("..");
@@ -380,6 +418,40 @@ export class CockpitPage {
         { timeout: 5_000, message: `${label} must keep its dropped graph position` },
       )
       .toBeGreaterThan(20);
+  }
+
+  async expectNodeBodyNotToDrag(label: string, delta: { x: number; y: number }): Promise<void> {
+    const card = this.node(label);
+    const wrapper = card.locator("..");
+    const body = card.locator(".node-main");
+    const before = await wrapper.boundingBox();
+    const bodyBox = await body.boundingBox();
+    expect(before, `${label} must have screen coordinates`).not.toBeNull();
+    expect(bodyBox, `${label} body must have screen coordinates`).not.toBeNull();
+    await this.page.mouse.move(bodyBox!.x + bodyBox!.width / 2, bodyBox!.y + bodyBox!.height / 2);
+    await this.page.mouse.down();
+    await this.page.mouse.move(
+      bodyBox!.x + bodyBox!.width / 2 + delta.x,
+      bodyBox!.y + bodyBox!.height / 2 + delta.y,
+      { steps: 9 },
+    );
+    await this.page.mouse.up();
+    const after = await wrapper.boundingBox();
+    expect(after, `${label} must remain measurable after dragging its body`).not.toBeNull();
+    expect(Math.hypot(after!.x - before!.x, after!.y - before!.y)).toBeLessThan(5);
+  }
+
+  async nodePortVerticalError(label: string): Promise<number> {
+    return this.node(label).evaluate((card) => {
+      const cardRect = card.getBoundingClientRect();
+      const center = cardRect.top + cardRect.height / 2;
+      return Math.max(
+        ...[...card.querySelectorAll<HTMLElement>(".cockpit-port")].map((port) => {
+          const rect = port.getBoundingClientRect();
+          return Math.abs(rect.top + rect.height / 2 - center);
+        }),
+      );
+    });
   }
 
   private async waitForViewportSettled(): Promise<void> {

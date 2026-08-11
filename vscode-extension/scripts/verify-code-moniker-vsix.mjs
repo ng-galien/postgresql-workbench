@@ -62,6 +62,19 @@ const notices = await requiredText(zip, "extension/THIRD_PARTY_NOTICES.md");
 if (!notices.includes("Permission is hereby granted")) {
   throw new Error("VSIX third-party notices contain no complete license text");
 }
+const readme = await requiredText(zip, "extension/readme.md");
+const marketplaceMediaBase =
+  "https://raw.githubusercontent.com/ng-galien/postgresql-workbench/main/vscode-extension/media/marketplace/";
+for (const image of [
+  "01-cockpit.gif",
+  "02-sql-notebook.gif",
+  "03-tests-coverage.gif",
+  "04-debugger.gif",
+]) {
+  if (!readme.includes(`${marketplaceMediaBase}${image}`)) {
+    throw new Error(`VSIX README does not contain the publishable Marketplace image URL: ${image}`);
+  }
+}
 
 const extracted = mkdtempSync(join(tmpdir(), "postgresql-workbench-code-moniker-vsix-"));
 let runtime;

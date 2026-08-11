@@ -457,7 +457,6 @@ button:disabled {
 }
 
 .react-flow__node-cockpit {
-  width: 220px;
   border-radius: 6px;
 }
 
@@ -527,7 +526,7 @@ button:disabled {
 
 .is-highlighted .cockpit-node {
   border-color: var(--cockpit-accent);
-  background: color-mix(in srgb, var(--vscode-editorWidget-background) 82%, var(--cockpit-accent));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--cockpit-accent) 45%, transparent);
 }
 
 .is-on-path .cockpit-node {
@@ -643,24 +642,31 @@ button:disabled {
   background: var(--vscode-descriptionForeground);
 }
 
-.cockpit-node.zoom-summary .node-degrees,
-.cockpit-node.zoom-summary .node-actions,
-.cockpit-node.zoom-summary .node-expansions,
-.cockpit-node.zoom-summary .focus-flag,
-.cockpit-node.zoom-summary .pin-flag,
-.cockpit-node.zoom-glyph .node-title strong,
-.cockpit-node.zoom-glyph .node-degrees,
-.cockpit-node.zoom-glyph .node-actions,
-.cockpit-node.zoom-glyph .node-expansions,
-.cockpit-node.zoom-glyph .focus-flag,
-.cockpit-node.zoom-glyph .pin-flag,
-.cockpit-node.zoom-glyph .node-drag-handle {
-  visibility: hidden;
-  opacity: 0;
-  pointer-events: none;
-  transition:
-    opacity 120ms ease,
-    visibility 0s linear 120ms;
+.cockpit-node.zoom-compact {
+  width: 168px;
+}
+
+.cockpit-node.zoom-compact .node-main {
+  padding: 7px 34px 7px 8px;
+}
+
+.cockpit-node.zoom-compact .node-title {
+  align-items: center;
+}
+
+.cockpit-node.zoom-compact .node-title strong {
+  display: block;
+  overflow-wrap: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cockpit-node.zoom-compact .node-degrees,
+.cockpit-node.zoom-compact .node-actions,
+.cockpit-node.zoom-compact .node-expansions,
+.cockpit-node.zoom-compact .focus-flag,
+.cockpit-node.zoom-compact .pin-flag {
+  display: none;
 }
 
 .react-flow__edge.selected path {
@@ -713,21 +719,6 @@ button:disabled {
   .focus-flag,
   .pin-flag,
   .node-drag-handle {
-    transition: none;
-  }
-
-  .cockpit-node.zoom-summary .node-degrees,
-  .cockpit-node.zoom-summary .node-actions,
-  .cockpit-node.zoom-summary .node-expansions,
-  .cockpit-node.zoom-summary .focus-flag,
-  .cockpit-node.zoom-summary .pin-flag,
-  .cockpit-node.zoom-glyph .node-title strong,
-  .cockpit-node.zoom-glyph .node-degrees,
-  .cockpit-node.zoom-glyph .node-actions,
-  .cockpit-node.zoom-glyph .node-expansions,
-  .cockpit-node.zoom-glyph .focus-flag,
-  .cockpit-node.zoom-glyph .pin-flag,
-  .cockpit-node.zoom-glyph .node-drag-handle {
     transition: none;
   }
 }

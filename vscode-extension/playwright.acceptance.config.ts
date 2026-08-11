@@ -17,5 +17,5 @@ export default defineConfig({
     screenshot: "only-on-failure",
     video: "retain-on-failure",
   },
-  outputDir: "test-results/graph-dnd",
+  outputDir: "test-results/acceptance",
 });

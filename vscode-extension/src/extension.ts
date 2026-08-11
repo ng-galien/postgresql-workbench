@@ -20,6 +20,7 @@ import {
   type DebugResultStatus,
   type DebugSessionStatus,
 } from "../../src/debugger/launch/index.js";
+import { registerAcceptanceControl } from "./acceptanceControl.js";
 import { CallSiteConnectionStore } from "./callSiteConnectionStore.js";
 import { CodeMonikerContentProvider } from "./codeMonikerContentProvider.js";
 import { ConnectionManager } from "./connectionManager.js";
@@ -614,7 +615,7 @@ function registerSqlWorkbenchCommands(options: SqlWorkbenchCommandOptions): void
           document,
           object.plpgsql ? "plpgsql" : "sql",
         );
-        await vscode.window.showTextDocument(document, { preview: false });
+        await vscode.window.showTextDocument(document, { preview: true });
         return uri;
       },
     ),
@@ -1374,6 +1375,9 @@ function registerDiagnosticsAndReconnect(
 
 export function activate(context: vscode.ExtensionContext): PlpgsqlExtensionApi {
   out.appendLine("activate() called");
+
+  const acceptanceControl = registerAcceptanceControl(context);
+  if (acceptanceControl) context.subscriptions.push(acceptanceControl);
 
   const cm = new ConnectionManager(context, out);
   context.subscriptions.push(cm);

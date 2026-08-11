@@ -50,6 +50,7 @@ readability.
 
 ```bash
 npm run test:acceptance:graph-dnd
+npm run test:acceptance:source-tab-cleanup
 ```
 
 The command builds the production extension, starts the deterministic demo

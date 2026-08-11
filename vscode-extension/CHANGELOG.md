@@ -4,6 +4,18 @@
 
 ### PostgreSQL Workbench
 
+- Refined Cockpit graph cards with an exclusive drag handle, border-only
+  interaction feedback, and a compact named layout that remains readable and
+  draggable at low zoom
+- Closed clean virtual PostgreSQL source tabs that cannot be resolved after a
+  window reload instead of leaving VS Code on a missing-file editor
+- Added separate Playwright acceptance journeys for graph interactions and
+  stale virtual-source cleanup, including stable command-ID infrastructure for
+  window reloads
+- Fixed Marketplace showcase GIF URLs in packaged VSIX metadata and added a
+  packaging guard for all four published media links
+- Removed SQL scratchpad creation from the no-connection welcome state;
+  scratchpads remain scoped to an explicit database context
 - Fixed the Workbench tree header search action so VS Code view context is not
   mistaken for a text query; clicking it now reliably opens the indexed object
   picker

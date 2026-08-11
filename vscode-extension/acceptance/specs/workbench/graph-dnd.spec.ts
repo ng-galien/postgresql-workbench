@@ -82,7 +82,46 @@ test.describe
         await expect
           .poll(() => cockpit.graphCenteringError(), { timeout: 5_000 })
           .toBeLessThan(0.12);
+        await cockpit.expectNodeBodyNotToDrag("product", { x: 80, y: 45 });
         await cockpit.repositionNode("product", { x: 90, y: 55 });
+      });
+
+      await test.step("keep a named, draggable card at the lowest semantic zoom", async () => {
+        for (let attempt = 0; attempt < 4 && (await cockpit.zoom()) >= 0.5; attempt += 1) {
+          await cockpit.zoomByWheel(300);
+        }
+        await expect
+          .poll(() => cockpit.zoom(), {
+            timeout: 5_000,
+            message: "Zooming out must switch the graph to its compact named cards",
+          })
+          .toBeLessThan(0.5);
+        await expect
+          .poll(() => cockpit.nodePresentation("product"), {
+            timeout: 5_000,
+            message: "The compact product card must be measured after React Flow updates it",
+          })
+          .toMatchObject({
+            compact: true,
+            name: "product",
+            nameVisible: true,
+            dragHandleVisible: true,
+          });
+        const compact = await cockpit.nodePresentation("product");
+        expect(compact.logicalWidth).toBeLessThanOrEqual(170);
+        expect(compact.logicalHeight).toBeLessThan(50);
+        expect(await cockpit.nodePortVerticalError("product")).toBeLessThanOrEqual(2);
+
+        for (let attempt = 0; attempt < 4 && (await cockpit.zoom()) < 0.5; attempt += 1) {
+          await cockpit.zoomByWheel(-300);
+        }
+        await expect
+          .poll(() => cockpit.zoom(), {
+            timeout: 5_000,
+            message: "The next interaction phase must resume with detailed graph cards",
+          })
+          .toBeGreaterThanOrEqual(0.5);
+        expect(await cockpit.nodePortVerticalError("product")).toBeLessThanOrEqual(2);
       });
     });
 

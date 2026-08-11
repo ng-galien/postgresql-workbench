@@ -117,7 +117,9 @@ describe("Cockpit canvas node dragging", () => {
 
     renderToStaticMarkup(<CockpitCanvas frameRequest="0:0" />);
 
-    expect(reactFlow.props?.nodes).toHaveLength(1);
+    const nodes = reactFlow.props?.nodes as Array<{ dragHandle?: string }> | undefined;
+    expect(nodes).toHaveLength(1);
+    expect(nodes?.[0]?.dragHandle).toBe(".node-drag-handle");
     expect(reactFlow.props?.onNodesChange).toBe(reactFlow.onNodesChange);
   });
 

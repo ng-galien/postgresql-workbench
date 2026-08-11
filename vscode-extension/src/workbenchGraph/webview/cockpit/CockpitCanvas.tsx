@@ -134,6 +134,7 @@ export function CockpitCanvas({ frameRequest }: { frameRequest: string }) {
       return {
         id: node.identity,
         type: "cockpit",
+        dragHandle: ".node-drag-handle",
         ariaLabel: `${node.presentation.label}, PostgreSQL ${node.presentation.kind}. Select and use the arrow keys to reposition.`,
         position: laidOut[node.identity] ?? { x: 0, y: 0 },
         data: {

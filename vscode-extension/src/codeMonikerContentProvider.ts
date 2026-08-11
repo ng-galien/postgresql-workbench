@@ -15,15 +15,25 @@ export class CodeMonikerContentProvider implements vscode.FileSystemProvider, vs
   readonly onDidChangeFile = this.changeEmitter.event;
   private readonly cache = new Map<string, Uint8Array>();
   private readonly subscriptions: vscode.Disposable[];
+  private closingUnavailableTabs: Promise<void> | undefined;
+  private unavailableTabsReconciliationRequested = false;
 
   constructor(
     private readonly connections: ConnectionManager,
     private readonly index: WorkbenchIndexController,
   ) {
     this.subscriptions = [
-      connections.onServerChanged(() => this.invalidateAll()),
-      index.onDidChangeState(() => this.invalidateAll()),
+      connections.onServerChanged(() => {
+        this.invalidateAll();
+        this.reconcileUnavailableTabs();
+      }),
+      index.onDidChangeState(() => {
+        this.invalidateAll();
+        this.reconcileUnavailableTabs();
+      }),
+      vscode.window.tabGroups.onDidChangeTabs(() => this.reconcileUnavailableTabs()),
     ];
+    queueMicrotask(() => this.reconcileUnavailableTabs());
   }
 
   dispose(): void {
@@ -34,6 +44,24 @@ export class CodeMonikerContentProvider implements vscode.FileSystemProvider, vs
 
   invalidateAll(): void {
     this.cache.clear();
+  }
+
+  private reconcileUnavailableTabs(): void {
+    this.unavailableTabsReconciliationRequested = true;
+    if (this.closingUnavailableTabs) return;
+    this.closingUnavailableTabs = this.closeUnavailableTabsUntilSettled().finally(() => {
+      this.closingUnavailableTabs = undefined;
+    });
+    void this.closingUnavailableTabs.catch(() => {});
+  }
+
+  private async closeUnavailableTabsUntilSettled(): Promise<void> {
+    while (this.unavailableTabsReconciliationRequested) {
+      this.unavailableTabsReconciliationRequested = false;
+      await closeUnavailableCodeMonikerTabs((uri) =>
+        Boolean(this.index.sourceDescriptorForDocumentUri(uri)),
+      );
+    }
   }
 
   watch(): vscode.Disposable {
@@ -124,6 +152,21 @@ export class CodeMonikerContentProvider implements vscode.FileSystemProvider, vs
     }
     return [...entries.entries()];
   }
+}
+
+export async function closeUnavailableCodeMonikerTabs(
+  isAvailable: (uri: vscode.Uri) => boolean,
+): Promise<void> {
+  const tabs = vscode.window.tabGroups.all.flatMap((group) =>
+    group.tabs.filter(
+      (tab) =>
+        !tab.isDirty &&
+        tab.input instanceof vscode.TabInputText &&
+        tab.input.uri.scheme === CodeMonikerContentProvider.SCHEME &&
+        !isAvailable(tab.input.uri),
+    ),
+  );
+  if (tabs.length > 0) await vscode.window.tabGroups.close(tabs, true);
 }
 
 interface UriConnection {

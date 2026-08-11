@@ -1,9 +1,7 @@
-export type CockpitZoomLevel = "detail" | "summary" | "glyph";
+export type CockpitZoomLevel = "detail" | "compact";
 
 export function cockpitZoomLevel(zoom: number): CockpitZoomLevel {
-  if (zoom < 0.32) return "glyph";
-  if (zoom < 0.7) return "summary";
-  return "detail";
+  return zoom < 0.5 ? "compact" : "detail";
 }
 
 export function showCockpitEdgeLabel(zoom: number): boolean {

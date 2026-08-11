@@ -101,11 +101,20 @@ describe("SQL Cockpit node actions", () => {
     expect(html).toContain('class="nodrag expand-outgoing"');
   });
 
-  it("keeps a stable summary card around the former compact cutoff", () => {
-    xyflow.zoom = 0.54;
+  it("keeps a named, draggable compact card at every reduced zoom", () => {
+    xyflow.zoom = 0.49;
     const html = renderToStaticMarkup(<CockpitNode data={data("neighbor")} />);
 
-    expect(html).toContain("cockpit-node kind-table role-neighbor zoom-summary");
-    expect(html).toContain("<strong>warehouse</strong>");
+    expect(html).toContain("cockpit-node kind-table role-neighbor zoom-compact");
+    expect(html).toContain('<strong title="warehouse">warehouse</strong>');
+    expect(html).toContain('class="node-drag-handle"');
+  });
+
+  it("never removes the object name at the minimum graph zoom", () => {
+    xyflow.zoom = 0.25;
+    const html = renderToStaticMarkup(<CockpitNode data={data("neighbor")} />);
+
+    expect(html).toContain("zoom-compact");
+    expect(html).toContain('<strong title="warehouse">warehouse</strong>');
   });
 });

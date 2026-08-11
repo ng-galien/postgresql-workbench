@@ -7,17 +7,6 @@ export class QuickInput {
     return this.page.locator(".quick-input-widget input");
   }
 
-  async runCommand(label: string): Promise<void> {
-    await this.page.keyboard.press(`${process.platform === "darwin" ? "Meta" : "Control"}+Shift+P`);
-    await this.input.waitFor({ state: "visible", timeout: 5_000 });
-    await this.input.fill(label);
-    const option = this.page
-      .locator(".quick-input-list .monaco-list-row")
-      .filter({ hasText: label });
-    await option.first().waitFor({ state: "visible", timeout: 5_000 });
-    await option.first().click();
-  }
-
   async chooseOption(label: RegExp): Promise<void> {
     const option = this.page
       .locator(".quick-input-list .monaco-list-row")

@@ -48,4 +48,11 @@ export class WorkbenchTree {
   async expandPath(labels: RegExp[]): Promise<void> {
     for (const label of labels) await this.expand(label);
   }
+
+  async select(label: RegExp): Promise<void> {
+    const item = this.item(label);
+    await item.waitFor({ state: "visible", timeout: 5_000 });
+    await item.scrollIntoViewIfNeeded();
+    await item.locator(".monaco-tl-contents").click();
+  }
 }
