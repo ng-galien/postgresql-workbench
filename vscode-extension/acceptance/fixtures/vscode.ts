@@ -230,6 +230,7 @@ export interface VSCodeInstance {
   inspectActiveNotebook(): Promise<ActiveNotebookSnapshot | undefined>;
   inspectDebugState(): Promise<DebugStateSnapshot>;
   inspectTestingState(): Promise<TestingStateSnapshot>;
+  openWorkspaceFile(fileName: string): Promise<void>;
   resetWorkbenchUI(): Promise<void>;
   resizeWindow(width: number, height: number): Promise<void>;
   dispose(): Promise<void>;
@@ -487,9 +488,10 @@ export async function launchVSCode(options: LaunchVSCodeOptions = {}): Promise<V
     const runAcceptanceCommand = async (
       command: string,
       timeout = 5_000,
+      arguments_?: unknown[],
     ): Promise<ExtensionReadyState> => {
       const nonce = randomUUID();
-      writeFileSync(controlFile, JSON.stringify({ command, nonce }));
+      writeFileSync(controlFile, JSON.stringify({ arguments: arguments_, command, nonce }));
       ready = await waitForCommand(
         readyFile,
         ready.activationId,
@@ -540,6 +542,11 @@ export async function launchVSCode(options: LaunchVSCodeOptions = {}): Promise<V
           "postgresql-workbench.acceptance.inspectTestingState",
         );
         return (state.result ?? {}) as TestingStateSnapshot;
+      },
+      async openWorkspaceFile(fileName) {
+        await runAcceptanceCommand("postgresql-workbench.acceptance.openWorkspaceFile", 5_000, [
+          fileName,
+        ]);
       },
       async resetWorkbenchUI() {
         const state = await runAcceptanceCommand("postgresql-workbench.acceptance.resetWorkbench");

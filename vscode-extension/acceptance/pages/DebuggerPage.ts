@@ -7,18 +7,14 @@ export class DebuggerPage {
 
   constructor(
     private readonly page: Page,
-    private readonly executeCommand: (command: "workbench.action.quickOpen") => Promise<void>,
+    private readonly openWorkspaceFile: (fileName: string) => Promise<void>,
     private readonly inspectDebugState: () => Promise<DebugStateSnapshot>,
   ) {
     this.quickInput = new QuickInput(page);
   }
 
   async openCallSite(fileName: string): Promise<void> {
-    await this.executeCommand("workbench.action.quickOpen");
-    await this.quickInput.input.waitFor({ state: "visible", timeout: 5_000 });
-    await this.quickInput.input.fill(fileName);
-    await this.quickInput.chooseOption(new RegExp(`^${fileName.replace(".", "\\.")}`));
-    await this.quickInput.input.waitFor({ state: "hidden", timeout: 5_000 });
+    await this.openWorkspaceFile(fileName);
     await expect(
       this.page.getByRole("tab", { name: new RegExp(fileName.replace(".", "\\.")) }),
     ).toBeVisible({

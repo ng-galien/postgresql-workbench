@@ -13,6 +13,7 @@ const INSPECT_TESTING_STATE_COMMAND = "postgresql-workbench.acceptance.inspectTe
 const INSPECT_ACTIVE_NOTEBOOK_COMMAND = "postgresql-workbench.acceptance.inspectActiveNotebook";
 const INSPECT_DEBUG_STATE_COMMAND = "postgresql-workbench.acceptance.inspectDebugState";
 const RESET_WORKBENCH_COMMAND = "postgresql-workbench.acceptance.resetWorkbench";
+const OPEN_WORKSPACE_FILE_COMMAND = "postgresql-workbench.acceptance.openWorkspaceFile";
 const ACCEPTANCE_COMMANDS = new Set([
   RELOAD_WINDOW_COMMAND,
   QUICK_OPEN_COMMAND,
@@ -24,6 +25,7 @@ const ACCEPTANCE_COMMANDS = new Set([
   INSPECT_ACTIVE_NOTEBOOK_COMMAND,
   INSPECT_DEBUG_STATE_COMMAND,
   RESET_WORKBENCH_COMMAND,
+  OPEN_WORKSPACE_FILE_COMMAND,
 ]);
 
 export interface AcceptanceControl extends vscode.Disposable {
@@ -59,6 +61,7 @@ export function registerAcceptanceControl(
     pending = pending
       .then(async () => {
         const instruction = JSON.parse(await readFile(controlFile, "utf8")) as {
+          arguments?: unknown;
           command?: unknown;
           nonce?: unknown;
         };
@@ -114,6 +117,23 @@ export function registerAcceptanceControl(
               0,
             ),
           });
+          return;
+        }
+        if (instruction.command === OPEN_WORKSPACE_FILE_COMMAND) {
+          const fileName = Array.isArray(instruction.arguments)
+            ? instruction.arguments[0]
+            : undefined;
+          if (typeof fileName !== "string" || fileName.length === 0) {
+            throw new Error("Open workspace file requires a non-empty file name");
+          }
+          const matches = await vscode.workspace.findFiles(`**/${fileName}`, undefined, 2);
+          if (matches.length !== 1) {
+            throw new Error(
+              `Expected one workspace file named ${fileName}, found ${matches.length}`,
+            );
+          }
+          await vscode.window.showTextDocument(matches[0]);
+          markReady(instruction.nonce);
           return;
         }
         await vscode.commands.executeCommand(instruction.command);

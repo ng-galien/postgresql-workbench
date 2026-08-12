@@ -78,7 +78,7 @@ export const test = base.extend<AcceptanceFixtures, AcceptanceWorkerFixtures>({
     await use(new CockpitPage(vscode.page));
   },
   debuggerPage: async ({ vscode }, use) => {
-    await use(new DebuggerPage(vscode.page, vscode.executeCommand, vscode.inspectDebugState));
+    await use(new DebuggerPage(vscode.page, vscode.openWorkspaceFile, vscode.inspectDebugState));
   },
   notebook: async ({ vscode }, use) => {
     await use(new NotebookPage(vscode.page, vscode.inspectActiveNotebook));
