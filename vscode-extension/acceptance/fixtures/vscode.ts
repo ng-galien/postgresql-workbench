@@ -9,6 +9,7 @@ import { preparedAcceptanceVSCode } from "./vscodeDownload";
 const extensionRoot = resolve(__dirname, "../..");
 const workspace = resolve(extensionRoot, "test-workspace");
 const artifactsRoot = resolve(extensionRoot, "test-results", "acceptance-worker");
+const workbenchActivityLabel = "PostgreSQL Workbench";
 
 interface ExtensionReadyState {
   activationId: string;
@@ -99,6 +100,27 @@ async function waitForVSCodeWindow(app: ElectronApplication, timeout: number): P
   }
   throw new Error(
     `No visible VS Code Electron window appeared within ${timeout} ms. BrowserWindow states:\n${JSON.stringify(lastStates, null, 2)}`,
+  );
+}
+
+async function waitForWorkbenchWindow(app: ElectronApplication, timeout: number): Promise<Page> {
+  const deadline = Date.now() + timeout;
+  let lastStates: ElectronWindowState[] = [];
+  while (Date.now() < deadline) {
+    const states: ElectronWindowState[] = [];
+    for (const page of app.windows()) {
+      if (page.isClosed()) continue;
+      const state = await electronWindowState(app, page).catch(() => undefined);
+      if (!state?.visible) continue;
+      states.push(state);
+      const activity = page.getByLabel(workbenchActivityLabel, { exact: true }).first();
+      if (await activity.isVisible().catch(() => false)) return page;
+    }
+    lastStates = states;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error(
+    `No visible VS Code window exposed the ${JSON.stringify(workbenchActivityLabel)} activity within ${timeout} ms. BrowserWindow states:\n${JSON.stringify(lastStates, null, 2)}`,
   );
 }
 
@@ -295,9 +317,8 @@ export async function launchVSCode(): Promise<VSCodeInstance> {
     });
     await app.context().tracing.start({ screenshots: true, snapshots: true });
     tracingStarted = true;
-    const page = await waitForVSCodeWindow(app, 30_000);
-    const workbenchActivity = page.getByLabel("PostgreSQL Workbench", { exact: true }).first();
-    await workbenchActivity.waitFor({ state: "visible", timeout: 10_000 });
+    const page = await waitForWorkbenchWindow(app, 30_000);
+    const workbenchActivity = page.getByLabel(workbenchActivityLabel, { exact: true }).first();
     await resizeWindow(app, page, 1440, 900);
     await workbenchActivity.click();
     let ready = await waitForActivation(
