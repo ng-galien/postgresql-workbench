@@ -389,6 +389,7 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
     this.entryOid = prepared.execution.entryOid;
     this.sourceUris = clientSourceUris(args.sourceUris);
     this.sourceOids = new Map([...this.sourceUris].map(([oid, symbolUri]) => [symbolUri, oid]));
+    log(`sourceRegistry: ${JSON.stringify(Object.fromEntries(this.sourceUris))}`);
     this.sourceReferences.clear();
     this.sourceReferenceByOid.clear();
     this.nextSourceReference = 1;
@@ -479,6 +480,9 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
       condition: bp.condition,
       logMessage: bp.logMessage,
     }));
+    log(
+      `setBreakPointsRequest: source=${source.path ?? `reference:${source.sourceReference}`} lines=${requested.map((breakpoint) => breakpoint.line).join(",") || "<none>"} listenerReady=${Boolean(this.listenerExecutor)}`,
+    );
 
     if (!this.listenerExecutor) {
       this.pendingBreakpointRequests.set(sourceKey, { source, breakpoints: requested });
@@ -563,9 +567,13 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
   /** Replay setBreakpoints requests that arrived before the listener session was ready. */
   private async replayPendingBreakpoints(): Promise<void> {
     const pending = [...this.pendingBreakpointRequests.entries()];
+    log(`replayPendingBreakpoints: requests=${pending.length}`);
     for (const [sourceKey, request] of pending) {
       try {
         const results = await this.applyBreakpoints(request.source, request.breakpoints);
+        log(
+          `replayPendingBreakpoints: source=${sourceKey} verified=${results.filter((breakpoint) => breakpoint.verified).length}/${results.length}`,
+        );
         if (this.pendingBreakpointRequests.get(sourceKey) === request) {
           this.pendingBreakpointRequests.delete(sourceKey);
         }

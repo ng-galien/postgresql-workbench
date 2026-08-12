@@ -1581,6 +1581,15 @@ export function activate(context: vscode.ExtensionContext): PlpgsqlExtensionApi 
   const workbenchSearch = { query: "" };
   const debugSessions = new DebugSessionController(() => connectionTreeProvider?.refresh());
   inspectAcceptanceDebugState = () => ({
+    breakpoints: vscode.debug.breakpoints.map((breakpoint) =>
+      breakpoint instanceof vscode.SourceBreakpoint
+        ? {
+            enabled: breakpoint.enabled,
+            line: breakpoint.location.range.start.line + 1,
+            uri: breakpoint.location.uri.toString(),
+          }
+        : { enabled: breakpoint.enabled },
+    ),
     extensionSession: debugSessions.active,
     vscodeSessionId: vscode.debug.activeDebugSession?.id,
   });

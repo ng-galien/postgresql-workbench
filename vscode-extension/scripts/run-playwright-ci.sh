@@ -36,6 +36,9 @@ if [[ $status -eq 0 ]]; then
   rm -f "$screen_snapshot"
 else
   scrot "$results_dir/runner-screen-final.png" 2>/dev/null || true
+  if [[ -f /tmp/postgresql-workbench.log ]]; then
+    cp /tmp/postgresql-workbench.log "$results_dir/dap-server.log"
+  fi
 fi
 
 exit "$status"

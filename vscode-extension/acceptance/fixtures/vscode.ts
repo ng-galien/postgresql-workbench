@@ -248,6 +248,11 @@ export interface ActiveNotebookSnapshot {
 }
 
 export interface DebugStateSnapshot {
+  breakpoints?: Array<{
+    enabled: boolean;
+    line?: number;
+    uri?: string;
+  }>;
   extensionSession?: {
     adapterSessionId?: string;
     state?: string;

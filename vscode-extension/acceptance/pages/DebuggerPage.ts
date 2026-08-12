@@ -27,6 +27,7 @@ export class DebuggerPage {
   }
 
   async setBreakpoint(sourceLine: string): Promise<void> {
+    const registeredBefore = (await this.inspectDebugState()).breakpoints?.length ?? 0;
     const line = await this.revealLine(sourceLine);
     const margin = this.page.locator(".monaco-editor:visible .margin-view-overlays").first();
     const lineBox = await this.waitForBoundingBox(
@@ -46,6 +47,12 @@ export class DebuggerPage {
         message: `The editor must display a breakpoint marker on ${sourceLine}`,
       })
       .toBe(markerCount + 1);
+    await expect
+      .poll(async () => (await this.inspectDebugState()).breakpoints?.length ?? 0, {
+        timeout: 5_000,
+        message: `VS Code must register the breakpoint through its debug API on ${sourceLine}`,
+      })
+      .toBe(registeredBefore + 1);
   }
 
   async assignConnection(sql: string, connection: RegExp): Promise<void> {
