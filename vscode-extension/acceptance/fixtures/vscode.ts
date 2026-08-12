@@ -21,15 +21,6 @@ const activationTarget = resolve(workspace, "debug-fib.sql");
 const artifactsRoot = resolve(extensionRoot, "test-results", "acceptance-worker");
 const workbenchActivityLabel = "PostgreSQL Workbench";
 
-function playwrightElectronLoader(): string {
-  const packageRoot = dirname(require.resolve("playwright-core/package.json"));
-  const loader = join(packageRoot, "lib", "server", "electron", "loader.js");
-  if (!existsSync(loader)) {
-    throw new Error(`Playwright Electron loader is unavailable at ${loader}`);
-  }
-  return loader;
-}
-
 async function bounded<T>(promise: Promise<T>, timeout: number): Promise<T | undefined> {
   return Promise.race([
     promise.catch(() => undefined),
@@ -438,8 +429,7 @@ export async function launchVSCode(): Promise<VSCodeInstance> {
         POSTGRESQL_WORKBENCH_ACCEPTANCE_CONTROL_FILE: controlFile,
       },
       args: [
-        "-r",
-        playwrightElectronLoader(),
+        ...(process.platform === "linux" ? ["--disable-gpu"] : []),
         "--disable-gpu-sandbox",
         "--disable-updates",
         "--force-disable-user-env",
