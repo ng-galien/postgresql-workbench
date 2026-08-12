@@ -583,8 +583,11 @@ suite("Debug session e2e", function () {
     const tid = (await session.customRequest("threads")).threads[0].id;
     const stack = await session.customRequest("stackTrace", { threadId: tid });
     const frame = stack.stackFrames[0];
-    assert.ok(frame.source?.path, "Frame should carry a Code Moniker source path");
-    assert.strictEqual(vscode.Uri.parse(frame.source.path, true).scheme, "code+moniker");
+    assert.ok(frame.source?.path, "Frame should carry an autonomous DAP source path");
+    const standaloneSource = vscode.Uri.parse(frame.source.path, true);
+    assert.strictEqual(standaloneSource.scheme, "postgresql-dap");
+    assert.strictEqual(standaloneSource.authority, "");
+    assert.match(standaloneSource.path, /^\/routine\/\d+$/);
 
     // Two assignments below the entry stop — steppable by construction.
     const bpLine = frame.line + 2;

@@ -236,23 +236,6 @@ export function CockpitCanvas({ frameRequest }: { frameRequest: string }) {
     frameNeighborhood(flow.current);
   }, [flowReady, frameNeighborhood, frameRequest]);
 
-  useEffect(() => {
-    const element = canvasElement.current;
-    if (!element || flowReady < 1) return;
-    let timer: number | undefined;
-    const observer = new ResizeObserver(() => {
-      if (timer !== undefined) window.clearTimeout(timer);
-      timer = window.setTimeout(() => {
-        if (flow.current) frameNeighborhood(flow.current);
-      }, 80);
-    });
-    observer.observe(element);
-    return () => {
-      observer.disconnect();
-      if (timer !== undefined) window.clearTimeout(timer);
-    };
-  }, [flowReady, frameNeighborhood]);
-
   const activeDropFeedback = dropFeedback ?? treeDragPayload;
 
   return (

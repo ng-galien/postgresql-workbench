@@ -7,6 +7,10 @@ export class WorkbenchTree {
     return this.page.getByRole("treeitem").filter({ hasText: label }).first();
   }
 
+  itemByAccessibleName(label: RegExp): Locator {
+    return this.page.getByRole("treeitem", { name: label }).first();
+  }
+
   headerAction(label: RegExp): Locator {
     return this.page.getByLabel(label).first();
   }

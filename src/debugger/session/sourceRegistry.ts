@@ -26,14 +26,15 @@ export function standaloneSourceUri(oid: number): string {
   if (!Number.isInteger(oid) || oid <= 0) {
     throw new Error(`Invalid PostgreSQL routine OID: ${oid}`);
   }
-  return `postgresql-dap://routine/${oid}`;
+  return `postgresql-dap:/routine/${oid}`;
 }
 
 export function standaloneSourceOid(documentUri: string): number | undefined {
   try {
     const parsed = new URL(documentUri);
-    if (parsed.protocol !== "postgresql-dap:" || parsed.hostname !== "routine") return undefined;
-    const oid = Number(parsed.pathname.slice(1));
+    const match = /^\/routine\/(\d+)$/.exec(parsed.pathname);
+    if (parsed.protocol !== "postgresql-dap:" || parsed.hostname || !match) return undefined;
+    const oid = Number(match[1]);
     return Number.isInteger(oid) && oid > 0 ? oid : undefined;
   } catch {
     return undefined;

@@ -18,8 +18,10 @@ describe("DAP Code Moniker source registry", () => {
 
   it("accepts a missing indexed registry for a standalone DAP client", () => {
     expect(canonicalSourceUris(undefined)).toEqual(new Map());
-    expect(standaloneSourceUri(42)).toBe("postgresql-dap://routine/42");
-    expect(standaloneSourceOid("postgresql-dap://routine/42")).toBe(42);
+    expect(standaloneSourceUri(42)).toBe("postgresql-dap:/routine/42");
+    expect(new URL(standaloneSourceUri(42)).hostname).toBe("");
+    expect(standaloneSourceOid("postgresql-dap:/routine/42")).toBe(42);
+    expect(standaloneSourceOid("postgresql-dap://routine/42")).toBeUndefined();
   });
 
   it("rejects non-Code-Moniker identities when an indexed registry is supplied", () => {

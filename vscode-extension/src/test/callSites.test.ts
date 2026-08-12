@@ -10,6 +10,7 @@ import {
   terminateDebugSessions,
 } from "../debugSessionRecovery.js";
 import type { PlpgsqlExtensionApi } from "../extension.js";
+import { isPostgresqlDapDocument } from "../postgresqlDapContentProvider.js";
 import type { WorkbenchGraphRenderEvidence } from "../workbenchGraph/protocol.js";
 import type {
   DebugSessionsItem,
@@ -1159,15 +1160,10 @@ suite("Command call sites (registered server)", function () {
         focusedReads,
         `The focused SQL graph should directly connect the view to its table: ${JSON.stringify(renderedFocus.edges)}`,
       );
-      assert.ok(
-        renderedFocus.preview?.title === "u22_product_view" &&
-          renderedFocus.preview.text.includes("CREATE VIEW") &&
-          renderedFocus.preview.text.includes("u22_product_source") &&
-          renderedFocus.preview.highlightedTokens > 0 &&
-          renderedFocus.preview.renderedLines === renderedFocus.preview.lines &&
-          renderedFocus.preview.maxVerticalGap <= 1 &&
-          renderedFocus.preview.backgroundMatchesEditor,
-        `The focused SQL graph should render the snapshot-bound DDL preview: ${JSON.stringify(renderedFocus.preview)}`,
+      assert.strictEqual(
+        renderedFocus.preview,
+        undefined,
+        "Opening a focused graph must keep the explicit Source panel closed",
       );
 
       const schemaScope = api.workbenchGraph.currentBreadcrumbs.find(
@@ -1394,21 +1390,11 @@ suite("Command call sites (registered server)", function () {
       ...(debugLens!.command!.arguments ?? []),
     );
     const session = await sessionStarted;
-    await delay(5000);
-
-    const threads = await session.customRequest("threads");
-    assert.ok(threads.threads.length > 0, "Session should be live with threads");
-    const stack = await session.customRequest("stackTrace", {
-      threadId: threads.threads[0].id,
-    });
+    const stopped = await waitForRoutineSource(session, "restock_report");
+    const stoppedUri = vscode.Uri.parse(stopped.source);
     assert.ok(
-      stack.stackFrames[0]?.name.includes("restock_report"),
-      `Expected restock_report frame, got ${stack.stackFrames[0]?.name}`,
-    );
-    assert.strictEqual(
-      vscode.window.activeTextEditor?.document.uri.scheme,
-      "code+moniker",
-      "The stopped routine source should still be the active editor",
+      stoppedUri.scheme === "code+moniker" || isPostgresqlDapDocument(stoppedUri),
+      `The stopped routine must use a supported Workbench source, got ${stopped.source}`,
     );
     assert.ok(
       vscode.window.tabGroups.all
@@ -1422,7 +1408,7 @@ suite("Command call sites (registered server)", function () {
     );
 
     const ended = waitSessionEnd();
-    await session.customRequest("continue", { threadId: threads.threads[0].id });
+    await session.customRequest("continue", { threadId: stopped.threadId });
     await ended;
     for (let attempt = 0; attempt < 20 && !api.resultsViewVisible(); attempt++) {
       await delay(100);

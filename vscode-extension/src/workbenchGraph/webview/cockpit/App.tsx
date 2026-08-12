@@ -11,6 +11,7 @@ import { requestNeighborhood } from "./transport.js";
 
 export function App() {
   const receive = useCockpitStore((state) => state.receive);
+  const appearance = useCockpitStore((state) => state.appearance);
   const session = useCockpitStore((state) => state.session);
   const exploration = useCockpitStore((state) => state.exploration);
   const preview = useCockpitStore((state) => state.preview);
@@ -180,7 +181,15 @@ export function App() {
     );
   }
   return (
-    <div className="cockpit-shell">
+    <div
+      className="cockpit-shell"
+      style={
+        {
+          "--cockpit-compact-node-font-size": `${appearance.compactNodeFontScale}em`,
+          "--cockpit-edge-label-font-scale": appearance.edgeLabelFontScale,
+        } as CSSProperties
+      }
+    >
       <CockpitToolbar onRecenter={() => setRecenterToken((value) => value + 1)} />
       {error && <div className="cockpit-error">{error}</div>}
       {dropError && <div className="cockpit-error">{dropError}</div>}

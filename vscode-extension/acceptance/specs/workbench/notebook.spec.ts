@@ -1,22 +1,10 @@
 import { demoConnectionUrl } from "../../fixtures/demoDatabase";
 import { expect, test } from "../../fixtures/test";
-import type { NotebookPage } from "../../pages/NotebookPage";
-import type { WorkbenchPage } from "../../pages/WorkbenchPage";
+import { createScratchpad } from "../../journeys/scratchpad";
 
 const server = /postgres@localhost:5434/;
 const database = /^demo/;
 const resultMime = "application/vnd.postgresql-workbench.sql-result+json";
-
-async function createScratchpad(workbench: WorkbenchPage, notebook: NotebookPage): Promise<void> {
-  await workbench.ensureServer(demoConnectionUrl, server);
-  await workbench.tree.expandPath([server, database]);
-  const scratchpads = workbench.tree.item(/^Scratchpads/);
-  await scratchpads.hover();
-  await scratchpads.getByLabel(/New SQL Scratchpad/i).click();
-  await notebook.activateLatestScratchpad();
-  await expect(notebook.cells).toHaveCount(1, { timeout: 5_000 });
-  await expect(notebook.cell(0)).toContainText(/postgres@localhost:5434/);
-}
 
 test.describe("SQL notebook journeys", () => {
   test("creates Markdown notes and executes a PostgreSQL query", async ({
@@ -24,7 +12,8 @@ test.describe("SQL notebook journeys", () => {
     notebook,
   }) => {
     await test.step("create a scratchpad from its database context", async () => {
-      await createScratchpad(workbench, notebook);
+      await workbench.ensureServer(demoConnectionUrl, server);
+      await createScratchpad(workbench, notebook, server, database);
     });
 
     await test.step("add and render a real Markdown cell without SQL controls", async () => {
@@ -82,7 +71,8 @@ test.describe("SQL notebook journeys", () => {
     workbench,
     notebook,
   }) => {
-    await createScratchpad(workbench, notebook);
+    await workbench.ensureServer(demoConnectionUrl, server);
+    await createScratchpad(workbench, notebook, server, database);
     const code = notebook.cell(0);
     await notebook.typeInCell(
       code,
@@ -117,7 +107,8 @@ test.describe("SQL notebook journeys", () => {
     workbench,
     notebook,
   }) => {
-    await createScratchpad(workbench, notebook);
+    await workbench.ensureServer(demoConnectionUrl, server);
+    await createScratchpad(workbench, notebook, server, database);
 
     const syntaxCell = notebook.cell(0);
     await notebook.typeInCell(syntaxCell, "SELECT 1 + ;");

@@ -129,6 +129,9 @@ export class WorkbenchDdlSyncController implements vscode.Disposable {
     if (!configuration.enabled) {
       throw new Error("Enable schema synchronization for this DatabaseContext first");
     }
+    this.output.appendLine(
+      `Workbench schema synchronization provisioning started: database=${server.database} schema=${configuration.supportSchema}`,
+    );
     await this.stopListener(serverId);
     const client = await this.connections.createDedicatedClient(serverId);
     try {
@@ -137,6 +140,9 @@ export class WorkbenchDdlSyncController implements vscode.Disposable {
         `Workbench schema synchronization provisioned on ${server.name} using schema ${configuration.supportSchema}`,
       );
     } catch (error) {
+      this.output.appendLine(
+        `Workbench schema synchronization provisioning failed: database=${server.database} schema=${configuration.supportSchema} error=${error instanceof Error ? error.message : String(error)}`,
+      );
       this.setFailureState(server, configuration.supportSchema, error);
       throw error;
     } finally {
@@ -148,6 +154,9 @@ export class WorkbenchDdlSyncController implements vscode.Disposable {
   async removeProvisioning(serverId: string): Promise<void> {
     const server = this.requireServer(serverId);
     const configuration = this.configuration(server);
+    this.output.appendLine(
+      `Workbench schema synchronization removal started: database=${server.database} schema=${configuration.supportSchema}`,
+    );
     await this.stopListener(serverId);
     const client = await this.connections.createDedicatedClient(serverId);
     try {
@@ -163,7 +172,13 @@ export class WorkbenchDdlSyncController implements vscode.Disposable {
         status: configuration.enabled ? "provisioning-required" : "disabled",
         message: "Database-level event triggers and Workbench notification functions removed",
       });
+      this.output.appendLine(
+        `Workbench schema synchronization removal complete: database=${server.database} schema=${configuration.supportSchema}`,
+      );
     } catch (error) {
+      this.output.appendLine(
+        `Workbench schema synchronization removal failed: database=${server.database} schema=${configuration.supportSchema} error=${error instanceof Error ? error.message : String(error)}`,
+      );
       this.index.markDatabaseStale(
         server.id,
         server.database,
@@ -291,6 +306,9 @@ export class WorkbenchDdlSyncController implements vscode.Disposable {
         status.drop_function_exists === true &&
         status.ddl_trigger_exists === true &&
         status.drop_trigger_exists === true;
+      this.output.appendLine(
+        `Workbench schema synchronization status: database=${server.database} schema=${configuration.supportSchema} provisioned=${provisioned}`,
+      );
       if (!provisioned) {
         await client.end();
         this.index.markDatabaseStale(
@@ -334,6 +352,9 @@ export class WorkbenchDdlSyncController implements vscode.Disposable {
         status: "listening",
         message: `Listening for structural DDL on ${server.database}`,
       });
+      this.output.appendLine(
+        `Workbench schema synchronization listening: database=${server.database} schema=${configuration.supportSchema} databaseOid=${databaseOid}`,
+      );
       if (this.needsFullRefresh.has(server.id)) {
         this.index.markDatabaseStale(
           server.id,
@@ -353,6 +374,9 @@ export class WorkbenchDdlSyncController implements vscode.Disposable {
         "Schema synchronization listener is unavailable",
       );
       const status = this.setFailureState(server, configuration.supportSchema, error);
+      this.output.appendLine(
+        `Workbench schema synchronization listener failed: database=${server.database} schema=${configuration.supportSchema} status=${status} error=${error instanceof Error ? error.message : String(error)}`,
+      );
       if (status === "unavailable") this.scheduleReconnect(server.id);
     }
   }
@@ -369,9 +393,15 @@ export class WorkbenchDdlSyncController implements vscode.Disposable {
         throw new Error("DDL notification belongs to another PostgreSQL database");
       }
       runtime.notifications.push(parsed);
+      this.output.appendLine(
+        `Workbench DDL notification received: database=${server.database} event=${parsed.event} transaction=${parsed.transactionId} objects=${ddlObjectSummary(parsed.objects)} fallback=${parsed.fallback === true}`,
+      );
       if (runtime.flushTimer) clearTimeout(runtime.flushTimer);
       runtime.flushTimer = setTimeout(() => void this.flushNotifications(server, runtime), 100);
     } catch (error) {
+      this.output.appendLine(
+        `Workbench DDL notification rejected: database=${server.database} error=${error instanceof Error ? error.message : String(error)}`,
+      );
       this.needsFullRefresh.add(server.id);
       this.index.markDatabaseStale(
         server.id,
@@ -400,6 +430,9 @@ export class WorkbenchDdlSyncController implements vscode.Disposable {
       const reason = group.fallback
         ? group.reasons.join(", ") || "DDL notification requested a full refresh"
         : undefined;
+      this.output.appendLine(
+        `Workbench DDL refresh scheduled: database=${server.database} transaction=${group.transactionId} mode=${reason ? "full-fallback" : "incremental"} objects=${ddlObjectSummary(group.objects)}${reason ? ` reason=${reason}` : ""}`,
+      );
       try {
         await this.refreshActive(server, group.objects, reason);
       } catch (error) {
@@ -427,7 +460,7 @@ export class WorkbenchDdlSyncController implements vscode.Disposable {
       (requiresFullRefresh ? "schema listener missed or rejected a DDL notification" : undefined);
     const client = await this.connections.createDedicatedClient(server.id);
     try {
-      await this.index.synchronizeActiveDatabaseDdl(
+      const result = await this.index.synchronizeActiveDatabaseDdl(
         {
           async query(sql: string) {
             const result = await client.query(sql);
@@ -437,6 +470,9 @@ export class WorkbenchDdlSyncController implements vscode.Disposable {
         { serverId: server.id, database: server.database },
         objects,
         effectiveFallbackReason,
+      );
+      this.output.appendLine(
+        `Workbench DDL refresh complete: database=${server.database} mode=${effectiveFallbackReason ? "full-fallback" : "incremental"} generation=${result.generation ?? "unknown"}`,
       );
       if (requiresFullRefresh) this.needsFullRefresh.delete(server.id);
       const runtime = this.listeners.get(server.id);
@@ -460,6 +496,9 @@ export class WorkbenchDdlSyncController implements vscode.Disposable {
     this.listeners.delete(server.id);
     void runtime.client.end().catch(() => undefined);
     this.needsFullRefresh.add(server.id);
+    this.output.appendLine(
+      `Workbench schema synchronization listener closed: database=${server.database} schema=${runtime.supportSchema}${error ? ` error=${error.message}` : ""}`,
+    );
     this.index.markDatabaseStale(
       server.id,
       server.database,
@@ -541,4 +580,19 @@ export class WorkbenchDdlSyncController implements vscode.Disposable {
       return false;
     }
   }
+}
+
+function ddlObjectSummary(
+  objects: Parameters<WorkbenchIndexController["synchronizeActiveDatabaseDdl"]>[2],
+): string {
+  if (objects.length === 0) return "none";
+  const counts = new Map<string, number>();
+  for (const object of objects) {
+    const key = object.resourceKind ?? object.objectType;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return [...counts]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([kind, count]) => `${kind}:${count}`)
+    .join(",");
 }

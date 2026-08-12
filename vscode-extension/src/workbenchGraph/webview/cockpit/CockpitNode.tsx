@@ -2,6 +2,7 @@ import { Handle, Position, useStore } from "@xyflow/react";
 import { postgresVisual } from "../../../postgresPresentation.js";
 import type { CockpitDirection } from "../../protocol.js";
 import type { CockpitNodeModel } from "./domain.js";
+import { useCockpitStore } from "./store.js";
 import { cockpitZoomLevel } from "./zoom.js";
 
 export interface CockpitNodeData extends Record<string, unknown> {
@@ -25,7 +26,8 @@ export function CockpitNode({
   dragging?: boolean;
 }) {
   const { node, role } = data;
-  const zoomLevel = useStore((state) => cockpitZoomLevel(state.transform[2]));
+  const compactZoomThreshold = useCockpitStore((state) => state.appearance.compactZoomThreshold);
+  const zoomLevel = useStore((state) => cockpitZoomLevel(state.transform[2], compactZoomThreshold));
   return (
     <article
       className={`cockpit-node kind-${node.symbol.kind} role-${role} zoom-${zoomLevel}${dragging ? " is-dragging" : ""}`}
@@ -54,7 +56,9 @@ export function CockpitNode({
       >
         <span className="node-title">
           <span className="node-glyph">{postgresVisual(node.symbol.kind).glyph}</span>
-          <strong title={node.presentation.label}>{node.presentation.label}</strong>
+          <strong title={zoomLevel === "compact" ? node.presentation.label : undefined}>
+            {node.presentation.label}
+          </strong>
           {role === "focus" && <span className="focus-flag">focus</span>}
           {node.pinned && <span className="pin-flag">⚑</span>}
         </span>

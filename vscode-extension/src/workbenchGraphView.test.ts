@@ -7,10 +7,32 @@ const panel = vi.hoisted(() => ({
   receive: undefined as ((message: unknown) => void) | undefined,
   setTitle: vi.fn(),
 }));
+const graphConfiguration = vi.hoisted(() => ({
+  compactZoomThreshold: 0.8,
+  compactNodeFontScale: 1.6,
+  edgeLabelFontScale: 1.3,
+  listener: undefined as
+    | ((event: { affectsConfiguration(section: string): boolean }) => void)
+    | undefined,
+}));
 
 vi.mock("vscode", () => ({
   DataTransferItem: class {
     constructor(readonly value: unknown) {}
+  },
+  workspace: {
+    getConfiguration: () => ({
+      get: (
+        key: "compactZoomThreshold" | "compactNodeFontScale" | "edgeLabelFontScale",
+        fallback: number,
+      ) => graphConfiguration[key] ?? fallback,
+    }),
+    onDidChangeConfiguration: (
+      listener: (event: { affectsConfiguration(section: string): boolean }) => void,
+    ) => {
+      graphConfiguration.listener = listener;
+      return { dispose: vi.fn() };
+    },
   },
 }));
 vi.mock("./workbenchGraph/panel.js", () => ({
@@ -50,9 +72,48 @@ beforeEach(() => {
   panel.post.mockReset().mockResolvedValue(true);
   panel.setTitle.mockReset();
   panel.receive = undefined;
+  graphConfiguration.compactZoomThreshold = 0.8;
+  graphConfiguration.compactNodeFontScale = 1.6;
+  graphConfiguration.edgeLabelFontScale = 1.3;
+  graphConfiguration.listener = undefined;
 });
 
 describe("Workbench graph database context invalidation", () => {
+  it("sends graph appearance settings on ready and when they change", async () => {
+    const view = graphView();
+
+    panel.receive?.({ type: "ready" });
+    await vi.waitFor(() =>
+      expect(panel.post).toHaveBeenCalledWith({
+        type: "cockpitAppearance",
+        appearance: {
+          compactZoomThreshold: 0.8,
+          compactNodeFontScale: 1.6,
+          edgeLabelFontScale: 1.3,
+        },
+      }),
+    );
+
+    panel.post.mockClear();
+    graphConfiguration.compactZoomThreshold = 0.72;
+    graphConfiguration.compactNodeFontScale = 1.35;
+    graphConfiguration.edgeLabelFontScale = 1.3;
+    graphConfiguration.listener?.({
+      affectsConfiguration: (section) => section === "postgresql-workbench.workbench.graph",
+    });
+    await vi.waitFor(() =>
+      expect(panel.post).toHaveBeenCalledWith({
+        type: "cockpitAppearance",
+        appearance: {
+          compactZoomThreshold: 0.72,
+          compactNodeFontScale: 1.35,
+          edgeLabelFontScale: 1.3,
+        },
+      }),
+    );
+    view.dispose();
+  });
+
   it.each([true, false])("invalidates retained webview state when visible is %s", (visible) => {
     panel.visible = visible;
     const view = graphView();
@@ -130,13 +191,15 @@ describe("Workbench graph database context invalidation", () => {
     );
     panel.post.mockClear();
     panel.receive?.({ type: "ready" });
-    expect(panel.post).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: "cockpitFocus",
-        payload: expect.objectContaining({
-          neighborhood: expect.objectContaining({ focus: symbol }),
+    await vi.waitFor(() =>
+      expect(panel.post).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "cockpitFocus",
+          payload: expect.objectContaining({
+            neighborhood: expect.objectContaining({ focus: symbol }),
+          }),
         }),
-      }),
+      ),
     );
     view.dispose();
   });
@@ -268,14 +331,16 @@ describe("Workbench graph database context invalidation", () => {
     expect(view.currentScope).toBe(dropped.uri);
     panel.post.mockClear();
     panel.receive?.({ type: "ready" });
-    expect(panel.post).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: "cockpitFocus",
-        payload: expect.objectContaining({
-          neighborhood: expect.objectContaining({ focus: dropped }),
-          pinned: [],
+    await vi.waitFor(() =>
+      expect(panel.post).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "cockpitFocus",
+          payload: expect.objectContaining({
+            neighborhood: expect.objectContaining({ focus: dropped }),
+            pinned: [],
+          }),
         }),
-      }),
+      ),
     );
     view.dispose();
   });

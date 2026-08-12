@@ -13,6 +13,7 @@ import type {
   CockpitPerspectiveState,
   CockpitRefreshPayload,
   CockpitSession,
+  WorkbenchGraphAppearance,
   WorkbenchGraphBreadcrumb,
   WorkbenchGraphHostMessage,
   WorkbenchGraphIdentityPresentation,
@@ -20,6 +21,7 @@ import type {
   WorkbenchGraphSearchResult,
   WorkbenchGraphWebviewMessage,
 } from "./workbenchGraph/protocol.js";
+import { DEFAULT_WORKBENCH_GRAPH_APPEARANCE } from "./workbenchGraph/protocol.js";
 import {
   cockpitBreadcrumbs,
   databaseLandingIdentity,
@@ -101,6 +103,7 @@ export class WorkbenchGraphView implements vscode.Disposable {
   private readonly selectInTree: NonNullable<WorkbenchGraphViewOptions["selectInTree"]>;
   private readonly workspaceState: vscode.Memento | undefined;
   private readonly treeDragPayload: NonNullable<WorkbenchGraphViewOptions["treeDragPayload"]>;
+  private readonly configurationSubscription: vscode.Disposable;
 
   constructor(options: WorkbenchGraphViewOptions) {
     this.index = options.index;
@@ -115,6 +118,10 @@ export class WorkbenchGraphView implements vscode.Disposable {
       () => this.reset(),
       options.collectRenderEvidence ?? false,
     );
+    this.configurationSubscription = vscode.workspace.onDidChangeConfiguration((event) => {
+      if (!event.affectsConfiguration("postgresql-workbench.workbench.graph")) return;
+      void this.postAppearance();
+    });
   }
 
   get visible(): boolean {
@@ -573,6 +580,7 @@ export class WorkbenchGraphView implements vscode.Disposable {
     if (this.disposed) return;
     this.disposed = true;
     this.closing = true;
+    this.configurationSubscription.dispose();
     this.panel.dispose();
   }
 
@@ -946,8 +954,13 @@ export class WorkbenchGraphView implements vscode.Disposable {
   }
 
   private async replayWebviewState(): Promise<void> {
+    await this.postAppearance();
     if (this.lastMessage) await this.panel.post(this.lastMessage);
     if (this.sourceVisible && this.previewSymbol) await this.inspect(this.previewSymbol.uri);
+  }
+
+  private async postAppearance(): Promise<void> {
+    await this.panel.post({ type: "cockpitAppearance", appearance: readGraphAppearance() });
   }
 
   private async loadGraphObject(symbol: CodeMonikerSymbol, snapshot: WorkbenchSnapshot) {
@@ -1248,4 +1261,38 @@ function emptyGraph(prefix: string): CodeMonikerIdentityGraphResult {
     },
     unlinked: { external: 0, manifest_blocked: 0, unresolved: 0 },
   };
+}
+
+function readGraphAppearance(): WorkbenchGraphAppearance {
+  const configuration = vscode.workspace.getConfiguration("postgresql-workbench.workbench.graph");
+  return {
+    compactZoomThreshold: boundedSetting(
+      configuration.get<number>(
+        "compactZoomThreshold",
+        DEFAULT_WORKBENCH_GRAPH_APPEARANCE.compactZoomThreshold,
+      ),
+      0.25,
+      1,
+    ),
+    compactNodeFontScale: boundedSetting(
+      configuration.get<number>(
+        "compactNodeFontScale",
+        DEFAULT_WORKBENCH_GRAPH_APPEARANCE.compactNodeFontScale,
+      ),
+      0.8,
+      2,
+    ),
+    edgeLabelFontScale: boundedSetting(
+      configuration.get<number>(
+        "edgeLabelFontScale",
+        DEFAULT_WORKBENCH_GRAPH_APPEARANCE.edgeLabelFontScale,
+      ),
+      0.8,
+      2,
+    ),
+  };
+}
+
+function boundedSetting(value: number, minimum: number, maximum: number): number {
+  return Math.max(minimum, Math.min(maximum, value));
 }

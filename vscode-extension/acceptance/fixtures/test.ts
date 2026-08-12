@@ -2,7 +2,7 @@ import { test as base } from "@playwright/test";
 import { CockpitPage } from "../pages/CockpitPage";
 import { NotebookPage } from "../pages/NotebookPage";
 import { WorkbenchPage } from "../pages/WorkbenchPage";
-import { startDemoDatabase } from "./demoDatabase";
+import { type DemoDatabase, startDemoDatabase } from "./demoDatabase";
 import { launchVSCode, type VSCodeInstance } from "./vscode";
 
 interface AcceptanceFixtures {
@@ -12,7 +12,7 @@ interface AcceptanceFixtures {
 }
 
 interface AcceptanceWorkerFixtures {
-  demoDatabase: undefined;
+  demoDatabase: DemoDatabase;
   vscode: VSCodeInstance;
 }
 
@@ -22,7 +22,7 @@ export const test = base.extend<AcceptanceFixtures, AcceptanceWorkerFixtures>({
     async ({}, use) => {
       const demo = startDemoDatabase();
       try {
-        await use(undefined);
+        await use(demo);
       } finally {
         demo.stop();
       }

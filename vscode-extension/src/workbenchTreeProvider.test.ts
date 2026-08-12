@@ -385,7 +385,13 @@ describe("Workbench tree incremental refresh", () => {
     currentSnapshot = incrementalResult;
     indexChanges.fire(index.state);
 
-    expect(changes.map((item) => item?.kind)).toEqual(["schema", "object", "object"]);
+    expect(changes.map((item) => item?.kind)).toEqual([
+      "sourcesSnapshot",
+      "schema",
+      "object",
+      "object",
+    ]);
+    expect(sources.description).toBe("available");
     expect(changes).toContain(unchangedObject);
     expect(changes).not.toContain(reportingSchema);
     expect(unchangedObject.snapshot).toMatchObject({ revision: "revision-2", generation: 8 });
@@ -423,7 +429,12 @@ describe("Workbench tree incremental refresh", () => {
     expect((await provider.getChildren(schema)).map((item) => item.label)).toContain(
       "workbench_ddl_sync_probe",
     );
-    expect(changes.map((item) => item?.kind)).toEqual(["schema", "object", "object"]);
+    expect(changes.map((item) => item?.kind)).toEqual([
+      "sourcesSnapshot",
+      "schema",
+      "object",
+      "object",
+    ]);
 
     forceStaleRelations = true;
     const staleChildren = await provider.getChildren(unchangedObject);
@@ -439,12 +450,12 @@ describe("Workbench tree incremental refresh", () => {
     changes.length = 0;
     provider.setExpanded(schema, false);
     indexChanges.fire(index.state);
-    expect(changes.map((item) => item?.kind)).toEqual(["object"]);
+    expect(changes.map((item) => item?.kind)).toEqual(["sourcesSnapshot", "object"]);
 
     changes.length = 0;
     provider.setExpanded(sources, false);
     indexChanges.fire(index.state);
-    expect(changes).toEqual([]);
+    expect(changes.map((item) => item?.kind)).toEqual(["sourcesSnapshot"]);
     provider.dispose();
   });
 });

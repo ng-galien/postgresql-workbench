@@ -1,13 +1,15 @@
 import { create } from "zustand";
 import type { WorkbenchGraphDragPayload } from "../../dragAndDrop.js";
-import type {
-  CockpitDirection,
-  CockpitPerspective,
-  CockpitPerspectiveState,
-  CockpitSession,
-  WorkbenchGraphHostMessage,
-  WorkbenchGraphSearchResult,
-  WorkbenchGraphSourcePreview,
+import {
+  type CockpitDirection,
+  type CockpitPerspective,
+  type CockpitPerspectiveState,
+  type CockpitSession,
+  DEFAULT_WORKBENCH_GRAPH_APPEARANCE,
+  type WorkbenchGraphAppearance,
+  type WorkbenchGraphHostMessage,
+  type WorkbenchGraphSearchResult,
+  type WorkbenchGraphSourcePreview,
 } from "../../protocol.js";
 import {
   cloneExploration,
@@ -23,6 +25,7 @@ import {
 } from "./domain.js";
 
 interface CockpitStore {
+  appearance: WorkbenchGraphAppearance;
   session: CockpitSession | null;
   exploration: ExplorationModel;
   preview: WorkbenchGraphSourcePreview | null;
@@ -70,6 +73,7 @@ const DEFAULT_RELATIONS = {
 };
 
 export const useCockpitStore = create<CockpitStore>((set, get) => ({
+  appearance: DEFAULT_WORKBENCH_GRAPH_APPEARANCE,
   session: null,
   exploration: emptyExploration(),
   preview: null,
@@ -92,6 +96,10 @@ export const useCockpitStore = create<CockpitStore>((set, get) => ({
   expansionUndo: [],
   expansionRedo: [],
   receive(message) {
+    if (message.type === "cockpitAppearance") {
+      set({ appearance: message.appearance });
+      return;
+    }
     if (message.type === "databaseContextInvalidated") {
       set({
         session: null,

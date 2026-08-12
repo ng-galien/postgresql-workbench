@@ -147,8 +147,21 @@ export interface WorkbenchGraphRenderEvidence {
   viewport?: { x: number; y: number; zoom: number };
 }
 
+export interface WorkbenchGraphAppearance {
+  compactZoomThreshold: number;
+  compactNodeFontScale: number;
+  edgeLabelFontScale: number;
+}
+
+export const DEFAULT_WORKBENCH_GRAPH_APPEARANCE: WorkbenchGraphAppearance = {
+  compactZoomThreshold: 0.8,
+  compactNodeFontScale: 1.6,
+  edgeLabelFontScale: 1.3,
+};
+
 export type WorkbenchGraphHostMessage =
   | { type: "databaseContextInvalidated"; message: string }
+  | { type: "cockpitAppearance"; appearance: WorkbenchGraphAppearance }
   | {
       type: "cockpitSession";
       session: CockpitSession;

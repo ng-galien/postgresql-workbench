@@ -6,12 +6,14 @@ describe("cockpit semantic zoom", () => {
     expect(cockpitZoomLevel(0.25)).toBe("compact");
     expect(cockpitZoomLevel(0.32)).toBe("compact");
     expect(cockpitZoomLevel(0.49)).toBe("compact");
+    expect(cockpitZoomLevel(0.79)).toBe("compact");
   });
 
   it("switches to the detailed card at the single threshold", () => {
-    expect(cockpitZoomLevel(0.5)).toBe("detail");
-    expect(cockpitZoomLevel(0.55)).toBe("detail");
-    expect(cockpitZoomLevel(0.7)).toBe("detail");
+    expect(cockpitZoomLevel(0.5)).toBe("compact");
+    expect(cockpitZoomLevel(0.79)).toBe("compact");
+    expect(cockpitZoomLevel(0.8)).toBe("detail");
+    expect(cockpitZoomLevel(0.9)).toBe("detail");
     expect(cockpitZoomLevel(1)).toBe("detail");
   });
 

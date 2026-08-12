@@ -181,6 +181,8 @@ export async function launchVSCode(): Promise<VSCodeInstance> {
       "security.workspace.trust.enabled": false,
       "telemetry.telemetryLevel": "off",
       "update.mode": "none",
+      "git.openRepositoryInParentFolders": "never",
+      "window.dialogStyle": "custom",
       "workbench.startupEditor": "none",
       "workbench.colorTheme": "Default Light Modern",
       "workbench.secondarySideBar.defaultVisibility": "hidden",

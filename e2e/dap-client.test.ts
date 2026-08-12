@@ -264,13 +264,24 @@ describe("DAP client e2e", () => {
     const stack = await dc.stackTraceRequest({ threadId: 1 });
     const frame = stack.body.stackFrames[0];
     if (!frame?.source) throw new Error("Structured launch did not expose a DAP source");
-    expect(frame.source.path).toMatch(/^postgresql-dap:\/\/routine\/\d+$/);
+    expect(frame.source.path).toMatch(/^postgresql-dap:\/routine\/\d+$/);
     expect(frame.source.sourceReference).toBeGreaterThan(0);
     const source = await dc.sourceRequest({
       source: frame.source,
       sourceReference: frame.source.sourceReference ?? 0,
     });
     expect(source.body.content).toContain("CREATE OR REPLACE FUNCTION public.test_simple");
+    expect(source.body.mimeType).toBe("text/x-plpgsql");
+    const scopes = await dc.scopesRequest({ frameId: frame.id });
+    const args = await dc.variablesRequest({
+      variablesReference: scopes.body.scopes[0].variablesReference,
+    });
+    expect(args.body.variables).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "a", value: "42" }),
+        expect.objectContaining({ name: "b", value: "bound" }),
+      ]),
+    );
     const breakpoints = await dc.setBreakpointsRequest({
       source: frame.source,
       breakpoints: [{ line: frame.line }],
@@ -291,6 +302,38 @@ describe("DAP client e2e", () => {
       routineArgs: [],
     });
     expect(stopped.body.reason).toBe("entry");
+  });
+
+  it("prefers an autonomous DAP source when the client resolves source URIs", async () => {
+    await launchAndWaitForStop(dc, {
+      ...LAUNCH_ARGS,
+      clientResolvesSourceUris: true,
+      sourceUris: canonicalSourceUris,
+      routine: {
+        schema: "public",
+        name: "test_simple",
+        kind: "function",
+        argTypes: ["integer", "text"],
+      },
+      routineArgs: [{ value: "42" }, { value: "bound" }],
+    });
+    const stack = await dc.stackTraceRequest({ threadId: 1 });
+    const frame = stack.body.stackFrames[0];
+    if (!frame?.source?.path) throw new Error("Structured launch did not expose a DAP source");
+    expect(frame.source.path).toMatch(/^postgresql-dap:\/routine\/\d+$/);
+    expect(frame.source.sourceReference).toBe(0);
+    const source = await dc.sourceRequest({ source: frame.source, sourceReference: 0 });
+    expect(source.body.content).toContain("CREATE OR REPLACE FUNCTION public.test_simple");
+    const scopes = await dc.scopesRequest({ frameId: frame.id });
+    const args = await dc.variablesRequest({
+      variablesReference: scopes.body.scopes[0].variablesReference,
+    });
+    expect(args.body.variables).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "a", value: "42" }),
+        expect.objectContaining({ name: "b", value: "bound" }),
+      ]),
+    );
   });
 
   it("launches a structured routine target with parser-style type aliases", async () => {

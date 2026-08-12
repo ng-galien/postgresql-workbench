@@ -1,6 +1,7 @@
 import * as assert from "node:assert";
 import * as vscode from "vscode";
 import { PlpgsqlInlineValuesProvider } from "../plpgsqlInlineValues.js";
+import { isPostgresqlDapDocument } from "../postgresqlDapContentProvider.js";
 import {
   delay,
   EXT_ID,
@@ -15,6 +16,58 @@ async function extensionSyntaxParser() {
   const extension = vscode.extensions.getExtension(EXT_ID)!;
   const api = extension.isActive ? extension.exports : await extension.activate();
   return api.workbenchIndex.syntaxParser();
+}
+
+async function waitForStoppedEditor(
+  session: vscode.DebugSession,
+  timeoutMs = 15_000,
+): Promise<{
+  editor: vscode.TextEditor;
+  frame: { id: number; line: number; source?: { path?: string; sourceReference?: number } };
+}> {
+  const deadline = Date.now() + timeoutMs;
+  let lastState = "debug session has not exposed a stopped frame";
+  while (Date.now() < deadline) {
+    try {
+      const threads = await session.customRequest("threads");
+      const threadId = threads?.threads?.[0]?.id;
+      if (threadId !== undefined) {
+        const stack = await session.customRequest("stackTrace", { threadId });
+        const frame = stack?.stackFrames?.[0];
+        const editor = vscode.window.activeTextEditor;
+        if (
+          frame?.source?.path &&
+          editor !== undefined &&
+          isPostgresqlDapDocument(editor.document.uri) &&
+          editor.document.languageId === "plpgsql" &&
+          vscode.debug.activeStackItem instanceof vscode.DebugStackFrame &&
+          vscode.debug.activeStackItem.frameId === frame.id
+        ) {
+          return { editor, frame };
+        }
+        lastState = `frame=${frame?.source?.path ?? "<none>"}, editor=${editor?.document.uri.toString() ?? "<none>"}, language=${editor?.document.languageId ?? "<none>"}`;
+      }
+    } catch (error) {
+      lastState = error instanceof Error ? error.message : String(error);
+    }
+    await delay(100);
+  }
+  throw new Error(`Stopped PL/pgSQL editor was not ready after ${timeoutMs}ms: ${lastState}`);
+}
+
+async function waitForInlineValuesInvocation(
+  calls: string[],
+  documentUri: string,
+  timeoutMs = 5_000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (calls.includes(documentUri)) return;
+    await delay(50);
+  }
+  throw new Error(
+    `Inline values provider was not called for ${documentUri} after ${timeoutMs}ms (calls: ${JSON.stringify(calls)})`,
+  );
 }
 
 suite("Stopped-frame editor and inline values", function () {
@@ -33,7 +86,11 @@ suite("Stopped-frame editor and inline values", function () {
   test("editor shown on stop matches frame.source.path and inline values provider fires", async () => {
     const inlineValueCalls: string[] = [];
     const spy = vscode.languages.registerInlineValuesProvider(
-      { scheme: "code+moniker" },
+      [
+        { scheme: "code+moniker" },
+        { scheme: "postgresql-dap" },
+        { scheme: "debug", language: "plpgsql" },
+      ],
       {
         provideInlineValues(doc) {
           inlineValueCalls.push(doc.uri.toString());
@@ -44,30 +101,32 @@ suite("Stopped-frame editor and inline values", function () {
 
     try {
       const session = await startPlpgsqlSession(pgConfig("SELECT test_simple(1, 'diag')"));
-      await delay(6000); // entry stop + editor reveal
-
-      const tid = (await session.customRequest("threads")).threads[0].id;
-      const stack = await session.customRequest("stackTrace", { threadId: tid });
-      const frame = stack.stackFrames[0];
+      const { editor: activeEditor, frame } = await waitForStoppedEditor(session);
       const framePath: string = frame?.source?.path ?? "<none>";
-
-      const active = vscode.window.activeTextEditor?.document.uri.toString() ?? "<no editor>";
+      const active = activeEditor?.document.uri.toString() ?? "<no editor>";
 
       assert.notStrictEqual(framePath, "<none>", "Frame should carry a source path");
+      assert.strictEqual(vscode.Uri.parse(framePath, true).authority, "");
+      assert.match(vscode.Uri.parse(framePath, true).path, /^\/routine\/\d+$/);
       assert.strictEqual(
-        active,
-        framePath,
-        "Editor shown on stop must match frame.source.path exactly (execution pointer + inlays depend on it)",
+        frame.source?.sourceReference ?? 0,
+        0,
+        "The Workbench host must request direct URI resolution instead of a racy debug: source",
       );
+      assert.strictEqual(activeEditor?.document.uri.scheme, "postgresql-dap");
+      assert.ok(isPostgresqlDapDocument(activeEditor.document.uri));
+      assert.strictEqual(activeEditor?.document.languageId, "plpgsql");
       assert.ok(
-        inlineValueCalls.includes(framePath),
-        `Inline values provider was never called for the stopped document (calls: ${JSON.stringify(inlineValueCalls)})`,
+        vscode.debug.activeStackItem instanceof vscode.DebugStackFrame,
+        "VS Code must expose the stopped frame through its stable debug API",
       );
+      assert.strictEqual(vscode.debug.activeStackItem.frameId, frame.id);
+      await waitForInlineValuesInvocation(inlineValueCalls, active);
 
       // The REAL provider must produce RESOLVED inline texts on the real
       // virtual document — guards against analysis failing on
       // pg_get_functiondef formatting AND against value resolution breaking.
-      const editor = vscode.window.activeTextEditor!;
+      const editor = activeEditor!;
       const fullRange = new vscode.Range(
         0,
         0,
@@ -202,7 +261,7 @@ suite("Stopped-frame editor and inline values", function () {
     await ended.catch(() => {});
   });
 
-  test("frame source path byte-matches the shared readable document URI", async () => {
+  test("standalone frame source is readable without a Code Moniker index", async () => {
     const session = await startPlpgsqlSession({
       ...pgConfig("SELECT test_simple(2, 'scoped')"),
       server: "localhost:5433/testdb:postgres",
@@ -213,29 +272,15 @@ suite("Stopped-frame editor and inline values", function () {
     const stack = await session.customRequest("stackTrace", { threadId: tid });
     const framePath: string = stack.stackFrames[0]?.source?.path ?? "<none>";
 
-    assert.strictEqual(vscode.Uri.parse(framePath, true).scheme, "code+moniker");
-    const extension = vscode.extensions.getExtension(EXT_ID)!;
-    const api = extension.isActive ? extension.exports : await extension.activate();
-    const descriptor = api.workbenchIndex.sourceDescriptorForDocumentUri(
-      vscode.Uri.parse(framePath),
-    );
-    assert.ok(descriptor, `Frame path must resolve through the indexed Code Moniker registry`);
-    assert.strictEqual(descriptor.name, "test_simple");
-    const identity = api.workbenchIndex.routineSymbol(descriptor.serverId, descriptor.oid)?.uri;
-    assert.ok(identity, "Expected the indexed routine identity");
-    const expected = api.workbenchIndex.documentUri(identity)?.toString();
-    assert.ok(expected, "Expected the shared readable document URI");
-
-    assert.strictEqual(
-      framePath,
-      expected,
-      "DAP source path must byte-match the URI the extension opens from the tree/CodeLens",
-    );
-    assert.strictEqual(
-      vscode.window.activeTextEditor?.document.uri.toString(),
-      expected,
-      "Editor shown on stop must be the virtual document",
-    );
+    assert.strictEqual(vscode.Uri.parse(framePath, true).scheme, "postgresql-dap");
+    assert.strictEqual(vscode.Uri.parse(framePath, true).authority, "");
+    assert.match(vscode.Uri.parse(framePath, true).path, /^\/routine\/\d+$/);
+    assert.strictEqual(vscode.window.activeTextEditor?.document.uri.scheme, "postgresql-dap");
+    assert.ok(isPostgresqlDapDocument(vscode.window.activeTextEditor!.document.uri));
+    assert.strictEqual(vscode.window.activeTextEditor?.document.languageId, "plpgsql");
+    assert.ok(vscode.debug.activeStackItem instanceof vscode.DebugStackFrame);
+    assert.strictEqual(vscode.debug.activeStackItem.frameId, stack.stackFrames[0].id);
+    assert.match(vscode.window.activeTextEditor?.document.getText() ?? "", /test_simple/i);
 
     // Explicit termination — lingering pldbgapi sessions destabilize later tests.
     const ended = waitSessionEnd();

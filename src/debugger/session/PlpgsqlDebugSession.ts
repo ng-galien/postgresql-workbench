@@ -89,6 +89,8 @@ interface LaunchRequestArguments extends DebugProtocol.LaunchRequestArguments {
   resultSource?: DebugResultSource;
   /** Optional indexed source identities supplied by an integrating host such as the Workbench. */
   sourceUris?: Record<string, string>;
+  /** The integrating client resolves autonomous source URIs instead of requesting a DAP reference. */
+  clientResolvesSourceUris?: boolean;
 }
 
 const DEFAULT_ATTACH_TIMEOUT_MS = 30_000;
@@ -261,6 +263,7 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
   private sourceReferences = new Map<number, number>();
   private sourceReferenceByOid = new Map<number, number>();
   private nextSourceReference = 1;
+  private clientResolvesSourceUris = false;
 
   constructor(private readonly syntaxParser: () => Promise<SyntaxParser>) {
     super("postgresql-workbench-debug.log");
@@ -378,6 +381,7 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
     this.sourceReferences.clear();
     this.sourceReferenceByOid.clear();
     this.nextSourceReference = 1;
+    this.clientResolvesSourceUris = args.clientResolvesSourceUris === true;
     this.sourceUri(this.entryOid);
     this.targetPid = prepared.targetPid;
     this.targetBackendPid = prepared.targetPid;
@@ -805,6 +809,9 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
   ): Promise<void> {
     const sourcePath = args.source?.path;
     const sourceReference = args.sourceReference || args.source?.sourceReference || 0;
+    log(
+      `sourceRequest reference=${sourceReference} path=${sourcePath ?? "<none>"} knownReferences=${this.sourceReferences.size}`,
+    );
     const oid =
       this.sourceReferences.get(sourceReference) ??
       (sourcePath
@@ -825,6 +832,7 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
     }
     response.body = {
       content: cached.funcDef.source,
+      mimeType: "text/x-plpgsql",
     };
     this.sendResponse(response);
   }
@@ -1490,6 +1498,11 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
   }
 
   private sourceUri(oid: number): string {
+    if (this.clientResolvesSourceUris) {
+      const standalone = standaloneSourceUri(oid);
+      this.sourceOids.set(standalone, oid);
+      return standalone;
+    }
     const existing = this.sourceUris.get(oid);
     if (existing) return existing;
     const generated = standaloneSourceUri(oid);
@@ -1499,7 +1512,8 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
   }
 
   private sourceReference(oid: number, documentUri: string): number {
-    if (!documentUri.startsWith("postgresql-dap://")) return 0;
+    if (this.clientResolvesSourceUris) return 0;
+    if (standaloneSourceOid(documentUri) !== oid) return 0;
     const existing = this.sourceReferenceByOid.get(oid);
     if (existing) return existing;
     const reference = this.nextSourceReference++;

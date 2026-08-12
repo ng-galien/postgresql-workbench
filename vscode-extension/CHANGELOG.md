@@ -7,6 +7,10 @@
 - Refined Cockpit graph cards with an exclusive drag handle, border-only
   interaction feedback, and a compact named layout that remains readable and
   draggable at low zoom
+- Added live graph settings for the compact-card threshold, compact object-name
+  scale, and edge-label scale; multiple relation labels now stack vertically
+- Preserved the user-selected graph viewport and zoom when switching away from
+  and back to an already-open Cockpit tab
 - Closed clean virtual PostgreSQL source tabs that cannot be resolved after a
   window reload instead of leaving VS Code on a missing-file editor
 - Fixed SQL scratchpad Markdown cells so they no longer display PostgreSQL

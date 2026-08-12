@@ -5,6 +5,7 @@ import {
   getSmoothStepPath,
   useStore,
 } from "@xyflow/react";
+import { relationClass, relationLabel } from "../graph/relationPresentation.js";
 import { showCockpitEdgeLabel } from "./zoom.js";
 
 export interface CockpitEdgeData extends Record<string, unknown> {
@@ -20,7 +21,6 @@ export function CockpitEdge(props: EdgeProps) {
   const data = props.data as CockpitEdgeData;
   const showLabel = useStore((state) => showCockpitEdgeLabel(state.transform[2]));
   const [path, labelX, labelY] = getSmoothStepPath({ ...props, borderRadius: 4, offset: 24 });
-  const label = data.kinds.join(" · ");
   return (
     <>
       <BaseEdge
@@ -54,7 +54,14 @@ export function CockpitEdge(props: EdgeProps) {
             }}
             onClick={data.onSelect}
           >
-            {label} {data.count > 1 ? `×${data.count}` : ""}
+            <span className="cockpit-edge-kinds">
+              {data.kinds.map((kind) => (
+                <span key={kind} className={`cockpit-edge-kind ${relationClass(kind)}`}>
+                  {relationLabel(kind)}
+                </span>
+              ))}
+            </span>
+            {data.count > 1 && <span className="cockpit-edge-count">×{data.count}</span>}
           </button>
         </EdgeLabelRenderer>
       )}

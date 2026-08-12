@@ -128,6 +128,9 @@
           ".pgsql",
           ".pgsql-notebook"
         ],
+        "mimetypes": [
+          "text/x-plpgsql"
+        ],
         "filenamePatterns": [
           "code+moniker://**"
         ],
@@ -730,6 +733,30 @@
           "maximum": 300000,
           "scope": "window",
           "description": "Maximum duration in milliseconds for one Code Moniker daemon command used by Workbench indexing, navigation, graph queries, and debugger syntax analysis. Changes apply to the next extension session."
+        },
+        "postgresql-workbench.workbench.graph.compactZoomThreshold": {
+          "type": "number",
+          "default": 0.8,
+          "minimum": 0.25,
+          "maximum": 1,
+          "scope": "window",
+          "description": "Zoom level below which PostgreSQL graph nodes switch from detailed cards to compact named cards. Changes apply immediately to an open graph."
+        },
+        "postgresql-workbench.workbench.graph.compactNodeFontScale": {
+          "type": "number",
+          "default": 1.6,
+          "minimum": 0.8,
+          "maximum": 2,
+          "scope": "window",
+          "description": "Font scale used for object names in compact PostgreSQL graph nodes. Changes apply immediately to an open graph."
+        },
+        "postgresql-workbench.workbench.graph.edgeLabelFontScale": {
+          "type": "number",
+          "default": 1.3,
+          "minimum": 0.8,
+          "maximum": 2,
+          "scope": "window",
+          "description": "Font scale applied to PostgreSQL graph edge labels. Changes apply immediately to an open graph."
         },
         "postgresql-workbench.results.maxRows": {
           "type": "number",

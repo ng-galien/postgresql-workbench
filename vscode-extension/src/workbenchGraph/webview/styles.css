@@ -643,7 +643,7 @@ button:disabled {
 }
 
 .cockpit-node.zoom-compact {
-  width: 168px;
+  width: 190px;
 }
 
 .cockpit-node.zoom-compact .node-main {
@@ -652,6 +652,7 @@ button:disabled {
 
 .cockpit-node.zoom-compact .node-title {
   align-items: center;
+  gap: 7px;
 }
 
 .cockpit-node.zoom-compact .node-title strong {
@@ -659,6 +660,14 @@ button:disabled {
   overflow-wrap: normal;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: var(--cockpit-compact-node-font-size, 1.6em);
+  font-weight: 700;
+  line-height: 1.15;
+}
+
+.cockpit-node.zoom-compact .node-glyph {
+  font-size: 1.15em;
+  line-height: 1;
 }
 
 .cockpit-node.zoom-compact .node-degrees,
@@ -726,16 +735,42 @@ button:disabled {
 .cockpit-edge-label {
   position: absolute;
   z-index: 9;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
   border: 1px solid var(--cockpit-line);
-  border-radius: 999px;
+  border-radius: 4px;
   padding: 2px 6px;
   color: var(--vscode-descriptionForeground);
   background: var(--vscode-editorWidget-background);
   box-shadow: 0 1px 4px color-mix(in srgb, var(--vscode-widget-shadow) 36%, transparent);
-  font-size: 0.68em;
+  font-size: calc(0.68em * var(--cockpit-edge-label-font-scale, 1.3));
   white-space: nowrap;
   pointer-events: all;
   cursor: pointer;
+}
+
+.cockpit-edge-kinds {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+}
+
+.cockpit-edge-kind,
+.cockpit-edge-count {
+  display: block;
+  line-height: 1.15;
+}
+
+.cockpit-edge-kind {
+  font-weight: 600;
+}
+
+.cockpit-edge-count {
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.88em;
 }
 
 .edge-popover {

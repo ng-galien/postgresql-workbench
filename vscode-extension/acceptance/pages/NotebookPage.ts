@@ -45,21 +45,31 @@ export class NotebookPage {
   }
 
   async addMarkdownCell(): Promise<Locator> {
-    const previousCount = await this.cells.count();
+    const previousCount = (await this.snapshot())?.cells.length ?? 0;
     const action = await this.toolbarAction("Markdown");
     await expect(action).toBeVisible({ timeout: 5_000 });
     await action.click();
-    await expect(this.cells).toHaveCount(previousCount + 1, { timeout: 5_000 });
-    return this.cell(previousCount);
+    await expect
+      .poll(async () => (await this.snapshot())?.cells.length, { timeout: 5_000 })
+      .toBe(previousCount + 1);
+    await expect
+      .poll(async () => (await this.snapshot())?.cells.at(-1)?.kind, { timeout: 5_000 })
+      .toBe("markup");
+    return this.cells.last();
   }
 
   async addCodeCell(): Promise<Locator> {
-    const previousCount = await this.cells.count();
+    const previousCount = (await this.snapshot())?.cells.length ?? 0;
     const action = await this.toolbarAction("Code");
     await expect(action).toBeVisible({ timeout: 5_000 });
     await action.click();
-    await expect(this.cells).toHaveCount(previousCount + 1, { timeout: 5_000 });
-    return this.cell(previousCount);
+    await expect
+      .poll(async () => (await this.snapshot())?.cells.length, { timeout: 5_000 })
+      .toBe(previousCount + 1);
+    await expect
+      .poll(async () => (await this.snapshot())?.cells.at(-1)?.kind, { timeout: 5_000 })
+      .toBe("code");
+    return this.cells.last();
   }
 
   async typeInCell(cell: Locator, value: string): Promise<void> {

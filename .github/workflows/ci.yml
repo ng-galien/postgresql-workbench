@@ -65,7 +65,7 @@ jobs:
           cache-dependency-path: |
             package-lock.json
       - run: npm ci
-      - run: npm run build
+      - run: npm run build:dap
       - name: Start PostgreSQL integration fixture
         run: npm run test:e2e:up
       - name: Run DAP integration tests

@@ -49,19 +49,59 @@ export class WorkbenchPage {
   async ensureActiveDatabaseIndexed(server: RegExp, database: RegExp): Promise<void> {
     await this.tree.expandPath([server, database]);
     const sources = this.tree.item(/^Sources/);
-    if (await sources.getByText("available", { exact: true }).isVisible()) {
-      await this.tree.expand(/^Sources/);
-      return;
+    await expect(sources).toContainText(/not-indexed|indexing|available|stale|error/, {
+      timeout: 5_000,
+    });
+    const state = await sources.innerText();
+    if (!state.includes("available")) {
+      if (!state.includes("indexing")) await sources.click();
+      await expect(sources).toContainText(/indexing|available/, { timeout: 5_000 });
+      await expect(sources).toContainText("available", { timeout: 30_000 });
     }
-    await expect(sources).toContainText("not-indexed", { timeout: 5_000 });
-    await sources.click();
-    await expect(sources).toContainText(/indexing|available/, { timeout: 5_000 });
-    await expect(sources).toContainText("available", { timeout: 30_000 });
     await this.tree.expand(/^Sources/);
   }
 
   async openCockpit(): Promise<void> {
     await this.tree.clickHeaderAction(/Open PostgreSQL Cockpit/i);
+  }
+
+  async enableAndProvisionSchemaSync(): Promise<void> {
+    const schemaSync = this.tree.item(/^Schema synchronization/);
+    await expect(schemaSync).toContainText("disabled", { timeout: 5_000 });
+    await schemaSync.click();
+    await this.quickInput.chooseOption(/Enable for this DatabaseContext/i);
+    await expect(schemaSync).toContainText("provisioning required", { timeout: 5_000 });
+
+    await schemaSync.hover();
+    await schemaSync.getByLabel(/Provision Schema Synchronization/i).click();
+    const provision = this.page.getByRole("button", { name: "Provision", exact: true });
+    await expect(provision).toBeVisible({ timeout: 5_000 });
+    await provision.click();
+    await expect(schemaSync).toContainText("active · listening", { timeout: 10_000 });
+  }
+
+  async restartSchemaSync(): Promise<void> {
+    const schemaSync = this.tree.item(/^Schema synchronization/);
+    await schemaSync.click();
+    await this.quickInput.chooseOption(/Disable for this DatabaseContext/i);
+    await expect(schemaSync).toContainText("disabled", { timeout: 5_000 });
+
+    await schemaSync.click();
+    await this.quickInput.chooseOption(/Enable for this DatabaseContext/i);
+    await expect(schemaSync).toContainText("active · listening", { timeout: 10_000 });
+  }
+
+  async removeAndDisableSchemaSync(): Promise<void> {
+    const schemaSync = this.tree.item(/^Schema synchronization/);
+    await schemaSync.click();
+    await this.quickInput.chooseOption(/Remove database provisioning/i);
+    const remove = this.page.getByRole("button", { name: "Remove Provisioning", exact: true });
+    await expect(remove).toBeVisible({ timeout: 5_000 });
+    await remove.click();
+    await expect(schemaSync).toContainText("provisioning required", { timeout: 10_000 });
+    await schemaSync.click();
+    await this.quickInput.chooseOption(/Disable for this DatabaseContext/i);
+    await expect(schemaSync).toContainText("disabled", { timeout: 5_000 });
   }
 
   async dragTreeItemToEditor(source: import("@playwright/test").Locator): Promise<void> {

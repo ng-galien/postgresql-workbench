@@ -102,12 +102,20 @@ describe("SQL Cockpit node actions", () => {
   });
 
   it("keeps a named, draggable compact card at every reduced zoom", () => {
-    xyflow.zoom = 0.49;
+    xyflow.zoom = 0.79;
     const html = renderToStaticMarkup(<CockpitNode data={data("neighbor")} />);
 
     expect(html).toContain("cockpit-node kind-table role-neighbor zoom-compact");
     expect(html).toContain('<strong title="warehouse">warehouse</strong>');
     expect(html).toContain('class="node-drag-handle"');
+  });
+
+  it("does not add a redundant name tooltip to the detailed card", () => {
+    const html = renderToStaticMarkup(<CockpitNode data={data("neighbor")} />);
+
+    expect(html).toContain("zoom-detail");
+    expect(html).toContain("<strong>warehouse</strong>");
+    expect(html).not.toContain('<strong title="warehouse">');
   });
 
   it("never removes the object name at the minimum graph zoom", () => {

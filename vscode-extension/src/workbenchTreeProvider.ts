@@ -893,8 +893,8 @@ export class WorkbenchTreeProvider
       return;
     }
 
+    this.emitUpdated(new SourcesSnapshotItem(server, true, state));
     if (state.status !== "available") {
-      this.emitUpdated(new SourcesSnapshotItem(server, true, state));
       return;
     }
 
@@ -905,7 +905,6 @@ export class WorkbenchTreeProvider
     });
     if (state.change?.kind !== "incremental" || !sameStrings(this.knownSchemas, nextSchemas)) {
       this.knownSchemas = nextSchemas;
-      this.emitUpdated(new SourcesSnapshotItem(server, true, state));
       if (this.sourcesExpanded) {
         for (const schema of this.materializedSchemas) {
           if (nextSchemas.includes(schema)) this.emitUpdated(new SchemaItem(schema));

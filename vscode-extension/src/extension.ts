@@ -44,6 +44,11 @@ import { PlpgsqlDiagnosticsProvider } from "./diagnosticsProvider.js";
 import { startDockerDebugDatabase } from "./dockerProvisioningUi.js";
 import { PlpgsqlInlineValuesProvider } from "./plpgsqlInlineValues.js";
 import { LEGEND, PlpgsqlSemanticTokensProvider } from "./plpgsqlSemanticTokens.js";
+import {
+  isPostgresqlDapDocument,
+  POSTGRESQL_DAP_SOURCE_SCHEME,
+  PostgresqlDapContentProvider,
+} from "./postgresqlDapContentProvider.js";
 import { showRequirementsGuide } from "./requirementsGuide.js";
 import { createRoutineComparisonHandler } from "./routineComparisonCommand.js";
 import { type ServerConfig, ServerStore } from "./serverStore.js";
@@ -1231,14 +1236,26 @@ function registerDebugInfrastructure(options: DebugInfrastructureOptions): Debug
   );
 
   const contentProvider = new CodeMonikerContentProvider(connections, index);
+  const dapContentProvider = new PostgresqlDapContentProvider();
   context.subscriptions.push(
     contentProvider,
     vscode.workspace.registerFileSystemProvider(CodeMonikerContentProvider.SCHEME, contentProvider),
+    vscode.workspace.registerTextDocumentContentProvider(
+      POSTGRESQL_DAP_SOURCE_SCHEME,
+      dapContentProvider,
+    ),
     vscode.workspace.onDidOpenTextDocument((document) => {
-      if (document.uri.scheme !== CodeMonikerContentProvider.SCHEME) return;
-      const descriptor = index.sourceDescriptorForDocumentUri(document.uri);
-      if (!descriptor) return;
-      const language = descriptor.plpgsql ? "plpgsql" : "sql";
+      if (
+        document.uri.scheme !== CodeMonikerContentProvider.SCHEME &&
+        !isPostgresqlDapDocument(document.uri)
+      ) {
+        return;
+      }
+      const descriptor =
+        document.uri.scheme === CodeMonikerContentProvider.SCHEME
+          ? index.sourceDescriptorForDocumentUri(document.uri)
+          : undefined;
+      const language = descriptor?.plpgsql === false ? "sql" : "plpgsql";
       if (document.languageId !== language) {
         void vscode.languages.setTextDocumentLanguage(document, language);
       }
@@ -1280,6 +1297,7 @@ function registerDebugInfrastructure(options: DebugInfrastructureOptions): Debug
             .get<number>("maxRows", DEBUG_RESULT_LIMITS.DEFAULT_ROWS);
         }
         if (!resolved) return undefined;
+        resolved.clientResolvesSourceUris = true;
         let serverId = String(resolved.server ?? "");
         const configuredServer = serverId ? connections.store.get(serverId) : undefined;
         const database = configuredServer?.database ?? String(resolved.database ?? "");
@@ -1342,7 +1360,13 @@ function registerDebugInfrastructure(options: DebugInfrastructureOptions): Debug
       vscode.DebugConfigurationProviderTriggerKind.Dynamic,
     ),
     vscode.languages.registerInlineValuesProvider(
-      [{ scheme: CodeMonikerContentProvider.SCHEME }, { language: "sql" }, { language: "plpgsql" }],
+      [
+        { scheme: CodeMonikerContentProvider.SCHEME },
+        { scheme: POSTGRESQL_DAP_SOURCE_SCHEME },
+        { scheme: "debug", language: "plpgsql" },
+        { language: "sql" },
+        { language: "plpgsql" },
+      ],
       new PlpgsqlInlineValuesProvider(() => index.syntaxParser()),
     ),
     vscode.languages.registerDocumentSemanticTokensProvider(
@@ -1499,10 +1523,15 @@ export function activate(context: vscode.ExtensionContext): PlpgsqlExtensionApi 
   const callSiteConnections = new CallSiteConnectionStore(context.workspaceState);
   const workbenchSearch = { query: "" };
   const debugSessions = new DebugSessionController(() => connectionTreeProvider?.refresh());
-  let sourceNavigation = Promise.resolve();
+  let sourceNavigationSequence = 0;
   const queueStoppedSource = (session: vscode.DebugSession, status: DebugSessionStatus) => {
-    sourceNavigation = sourceNavigation
-      .then(() => revealStoppedSource(session, status, debugSessions))
+    const sequence = ++sourceNavigationSequence;
+    void revealStoppedSource(
+      session,
+      status,
+      debugSessions,
+      () => sequence === sourceNavigationSequence,
+    )
       .then(() =>
         out.appendLine(
           `stoppedSource: ${status.sessionId} active=${vscode.window.activeTextEditor?.document.uri.toString() ?? "<none>"}`,
@@ -1774,11 +1803,13 @@ async function revealStoppedSource(
   session: vscode.DebugSession,
   status: DebugSessionStatus,
   debugSessions: DebugSessionController,
+  isLatest: () => boolean,
 ): Promise<void> {
-  if (!status.source || !debugSessions.matches(session.id, status.sessionId)) return;
+  if (!status.source || !isLatest() || !debugSessions.matches(session.id, status.sessionId)) return;
+  if (vscode.Uri.parse(status.source.path).scheme === POSTGRESQL_DAP_SOURCE_SCHEME) return;
   const viewColumn = debugSessions.active?.viewColumn as vscode.ViewColumn | undefined;
   const document = await vscode.workspace.openTextDocument(vscode.Uri.parse(status.source.path));
-  if (!debugSessions.matches(session.id, status.sessionId)) return;
+  if (!isLatest() || !debugSessions.matches(session.id, status.sessionId)) return;
   const line = Math.max(0, status.source.line - 1);
   await vscode.window.showTextDocument(document, {
     viewColumn: viewColumn ?? vscode.ViewColumn.Active,
