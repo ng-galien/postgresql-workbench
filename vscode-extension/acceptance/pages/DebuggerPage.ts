@@ -267,11 +267,14 @@ export class DebuggerPage {
       if (!box) continue;
       const lineCenter = lineBox!.y + lineBox!.height / 2;
       const lensCenter = box.y + box.height / 2;
-      const distance = Math.abs(lineCenter - lensCenter);
+      if (lensCenter > lineCenter) continue;
+      const distance = lineCenter - lensCenter;
       if (!nearest || distance < nearest.distance) nearest = { distance, index };
     }
     if (!nearest)
-      throw new Error(`No visible CodeLens ${label} is associated with ${await line.innerText()}`);
+      throw new Error(
+        `No visible CodeLens ${label} precedes the SQL line ${await line.innerText()}`,
+      );
     return lenses.nth(nearest.index);
   }
 }

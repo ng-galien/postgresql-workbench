@@ -31,7 +31,9 @@ export function registerAcceptanceControl(
   context: vscode.ExtensionContext,
   options: AcceptanceControlOptions,
 ): AcceptanceControl | undefined {
-  const controlFile = process.env.POSTGRESQL_WORKBENCH_ACCEPTANCE_CONTROL_FILE;
+  const controlFile =
+    process.env.POSTGRESQL_WORKBENCH_ACCEPTANCE_CONTROL_FILE ??
+    vscode.workspace.getConfiguration("postgresql-workbench").get<string>("acceptanceControlFile");
   if (!controlFile || context.extensionMode === vscode.ExtensionMode.Production) return undefined;
   const readyFile = `${controlFile}.ready`;
   const activationId = randomUUID();

@@ -193,6 +193,7 @@ export async function launchVSCode(): Promise<VSCodeInstance> {
       "telemetry.telemetryLevel": "off",
       "update.mode": "none",
       "git.openRepositoryInParentFolders": "never",
+      "postgresql-workbench.acceptanceControlFile": controlFile,
       "window.dialogStyle": "custom",
       "workbench.startupEditor": "none",
       "workbench.colorTheme": "Default Light Modern",
@@ -242,14 +243,17 @@ export async function launchVSCode(): Promise<VSCodeInstance> {
     });
     await app.context().tracing.start({ screenshots: true, snapshots: true });
     tracingStarted = true;
+    const page = await waitForVSCodeWindow(app, 30_000);
+    await resizeWindow(app, page, 1440, 900);
+    const workbenchActivity = page.getByLabel("PostgreSQL Workbench", { exact: true }).first();
+    await workbenchActivity.waitFor({ state: "visible", timeout: 10_000 });
+    await workbenchActivity.click();
     let ready = await waitForActivation(
       readyFile,
       undefined,
       30_000,
       "PostgreSQL Workbench extension activation",
     );
-    const page = await waitForVSCodeWindow(app, 30_000);
-    await resizeWindow(app, page, 1440, 900);
 
     const runningApp = app;
     const runAcceptanceCommand = async (command: string): Promise<ExtensionReadyState> => {

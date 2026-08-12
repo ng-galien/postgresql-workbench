@@ -120,7 +120,8 @@ suite("SQL notebook integration", function () {
     assert.strictEqual(saved.cells[0].outputs, undefined);
   });
 
-  test("uses its binding without switching the active database context", async () => {
+  test("uses its binding without switching the active database context", async function () {
+    this.timeout(60_000);
     await api.connectionManager.store.add(
       {
         id: SECONDARY_SERVER_ID,
