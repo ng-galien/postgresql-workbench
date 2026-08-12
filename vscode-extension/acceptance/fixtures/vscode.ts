@@ -156,16 +156,68 @@ async function resizeWindow(
   width: number,
   height: number,
 ): Promise<void> {
+  const tolerance = 32;
+  const deadline = Date.now() + 5_000;
   const browserWindow = await app.browserWindow(page);
+  let lastDimensions:
+    | {
+        devicePixelRatio: number;
+        nativeHeight: number;
+        nativeWidth: number;
+        rendererHeight: number;
+        rendererWidth: number;
+      }
+    | undefined;
   try {
     await browserWindow.evaluate((window, size) => window.setContentSize(size.width, size.height), {
       width,
       height,
     });
-    await page.waitForFunction(
-      (size) => window.innerWidth === size.width && window.innerHeight === size.height,
-      { width, height },
-      { timeout: 5_000 },
+    while (Date.now() < deadline) {
+      const [nativeWidth, nativeHeight] = await browserWindow.evaluate((window) =>
+        window.getContentSize(),
+      );
+      const renderer = await page.evaluate(() => ({
+        devicePixelRatio: window.devicePixelRatio,
+        height: window.innerHeight,
+        width: window.innerWidth,
+      }));
+      lastDimensions = {
+        devicePixelRatio: renderer.devicePixelRatio,
+        nativeHeight,
+        nativeWidth,
+        rendererHeight: renderer.height,
+        rendererWidth: renderer.width,
+      };
+      if (
+        Math.abs(nativeWidth - width) <= tolerance &&
+        Math.abs(nativeHeight - height) <= tolerance &&
+        Math.abs(renderer.width - width) <= tolerance &&
+        Math.abs(renderer.height - height) <= tolerance
+      ) {
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    const diagnostic = {
+      actual: lastDimensions,
+      delta: lastDimensions
+        ? {
+            nativeHeight: lastDimensions.nativeHeight - height,
+            nativeWidth: lastDimensions.nativeWidth - width,
+            rendererHeight: lastDimensions.rendererHeight - height,
+            rendererWidth: lastDimensions.rendererWidth - width,
+          }
+        : undefined,
+      requested: { height, width },
+      tolerance,
+    };
+    const diagnosticPath = join(artifactsRoot, "window-resize-error.json");
+    const screenshotPath = join(artifactsRoot, "window-resize-error.png");
+    writeFileSync(diagnosticPath, `${JSON.stringify(diagnostic, null, 2)}\n`);
+    await page.screenshot({ path: screenshotPath }).catch(() => undefined);
+    throw new Error(
+      `VS Code window did not settle within 5000 ms. Dimensions: ${JSON.stringify(diagnostic)}. Snapshot: ${screenshotPath}`,
     );
   } finally {
     await browserWindow.dispose();
@@ -244,9 +296,9 @@ export async function launchVSCode(): Promise<VSCodeInstance> {
     await app.context().tracing.start({ screenshots: true, snapshots: true });
     tracingStarted = true;
     const page = await waitForVSCodeWindow(app, 30_000);
-    await resizeWindow(app, page, 1440, 900);
     const workbenchActivity = page.getByLabel("PostgreSQL Workbench", { exact: true }).first();
     await workbenchActivity.waitFor({ state: "visible", timeout: 10_000 });
+    await resizeWindow(app, page, 1440, 900);
     await workbenchActivity.click();
     let ready = await waitForActivation(
       readyFile,
