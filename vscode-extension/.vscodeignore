@@ -4,6 +4,7 @@
 .vscode-showcase.mjs
 acceptance/**
 playwright.acceptance.config.ts
+playwright.bootstrap.config.ts
 test-results/**
 test-workspace/**
 src/**

@@ -8,5 +8,9 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["./**/*.ts", "../playwright.acceptance.config.ts"]
+  "include": [
+    "./**/*.ts",
+    "../playwright.acceptance.config.ts",
+    "../playwright.bootstrap.config.ts"
+  ]
 }

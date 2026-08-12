@@ -17,7 +17,6 @@ import { preparedAcceptanceVSCode } from "./vscodeDownload";
 
 const extensionRoot = resolve(__dirname, "../..");
 const workspace = resolve(extensionRoot, "test-workspace");
-const activationTarget = resolve(workspace, "debug-fib.sql");
 const artifactsRoot = resolve(extensionRoot, "test-results", "acceptance-worker");
 const workbenchActivityLabel = "PostgreSQL Workbench";
 
@@ -370,7 +369,16 @@ async function focusWindow(app: ElectronApplication, page: Page): Promise<void> 
   }
 }
 
-export async function launchVSCode(): Promise<VSCodeInstance> {
+export interface LaunchVSCodeOptions {
+  activationTimeout?: number;
+  viewTimeout?: number;
+  windowTimeout?: number;
+}
+
+export async function launchVSCode(options: LaunchVSCodeOptions = {}): Promise<VSCodeInstance> {
+  const activationTimeout = options.activationTimeout ?? 30_000;
+  const viewTimeout = options.viewTimeout ?? 30_000;
+  const windowTimeout = options.windowTimeout ?? 30_000;
   const { executablePath } = preparedAcceptanceVSCode();
   const profileRoot = mkdtempSync(
     join(process.platform === "darwin" ? "/tmp" : tmpdir(), "pgwb-acceptance-"),
@@ -425,11 +433,9 @@ export async function launchVSCode(): Promise<VSCodeInstance> {
       executablePath,
       env: {
         ...process.env,
-        ELECTRON_ENABLE_LOGGING: "1",
         POSTGRESQL_WORKBENCH_ACCEPTANCE_CONTROL_FILE: controlFile,
       },
       args: [
-        ...(process.platform === "linux" ? ["--disable-gpu"] : []),
         "--disable-gpu-sandbox",
         "--disable-updates",
         "--force-disable-user-env",
@@ -444,7 +450,6 @@ export async function launchVSCode(): Promise<VSCodeInstance> {
         `--extensions-dir=${extensionsDir}`,
         `--extensionDevelopmentPath=${extensionRoot}`,
         workspace,
-        activationTarget,
       ],
       recordVideo: { dir: join(artifactsRoot, "video"), size: { width: 1440, height: 900 } },
     });
@@ -453,16 +458,12 @@ export async function launchVSCode(): Promise<VSCodeInstance> {
     await app.context().tracing.start({ screenshots: true, snapshots: true });
     tracingStarted = true;
     recordBootstrapStage("waiting-for-vscode-window");
-    const page = await waitForVSCodeWindow(app, 30_000);
-    recordBootstrapStage("opening-workbench-activity");
-    const workbenchActivity = page.getByLabel(workbenchActivityLabel, { exact: true }).first();
-    await workbenchActivity.waitFor({ state: "visible", timeout: 30_000 });
-    await workbenchActivity.click({ timeout: 5_000 });
+    const page = await waitForVSCodeWindow(app, windowTimeout);
     recordBootstrapStage("waiting-for-extension-activation");
     let ready = await waitForActivation(
       readyFile,
       undefined,
-      30_000,
+      activationTimeout,
       "PostgreSQL Workbench extension activation",
       app,
     );
@@ -485,7 +486,8 @@ export async function launchVSCode(): Promise<VSCodeInstance> {
       return ready;
     };
     await runAcceptanceCommand("postgresql-workbench-connections.focus");
-    await waitForWorkbenchWindow(app, 30_000);
+    recordBootstrapStage("waiting-for-workbench-window");
+    await waitForWorkbenchWindow(app, viewTimeout);
     await resizeWindow(app, page, 1440, 900);
     recordBootstrapStage("ready");
     return {

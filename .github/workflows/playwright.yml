@@ -5,7 +5,7 @@ on:
 
 jobs:
   playwright:
-    name: Single Playwright scenario
+    name: VS Code bootstrap smoke
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -21,14 +21,18 @@ jobs:
       - run: sudo apt-get install -y xvfb
       - run: npm ci
       - run: npm --prefix vscode-extension ci
-      - name: Run one Playwright scenario
+      - name: Report runner resources
+        run: |
+          free -h
+          df -h /dev/shm
+          ulimit -a
+          nproc
+      - name: Probe VS Code and extension bootstrap
         env:
           DEBUG: pw:browser
         run: >-
-          dbus-run-session -- xvfb-run -a -s "-screen 0 1600x1000x24"
-          npm --prefix vscode-extension run test:acceptance --
-          acceptance.spec.ts
-          --grep "phase 1 — opens the graph from a TreeView drop"
+          xvfb-run -a -s "-screen 0 1600x1000x24"
+          npm --prefix vscode-extension run test:bootstrap
       - name: Upload Playwright evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -36,6 +40,3 @@ jobs:
           name: playwright-debug-results
           path: vscode-extension/test-results/**
           if-no-files-found: ignore
-      - name: Stop acceptance database fixture
-        if: always()
-        run: docker compose -f demo/docker-compose.yml down -v

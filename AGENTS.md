@@ -100,8 +100,26 @@ verify the real VS Code and PostgreSQL paths affected by the release.
 
 ## CI and release workflow
 
-- `.github/workflows/ci.yml` runs for pull requests targeting `main` and manual
-  dispatch. A normal push to `main` does not start CI.
+### Playwright VS Code bootstrap
+
+- Keep acceptance credentials isolated with VS Code's
+  `--use-inmemory-secretstorage`; tests must never read or persist a developer's
+  keychain.
+- Bootstrap in this order: wait for the VS Code window, wait for the extension's
+  `onStartupFinished` readiness signal, then focus the Workbench through the
+  extension-owned acceptance control command. Do not open a synthetic SQL file
+  or click the renderer merely to force activation.
+- Linux runs need a real display such as Xvfb. Docker reproductions must use
+  both `--init` and at least `--shm-size=2g`: Docker's 64 MB default `/dev/shm`
+  crashes the Electron renderer with code 5 without marking the container
+  `OOMKilled`, and making `xvfb-run` PID 1 prevents its `SIGUSR1` readiness
+  handshake.
+- `playwright.bootstrap.config.ts` is the database-free runner smoke. Keep it
+  separate from the full acceptance suite so Electron or extension bootstrap
+  failures are diagnosed without indexing or PostgreSQL fixture noise.
+
+- `.github/workflows/ci.yml` runs for pushes to `main`, pull requests targeting
+  `main`, and manual dispatch.
 - `.github/workflows/release-extension.yml` runs only for
   `extension-v<version>` tags. Never create or push a release tag unless the
   user explicitly authorizes publication.
