@@ -18,11 +18,14 @@
 - Executed multi-statement scratchpad cells sequentially on one PostgreSQL
   client, rendered only statements that return rows, and replaced internal
   stack traces with structured SQL syntax and PostgreSQL diagnostics
-- Added separate Playwright journeys for graph interactions, SQL notebooks, and
-  stale virtual-source cleanup; the notebook journey verifies VS Code cell
+- Added separate Playwright scenarios for graph interactions, SQL notebooks, and
+  stale virtual-source cleanup; the notebook scenario verifies VS Code cell
   kinds through the public API, renders Markdown, executes single and
   multi-statement queries, checks silent statements, and inspects result and
   error renderers
+- Made the first TreeView-to-graph drop wait for VS Code's accepted resource
+  target, reject unavailable graph state explicitly, and always close the
+  synthetic bridge editor instead of leaving a broken tab
 - Hardened the shared Playwright instance with explicit extension readiness,
   stable VS Code command IDs, native Electron window selection and resizing,
   per-scenario editor and TreeView reset, fail-fast single-instance execution,
@@ -63,6 +66,9 @@
 - Fixed recursive stack inspection so argument and local-variable scopes select
   the frame requested by the DAP client instead of reusing PostgreSQL's current
   frame
+- Made stack-frame and variable handles unique across recursive suspensions and
+  serialized frame selection with variable inspection, preventing VS Code from
+  displaying stale or empty scopes while continuing through repeated stops
 - Kept standalone source retrieval independent from Workbench indexing through
   standard positive DAP source references when no host URI is available, without
   inventing an adapter-owned fallback URI

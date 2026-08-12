@@ -1,5 +1,5 @@
-// Keep the user journeys modular while declaring their shared-instance order explicitly.
-// The reload journey invalidates the in-memory index; schema synchronization is therefore
+// Keep the feature scenarios modular while declaring their shared-instance order explicitly.
+// The reload scenario invalidates the in-memory index; schema synchronization is therefore
 // the only scenario allowed to rebuild it, and remains last.
 import "./workbench/graph-dnd.spec.js";
 import "./workbench/search.spec.js";

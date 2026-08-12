@@ -9,7 +9,7 @@ import {
 export const WORKBENCH_GRAPH_DROP_SCHEME = "postgresql-workbench-graph-drop";
 
 export interface WorkbenchGraphDropTarget {
-  acceptTreeDrop(payload: WorkbenchGraphDragPayload): Promise<void>;
+  acceptTreeDrop(payload: WorkbenchGraphDragPayload): Promise<boolean>;
   reveal(): void;
 }
 
@@ -57,17 +57,23 @@ export async function completeGraphDrop(
   payload: WorkbenchGraphDragPayload,
   target: WorkbenchGraphDropTarget,
 ): Promise<void> {
+  await closeSyntheticTab(documentUri);
+  let accepted = false;
   try {
-    await target.acceptTreeDrop(payload);
+    accepted = await target.acceptTreeDrop(payload);
   } finally {
-    const tab = vscode.window.tabGroups.all
-      .flatMap((group) => group.tabs)
-      .find(
-        (candidate) =>
-          candidate.input instanceof vscode.TabInputText &&
-          candidate.input.uri.toString() === documentUri.toString(),
-      );
-    if (tab) await vscode.window.tabGroups.close(tab);
+    await closeSyntheticTab(documentUri);
   }
-  target.reveal();
+  if (accepted) target.reveal();
+}
+
+async function closeSyntheticTab(documentUri: vscode.Uri): Promise<void> {
+  const tab = vscode.window.tabGroups.all
+    .flatMap((group) => group.tabs)
+    .find(
+      (candidate) =>
+        candidate.input instanceof vscode.TabInputText &&
+        candidate.input.uri.toString() === documentUri.toString(),
+    );
+  if (tab) await vscode.window.tabGroups.close(tab);
 }

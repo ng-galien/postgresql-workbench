@@ -31,7 +31,7 @@ describe("Workbench graph drop bridge", () => {
     const uri = resourceUri();
     const tab = { input: new (await import("vscode")).TabInputText(uri as never) };
     vscodeState.groups = [{ tabs: [tab] }];
-    const acceptTreeDrop = vi.fn().mockResolvedValue(undefined);
+    const acceptTreeDrop = vi.fn().mockResolvedValue(true);
     const reveal = vi.fn();
 
     await completeGraphDrop(uri as never, acceptedPayload(), { acceptTreeDrop, reveal });
@@ -39,8 +39,26 @@ describe("Workbench graph drop bridge", () => {
     expect(vscodeState.close).toHaveBeenCalledWith(tab);
     expect(reveal).toHaveBeenCalledOnce();
     expect(vscodeState.close.mock.invocationCallOrder[0]).toBeLessThan(
+      acceptTreeDrop.mock.invocationCallOrder[0],
+    );
+    expect(acceptTreeDrop.mock.invocationCallOrder[0]).toBeLessThan(
       reveal.mock.invocationCallOrder[0],
     );
+  });
+
+  it("closes the synthetic resource without revealing an unavailable graph", async () => {
+    const uri = resourceUri();
+    const tab = { input: new (await import("vscode")).TabInputText(uri as never) };
+    vscodeState.groups = [{ tabs: [tab] }];
+    const reveal = vi.fn();
+
+    await completeGraphDrop(uri as never, acceptedPayload(), {
+      acceptTreeDrop: vi.fn().mockResolvedValue(false),
+      reveal,
+    });
+
+    expect(vscodeState.close).toHaveBeenCalledWith(tab);
+    expect(reveal).not.toHaveBeenCalled();
   });
 
   it("still closes the synthetic resource when focusing the graph fails", async () => {

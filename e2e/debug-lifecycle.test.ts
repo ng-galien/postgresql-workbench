@@ -110,8 +110,8 @@ describe("DAP human debug lifecycle", () => {
     await Promise.race([dc.stop(), delay(3_000)]).catch(() => {});
   }, 10_000);
 
-  it("skips the technical entry stop when a line breakpoint was configured before launch", async () => {
-    const oid = await routineOid("test_increments()");
+  it("skips the recursive technical entry and reports every recursive line-breakpoint frame", async () => {
+    const oid = await routineOid("playground.fib(integer)");
     const sourcePath = canonicalSourceUris[String(oid)];
     expect(sourcePath).toMatch(/^code\+moniker:\/\//);
 
@@ -121,25 +121,58 @@ describe("DAP human debug lifecycle", () => {
 
     const pending = await dc.setBreakpointsRequest({
       source: { path: sourcePath },
-      breakpoints: [{ line: 11 }],
+      breakpoints: [{ line: 12 }],
     });
     expect(pending.body.breakpoints[0]?.verified).toBe(false);
 
     const changed = dc.waitForEvent("breakpoint", 15_000);
     const breakpointStop = dc.waitForEvent("stopped", 15_000);
     await dc.launchRequest(
-      launchConfig("SELECT test_increments()", {
+      launchConfig("SELECT playground.fib(5)", {
         stopOnEntry: true,
       }),
     );
     await dc.configurationDoneRequest();
 
     expect((await changed).body.breakpoint.verified).toBe(true);
-    expect((await breakpointStop).body.reason).toBe("breakpoint");
-
-    const stack = await dc.stackTraceRequest({ threadId: 1 });
-    expect(stack.body.stackFrames[0]?.line).toBe(11);
-  }, 20_000);
+    let stopped = await breakpointStop;
+    const expectedReturns = [
+      { n: "2", result: "1" },
+      { n: "3", result: "2" },
+      { n: "2", result: "1" },
+      { n: "4", result: "3" },
+      { n: "2", result: "1" },
+      { n: "3", result: "2" },
+      { n: "5", result: "5" },
+    ];
+    const seenScopeReferences = new Set<number>();
+    const seenFrameIds = new Set<number>();
+    for (const expected of expectedReturns) {
+      expect(stopped.body.reason).toBe("breakpoint");
+      const stack = await dc.stackTraceRequest({ threadId: stopped.body.threadId });
+      expect(stack.body.stackFrames[0]?.line).toBe(12);
+      const frameId = stack.body.stackFrames[0].id;
+      expect(seenFrameIds.has(frameId)).toBe(false);
+      seenFrameIds.add(frameId);
+      const scopes = await dc.scopesRequest({ frameId });
+      const values = new Map<string, string>();
+      for (const scope of scopes.body.scopes) {
+        expect(seenScopeReferences.has(scope.variablesReference)).toBe(false);
+        seenScopeReferences.add(scope.variablesReference);
+        const variables = await dc.variablesRequest({
+          variablesReference: scope.variablesReference,
+        });
+        for (const { name, value } of variables.body.variables) values.set(name, value);
+      }
+      expect(values.get("n")).toBe(expected.n);
+      expect(values.get("result")).toBe(expected.result);
+      if (expected !== expectedReturns.at(-1)) {
+        const nextStop = dc.waitForEvent("stopped", 15_000);
+        await dc.continueRequest({ threadId: stopped.body.threadId });
+        stopped = await nextStop;
+      }
+    }
+  }, 30_000);
 
   it("reconciles repeated and replaced breakpoints without leaving stale server state", async () => {
     const entry = await launchAndWaitForEntry(dc, "SELECT test_increments()");

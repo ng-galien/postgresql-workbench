@@ -6,7 +6,7 @@ const server = /postgres@localhost:5434/;
 const database = /^demo/;
 const resultMime = "application/vnd.postgresql-workbench.sql-result+json";
 
-test.describe("SQL notebook journeys", () => {
+test.describe("SQL notebooks", () => {
   test("creates Markdown notes and executes a PostgreSQL query", async ({
     workbench,
     notebook,

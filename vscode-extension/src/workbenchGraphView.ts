@@ -92,7 +92,7 @@ export class WorkbenchGraphView implements vscode.Disposable {
   private pendingSnapshot?: WorkbenchSnapshot;
   private refreshRun?: Promise<boolean>;
   private operationTail: Promise<void> = Promise.resolve();
-  private readonly activeTreeDrops = new Set<Promise<void>>();
+  private readonly activeTreeDrops = new Set<Promise<boolean>>();
   private closing = false;
   private readonly acknowledgements: WorkbenchGraphAck[] = [];
   private webviewRenderSequence = 0;
@@ -240,10 +240,18 @@ export class WorkbenchGraphView implements vscode.Disposable {
     return result;
   }
 
-  acceptTreeDrop(payload: WorkbenchGraphDragPayload): Promise<void> {
-    if (this.closing || this.disposed) return Promise.resolve();
+  async acceptTreeDrop(payload: WorkbenchGraphDragPayload): Promise<boolean> {
+    if (this.closing || this.disposed) {
+      await this.rejectTreeDrop("The PostgreSQL graph is not ready yet. Try the drop again.");
+      return false;
+    }
     const activePayload = this.treeDragPayload(true);
-    if (!activePayload || !sameTreeDrag(activePayload, payload)) return Promise.resolve();
+    if (!activePayload || !sameTreeDrag(activePayload, payload)) {
+      await this.rejectTreeDrop(
+        "The dragged Sources item is no longer available. Start the drag again.",
+      );
+      return false;
+    }
     const run = this.acceptTreeDropNow(payload);
     this.activeTreeDrops.add(run);
     void run.then(
@@ -253,10 +261,10 @@ export class WorkbenchGraphView implements vscode.Disposable {
     return run;
   }
 
-  private async acceptTreeDropNow(payload: WorkbenchGraphDragPayload): Promise<void> {
+  private async acceptTreeDropNow(payload: WorkbenchGraphDragPayload): Promise<boolean> {
     if (payload.availability === "unsupported") {
       if (!this.panel.current) await vscode.window.showInformationMessage(payload.reason);
-      return;
+      return false;
     }
     if (this.refreshRun) await this.refreshRun;
     const result = this.index.state.result;
@@ -267,7 +275,7 @@ export class WorkbenchGraphView implements vscode.Disposable {
       result.database !== payload.database
     ) {
       await this.rejectTreeDrop("This object is not part of the active indexed database context.");
-      return;
+      return false;
     }
     const object = buildWorkbenchObjects(this.index.indexedSymbols, {
       serverId: result.serverId,
@@ -280,16 +288,17 @@ export class WorkbenchGraphView implements vscode.Disposable {
       await this.rejectTreeDrop(
         "This Sources item is not available in the current database index.",
       );
-      return;
+      return false;
     }
     const focused = this.panel.current
       ? await this.syncObjectFromTree(object, result)
       : await this.open(object, result);
     if (!focused) {
       await this.rejectTreeDrop("The selected PostgreSQL object could not be opened in the graph.");
-      return;
+      return false;
     }
     await this.selectInTree(object, result);
+    return true;
   }
 
   previewTreeDrop(payload: WorkbenchGraphDragPayload | null): void {

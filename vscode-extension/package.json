@@ -1064,7 +1064,7 @@
     "test:acceptance:typecheck": "tsc -p acceptance/tsconfig.json",
     "test:acceptance": "npm run build:production && npm run test:acceptance:typecheck && playwright test --config playwright.acceptance.config.ts",
     "test:bootstrap": "npm run build:production && npm run test:acceptance:typecheck && playwright test --config playwright.bootstrap.config.ts",
-    "test:acceptance:graph-dnd": "npm run build:production && npm run test:acceptance:typecheck && playwright test --config playwright.acceptance.config.ts acceptance/specs/acceptance.spec.ts --grep 'Workbench Cockpit'",
+    "test:acceptance:graph-dnd": "npm run build:production && npm run test:acceptance:typecheck && playwright test --config playwright.acceptance.config.ts acceptance/specs/acceptance.spec.ts --grep 'Workbench graph'",
     "test:acceptance:debugger": "npm run build:production && npm run test:acceptance:typecheck && playwright test --config playwright.acceptance.config.ts acceptance/specs/acceptance.spec.ts --grep 'PL/pgSQL debugger'",
     "test:acceptance:source-tab-cleanup": "npm run build:production && npm run test:acceptance:typecheck && playwright test --config playwright.acceptance.config.ts acceptance/specs/acceptance.spec.ts --grep 'virtual source cleanup'",
     "package": "npm run build:production && node scripts/package-local.mjs && npm run verify:package",

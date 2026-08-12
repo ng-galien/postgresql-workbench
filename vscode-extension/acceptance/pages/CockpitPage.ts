@@ -1,4 +1,5 @@
 import { expect, type Frame, type Locator, type Page } from "@playwright/test";
+import { installDragProbe, readDragProbe } from "../support/dragProbe";
 
 export class CockpitPage {
   private frame?: Frame;
@@ -514,46 +515,4 @@ export class CockpitPage {
     }
     throw new Error("The PostgreSQL Cockpit webview frame did not become available.");
   }
-}
-
-interface DragProbeEvent {
-  type: string;
-  types: string[];
-  target: string;
-}
-
-async function installDragProbe(target: Page | Frame): Promise<void> {
-  await target.evaluate(() => {
-    const state = globalThis as typeof globalThis & {
-      __pgwbDragProbe?: DragProbeEvent[];
-      __pgwbDragProbeInstalled?: boolean;
-    };
-    state.__pgwbDragProbe = [];
-    if (state.__pgwbDragProbeInstalled) return;
-    state.__pgwbDragProbeInstalled = true;
-    for (const type of ["dragstart", "dragenter", "dragover", "dragleave", "drop", "dragend"]) {
-      document.addEventListener(
-        type,
-        (event) => {
-          const drag = event as DragEvent;
-          state.__pgwbDragProbe?.push({
-            type,
-            types: drag.dataTransfer ? [...drag.dataTransfer.types] : [],
-            target:
-              drag.target instanceof Element
-                ? `${drag.target.tagName.toLocaleLowerCase()}.${drag.target.className}`
-                : String(drag.target),
-          });
-        },
-        { capture: true, once: false },
-      );
-    }
-  });
-}
-
-async function readDragProbe(target: Page | Frame): Promise<DragProbeEvent[]> {
-  return target.evaluate(() => {
-    const state = globalThis as typeof globalThis & { __pgwbDragProbe?: DragProbeEvent[] };
-    return state.__pgwbDragProbe ?? [];
-  });
 }

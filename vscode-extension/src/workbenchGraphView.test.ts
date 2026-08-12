@@ -401,11 +401,11 @@ describe("Workbench graph database context invalidation", () => {
     const drop = view.acceptTreeDrop(payload);
     await vi.waitFor(() => expect(resolveFocus).toBeTypeOf("function"));
     const close = view.close();
-    await expect(view.acceptTreeDrop(payload)).resolves.toBeUndefined();
+    await expect(view.acceptTreeDrop(payload)).resolves.toBe(false);
     expect(view.currentScope).toBe(dropped.uri);
 
     resolveFocus?.(graph(dropped));
-    await expect(drop).resolves.toBeUndefined();
+    await expect(drop).resolves.toBe(true);
     await expect(close).resolves.toBeUndefined();
     expect(view.currentScope).toBeUndefined();
     controller.dispose();

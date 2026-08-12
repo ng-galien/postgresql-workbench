@@ -86,7 +86,7 @@ test.describe("Workbench schema synchronization", () => {
       });
     });
 
-    await test.step("show the created table without rebuilding the user journey", async () => {
+    await test.step("show the created table without rebuilding the full index", async () => {
       await workbench.tree.expandPath([server, database, /^Sources/, /^public/]);
       await expect(workbench.tree.item(probe)).toBeVisible({ timeout: 30_000 });
     });

@@ -1,4 +1,5 @@
 import { expect, type Page } from "@playwright/test";
+import { installDragProbe, readDragProbe } from "../support/dragProbe";
 import { QuickInput } from "./QuickInput";
 import { WorkbenchTree } from "./WorkbenchTree";
 
@@ -176,6 +177,7 @@ export class WorkbenchPage {
 
   async dragTreeItemToEditor(source: import("@playwright/test").Locator): Promise<void> {
     await source.scrollIntoViewIfNeeded();
+    await installDragProbe(this.page);
     const target = this.page.locator(".editor-group-container").first();
     const sourceBox = await source.boundingBox();
     const targetBox = await target.boundingBox();
@@ -194,6 +196,35 @@ export class WorkbenchPage {
       targetBox!.y + targetBox!.height / 2,
       { steps: 24 },
     );
-    await this.page.mouse.up();
+    try {
+      await expect
+        .poll(
+          async () =>
+            (await readDragProbe(this.page)).some(
+              (event) =>
+                (event.type === "dragenter" || event.type === "dragover") &&
+                event.types.includes("resourceurls"),
+            ),
+          {
+            message: "VS Code must expose an accepted editor drop target before release",
+            timeout: 5_000,
+          },
+        )
+        .toBe(true);
+    } catch (cause) {
+      const events = (await readDragProbe(this.page)).slice(-40);
+      throw new Error(
+        `The editor did not become ready for the graph drop. sourceBox=${JSON.stringify(sourceBox)}; targetBox=${JSON.stringify(targetBox)}; events=${JSON.stringify(events)}.`,
+        { cause },
+      );
+    } finally {
+      await this.page.mouse.up();
+    }
+    await expect
+      .poll(async () => (await readDragProbe(this.page)).some((event) => event.type === "drop"), {
+        message: "VS Code must emit the accepted editor drop",
+        timeout: 5_000,
+      })
+      .toBe(true);
   }
 }

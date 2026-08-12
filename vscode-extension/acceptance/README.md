@@ -4,11 +4,11 @@ This suite drives the real VS Code Electron workbench with Playwright. It is
 separate from the six extension-host technical checks in
 `src/test/extension.test.ts`: those checks cover activation and narrow VS Code
 API adapters without PostgreSQL, while this suite proves complete user-visible
-journeys.
+scenarios.
 
 ## Test boundary
 
-User journeys belong in Playwright, including TreeView commands, Quick Picks,
+User scenarios belong in Playwright, including TreeView commands, Quick Picks,
 notebooks, Testing and coverage, debugger navigation, webviews, editor cleanup,
 and visible schema synchronization. The extension-host suite must not grow a
 second database-backed integration campaign. It is limited to checks that are
@@ -19,7 +19,7 @@ token projection, stateless PL/pgSQL analysis, and virtual-source writes.
 Protocol and PostgreSQL backend contracts remain in the root Vitest/E2E suites;
 they are not duplicated through the extension host. When a regression is only
 observable after composing VS Code UI, extension code, and PostgreSQL, add or
-extend a Playwright journey instead of a `src/test` integration test.
+extend a Playwright scenario instead of a `src/test` integration test.
 
 ## Structure
 
@@ -77,6 +77,6 @@ npm run test:acceptance:source-tab-cleanup
 
 The command builds the production extension, starts the deterministic demo
 database if needed, launches an isolated VS Code profile, performs the real UI
-journey, and retains Playwright evidence on failure. Set
+scenario, and retains Playwright evidence on failure. Set
 `PGWB_ACCEPTANCE_KEEP_DEMO=1` to leave a database started by the suite running.
 Set `PGWB_ACCEPTANCE_VSCODE_VERSION` to validate a specific VS Code version.

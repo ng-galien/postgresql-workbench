@@ -24,7 +24,7 @@ async function openCockpitFromTree(
   });
 }
 
-test.describe("Workbench Cockpit TreeView journeys", () => {
+test.describe("Workbench graph", () => {
   test("phase 1 — opens the graph from a TreeView drop", async ({ workbench, cockpit }) => {
     await test.step("prepare the indexed demo database through the Workbench UI", async () => {
       await workbench.ensureServer(demoConnectionUrl, server);
