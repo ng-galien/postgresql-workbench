@@ -110,7 +110,7 @@ describe("DAP human debug lifecycle", () => {
     await Promise.race([dc.stop(), delay(3_000)]).catch(() => {});
   }, 10_000);
 
-  it("keeps stopOnEntry explicit when a line breakpoint was configured before launch", async () => {
+  it("skips the technical entry stop when a line breakpoint was configured before launch", async () => {
     const oid = await routineOid("test_increments()");
     const sourcePath = canonicalSourceUris[String(oid)];
     expect(sourcePath).toMatch(/^code\+moniker:\/\//);
@@ -126,7 +126,7 @@ describe("DAP human debug lifecycle", () => {
     expect(pending.body.breakpoints[0]?.verified).toBe(false);
 
     const changed = dc.waitForEvent("breakpoint", 15_000);
-    const entry = dc.waitForEvent("stopped", 15_000);
+    const breakpointStop = dc.waitForEvent("stopped", 15_000);
     await dc.launchRequest(
       launchConfig("SELECT test_increments()", {
         stopOnEntry: true,
@@ -135,10 +135,6 @@ describe("DAP human debug lifecycle", () => {
     await dc.configurationDoneRequest();
 
     expect((await changed).body.breakpoint.verified).toBe(true);
-    expect((await entry).body.reason).toBe("entry");
-
-    const breakpointStop = dc.waitForEvent("stopped", 15_000);
-    await dc.continueRequest({ threadId: 1 });
     expect((await breakpointStop).body.reason).toBe("breakpoint");
 
     const stack = await dc.stackTraceRequest({ threadId: 1 });

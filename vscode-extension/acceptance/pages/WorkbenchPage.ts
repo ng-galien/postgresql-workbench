@@ -61,6 +61,51 @@ export class WorkbenchPage {
     await this.tree.expand(/^Sources/);
   }
 
+  async reindexActiveDatabase(server: RegExp, database: RegExp): Promise<void> {
+    await this.ensureActiveDatabaseIndexed(server, database);
+    await this.tree.clickHeaderAction(/Reindex Active Database/);
+    const sources = this.tree.item(/^Sources/);
+    await expect(sources).toContainText(/indexing|available/, { timeout: 5_000 });
+    await expect(sources).toContainText("available", { timeout: 30_000 });
+  }
+
+  async openRoutineSource(
+    server: RegExp,
+    database: RegExp,
+    schema: RegExp,
+    routine: RegExp,
+  ): Promise<void> {
+    await this.tree.scrollToTop();
+    await this.ensureActiveDatabaseIndexed(server, database);
+    await this.tree.expandPath([server, database, /^Sources/, schema]);
+    const item = await this.tree.findItem(routine);
+    await expect(item).toBeVisible({ timeout: 5_000 });
+    await item.click();
+    await item.hover();
+    // Use the extension-owned command title exposed by VS Code's accessibility
+    // tree. It stays stable across VS Code locales and DOM layout changes.
+    const openSource = this.page.getByRole("button", { name: "Open PostgreSQL Definition" });
+    await expect(openSource).toBeVisible({ timeout: 5_000 });
+    await openSource.click();
+  }
+
+  async debugRoutineFromTree(
+    server: RegExp,
+    database: RegExp,
+    schema: RegExp,
+    routine: RegExp,
+  ): Promise<void> {
+    await this.tree.scrollToTop();
+    await this.ensureActiveDatabaseIndexed(server, database);
+    await this.tree.expandPath([server, database, /^Sources/, schema]);
+    const item = await this.tree.findItem(routine);
+    await item.scrollIntoViewIfNeeded();
+    await item.hover();
+    const debug = this.page.getByRole("button", { name: "Debug", exact: true });
+    await expect(debug).toBeVisible({ timeout: 5_000 });
+    await debug.click();
+  }
+
   async openCockpit(): Promise<void> {
     await this.tree.clickHeaderAction(/Open PostgreSQL Cockpit/i);
   }

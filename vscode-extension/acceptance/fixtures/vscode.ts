@@ -120,8 +120,10 @@ async function waitForActivation(
 export interface VSCodeInstance {
   app: ElectronApplication;
   page: Page;
+  executeCommand(command: "workbench.action.quickOpen"): Promise<void>;
   executeInfrastructureCommand(command: "workbench.action.reloadWindow"): Promise<void>;
   inspectActiveNotebook(): Promise<ActiveNotebookSnapshot | undefined>;
+  inspectDebugState(): Promise<DebugStateSnapshot>;
   resetWorkbenchUI(): Promise<void>;
   resizeWindow(width: number, height: number): Promise<void>;
   dispose(): Promise<void>;
@@ -137,6 +139,15 @@ export interface ActiveNotebookSnapshot {
   }>;
   notebookType: string;
   uri: string;
+}
+
+export interface DebugStateSnapshot {
+  extensionSession?: {
+    adapterSessionId?: string;
+    state?: string;
+    vscodeSessionId?: string;
+  };
+  vscodeSessionId?: string;
 }
 
 async function resizeWindow(
@@ -257,6 +268,9 @@ export async function launchVSCode(): Promise<VSCodeInstance> {
     return {
       app: runningApp,
       page,
+      async executeCommand(command) {
+        await runAcceptanceCommand(command);
+      },
       async executeInfrastructureCommand(command) {
         const previousActivationId = ready.activationId;
         writeFileSync(controlFile, JSON.stringify({ command, nonce: randomUUID() }));
@@ -273,6 +287,12 @@ export async function launchVSCode(): Promise<VSCodeInstance> {
           "postgresql-workbench.acceptance.inspectActiveNotebook",
         );
         return state.result as ActiveNotebookSnapshot | undefined;
+      },
+      async inspectDebugState() {
+        const state = await runAcceptanceCommand(
+          "postgresql-workbench.acceptance.inspectDebugState",
+        );
+        return state.result as DebugStateSnapshot;
       },
       async resetWorkbenchUI() {
         const state = await runAcceptanceCommand("postgresql-workbench.acceptance.resetWorkbench");

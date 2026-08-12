@@ -3,11 +3,44 @@ CREATE SCHEMA IF NOT EXISTS playground;
 -- Recursion: watch the call stack grow with Step Into.
 CREATE OR REPLACE FUNCTION playground.fib(n int)
 RETURNS bigint AS $$
+DECLARE
+  result bigint;
 BEGIN
   IF n < 2 THEN
     RETURN n;
   END IF;
-  RETURN playground.fib(n - 1) + playground.fib(n - 2);
+  result := playground.fib(n - 1) + playground.fib(n - 2);
+  RETURN result;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Small call chain used by the debugger journey to prove Step Into and return-to-caller.
+CREATE OR REPLACE FUNCTION playground.double_value(n int)
+RETURNS int AS $$
+BEGIN
+  RETURN n * 2;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION playground.call_double(n int)
+RETURNS int AS $$
+DECLARE
+  result int;
+BEGIN
+  result := n;
+  result := playground.double_value(result);
+  result := result + 1;
+  RETURN result;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Zero-argument entry used to exercise the Workbench TreeView Debug action.
+CREATE OR REPLACE FUNCTION playground.debug_tree_entry()
+RETURNS int AS $$
+DECLARE
+  result int := 42;
+BEGIN
+  RETURN result;
 END;
 $$ LANGUAGE plpgsql;
 

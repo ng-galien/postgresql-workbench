@@ -55,6 +55,24 @@ export class WorkbenchTree {
     for (const label of labels) await this.expand(label);
   }
 
+  async scrollToTop(): Promise<void> {
+    const tree = this.page.getByRole("tree", { name: "Workbench" });
+    await tree.hover();
+    await this.page.mouse.wheel(0, -10_000);
+  }
+
+  async findItem(label: RegExp): Promise<Locator> {
+    const item = this.item(label);
+    const tree = this.page.getByRole("tree", { name: "Workbench" });
+    await tree.hover();
+    for (let attempt = 0; attempt < 20; attempt++) {
+      if (await item.isVisible()) return item;
+      await this.page.mouse.wheel(0, 500);
+      await this.page.waitForTimeout(50);
+    }
+    throw new Error(`The Workbench TreeView did not reveal ${label} after scrolling`);
+  }
+
   async select(label: RegExp): Promise<void> {
     const item = this.item(label);
     await item.waitFor({ state: "visible", timeout: 5_000 });

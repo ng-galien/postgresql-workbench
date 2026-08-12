@@ -3,6 +3,11 @@
 `@ng-galien/postgresql-dap` is the standalone Debug Adapter Protocol server
 used by PostgreSQL Workbench to debug PL/pgSQL routines.
 
+The executable and PostgreSQL Workbench are separate hosts over the same DAP
+library. The extension compiles its own adapter entry from the repository; it
+does not import this standalone CLI entry or require this package to be
+published first.
+
 It communicates over standard input and output and can be launched by any DAP
 client:
 
@@ -39,8 +44,17 @@ Standalone consumers normally do not need either override:
 - `PLPGSQL_CODE_MONIKER_TIMEOUT_MS`
 
 A DAP client may optionally include a `sourceUris` map from PostgreSQL routine
-OID to canonical Code Moniker URI. Without it, the adapter uses autonomous
-`postgresql-dap://routine/<oid>` source identifiers.
+OID to an absolute URI owned by that client. The adapter preserves each URI
+exactly, including its scheme and authority. PostgreSQL Workbench uses this to
+share its canonical Code Moniker source identities with the DAP it compiles.
+
+Without a client-owned URI, the adapter returns a positive DAP
+`sourceReference`; clients retrieve the content through the standard DAP
+`source` request. The accompanying
+`postgresql-dap://postgresql/<host>/<port>/<database>/<user>/session/<id>/routine/<oid>/<schema>.<routine>`
+path contains no secret, scopes the document to its PostgreSQL context and
+debug session, and gives editors a readable source name. It remains an
+adapter-local identifier rather than a second client-owned source namespace.
 
 ## Requirements
 

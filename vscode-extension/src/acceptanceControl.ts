@@ -4,13 +4,17 @@ import { readFile, rm } from "node:fs/promises";
 import * as vscode from "vscode";
 
 const RELOAD_WINDOW_COMMAND = "workbench.action.reloadWindow";
+const QUICK_OPEN_COMMAND = "workbench.action.quickOpen";
 const FOCUS_WORKBENCH_COMMAND = "postgresql-workbench-connections.focus";
 const INSPECT_ACTIVE_NOTEBOOK_COMMAND = "postgresql-workbench.acceptance.inspectActiveNotebook";
+const INSPECT_DEBUG_STATE_COMMAND = "postgresql-workbench.acceptance.inspectDebugState";
 const RESET_WORKBENCH_COMMAND = "postgresql-workbench.acceptance.resetWorkbench";
 const ACCEPTANCE_COMMANDS = new Set([
   RELOAD_WINDOW_COMMAND,
+  QUICK_OPEN_COMMAND,
   FOCUS_WORKBENCH_COMMAND,
   INSPECT_ACTIVE_NOTEBOOK_COMMAND,
+  INSPECT_DEBUG_STATE_COMMAND,
   RESET_WORKBENCH_COMMAND,
 ]);
 
@@ -19,6 +23,7 @@ export interface AcceptanceControl extends vscode.Disposable {
 }
 
 export interface AcceptanceControlOptions {
+  inspectDebugState(): unknown;
   resetWorkbench(): Promise<void> | void;
 }
 
@@ -75,6 +80,10 @@ export function registerAcceptanceControl(
               uri: notebook.uri.toString(),
             },
           );
+          return;
+        }
+        if (instruction.command === INSPECT_DEBUG_STATE_COMMAND) {
+          markReady(instruction.nonce, options.inspectDebugState());
           return;
         }
         if (instruction.command === RESET_WORKBENCH_COMMAND) {

@@ -1,4 +1,4 @@
-export function canonicalSourceUris(
+export function clientSourceUris(
   sourceUris: Record<string, string> | undefined,
 ): Map<number, string> {
   if (!sourceUris) return new Map();
@@ -7,53 +7,111 @@ export function canonicalSourceUris(
   for (const [rawOid, documentUri] of Object.entries(sourceUris)) {
     const oid = Number(rawOid);
     if (!Number.isInteger(oid) || oid <= 0) {
-      throw new Error(`Invalid PostgreSQL routine OID in Code Moniker source registry: ${rawOid}`);
+      throw new Error(`Invalid PostgreSQL routine OID in client source registry: ${rawOid}`);
     }
-    const identity = canonicalIdentity(documentUri);
-    if (!identity) {
-      throw new Error(`Invalid canonical Code Moniker source URI for routine OID ${oid}`);
+    if (!absoluteUri(documentUri)) {
+      throw new Error(`Invalid absolute client source URI for routine OID ${oid}`);
     }
-    if (identities.has(identity)) {
-      throw new Error(`Code Moniker source URI is mapped to more than one routine: ${identity}`);
+    if (identities.has(documentUri)) {
+      throw new Error(`Client source URI is mapped to more than one routine: ${documentUri}`);
     }
     result.set(oid, documentUri);
-    identities.add(identity);
+    identities.add(documentUri);
   }
   return result;
 }
 
-export function standaloneSourceUri(oid: number): string {
+export interface StandaloneSourceContext {
+  host: string;
+  port: number;
+  database: string;
+  user: string;
+  sessionId: string;
+}
+
+export interface StandaloneSourceIdentity {
+  context: StandaloneSourceContext;
+  oid: number;
+  sourceName: string;
+}
+
+export function standaloneSourceUri(
+  oid: number,
+  context: StandaloneSourceContext,
+  sourceName: string,
+): string {
   if (!Number.isInteger(oid) || oid <= 0) {
     throw new Error(`Invalid PostgreSQL routine OID: ${oid}`);
   }
-  return `postgresql-dap:/routine/${oid}`;
+  if (!sourceName.trim()) throw new Error("PostgreSQL routine source name is required");
+  const path = [context.host, String(context.port), context.database, context.user]
+    .map(encodeURIComponent)
+    .join("/");
+  return `postgresql-dap://postgresql/${path}/session/${encodeURIComponent(context.sessionId)}/routine/${oid}/${encodeURIComponent(sourceName)}`;
 }
 
-export function standaloneSourceOid(documentUri: string): number | undefined {
+export function standaloneSourceIdentity(
+  documentUri: string,
+): StandaloneSourceIdentity | undefined {
   try {
     const parsed = new URL(documentUri);
-    const match = /^\/routine\/(\d+)$/.exec(parsed.pathname);
-    if (parsed.protocol !== "postgresql-dap:" || parsed.hostname || !match) return undefined;
-    const oid = Number(match[1]);
-    return Number.isInteger(oid) && oid > 0 ? oid : undefined;
+    const match =
+      /^\/([^/]+)\/(\d+)\/([^/]+)\/([^/]+)\/session\/([^/]+)\/routine\/(\d+)\/([^/]+)$/.exec(
+        parsed.pathname,
+      );
+    if (
+      parsed.protocol !== "postgresql-dap:" ||
+      parsed.hostname !== "postgresql" ||
+      parsed.search ||
+      parsed.hash ||
+      !match
+    ) {
+      return undefined;
+    }
+    const port = Number(match[2]);
+    const oid = Number(match[6]);
+    if (!Number.isInteger(port) || port <= 0 || !Number.isInteger(oid) || oid <= 0) {
+      return undefined;
+    }
+    return {
+      context: {
+        host: decodeURIComponent(match[1]),
+        port,
+        database: decodeURIComponent(match[3]),
+        user: decodeURIComponent(match[4]),
+        sessionId: decodeURIComponent(match[5]),
+      },
+      oid,
+      sourceName: decodeURIComponent(match[7]),
+    };
   } catch {
     return undefined;
   }
 }
 
-function canonicalIdentity(documentUri: string): string | undefined {
-  if (!documentUri.startsWith("code+moniker://")) return undefined;
-  const parsed = new URL(documentUri);
-  if (parsed.hostname !== "postgresql") return documentUri;
-  try {
-    const projection = JSON.parse(decodeURIComponent(parsed.search.slice(1))) as {
-      identity?: unknown;
-    };
-    return typeof projection.identity === "string" &&
-      projection.identity.startsWith("code+moniker://")
-      ? projection.identity
-      : undefined;
-  } catch {
+export function standaloneSourceOid(
+  documentUri: string,
+  expectedContext?: StandaloneSourceContext,
+): number | undefined {
+  const identity = standaloneSourceIdentity(documentUri);
+  if (!identity) return undefined;
+  if (
+    expectedContext &&
+    (identity.context.host !== expectedContext.host ||
+      identity.context.port !== expectedContext.port ||
+      identity.context.database !== expectedContext.database ||
+      identity.context.user !== expectedContext.user ||
+      identity.context.sessionId !== expectedContext.sessionId)
+  ) {
     return undefined;
+  }
+  return identity.oid;
+}
+
+function absoluteUri(documentUri: string): boolean {
+  try {
+    return new URL(documentUri).protocol.length > 1;
+  } catch {
+    return false;
   }
 }

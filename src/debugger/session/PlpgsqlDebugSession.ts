@@ -51,7 +51,12 @@ import {
 } from "../launch/startDebugLaunch.js";
 import type { PlApiFunctionDef, PostgresDebugger } from "../postgres/index.js";
 import { DebugSessionLifecycle } from "./DebugSessionLifecycle.js";
-import { canonicalSourceUris, standaloneSourceOid, standaloneSourceUri } from "./sourceRegistry.js";
+import {
+  clientSourceUris,
+  type StandaloneSourceContext,
+  standaloneSourceOid,
+  standaloneSourceUri,
+} from "./sourceRegistry.js";
 
 const logFile = path.join(os.tmpdir(), "postgresql-workbench.log");
 const log = (msg: string) =>
@@ -89,7 +94,7 @@ interface LaunchRequestArguments extends DebugProtocol.LaunchRequestArguments {
   resultSource?: DebugResultSource;
   /** Optional indexed source identities supplied by an integrating host such as the Workbench. */
   sourceUris?: Record<string, string>;
-  /** The integrating client resolves autonomous source URIs instead of requesting a DAP reference. */
+  /** The host can open adapter source URIs directly instead of requiring DAP source references. */
   clientResolvesSourceUris?: boolean;
 }
 
@@ -221,6 +226,8 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
   private frameAnalyses = new Map<number, PlSourceAnalysis>();
   private selectedFrameAnalysis: PlSourceAnalysis | undefined;
   private entryOid: number = 0;
+  private entryBreakpointReleased = false;
+  private entryFunctionBreakpointRequested = false;
   private stopOnEntry = true;
   private targetQueryPromise: Promise<void> | undefined;
   private expandableVars = new Map<number, DebugProtocol.Variable[]>();
@@ -260,6 +267,7 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
   private entrySource: DebugSessionSource | undefined;
   private sourceUris = new Map<number, string>();
   private sourceOids = new Map<string, number>();
+  private sourceContext: StandaloneSourceContext | undefined;
   private sourceReferences = new Map<number, number>();
   private sourceReferenceByOid = new Map<number, number>();
   private nextSourceReference = 1;
@@ -313,6 +321,8 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
     }
     this.lifecycle.transition("preparing");
     this.stopOnEntry = args.stopOnEntry !== false;
+    this.entryBreakpointReleased = false;
+    this.entryFunctionBreakpointRequested = false;
     this.sendLifecycleOutput("Preparing PL/pgSQL debug session");
     this.sendSessionStatus("preparing", {
       query: args.sql,
@@ -338,6 +348,9 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
         {
           listenerReady: (debuggerBackend) => {
             this.listenerExecutor = debuggerBackend;
+          },
+          entryResolved: (entryOid) => {
+            this.entryOid = entryOid;
           },
           targetClientReady: (client) => {
             this.targetClient = client;
@@ -376,13 +389,19 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
     this.preparedLaunch = prepared;
     this.pgConfig = prepared.pgConfig;
     this.entryOid = prepared.execution.entryOid;
-    this.sourceUris = canonicalSourceUris(args.sourceUris);
+    this.sourceUris = clientSourceUris(args.sourceUris);
+    this.clientResolvesSourceUris = args.clientResolvesSourceUris === true;
     this.sourceOids = new Map([...this.sourceUris].map(([oid, symbolUri]) => [symbolUri, oid]));
+    this.sourceContext = {
+      host: args.host,
+      port: args.port,
+      database: args.database,
+      user: args.user,
+      sessionId: this.sessionSuffix,
+    };
     this.sourceReferences.clear();
     this.sourceReferenceByOid.clear();
     this.nextSourceReference = 1;
-    this.clientResolvesSourceUris = args.clientResolvesSourceUris === true;
-    this.sourceUri(this.entryOid);
     this.targetPid = prepared.targetPid;
     this.targetBackendPid = prepared.targetPid;
     this.listenerPid = prepared.debuggerBackend.getBackendPid();
@@ -437,6 +456,7 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
           this.resolveTargetReady();
           return;
         }
+        await this.releaseEntryBreakpoint();
         this.lifecycle.transition("suspended");
         this.entrySource = await this.currentStopSource().catch(() => undefined);
         this.sendLifecycleOutput(`Attached to PostgreSQL backend ${prepared.targetPid}`);
@@ -493,7 +513,9 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
     sourcePath: string,
     breakpoints: Array<{ id: number; line: number; condition?: string; logMessage?: string }>,
   ): Promise<DebugProtocol.Breakpoint[]> {
-    const oid = this.sourceOids.get(sourcePath) ?? standaloneSourceOid(sourcePath);
+    const oid =
+      this.sourceOids.get(sourcePath) ??
+      (this.sourceContext ? standaloneSourceOid(sourcePath, this.sourceContext) : undefined);
     if (!oid) throw new Error(`Unknown debug source URI: ${sourcePath}`);
 
     const cached = oid ? await this.getSource(oid) : null;
@@ -621,6 +643,7 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
     requested: Array<{ id: number; name: string }>,
   ): Promise<DebugProtocol.Breakpoint[]> {
     const breakpoints: DebugProtocol.Breakpoint[] = [];
+    let entryRequested = false;
     for (const bp of requested) {
       const parts = bp.name.split(".");
       const schema = parts.length >= 2 ? parts[0] : "public";
@@ -630,7 +653,8 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
         const callArgs = await this.listenerExecutor.getCallArgs(schema, funcName);
         if (callArgs.length > 0) {
           const oid = callArgs[0].oid;
-          if (oid !== this.entryOid) {
+          if (oid === this.entryOid) entryRequested = true;
+          if (oid !== this.entryOid || this.entryBreakpointReleased) {
             await this.listenerExecutor.setGlobalBreakpoint(oid);
           }
           breakpoints.push({
@@ -653,6 +677,7 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
         });
       }
     }
+    this.entryFunctionBreakpointRequested = entryRequested;
     return breakpoints;
   }
 
@@ -689,10 +714,17 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
       await this.replayPendingBreakpoints();
     }
 
-    if (this.stopOnEntry) {
+    const entryLineBreakpoints = this.activeBreakpoints.get(this.entryOid)?.size ?? 0;
+    if (this.stopOnEntry && entryLineBreakpoints === 0) {
       log("configurationDone: sending StoppedEvent(entry)");
       this.sendStoppedAndReset("entry", this.entrySource);
       return;
+    }
+
+    if (entryLineBreakpoints > 0) {
+      log(
+        `configurationDone: skipping technical entry stop and continuing to ${entryLineBreakpoints} user breakpoint(s)`,
+      );
     }
 
     if (this.lifecycle.beginExecution()) {
@@ -723,7 +755,9 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
         const cached = await this.getSource(frame.oid);
         if (cached) this.frameAnalyses.set(frame.level, cached.analysis);
         const funcDef = cached?.funcDef;
-        const symbolUri = this.sourceUri(frame.oid);
+        const symbolUri = funcDef
+          ? this.sourceUri(frame.oid, `${funcDef.schema}.${funcDef.name}`)
+          : undefined;
         const source =
           funcDef && symbolUri
             ? new Source(
@@ -814,9 +848,7 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
     );
     const oid =
       this.sourceReferences.get(sourceReference) ??
-      (sourcePath
-        ? (this.sourceOids.get(sourcePath) ?? standaloneSourceOid(sourcePath))
-        : undefined);
+      (sourcePath ? this.sourceOids.get(sourcePath) : undefined);
     if (oid === undefined) {
       this.sendErrorResponse(response, 9, "Unknown debug source URI");
       return;
@@ -1124,7 +1156,7 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
   ): Promise<DebugSessionSource | undefined> {
     const cached = await this.getSource(oid);
     if (!cached) return undefined;
-    const symbolUri = this.sourceUri(oid);
+    const symbolUri = this.sourceUri(oid, `${cached.funcDef.schema}.${cached.funcDef.name}`);
     return {
       name: `${cached.funcDef.schema}.${cached.funcDef.name}`,
       path: symbolUri,
@@ -1497,22 +1529,31 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
     return cached;
   }
 
-  private sourceUri(oid: number): string {
-    if (this.clientResolvesSourceUris) {
-      const standalone = standaloneSourceUri(oid);
-      this.sourceOids.set(standalone, oid);
-      return standalone;
+  private async releaseEntryBreakpoint(): Promise<void> {
+    const released = await this.listenerExecutor.dropGlobalBreakpoint(this.entryOid);
+    if (!released) {
+      throw new Error(
+        `Cannot release the PL/pgSQL entry breakpoint for routine OID ${this.entryOid}`,
+      );
     }
+    this.entryBreakpointReleased = true;
+    if (this.entryFunctionBreakpointRequested) {
+      await this.listenerExecutor.setGlobalBreakpoint(this.entryOid);
+    }
+  }
+
+  private sourceUri(oid: number, sourceName?: string): string {
     const existing = this.sourceUris.get(oid);
     if (existing) return existing;
-    const generated = standaloneSourceUri(oid);
-    this.sourceUris.set(oid, generated);
+    if (!this.sourceContext) throw new Error("Debug source context is unavailable");
+    if (!sourceName) throw new Error(`Debug source name is unavailable for routine OID ${oid}`);
+    const generated = standaloneSourceUri(oid, this.sourceContext, sourceName);
     this.sourceOids.set(generated, oid);
     return generated;
   }
 
   private sourceReference(oid: number, documentUri: string): number {
-    if (this.clientResolvesSourceUris) return 0;
+    if (this.clientResolvesSourceUris || this.sourceUris.get(oid) === documentUri) return 0;
     if (standaloneSourceOid(documentUri) !== oid) return 0;
     const existing = this.sourceReferenceByOid.get(oid);
     if (existing) return existing;

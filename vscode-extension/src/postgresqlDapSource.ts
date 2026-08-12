@@ -22,15 +22,27 @@ export class PostgresqlDapContentProvider implements vscode.TextDocumentContentP
   async provideTextDocumentContent(uri: vscode.Uri): Promise<string> {
     const session = vscode.debug.activeDebugSession;
     if (session?.type !== "postgresql-workbench") {
-      throw new Error(`No active PL/pgSQL debug session can resolve ${uri.toString()}`);
+      throw new Error(`No active PostgreSQL debug session can resolve ${uri.toString()}`);
     }
     const response = (await session.customRequest("source", {
       source: { path: uri.toString() },
       sourceReference: 0,
     })) as { content?: unknown };
     if (typeof response.content !== "string") {
-      throw new Error(`PL/pgSQL debug source ${uri.toString()} returned no content`);
+      throw new Error(`PostgreSQL debug source ${uri.toString()} returned no content`);
     }
     return response.content;
   }
+}
+
+export async function closePostgresqlDapTabs(): Promise<void> {
+  const tabs = vscode.window.tabGroups.all.flatMap((group) =>
+    group.tabs.filter(
+      (tab) =>
+        !tab.isDirty &&
+        tab.input instanceof vscode.TabInputText &&
+        isPostgresqlDapDocument(tab.input.uri),
+    ),
+  );
+  if (tabs.length > 0) await vscode.window.tabGroups.close(tabs, true);
 }

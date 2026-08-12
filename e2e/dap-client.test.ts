@@ -135,6 +135,18 @@ describe("DAP client e2e", () => {
     await terminated;
   });
 
+  it("removes the attach breakpoint after the first recursive entry", async () => {
+    const stopped = await launchAndWaitForStop(dc, launchConfig("SELECT test_recursive_entry(8)"));
+    let repeatedStops = 0;
+    dc.on("stopped", () => repeatedStops++);
+    const terminated = dc.waitForEvent("terminated", 15_000);
+
+    await dc.continueRequest({ threadId: stopped.body.threadId });
+
+    await terminated;
+    expect(repeatedStops).toBe(0);
+  });
+
   it("streams a large target result into a bounded structured preview", async () => {
     const pending = dc.waitForEvent(DEBUG_RESULT_STATUS_EVENT, 15_000);
     await launchAndWaitForStop(dc, {
@@ -264,7 +276,10 @@ describe("DAP client e2e", () => {
     const stack = await dc.stackTraceRequest({ threadId: 1 });
     const frame = stack.body.stackFrames[0];
     if (!frame?.source) throw new Error("Structured launch did not expose a DAP source");
-    expect(frame.source.path).toMatch(/^postgresql-dap:\/routine\/\d+$/);
+    expect(frame.source.name).toBe("public.test_simple");
+    expect(frame.source.path).toMatch(
+      /^postgresql-dap:\/\/postgresql\/localhost\/5433\/testdb\/postgres\/session\/[a-f0-9]+\/routine\/\d+\/public\.test_simple$/,
+    );
     expect(frame.source.sourceReference).toBeGreaterThan(0);
     const source = await dc.sourceRequest({
       source: frame.source,
@@ -289,6 +304,41 @@ describe("DAP client e2e", () => {
     expect(breakpoints.body.breakpoints[0]?.verified).toBe(true);
   });
 
+  it("rejects restored standalone breakpoints from another database or session", async () => {
+    await launchAndWaitForStop(dc, {
+      ...LAUNCH_ARGS,
+      routine: {
+        schema: "public",
+        name: "test_simple",
+        kind: "function",
+        argTypes: ["integer", "text"],
+      },
+      routineArgs: [{ value: "42" }, { value: "isolated" }],
+    });
+    const stack = await dc.stackTraceRequest({ threadId: 1 });
+    const frame = stack.body.stackFrames[0];
+    if (!frame?.source?.path) throw new Error("Standalone launch did not expose a DAP source");
+
+    const staleSources = [
+      frame.source.path.replace("/testdb/", "/another_database/"),
+      frame.source.path.replace(/\/session\/[^/]+\//, "/session/previous-session/"),
+    ];
+    for (const sourcePath of staleSources) {
+      expect(sourcePath).not.toBe(frame.source.path);
+      const restored = await dc.setBreakpointsRequest({
+        source: { path: sourcePath },
+        breakpoints: [{ line: frame.line }],
+      });
+      expect(restored.body.breakpoints[0]?.verified).toBe(false);
+    }
+
+    const current = await dc.setBreakpointsRequest({
+      source: frame.source,
+      breakpoints: [{ line: frame.line }],
+    });
+    expect(current.body.breakpoints[0]?.verified).toBe(true);
+  });
+
   it("launches a zero-arg structured routine target", async () => {
     const stopped = await launchAndWaitForStop(dc, {
       ...LAUNCH_ARGS,
@@ -304,10 +354,9 @@ describe("DAP client e2e", () => {
     expect(stopped.body.reason).toBe("entry");
   });
 
-  it("prefers an autonomous DAP source when the client resolves source URIs", async () => {
+  it("preserves the exact source authority supplied by the client", async () => {
     await launchAndWaitForStop(dc, {
       ...LAUNCH_ARGS,
-      clientResolvesSourceUris: true,
       sourceUris: canonicalSourceUris,
       routine: {
         schema: "public",
@@ -319,8 +368,13 @@ describe("DAP client e2e", () => {
     });
     const stack = await dc.stackTraceRequest({ threadId: 1 });
     const frame = stack.body.stackFrames[0];
-    if (!frame?.source?.path) throw new Error("Structured launch did not expose a DAP source");
-    expect(frame.source.path).toMatch(/^postgresql-dap:\/routine\/\d+$/);
+    if (!frame?.source?.path) throw new Error("Structured launch did not expose a client source");
+    const clientSource = Object.values(canonicalSourceUris).find(
+      (sourceUri) => sourceUri === frame.source?.path,
+    );
+    expect(clientSource).toBeDefined();
+    expect(frame.source.path).toMatch(/^code\+moniker:\/\//);
+    expect(new URL(frame.source.path).host).toBe(new URL(clientSource!).host);
     expect(frame.source.sourceReference).toBe(0);
     const source = await dc.sourceRequest({ source: frame.source, sourceReference: 0 });
     expect(source.body.content).toContain("CREATE OR REPLACE FUNCTION public.test_simple");

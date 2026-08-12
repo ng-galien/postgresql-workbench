@@ -112,7 +112,7 @@ The `vscode-extension/` is a full-featured VS Code extension:
 - FileSystemProvider for exact canonical `code+moniker://` symbol URIs (breakpoints on virtual source)
 - Semantic tokens (variables, params, types, dollar quoting)
 - Inline values during debug, RAISE NOTICE → Debug Console
-- esbuild bundles both extension.ts and ../src/main.ts (DAP server)
+- esbuild bundles extension.ts and the extension-specific dapServer.ts entry; the latter reuses the shared stdio DAP host without importing the standalone CLI entry
 - Imports from ../src/ work via esbuild (not tsc rootDir — removed)
 
 ## Testing

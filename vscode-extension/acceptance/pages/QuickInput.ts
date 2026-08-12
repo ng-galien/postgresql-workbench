@@ -4,12 +4,12 @@ export class QuickInput {
   constructor(private readonly page: Page) {}
 
   get input(): Locator {
-    return this.page.locator(".quick-input-widget input");
+    return this.page.locator(".quick-input-widget:visible input:visible");
   }
 
   async chooseOption(label: RegExp): Promise<void> {
     const option = this.page
-      .locator(".quick-input-list .monaco-list-row")
+      .locator(".quick-input-list:visible .monaco-list-row")
       .filter({ hasText: label });
     await option.first().waitFor({ state: "visible", timeout: 5_000 });
     await option.first().click();

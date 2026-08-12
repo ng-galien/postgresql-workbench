@@ -1066,6 +1066,7 @@
     "test:acceptance:typecheck": "tsc -p acceptance/tsconfig.json",
     "test:acceptance": "npm run build:production && npm run test:acceptance:typecheck && playwright test --config playwright.acceptance.config.ts",
     "test:acceptance:graph-dnd": "npm run build:production && npm run test:acceptance:typecheck && playwright test --config playwright.acceptance.config.ts acceptance/specs/workbench/graph-dnd.spec.ts",
+    "test:acceptance:debugger": "npm run build:production && npm run test:acceptance:typecheck && playwright test --config playwright.acceptance.config.ts acceptance/specs/debugger/call-sites.spec.ts",
     "test:acceptance:source-tab-cleanup": "npm run build:production && npm run test:acceptance:typecheck && playwright test --config playwright.acceptance.config.ts acceptance/specs/workbench/source-tab-cleanup.spec.ts",
     "package": "npm run build:production && node scripts/package-local.mjs && npm run verify:package",
     "verify:package": "node scripts/verify-code-moniker-vsix.mjs",

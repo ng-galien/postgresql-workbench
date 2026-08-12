@@ -1,7 +1,7 @@
 import * as assert from "node:assert";
 import * as vscode from "vscode";
 import { PlpgsqlInlineValuesProvider } from "../plpgsqlInlineValues.js";
-import { isPostgresqlDapDocument } from "../postgresqlDapContentProvider.js";
+import { isPostgresqlDapDocument } from "../postgresqlDapSource.js";
 import {
   delay,
   EXT_ID,
@@ -106,8 +106,12 @@ suite("Stopped-frame editor and inline values", function () {
       const active = activeEditor?.document.uri.toString() ?? "<no editor>";
 
       assert.notStrictEqual(framePath, "<none>", "Frame should carry a source path");
-      assert.strictEqual(vscode.Uri.parse(framePath, true).authority, "");
-      assert.match(vscode.Uri.parse(framePath, true).path, /^\/routine\/\d+$/);
+      assert.strictEqual(vscode.Uri.parse(framePath, true).authority, "postgresql");
+      assert.match(
+        vscode.Uri.parse(framePath, true).path,
+        /^\/localhost\/5433\/testdb\/postgres\/session\/[a-f0-9]+\/routine\/\d+\/public\.test_simple$/,
+      );
+      assert.strictEqual(vscode.Uri.parse(framePath, true).query, "");
       assert.strictEqual(
         frame.source?.sourceReference ?? 0,
         0,
@@ -273,8 +277,12 @@ suite("Stopped-frame editor and inline values", function () {
     const framePath: string = stack.stackFrames[0]?.source?.path ?? "<none>";
 
     assert.strictEqual(vscode.Uri.parse(framePath, true).scheme, "postgresql-dap");
-    assert.strictEqual(vscode.Uri.parse(framePath, true).authority, "");
-    assert.match(vscode.Uri.parse(framePath, true).path, /^\/routine\/\d+$/);
+    assert.strictEqual(vscode.Uri.parse(framePath, true).authority, "postgresql");
+    assert.match(
+      vscode.Uri.parse(framePath, true).path,
+      /^\/localhost\/5433\/testdb\/postgres\/session\/[a-f0-9]+\/routine\/\d+\/public\.test_simple$/,
+    );
+    assert.strictEqual(vscode.Uri.parse(framePath, true).query, "");
     assert.strictEqual(vscode.window.activeTextEditor?.document.uri.scheme, "postgresql-dap");
     assert.ok(isPostgresqlDapDocument(vscode.window.activeTextEditor!.document.uri));
     assert.strictEqual(vscode.window.activeTextEditor?.document.languageId, "plpgsql");

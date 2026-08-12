@@ -21,6 +21,7 @@ export interface DebugLaunchArguments extends LaunchTargetArguments {
 
 export interface DebugLaunchHooks {
   listenerReady(debuggerBackend: PostgresDebugger): void;
+  entryResolved(entryOid: number): void;
   targetClientReady(client: Client): void;
   replayFunctionBreakpoints(): Promise<void>;
   listenerError(error: Error): void;
@@ -102,6 +103,7 @@ export async function prepareDebugLaunch(
       args,
       args.routine ? undefined : await getParser(),
     );
+    hooks.entryResolved(execution.entryOid);
     await listenerClient.query("SELECT set_config('application_name', $1, false)", [
       debugApplicationName("listener", sessionSuffix, execution.entryOid),
     ]);

@@ -54,12 +54,18 @@ export class CockpitPage {
     return this.node(label).getByRole("button", { name: "DDL", exact: true });
   }
 
+  sourceToggleState(label: string): Locator {
+    return this.node(label).locator(".node-source-toggle");
+  }
+
   async showSource(label: string): Promise<void> {
     const source = this.ddlToggle(label);
     await source.waitFor({ state: "visible", timeout: 5_000 });
     await source.click();
     await this.inspector.waitFor({ state: "visible", timeout: 5_000 });
-    await expect(source).toHaveAttribute("aria-pressed", "true", { timeout: 5_000 });
+    await expect(this.sourceToggleState(label)).toHaveAttribute("aria-pressed", "true", {
+      timeout: 5_000,
+    });
   }
 
   async openIndexedDefinition(label: string): Promise<void> {

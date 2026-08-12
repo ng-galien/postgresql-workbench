@@ -10,7 +10,7 @@ import {
   terminateDebugSessions,
 } from "../debugSessionRecovery.js";
 import type { PlpgsqlExtensionApi } from "../extension.js";
-import { isPostgresqlDapDocument } from "../postgresqlDapContentProvider.js";
+import { isPostgresqlDapDocument } from "../postgresqlDapSource.js";
 import type { WorkbenchGraphRenderEvidence } from "../workbenchGraph/protocol.js";
 import type {
   DebugSessionsItem,
@@ -104,7 +104,7 @@ async function publicFunctions(api: PlpgsqlExtensionApi): Promise<FunctionItem[]
   return cachedFunctions;
 }
 
-async function waitForRoutineSource(
+async function waitForRoutineFrame(
   session: vscode.DebugSession,
   routine: string,
   timeoutMs = 5_000,
@@ -121,10 +121,7 @@ async function waitForRoutineSource(
           candidate.name?.includes(routine),
         );
         lastSource = frame?.source?.path ?? lastSource;
-        if (
-          frame?.source?.path &&
-          vscode.window.activeTextEditor?.document.uri.toString() === frame.source.path
-        ) {
+        if (frame?.source?.path) {
           return {
             threadId,
             source: frame.source.path,
@@ -136,8 +133,8 @@ async function waitForRoutineSource(
     await delay(50);
   }
   throw new Error(
-    `Source for ${routine} did not become active within ${timeoutMs}ms; ` +
-      `frame source=${lastSource}, active=${vscode.window.activeTextEditor?.document.uri.toString() ?? "<none>"}`,
+    `The DAP frame for ${routine} did not expose a source within ${timeoutMs}ms; ` +
+      `last source=${lastSource}`,
   );
 }
 
@@ -202,6 +199,23 @@ function currentDebugSession(api: PlpgsqlExtensionApi): ExtensionDebugSessionSna
   return api.debugSessions.active;
 }
 
+async function waitForDebugSessionState(
+  api: PlpgsqlExtensionApi,
+  state: ExtensionDebugSessionSnapshot["state"],
+  timeoutMs = 5_000,
+): Promise<ExtensionDebugSessionSnapshot> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const session = currentDebugSession(api);
+    if (session?.state === state) return session;
+    await delay(25);
+  }
+  throw new Error(
+    `Extension debug session did not reach ${state} within ${timeoutMs}ms; ` +
+      `current=${currentDebugSession(api)?.state ?? "<none>"}`,
+  );
+}
+
 async function resetShopFixture(api: PlpgsqlExtensionApi): Promise<void> {
   const client = api.connectionManager.getClient();
   assert.ok(client, "The extension connection should be available");
@@ -260,6 +274,10 @@ suite("Command call sites (registered server)", function () {
     await stopActivePlpgsqlSession();
     if (!api) return;
     await api.connectionManager.store.remove(SERVER_ID).catch(() => {});
+  });
+
+  teardown(async () => {
+    await stopActivePlpgsqlSession();
   });
 
   test("server registered via store + connectServer command", async () => {
@@ -1301,24 +1319,25 @@ suite("Command call sites (registered server)", function () {
     assert.ok(target, "test_record_var should be in the tree");
 
     const sessionStarted = waitForSessionStart(20_000);
+    try {
+      await vscode.commands.executeCommand("postgresql-workbench.debugFromTree", target);
+      const session = await sessionStarted;
+      await delay(5000);
 
-    await vscode.commands.executeCommand("postgresql-workbench.debugFromTree", target);
-    const session = await sessionStarted;
-    await delay(5000);
-
-    const stack = await session.customRequest("stackTrace", {
-      threadId: (await session.customRequest("threads")).threads[0].id,
-    });
-    assert.ok(
-      stack.stackFrames[0]?.name.includes("test_record_var"),
-      `Expected test_record_var frame, got ${stack.stackFrames[0]?.name}`,
-    );
-    assert.strictEqual(
-      stack.stackFrames[0].source.path,
-      api.workbenchIndex.documentUri(target.symbolUri)?.toString(),
-    );
-
-    await stopActivePlpgsqlSession();
+      const stack = await session.customRequest("stackTrace", {
+        threadId: (await session.customRequest("threads")).threads[0].id,
+      });
+      assert.ok(
+        stack.stackFrames[0]?.name.includes("test_record_var"),
+        `Expected test_record_var frame, got ${stack.stackFrames[0]?.name}`,
+      );
+      assert.strictEqual(
+        stack.stackFrames[0].source.path,
+        api.workbenchIndex.documentUri(target.symbolUri)?.toString(),
+      );
+    } finally {
+      await stopActivePlpgsqlSession();
+    }
   });
 
   test("demo callsite assigns a connection, reveals Debug, and runs end to end", async () => {
@@ -1390,7 +1409,7 @@ suite("Command call sites (registered server)", function () {
       ...(debugLens!.command!.arguments ?? []),
     );
     const session = await sessionStarted;
-    const stopped = await waitForRoutineSource(session, "restock_report");
+    const stopped = await waitForRoutineFrame(session, "restock_report");
     const stoppedUri = vscode.Uri.parse(stopped.source);
     assert.ok(
       stoppedUri.scheme === "code+moniker" || isPostgresqlDapDocument(stoppedUri),
@@ -1435,7 +1454,7 @@ suite("Command call sites (registered server)", function () {
     assert.match(copied, /Truite fumée/);
   });
 
-  test("three successive demo callsites open sources, publish results, and terminate", async () => {
+  test("three successive demo callsites publish DAP frames, results, and terminate", async () => {
     await resetShopFixture(api);
     const extensionUri = vscode.extensions.getExtension(EXT_ID)!.extensionUri;
     const callsite = await vscode.workspace.openTextDocument(
@@ -1500,7 +1519,7 @@ suite("Command call sites (registered server)", function () {
       ...(firstLens.command!.arguments ?? []),
     );
     const firstSession = await firstStarted;
-    const firstStop = await waitForRoutineSource(firstSession, "restock_report");
+    const firstStop = await waitForRoutineFrame(firstSession, "restock_report");
     const firstEnded = waitSessionEnd();
     await firstSession.customRequest("continue", { threadId: firstStop.threadId });
     await firstEnded;
@@ -1541,16 +1560,10 @@ suite("Command call sites (registered server)", function () {
       false,
       "Starting the second callsite must not reveal Results while VS Code is navigating to its stopped source",
     );
-    const secondStop = await waitForRoutineSource(secondSession, "place_order");
+    const secondStop = await waitForRoutineFrame(secondSession, "place_order");
     assert.ok(
       secondStop.elapsedMs < 3_000,
-      `Second stopped source took ${secondStop.elapsedMs}ms to become active`,
-    );
-    await delay(750);
-    assert.strictEqual(
-      vscode.window.activeTextEditor?.document.uri.toString(),
-      secondStop.source,
-      "The second stopped source should remain active after the UI settles",
+      `Second DAP frame took ${secondStop.elapsedMs}ms to expose its source`,
     );
     assert.ok(
       vscode.window.tabGroups.all
@@ -1580,13 +1593,12 @@ suite("Command call sites (registered server)", function () {
       ...(thirdLens.command!.arguments ?? []),
     );
     const thirdSession = await thirdStarted;
-    const thirdStop = await waitForRoutineSource(thirdSession, calls[2].routine);
+    const thirdStop = await waitForRoutineFrame(thirdSession, calls[2].routine);
     assert.ok(
       thirdStop.elapsedMs < 3_000,
-      `Third stopped source took ${thirdStop.elapsedMs}ms to become active`,
+      `Third DAP frame took ${thirdStop.elapsedMs}ms to expose its source`,
     );
-    const thirdRuntime = currentDebugSession(api);
-    assert.strictEqual(thirdRuntime?.state, "suspended");
+    const thirdRuntime = await waitForDebugSessionState(api, "suspended");
     assert.strictEqual(thirdRuntime?.status?.routine?.name, "try_order");
     assert.ok((thirdRuntime?.status?.routine?.oid ?? 0) > 0);
     assert.ok((thirdRuntime?.status?.listenerPid ?? 0) > 0);

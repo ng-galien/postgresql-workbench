@@ -25,7 +25,9 @@ export class DebugResultsViewProvider implements vscode.WebviewViewProvider, vsc
     view.webview.options = { enableScripts: true };
     view.webview.html = createDebugResultsHtml(crypto.randomBytes(16).toString("base64"));
     view.webview.onDidReceiveMessage(async (message: ResultsWebviewMessage) => {
-      if (message.type === "select" && message.id) {
+      if (message.type === "ready") {
+        this.update();
+      } else if (message.type === "select" && message.id) {
         this.store.select(message.id);
       } else if (message.type === "copy" && typeof message.text === "string") {
         await vscode.env.clipboard.writeText(message.text);
@@ -338,6 +340,7 @@ const DEBUG_RESULTS_HTML = `<!doctype html>
       if (data.type === 'state') render(data.state);
       if (data.type === 'copyResult' && data.ok) announce('Copied to clipboard');
     });
+    vscode.postMessage({ type: 'ready' });
 
     function render(state) {
       currentResult = state.selected;

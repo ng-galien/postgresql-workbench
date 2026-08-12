@@ -586,8 +586,11 @@ suite("Debug session e2e", function () {
     assert.ok(frame.source?.path, "Frame should carry an autonomous DAP source path");
     const standaloneSource = vscode.Uri.parse(frame.source.path, true);
     assert.strictEqual(standaloneSource.scheme, "postgresql-dap");
-    assert.strictEqual(standaloneSource.authority, "");
-    assert.match(standaloneSource.path, /^\/routine\/\d+$/);
+    assert.strictEqual(standaloneSource.authority, "postgresql");
+    assert.match(
+      standaloneSource.path,
+      /^\/localhost\/5433\/testdb\/postgres\/session\/[a-f0-9]+\/routine\/\d+\/public\.test_increments$/,
+    );
 
     // Two assignments below the entry stop — steppable by construction.
     const bpLine = frame.line + 2;

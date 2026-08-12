@@ -45,10 +45,11 @@ import { startDockerDebugDatabase } from "./dockerProvisioningUi.js";
 import { PlpgsqlInlineValuesProvider } from "./plpgsqlInlineValues.js";
 import { LEGEND, PlpgsqlSemanticTokensProvider } from "./plpgsqlSemanticTokens.js";
 import {
+  closePostgresqlDapTabs,
   isPostgresqlDapDocument,
   POSTGRESQL_DAP_SOURCE_SCHEME,
   PostgresqlDapContentProvider,
-} from "./postgresqlDapContentProvider.js";
+} from "./postgresqlDapSource.js";
 import { showRequirementsGuide } from "./requirementsGuide.js";
 import { createRoutineComparisonHandler } from "./routineComparisonCommand.js";
 import { type ServerConfig, ServerStore } from "./serverStore.js";
@@ -1264,6 +1265,7 @@ function registerDebugInfrastructure(options: DebugInfrastructureOptions): Debug
       if (session.type === "postgresql-workbench") {
         contentProvider.invalidateAll();
         sessions.observeTermination(session.id);
+        void closePostgresqlDapTabs();
       }
     }),
     vscode.debug.registerDebugAdapterDescriptorFactory("postgresql-workbench", {
@@ -1401,7 +1403,12 @@ export function activate(context: vscode.ExtensionContext): PlpgsqlExtensionApi 
   out.appendLine("activate() called");
 
   let resetAcceptanceWorkbench = () => {};
+  let inspectAcceptanceDebugState = (): unknown => ({
+    extensionSession: undefined,
+    vscodeSessionId: vscode.debug.activeDebugSession?.id,
+  });
   const acceptanceControl = registerAcceptanceControl(context, {
+    inspectDebugState: () => inspectAcceptanceDebugState(),
     resetWorkbench: () => resetAcceptanceWorkbench(),
   });
   if (acceptanceControl) context.subscriptions.push(acceptanceControl);
@@ -1523,6 +1530,10 @@ export function activate(context: vscode.ExtensionContext): PlpgsqlExtensionApi 
   const callSiteConnections = new CallSiteConnectionStore(context.workspaceState);
   const workbenchSearch = { query: "" };
   const debugSessions = new DebugSessionController(() => connectionTreeProvider?.refresh());
+  inspectAcceptanceDebugState = () => ({
+    extensionSession: debugSessions.active,
+    vscodeSessionId: vscode.debug.activeDebugSession?.id,
+  });
   let sourceNavigationSequence = 0;
   const queueStoppedSource = (session: vscode.DebugSession, status: DebugSessionStatus) => {
     const sequence = ++sourceNavigationSequence;
@@ -1569,6 +1580,28 @@ export function activate(context: vscode.ExtensionContext): PlpgsqlExtensionApi 
     workbenchGraph,
   );
   resetAcceptanceWorkbench = async () => {
+    const debugSession = vscode.debug.activeDebugSession;
+    if (debugSession?.type === "postgresql-workbench") {
+      const terminated = new Promise<void>((resolve, reject) => {
+        const subscription = vscode.debug.onDidTerminateDebugSession((session) => {
+          if (session.id !== debugSession.id) return;
+          clearTimeout(timeout);
+          subscription.dispose();
+          resolve();
+        });
+        const timeout = setTimeout(() => {
+          subscription.dispose();
+          reject(new Error(`Debug session ${debugSession.id} did not terminate within 5 seconds`));
+        }, 5_000);
+      });
+      await vscode.debug.stopDebugging(debugSession);
+      await terminated;
+    }
+    if (vscode.debug.breakpoints.length > 0) {
+      vscode.debug.removeBreakpoints(vscode.debug.breakpoints);
+    }
+    await callSiteConnections.clearAll();
+    await vscode.commands.executeCommand("workbench.action.closePanel");
     await workbenchGraph.close();
     const [neutralRoot] = await treeProvider.getChildren();
     if (neutralRoot) await graphTreeSync.resetSelection(neutralRoot);
@@ -1613,6 +1646,7 @@ export function activate(context: vscode.ExtensionContext): PlpgsqlExtensionApi 
       if (session.type === "postgresql-workbench") scheduleDebugSessionRefresh();
     }),
   );
+  void closePostgresqlDapTabs();
 
   context.subscriptions.push(
     contentProvider.onDidChangeFile((events) => {

@@ -46,6 +46,9 @@
 
 ### Standalone PostgreSQL DAP
 
+- Split the shared DAP library from its standalone CLI and the VS Code adapter
+  entry, so the extension compiles the shared implementation without importing
+  the autonomous executable bootstrap
 - Added the independently publishable `@ng-galien/postgresql-dap` package, its
   package validation and real PostgreSQL smoke tests, and a dedicated `dap-v*`
   release workflow
@@ -54,11 +57,12 @@
 - Reduced the standalone DAP dependency on Code Moniker to lazy, stateless
   SQL/PL/pgSQL parsing on demand; it no longer manages a workspace daemon,
   indexes sources, or requires Code Moniker URIs
-- Added autonomous `postgresql-dap://routine/<oid>` source identities and DAP
-  source references so structured targets, source retrieval, and breakpoints do
-  not depend on a Workbench index
-- Kept host-provided Code Moniker source URIs as optional enrichment while
-  preventing VS Code debug launches from forcing database indexing
+- Preserved exact host-provided source URIs, including their schemes and
+  authorities, so the Workbench client and its compiled DAP use the same Code
+  Moniker identities
+- Kept standalone source retrieval independent from Workbench indexing through
+  standard positive DAP source references when no host URI is available, with
+  context- and session-scoped fallback URIs that cannot collide across databases
 - Hardened the private syntax worker lifecycle with bounded graceful shutdown,
   SIGTERM and SIGKILL fallbacks, cleanup tests, and an executable architecture
   guard for the reduced DAP boundary

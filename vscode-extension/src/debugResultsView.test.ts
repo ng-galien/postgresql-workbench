@@ -27,5 +27,6 @@ describe("debug results webview", () => {
     expect(html).toContain("Raw");
     expect(html).toContain("Formatted");
     expect(html).toContain("Open callsite");
+    expect(html).toContain("vscode.postMessage({ type: 'ready' })");
   });
 });

@@ -1,5 +1,6 @@
 import { test as base } from "@playwright/test";
 import { CockpitPage } from "../pages/CockpitPage";
+import { DebuggerPage } from "../pages/DebuggerPage";
 import { NotebookPage } from "../pages/NotebookPage";
 import { WorkbenchPage } from "../pages/WorkbenchPage";
 import { type DemoDatabase, startDemoDatabase } from "./demoDatabase";
@@ -8,6 +9,7 @@ import { launchVSCode, type VSCodeInstance } from "./vscode";
 interface AcceptanceFixtures {
   workbench: WorkbenchPage;
   cockpit: CockpitPage;
+  debuggerPage: DebuggerPage;
   notebook: NotebookPage;
 }
 
@@ -56,6 +58,9 @@ export const test = base.extend<AcceptanceFixtures, AcceptanceWorkerFixtures>({
   },
   cockpit: async ({ vscode }, use) => {
     await use(new CockpitPage(vscode.page));
+  },
+  debuggerPage: async ({ vscode }, use) => {
+    await use(new DebuggerPage(vscode.page, vscode.executeCommand, vscode.inspectDebugState));
   },
   notebook: async ({ vscode }, use) => {
     await use(new NotebookPage(vscode.page, vscode.inspectActiveNotebook));

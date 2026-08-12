@@ -289,6 +289,10 @@ export class PostgresDebugger {
     return Boolean(result.rows[0]?.pldbg_drop_breakpoint);
   }
 
+  async dropGlobalBreakpoint(oid: number): Promise<boolean> {
+    return this.dropBreakpoint(oid, -1);
+  }
+
   async depositValue(varNo: number, lineNo: number, value: string): Promise<boolean> {
     if (this.invalidSession()) return false;
     try {

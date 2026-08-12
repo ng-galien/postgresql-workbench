@@ -10,6 +10,18 @@ The TypeScript debug adapter is separate from the VS Code user interface. Any
 editor or client capable of launching a stdio Debug Adapter Protocol server can
 integrate it.
 
+The implementation has three explicit layers:
+
+- the shared DAP library contains the protocol session, PostgreSQL debugger,
+  and source-routing contracts;
+- the standalone `@ng-galien/postgresql-dap` executable is one stdio host over
+  that library;
+- PostgreSQL Workbench compiles a separate VS Code adapter entry over the same
+  library and does not import the standalone CLI entry.
+
+This keeps debugger behavior shared without forcing the extension to consume a
+separately published DAP artifact or the standalone executable lifecycle.
+
 {{dap-flow}}
 
 ## Distribution
@@ -83,9 +95,19 @@ Configuration Done. Clients should follow the standard DAP configuration
 sequence.
 
 Structured routine targets start without parsing launch SQL. When an integrating
-host supplies `sourceUris`, the adapter preserves those canonical Code Moniker
-identities. Otherwise it exposes autonomous `postgresql-dap://routine/<oid>`
-sources and serves their content through the standard DAP Source request.
+host supplies `sourceUris`, the adapter preserves those absolute client-owned
+URIs exactly, including their schemes and authorities. PostgreSQL Workbench
+therefore exposes the same canonical Code Moniker identities through both its
+client library and its compiled DAP.
+
+For routines without a client-owned URI, the adapter returns a positive DAP
+`sourceReference` and serves the content through the standard DAP Source
+request. Its
+`postgresql-dap://postgresql/<host>/<port>/<database>/<user>/session/<id>/routine/<oid>/<schema>.<routine>`
+path contains no secret, prevents source identities from colliding across
+databases or debug sessions, and exposes a readable source name to editors. It
+remains adapter-local; a generic DAP client does not need to register that URI
+scheme.
 
 The [DAP source](https://github.com/ng-galien/postgresql-workbench/tree/main/src)
 and [protocol integration tests](https://github.com/ng-galien/postgresql-workbench/tree/main/e2e)

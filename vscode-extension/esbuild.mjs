@@ -55,7 +55,7 @@ const extensionConfig = {
 
 /** @type {import('esbuild').BuildOptions} */
 const dapServerConfig = {
-  entryPoints: ["../src/main.ts"],
+  entryPoints: ["src/dapServer.ts"],
   bundle: true,
   outfile: "dist/dap-server.js",
   external: ["@code-moniker/client"],

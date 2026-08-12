@@ -192,6 +192,17 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- Recursive entry used to prove that the attach breakpoint is one-shot.
+CREATE OR REPLACE FUNCTION test_recursive_entry(n int)
+RETURNS int AS $$
+BEGIN
+  IF n <= 1 THEN
+    RETURN n;
+  END IF;
+  RETURN test_recursive_entry(n - 1) + test_recursive_entry(n - 2);
+END;
+$$ LANGUAGE plpgsql;
+
 -- Set-returning function used to verify bounded result streaming.
 CREATE OR REPLACE FUNCTION test_many_rows(n int)
 RETURNS TABLE(id int, payload jsonb) AS $$

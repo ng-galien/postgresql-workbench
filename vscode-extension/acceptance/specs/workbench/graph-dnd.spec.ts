@@ -186,7 +186,7 @@ test.describe("Workbench Cockpit TreeView journeys", () => {
     await test.step("close Source and recover the full graph width", async () => {
       const openCanvas = await cockpit.canvasGeometry();
       await cockpit.closeSourceWithButton();
-      await expect(cockpit.ddlToggle("product_availability")).toHaveAttribute(
+      await expect(cockpit.sourceToggleState("product_availability")).toHaveAttribute(
         "aria-pressed",
         "false",
         { timeout: 5_000 },
