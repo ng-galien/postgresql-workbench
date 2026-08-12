@@ -360,7 +360,7 @@ export class FunctionItem extends vscode.TreeItem {
     this.symbolUri = object.symbolUri;
     this.sourceUri = object.sourceUri;
     this.iconPath = objectThemeIcon(this.isProc ? "procedure" : "function");
-    this.contextValue = "postgresql-workbench-function";
+    this.contextValue = "postgresql-workbench-function-debuggable";
     this.tooltip = `${object.schema}.${object.name}(${signature})`;
   }
 }
@@ -780,6 +780,15 @@ export class WorkbenchTreeProvider
     if (element.kind === "function" || element.kind === "object") {
       this.visibleObjects.set(element.object.sourceUri, element);
     }
+    if (element.kind === "function") {
+      const result = this.index.state.result;
+      element.contextValue =
+        this.index.state.status === "available" &&
+        result?.serverId === element.object.serverId &&
+        result.database === element.object.database
+          ? "postgresql-workbench-function-debuggable"
+          : "postgresql-workbench-function";
+    }
     return element;
   }
 
@@ -895,6 +904,12 @@ export class WorkbenchTreeProvider
 
     this.emitUpdated(new SourcesSnapshotItem(server, true, state));
     if (state.status !== "available") {
+      for (const item of this.visibleObjects.values()) {
+        if (item.kind === "function") {
+          item.contextValue = "postgresql-workbench-function";
+          this.emitUpdated(item);
+        }
+      }
       return;
     }
 

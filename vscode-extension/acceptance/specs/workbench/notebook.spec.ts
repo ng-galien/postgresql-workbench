@@ -103,6 +103,70 @@ test.describe("SQL notebook journeys", () => {
     expect(await notebook.renderedTextCount(/completed without a row set/i)).toBe(0);
   });
 
+  test("executes a data-modifying CTE through the real notebook UI", async ({
+    workbench,
+    notebook,
+  }) => {
+    await workbench.ensureServer(demoConnectionUrl, server);
+    await createScratchpad(workbench, notebook, server, database);
+    const code = notebook.cell(0);
+    await notebook.typeInCell(
+      code,
+      [
+        "CREATE TEMP TABLE notebook_cursor_safety(id integer);",
+        "WITH inserted AS (",
+        "  INSERT INTO notebook_cursor_safety (id)",
+        "  SELECT value FROM generate_series(1, 3) AS value",
+        "  RETURNING id",
+        ")",
+        "SELECT id FROM inserted ORDER BY id;",
+      ].join("\n"),
+    );
+    await notebook.executeCode(code);
+
+    await expect
+      .poll(async () => (await notebook.snapshot())?.cells[0]?.outputGroups.length, {
+        timeout: 10_000,
+        message: "The data-modifying CTE must expose its returned rows without opening a cursor",
+      })
+      .toBe(1);
+    const result = await notebook.resultFrame();
+    await expect(result.getByRole("region", { name: "PostgreSQL query result" })).toBeVisible();
+    for (const id of ["1", "2", "3"]) {
+      await expect(result.getByText(id, { exact: true })).toBeVisible();
+    }
+  });
+
+  test("pages and loads a large PostgreSQL result through the result controls", async ({
+    workbench,
+    notebook,
+  }) => {
+    await workbench.ensureServer(demoConnectionUrl, server);
+    await createScratchpad(workbench, notebook, server, database);
+    const code = notebook.cell(0);
+    await notebook.typeInCell(code, "SELECT value FROM generate_series(1, 1000) AS value");
+    await notebook.executeCode(code);
+
+    const firstPage = await notebook.resultFrame();
+    await expect(firstPage.getByText("Rows 1–200 · more available", { exact: true })).toBeVisible({
+      timeout: 10_000,
+    });
+    await firstPage.getByRole("button", { name: "Next", exact: true }).click();
+    await expect(firstPage.getByText("Rows 201–400 · more available", { exact: true })).toBeVisible(
+      {
+        timeout: 5_000,
+      },
+    );
+    await firstPage.getByRole("button", { name: "Previous", exact: true }).click();
+    await expect(firstPage.getByText("Rows 1–200 · more available", { exact: true })).toBeVisible({
+      timeout: 5_000,
+    });
+    await firstPage.getByRole("button", { name: "Load all", exact: true }).click();
+    await expect(firstPage.getByText("1000 rows", { exact: true })).toBeVisible({
+      timeout: 10_000,
+    });
+  });
+
   test("renders syntax and PostgreSQL failures without internal stack traces", async ({
     workbench,
     notebook,

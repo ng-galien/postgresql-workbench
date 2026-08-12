@@ -44,12 +44,7 @@ import { PlpgsqlDiagnosticsProvider } from "./diagnosticsProvider.js";
 import { startDockerDebugDatabase } from "./dockerProvisioningUi.js";
 import { PlpgsqlInlineValuesProvider } from "./plpgsqlInlineValues.js";
 import { LEGEND, PlpgsqlSemanticTokensProvider } from "./plpgsqlSemanticTokens.js";
-import {
-  closePostgresqlDapTabs,
-  isPostgresqlDapDocument,
-  POSTGRESQL_DAP_SOURCE_SCHEME,
-  PostgresqlDapContentProvider,
-} from "./postgresqlDapSource.js";
+import { closePostgresqlDapTabs } from "./postgresqlDapSource.js";
 import { showRequirementsGuide } from "./requirementsGuide.js";
 import { createRoutineComparisonHandler } from "./routineComparisonCommand.js";
 import { type ServerConfig, ServerStore } from "./serverStore.js";
@@ -146,6 +141,10 @@ function workbenchObjectPicks(objects: readonly WorkbenchObjectModel[]): Workben
     label: `${object.schema}.${object.name}`,
     description: object.kind,
     detail: object.signature || `${object.database} · ${object.sourceUri}`,
+    // The Workbench search already matches tokens across schema, name, kind, and
+    // signature. Keep those results visible instead of letting QuickPick apply a
+    // second, single-field fuzzy filter that can hide valid cross-field matches.
+    alwaysShow: true,
     buttons: [
       {
         iconPath: new vscode.ThemeIcon("type-hierarchy"),
@@ -1237,25 +1236,12 @@ function registerDebugInfrastructure(options: DebugInfrastructureOptions): Debug
   );
 
   const contentProvider = new CodeMonikerContentProvider(connections, index);
-  const dapContentProvider = new PostgresqlDapContentProvider();
   context.subscriptions.push(
     contentProvider,
     vscode.workspace.registerFileSystemProvider(CodeMonikerContentProvider.SCHEME, contentProvider),
-    vscode.workspace.registerTextDocumentContentProvider(
-      POSTGRESQL_DAP_SOURCE_SCHEME,
-      dapContentProvider,
-    ),
     vscode.workspace.onDidOpenTextDocument((document) => {
-      if (
-        document.uri.scheme !== CodeMonikerContentProvider.SCHEME &&
-        !isPostgresqlDapDocument(document.uri)
-      ) {
-        return;
-      }
-      const descriptor =
-        document.uri.scheme === CodeMonikerContentProvider.SCHEME
-          ? index.sourceDescriptorForDocumentUri(document.uri)
-          : undefined;
+      if (document.uri.scheme !== CodeMonikerContentProvider.SCHEME) return;
+      const descriptor = index.sourceDescriptorForDocumentUri(document.uri);
       const language = descriptor?.plpgsql === false ? "sql" : "plpgsql";
       if (document.languageId !== language) {
         void vscode.languages.setTextDocumentLanguage(document, language);
@@ -1299,7 +1285,6 @@ function registerDebugInfrastructure(options: DebugInfrastructureOptions): Debug
             .get<number>("maxRows", DEBUG_RESULT_LIMITS.DEFAULT_ROWS);
         }
         if (!resolved) return undefined;
-        resolved.clientResolvesSourceUris = true;
         let serverId = String(resolved.server ?? "");
         const configuredServer = serverId ? connections.store.get(serverId) : undefined;
         const database = configuredServer?.database ?? String(resolved.database ?? "");
@@ -1317,17 +1302,30 @@ function registerDebugInfrastructure(options: DebugInfrastructureOptions): Debug
         }
         const indexed = index.state.result;
         if (
-          index.state.status === "available" &&
-          indexed?.serverId === serverId &&
-          indexed.database === database
+          index.state.status !== "available" ||
+          indexed?.serverId !== serverId ||
+          indexed.database !== database
         ) {
-          const sourceUris = index.routineSourceUris(serverId);
-          if (Object.keys(sourceUris).length > 0) resolved.sourceUris = sourceUris;
-          if (resolved.routine) {
-            const oid = Number(resolved.routine.oid ?? 0);
-            const symbol = oid > 0 ? index.routineSymbol(serverId, oid) : undefined;
-            if (symbol) resolved.routine = { ...resolved.routine, symbolUri: symbol.uri };
-          }
+          vscode.window.showInformationMessage(
+            "Index the active PostgreSQL DatabaseContext before starting a debug session.",
+          );
+          output.appendLine(
+            `resolveDebugConfiguration: rejected launch because ${serverId || "<unknown>"}/${database || "<unknown>"} is not the available active index`,
+          );
+          return undefined;
+        }
+        const sourceUris = index.routineSourceUris(serverId);
+        if (Object.keys(sourceUris).length === 0) {
+          vscode.window.showInformationMessage(
+            "The active PostgreSQL index contains no debuggable routines.",
+          );
+          return undefined;
+        }
+        resolved.sourceUris = sourceUris;
+        if (resolved.routine) {
+          const oid = Number(resolved.routine.oid ?? 0);
+          const symbol = oid > 0 ? index.routineSymbol(serverId, oid) : undefined;
+          if (symbol) resolved.routine = { ...resolved.routine, symbolUri: symbol.uri };
         }
         const launchToken = sessions.admit(
           debugDescriptor(resolved, vscode.window.activeTextEditor?.viewColumn),
@@ -1364,7 +1362,6 @@ function registerDebugInfrastructure(options: DebugInfrastructureOptions): Debug
     vscode.languages.registerInlineValuesProvider(
       [
         { scheme: CodeMonikerContentProvider.SCHEME },
-        { scheme: POSTGRESQL_DAP_SOURCE_SCHEME },
         { scheme: "debug", language: "plpgsql" },
         { language: "sql" },
         { language: "plpgsql" },
@@ -1407,8 +1404,10 @@ export function activate(context: vscode.ExtensionContext): PlpgsqlExtensionApi 
     extensionSession: undefined,
     vscodeSessionId: vscode.debug.activeDebugSession?.id,
   });
+  let inspectAcceptanceTestingState = (): unknown => ({});
   const acceptanceControl = registerAcceptanceControl(context, {
     inspectDebugState: () => inspectAcceptanceDebugState(),
+    inspectTestingState: () => inspectAcceptanceTestingState(),
     resetWorkbench: () => resetAcceptanceWorkbench(),
   });
   if (acceptanceControl) context.subscriptions.push(acceptanceControl);
@@ -1451,6 +1450,14 @@ export function activate(context: vscode.ExtensionContext): PlpgsqlExtensionApi 
     indexDatabase: async (serverId, client) => {
       const server = cm.store.get(serverId);
       if (!server) throw new Error(`Unknown PostgreSQL connection: ${serverId}`);
+      const indexed = workbenchIndex.state.result;
+      if (
+        workbenchIndex.state.status === "available" &&
+        indexed?.serverId === serverId &&
+        indexed.database === server.database
+      ) {
+        return;
+      }
       await workbenchIndex.indexPostgresDatabase(client, {
         serverId,
         database: server.database,
@@ -1462,6 +1469,49 @@ export function activate(context: vscode.ExtensionContext): PlpgsqlExtensionApi 
       const source = workbenchIndex.sourceDescriptorForDocumentUri(uri);
       return source ? { serverId: source.serverId, oid: source.oid } : undefined;
     },
+  });
+  let acceptanceTestRunSequence = 0;
+  let acceptanceCoverageSequence = 0;
+  let acceptanceTestRun: unknown;
+  let acceptanceCoverage: unknown;
+  context.subscriptions.push(
+    coverageTests.onDidCompleteRun((outcomes) => {
+      acceptanceTestRunSequence += 1;
+      acceptanceTestRun = {
+        outcomes: Object.fromEntries(outcomes),
+        sequence: acceptanceTestRunSequence,
+      };
+    }),
+    coverageTests.coverageProfile.onDidComplete((snapshot) => {
+      acceptanceCoverageSequence += 1;
+      acceptanceCoverage = {
+        files: snapshot.files.map((file) => ({
+          branch: file.branchCoverage
+            ? {
+                covered: file.branchCoverage.covered,
+                total: file.branchCoverage.total,
+              }
+            : undefined,
+          statement: {
+            covered: file.statementCoverage.covered,
+            total: file.statementCoverage.total,
+          },
+          uri: file.uri.toString(),
+        })),
+        sequence: acceptanceCoverageSequence,
+      };
+    }),
+  );
+  inspectAcceptanceTestingState = () => ({
+    coverage: acceptanceCoverage,
+    index: {
+      database: workbenchIndex.state.result?.database,
+      generation: workbenchIndex.state.result?.generation,
+      revision: workbenchIndex.state.result?.revision,
+      serverId: workbenchIndex.state.result?.serverId,
+      status: workbenchIndex.state.status,
+    },
+    run: acceptanceTestRun,
   });
   context.subscriptions.push(coverageTests);
   const workbenchObjectActions = async (
@@ -1673,6 +1723,14 @@ export function activate(context: vscode.ExtensionContext): PlpgsqlExtensionApi 
       const server = serverId ? cm.store.get(serverId) : undefined;
       return server ? { id: server.id, name: server.name } : undefined;
     },
+    canDebug: (connection) => {
+      const indexed = workbenchIndex.state.result;
+      return (
+        workbenchIndex.state.status === "available" &&
+        indexed?.serverId === connection.id &&
+        indexed.database === cm.store.get(connection.id)?.database
+      );
+    },
   });
   context.subscriptions.push(
     vscode.languages.registerCodeLensProvider(
@@ -1685,6 +1743,7 @@ export function activate(context: vscode.ExtensionContext): PlpgsqlExtensionApi 
       codeLens,
     ),
     cm.onChanged(() => codeLens.refresh()),
+    workbenchIndex.onDidChangeState(() => codeLens.refresh()),
     vscode.commands.registerCommand(
       "postgresql-workbench.assignCallConnection",
       (call: CommandCallSite, requestedServerId?: string) =>
@@ -1839,8 +1898,9 @@ async function revealStoppedSource(
   debugSessions: DebugSessionController,
   isLatest: () => boolean,
 ): Promise<void> {
-  if (!status.source || !isLatest() || !debugSessions.matches(session.id, status.sessionId)) return;
-  if (vscode.Uri.parse(status.source.path).scheme === POSTGRESQL_DAP_SOURCE_SCHEME) return;
+  if (!status.source?.path || !isLatest() || !debugSessions.matches(session.id, status.sessionId)) {
+    return;
+  }
   const viewColumn = debugSessions.active?.viewColumn as vscode.ViewColumn | undefined;
   const document = await vscode.workspace.openTextDocument(vscode.Uri.parse(status.source.path));
   if (!isLatest() || !debugSessions.matches(session.id, status.sessionId)) return;

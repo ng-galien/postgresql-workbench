@@ -49,7 +49,7 @@ jobs:
         run: npm run test:e2e:up
       - name: DAP Integration
         run: npm run test:e2e:run
-      - name: VS Code Integration
+      - name: VS Code Technical
         run: xvfb-run -a npm --prefix vscode-extension test
       - name: Playwright
         run: xvfb-run -a -s "-screen 0 1600x1000x24" npm --prefix vscode-extension run test:acceptance

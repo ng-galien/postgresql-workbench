@@ -72,7 +72,7 @@ npm install
 npm run build        # Build DAP server + extension
 npm run watch        # Watch mode (DAP server)
 npm test             # Unit tests
-npm run test:e2e:callsites # Focused VS Code integration tests for real SQL callsites
+npm --prefix vscode-extension run test:acceptance:debugger # Playwright debugger journeys in VS Code
 npm run test:e2e     # E2E tests (Docker required)
 npm run test:e2e:legacy # Compatibility with unpatched EnterpriseDB pldebugger
 npm run check        # Biome checks on server, extension, and e2e code

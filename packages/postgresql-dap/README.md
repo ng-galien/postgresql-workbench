@@ -50,11 +50,8 @@ share its canonical Code Moniker source identities with the DAP it compiles.
 
 Without a client-owned URI, the adapter returns a positive DAP
 `sourceReference`; clients retrieve the content through the standard DAP
-`source` request. The accompanying
-`postgresql-dap://postgresql/<host>/<port>/<database>/<user>/session/<id>/routine/<oid>/<schema>.<routine>`
-path contains no secret, scopes the document to its PostgreSQL context and
-debug session, and gives editors a readable source name. It remains an
-adapter-local identifier rather than a second client-owned source namespace.
+`source` request. It deliberately omits `Source.path`: the adapter does not
+invent a second URI namespace when the client has not supplied one.
 
 ## Requirements
 

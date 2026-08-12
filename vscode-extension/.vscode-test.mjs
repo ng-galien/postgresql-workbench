@@ -8,11 +8,14 @@ const testUserDataDir =
     : join(tmpdir(), `pgwb-vscode-test-${process.pid}`);
 
 export default defineConfig({
-  files: "dist/**/test/**/*.test.js",
+  files: [
+    "dist/vscode-extension/src/test/extension.test.js",
+  ],
   workspaceFolder: "./test-workspace",
   launchArgs: [`--user-data-dir=${testUserDataDir}`],
   mocha: {
     ui: "tdd",
+    slow: 0,
     timeout: 60_000,
   },
 });

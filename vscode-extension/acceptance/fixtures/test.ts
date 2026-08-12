@@ -3,8 +3,11 @@ import { CockpitPage } from "../pages/CockpitPage";
 import { DebuggerPage } from "../pages/DebuggerPage";
 import { NotebookPage } from "../pages/NotebookPage";
 import { WorkbenchPage } from "../pages/WorkbenchPage";
-import { type DemoDatabase, startDemoDatabase } from "./demoDatabase";
+import { type DemoDatabase, demoConnectionUrl, startDemoDatabase } from "./demoDatabase";
 import { launchVSCode, type VSCodeInstance } from "./vscode";
+
+const demoServer = /postgres@localhost:5434/;
+const demoDatabase = /^demo/;
 
 interface AcceptanceFixtures {
   workbench: WorkbenchPage;
@@ -16,6 +19,7 @@ interface AcceptanceFixtures {
 interface AcceptanceWorkerFixtures {
   demoDatabase: DemoDatabase;
   vscode: VSCodeInstance;
+  indexedWorkbench: undefined;
 }
 
 export const test = base.extend<AcceptanceFixtures, AcceptanceWorkerFixtures>({
@@ -42,7 +46,21 @@ export const test = base.extend<AcceptanceFixtures, AcceptanceWorkerFixtures>({
     },
     { scope: "worker", timeout: 90_000 },
   ],
-  workbench: async ({ vscode }, use, testInfo) => {
+  indexedWorkbench: [
+    async ({ vscode }, use) => {
+      const workbench = new WorkbenchPage(
+        vscode.page,
+        vscode.resizeWindow,
+        vscode.resetWorkbenchUI,
+      );
+      await workbench.reset();
+      await workbench.ensureServer(demoConnectionUrl, demoServer);
+      await workbench.ensureActiveDatabaseIndexed(demoServer, demoDatabase);
+      await use(undefined);
+    },
+    { scope: "worker", auto: true, timeout: 60_000 },
+  ],
+  workbench: async ({ indexedWorkbench: _indexedWorkbench, vscode }, use, testInfo) => {
     const workbench = new WorkbenchPage(vscode.page, vscode.resizeWindow, vscode.resetWorkbenchUI);
     await workbench.reset();
     try {

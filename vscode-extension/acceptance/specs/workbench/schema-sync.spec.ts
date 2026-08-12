@@ -6,6 +6,7 @@ import type { NotebookPage } from "../../pages/NotebookPage";
 const server = /postgres@localhost:5434/;
 const database = /^demo/;
 const probe = /^ddl_sync_probe(?:\s|$)/;
+const renamedProbe = /^ddl_sync_probe_renamed(?:\s|$)/;
 const probeRoutine = /^ddl_sync_probe_touch\(\)/;
 const probeTrigger = /^ddl_sync_probe_trigger(?:\s|$)/;
 
@@ -40,6 +41,10 @@ test.describe("Workbench schema synchronization", () => {
         columns: [],
         exists: false,
       });
+      expect(await demoDatabase.inspectTable("public", "ddl_sync_probe_renamed")).toEqual({
+        columns: [],
+        exists: false,
+      });
       expect(await demoDatabase.inspectRoutine("public", "ddl_sync_probe_touch")).toEqual({
         exists: false,
       });
@@ -49,6 +54,7 @@ test.describe("Workbench schema synchronization", () => {
       await workbench.ensureServer(demoConnectionUrl, server);
       await workbench.tree.expandPath([server, database]);
       await expect(workbench.tree.item(probe)).toHaveCount(0);
+      await expect(workbench.tree.item(renamedProbe)).toHaveCount(0);
     });
 
     await test.step("provision explicitly and resume the existing provisioning after opt-out", async () => {
@@ -102,6 +108,29 @@ test.describe("Workbench schema synchronization", () => {
       });
     });
 
+    await test.step("replace the old table identity after ALTER TABLE RENAME", async () => {
+      await executeDdl(
+        notebook,
+        "ALTER TABLE public.ddl_sync_probe RENAME TO ddl_sync_probe_renamed",
+        "renamed",
+      );
+      expect(await demoDatabase.inspectTable("public", "ddl_sync_probe")).toEqual({
+        columns: [],
+        exists: false,
+      });
+      expect(await demoDatabase.inspectTable("public", "ddl_sync_probe_renamed")).toEqual({
+        columns: ["id", "note"],
+        exists: true,
+      });
+      await workbench.tree.expandPath([server, database, /^Sources/, /^public/]);
+      await expect(workbench.tree.item(probe)).toHaveCount(0, { timeout: 30_000 });
+      await expect(workbench.tree.item(renamedProbe)).toBeVisible({ timeout: 30_000 });
+      await workbench.tree.expandPath([server, database, /^Sources/, /^public/, renamedProbe]);
+      await expect(workbench.tree.itemByAccessibleName(/^note · text$/)).toBeVisible({
+        timeout: 30_000,
+      });
+    });
+
     await test.step("show a trigger and its function after committed DDL", async () => {
       await executeDdl(
         notebook,
@@ -116,12 +145,16 @@ test.describe("Workbench schema synchronization", () => {
       await executeDdl(
         notebook,
         `CREATE TRIGGER ddl_sync_probe_trigger
-         BEFORE INSERT ON public.ddl_sync_probe
+         BEFORE INSERT ON public.ddl_sync_probe_renamed
          FOR EACH ROW EXECUTE FUNCTION public.ddl_sync_probe_touch()`,
         "trigger-created",
       );
       expect(
-        await demoDatabase.inspectTrigger("public", "ddl_sync_probe", "ddl_sync_probe_trigger"),
+        await demoDatabase.inspectTrigger(
+          "public",
+          "ddl_sync_probe_renamed",
+          "ddl_sync_probe_trigger",
+        ),
       ).toEqual({ exists: true });
       await workbench.tree.expandPath([server, database, /^Sources/, /^public/]);
       await expect(workbench.tree.item(probeRoutine)).toBeVisible({ timeout: 30_000 });
@@ -131,11 +164,15 @@ test.describe("Workbench schema synchronization", () => {
     await test.step("remove the trigger and its function from PostgreSQL and the TreeView", async () => {
       await executeDdl(
         notebook,
-        "DROP TRIGGER ddl_sync_probe_trigger ON public.ddl_sync_probe",
+        "DROP TRIGGER ddl_sync_probe_trigger ON public.ddl_sync_probe_renamed",
         "trigger-dropped",
       );
       expect(
-        await demoDatabase.inspectTrigger("public", "ddl_sync_probe", "ddl_sync_probe_trigger"),
+        await demoDatabase.inspectTrigger(
+          "public",
+          "ddl_sync_probe_renamed",
+          "ddl_sync_probe_trigger",
+        ),
       ).toEqual({ exists: false });
       await expect(workbench.tree.item(probeTrigger)).toHaveCount(0, { timeout: 30_000 });
 
@@ -147,12 +184,12 @@ test.describe("Workbench schema synchronization", () => {
     });
 
     await test.step("remove the table from the visible TreeView after DROP TABLE", async () => {
-      await executeDdl(notebook, "DROP TABLE public.ddl_sync_probe", "dropped");
-      expect(await demoDatabase.inspectTable("public", "ddl_sync_probe")).toEqual({
+      await executeDdl(notebook, "DROP TABLE public.ddl_sync_probe_renamed", "dropped");
+      expect(await demoDatabase.inspectTable("public", "ddl_sync_probe_renamed")).toEqual({
         columns: [],
         exists: false,
       });
-      await expect(workbench.tree.item(probe)).toHaveCount(0, { timeout: 30_000 });
+      await expect(workbench.tree.item(renamedProbe)).toHaveCount(0, { timeout: 30_000 });
     });
 
     await test.step("remove the test provisioning and leave synchronization disabled", async () => {

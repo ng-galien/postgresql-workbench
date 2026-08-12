@@ -102,12 +102,9 @@ client library and its compiled DAP.
 
 For routines without a client-owned URI, the adapter returns a positive DAP
 `sourceReference` and serves the content through the standard DAP Source
-request. Its
-`postgresql-dap://postgresql/<host>/<port>/<database>/<user>/session/<id>/routine/<oid>/<schema>.<routine>`
-path contains no secret, prevents source identities from colliding across
-databases or debug sessions, and exposes a readable source name to editors. It
-remains adapter-local; a generic DAP client does not need to register that URI
-scheme.
+request. `Source.path` is intentionally absent: a generic DAP client does not
+need to register an adapter-owned URI scheme, and only the integrating host may
+define a durable source identity.
 
 The [DAP source](https://github.com/ng-galien/postgresql-workbench/tree/main/src)
 and [protocol integration tests](https://github.com/ng-galien/postgresql-workbench/tree/main/e2e)

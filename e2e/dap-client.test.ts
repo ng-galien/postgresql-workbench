@@ -7,9 +7,8 @@
 import * as path from "node:path";
 import { DebugClient } from "@vscode/debugadapter-testsupport";
 import { Client } from "pg";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { DEBUG_RESULT_EVENT, DEBUG_RESULT_STATUS_EVENT } from "../src/debugger/launch/index.js";
-import { type CodeMonikerTestRuntime, startCodeMonikerTestRuntime } from "./codeMonikerRuntime.js";
 
 const DAP_SERVER = process.env.POSTGRESQL_DAP_SERVER
   ? path.resolve(process.env.POSTGRESQL_DAP_SERVER)
@@ -37,6 +36,24 @@ async function routineOid(signature: string): Promise<number> {
   try {
     const result = await client.query("SELECT $1::regprocedure::oid AS oid", [signature]);
     return Number(result.rows[0]?.oid ?? 0);
+  } finally {
+    await client.end();
+  }
+}
+
+async function indexedClientSourceUris(): Promise<Record<string, string>> {
+  const client = new Client(LAUNCH_ARGS);
+  await client.connect();
+  try {
+    const result = await client.query<{ oid: number }>(`
+      SELECT p.oid
+      FROM pg_proc AS p
+      JOIN pg_namespace AS n ON n.oid = p.pronamespace
+      WHERE n.nspname IN ('public', 'playground')
+    `);
+    return Object.fromEntries(
+      result.rows.map(({ oid }) => [String(oid), `code+moniker://indexed.test/routine/${oid}`]),
+    );
   } finally {
     await client.end();
   }
@@ -79,21 +96,13 @@ async function runAndWaitForStop(
 
 describe("DAP client e2e", () => {
   let dc: DebugClient;
-  let codeMoniker: CodeMonikerTestRuntime;
 
   beforeAll(async () => {
-    codeMoniker = await startCodeMonikerTestRuntime();
-    canonicalSourceUris = await codeMoniker.sourceUris(LAUNCH_ARGS);
-  }, 30_000);
-
-  afterAll(async () => {
-    await codeMoniker.dispose();
+    canonicalSourceUris = await indexedClientSourceUris();
   });
 
   beforeEach(async () => {
-    dc = new DebugClient("node", DAP_SERVER, "plpgsql", {
-      env: codeMoniker.dapEnvironment(),
-    });
+    dc = new DebugClient("node", DAP_SERVER, "plpgsql");
     await dc.start();
   });
 
@@ -277,9 +286,7 @@ describe("DAP client e2e", () => {
     const frame = stack.body.stackFrames[0];
     if (!frame?.source) throw new Error("Structured launch did not expose a DAP source");
     expect(frame.source.name).toBe("public.test_simple");
-    expect(frame.source.path).toMatch(
-      /^postgresql-dap:\/\/postgresql\/localhost\/5433\/testdb\/postgres\/session\/[a-f0-9]+\/routine\/\d+\/public\.test_simple$/,
-    );
+    expect(frame.source.path).toBeUndefined();
     expect(frame.source.sourceReference).toBeGreaterThan(0);
     const source = await dc.sourceRequest({
       source: frame.source,
@@ -304,7 +311,7 @@ describe("DAP client e2e", () => {
     expect(breakpoints.body.breakpoints[0]?.verified).toBe(true);
   });
 
-  it("rejects restored standalone breakpoints from another database or session", async () => {
+  it("rejects path-only breakpoints when the client supplied no source registry", async () => {
     await launchAndWaitForStop(dc, {
       ...LAUNCH_ARGS,
       routine: {
@@ -317,20 +324,14 @@ describe("DAP client e2e", () => {
     });
     const stack = await dc.stackTraceRequest({ threadId: 1 });
     const frame = stack.body.stackFrames[0];
-    if (!frame?.source?.path) throw new Error("Standalone launch did not expose a DAP source");
+    if (!frame?.source) throw new Error("Standalone launch did not expose a DAP source");
+    expect(frame.source.path).toBeUndefined();
 
-    const staleSources = [
-      frame.source.path.replace("/testdb/", "/another_database/"),
-      frame.source.path.replace(/\/session\/[^/]+\//, "/session/previous-session/"),
-    ];
-    for (const sourcePath of staleSources) {
-      expect(sourcePath).not.toBe(frame.source.path);
-      const restored = await dc.setBreakpointsRequest({
-        source: { path: sourcePath },
-        breakpoints: [{ line: frame.line }],
-      });
-      expect(restored.body.breakpoints[0]?.verified).toBe(false);
-    }
+    const restored = await dc.setBreakpointsRequest({
+      source: { path: "file:///stale/routine.sql" },
+      breakpoints: [{ line: frame.line }],
+    });
+    expect(restored.body.breakpoints[0]?.verified).toBe(false);
 
     const current = await dc.setBreakpointsRequest({
       source: frame.source,
@@ -447,9 +448,7 @@ describe("DAP client e2e", () => {
   });
 
   it("rejects a conflicting launch without terminating the active session", async () => {
-    const second = new DebugClient("node", DAP_SERVER, "plpgsql", {
-      env: codeMoniker.dapEnvironment(),
-    });
+    const second = new DebugClient("node", DAP_SERVER, "plpgsql");
     await second.start();
 
     try {
@@ -998,7 +997,7 @@ describe("DAP client e2e", () => {
     await dc.disconnectRequest();
   });
 
-  it("emits the exact canonical Code Moniker source path when a server id is provided", async () => {
+  it("emits the exact source URI supplied by the indexed client", async () => {
     await launchAndWaitForStop(dc, {
       ...launchConfig("SELECT test_simple(1, 'scoped')"),
       server: "localhost:5433/testdb:postgres",

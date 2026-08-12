@@ -33,7 +33,6 @@
     "test:e2e:dap": "npm run build:dap && vitest run e2e/e2e.test.ts e2e/debug-lifecycle.test.ts e2e/syntax-consumers.test.ts --fileParallelism=false",
     "test:e2e:workbench": "REQUIRE_LOCAL_CODE_MONIKER=1 vitest run e2e/workbench-index.test.ts --fileParallelism=false",
     "test:e2e:lifecycle": "npm run build:dap && vitest run e2e/debug-lifecycle.test.ts --fileParallelism=false",
-    "test:e2e:callsites": "npm --prefix vscode-extension run test:call-sites --",
     "test:e2e:down": "cd e2e && docker compose down -v",
     "test:e2e": "node scripts/run-e2e.mjs",
     "test:e2e:legacy:up": "cd e2e && docker compose -f docker-compose.legacy.yml up -d --build --wait",

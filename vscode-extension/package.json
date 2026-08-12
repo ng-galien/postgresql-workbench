@@ -410,22 +410,22 @@
         },
         {
           "command": "postgresql-workbench.openFunction",
-          "when": "viewItem == postgresql-workbench-function",
+          "when": "viewItem == postgresql-workbench-function || viewItem == postgresql-workbench-function-debuggable",
           "group": "navigation"
         },
         {
           "command": "postgresql-workbench.revealRoutineTests",
-          "when": "viewItem == postgresql-workbench-function",
+          "when": "viewItem == postgresql-workbench-function || viewItem == postgresql-workbench-function-debuggable",
           "group": "navigation@2"
         },
         {
           "command": "postgresql-workbench.debugFromTree",
-          "when": "viewItem == postgresql-workbench-function",
+          "when": "viewItem == postgresql-workbench-function-debuggable",
           "group": "inline"
         },
         {
           "command": "postgresql-workbench.showObjectActions",
-          "when": "viewItem == postgresql-workbench-function || viewItem == postgresql-workbench-table || viewItem == postgresql-workbench-view || viewItem == postgresql-workbench-function || viewItem == postgresql-workbench-procedure || viewItem == postgresql-workbench-trigger",
+          "when": "viewItem == postgresql-workbench-function || viewItem == postgresql-workbench-function-debuggable || viewItem == postgresql-workbench-table || viewItem == postgresql-workbench-view || viewItem == postgresql-workbench-procedure || viewItem == postgresql-workbench-trigger",
           "group": "navigation@4"
         },
         {
@@ -435,7 +435,7 @@
         },
         {
           "command": "postgresql-workbench.openDatabaseObject",
-          "when": "view == postgresql-workbench-connections && (viewItem == postgresql-workbench-function || viewItem == postgresql-workbench-table || viewItem == postgresql-workbench-view || viewItem == postgresql-workbench-function || viewItem == postgresql-workbench-procedure || viewItem == postgresql-workbench-trigger || viewItem == postgresql-workbench-relation-target)",
+          "when": "view == postgresql-workbench-connections && (viewItem == postgresql-workbench-function || viewItem == postgresql-workbench-function-debuggable || viewItem == postgresql-workbench-table || viewItem == postgresql-workbench-view || viewItem == postgresql-workbench-procedure || viewItem == postgresql-workbench-trigger || viewItem == postgresql-workbench-relation-target)",
           "group": "inline@2"
         },
         {
@@ -1060,14 +1060,12 @@
     "pretest": "npm run build && tsc -p . --outDir dist && node scripts/mark-test-output-esm.mjs && node scripts/build-vscode-smoke.mjs",
     "test": "vscode-test --fail-zero",
     "test:smoke": "npm run pretest && node scripts/run-vscode-test.mjs --timeout-ms 90000 -- --config .vscode-smoke.mjs --fail-zero",
-    "test:notebook": "npm run pretest && vscode-test --fail-zero --run dist/vscode-extension/src/test/sqlNotebook.test.js",
-    "test:call-sites": "npm run pretest && vscode-test --fail-zero --run dist/vscode-extension/src/test/callSites.test.js",
     "test:min-vscode": "npm run pretest && node scripts/run-vscode-test.mjs --timeout-ms 90000 -- --config .vscode-smoke.mjs --code-version 1.109.0 --fail-zero",
     "test:acceptance:typecheck": "tsc -p acceptance/tsconfig.json",
     "test:acceptance": "npm run build:production && npm run test:acceptance:typecheck && playwright test --config playwright.acceptance.config.ts",
-    "test:acceptance:graph-dnd": "npm run build:production && npm run test:acceptance:typecheck && playwright test --config playwright.acceptance.config.ts acceptance/specs/workbench/graph-dnd.spec.ts",
-    "test:acceptance:debugger": "npm run build:production && npm run test:acceptance:typecheck && playwright test --config playwright.acceptance.config.ts acceptance/specs/debugger/call-sites.spec.ts",
-    "test:acceptance:source-tab-cleanup": "npm run build:production && npm run test:acceptance:typecheck && playwright test --config playwright.acceptance.config.ts acceptance/specs/workbench/source-tab-cleanup.spec.ts",
+    "test:acceptance:graph-dnd": "npm run build:production && npm run test:acceptance:typecheck && playwright test --config playwright.acceptance.config.ts acceptance/specs/acceptance.spec.ts --grep 'Workbench Cockpit'",
+    "test:acceptance:debugger": "npm run build:production && npm run test:acceptance:typecheck && playwright test --config playwright.acceptance.config.ts acceptance/specs/acceptance.spec.ts --grep 'PL/pgSQL debugger'",
+    "test:acceptance:source-tab-cleanup": "npm run build:production && npm run test:acceptance:typecheck && playwright test --config playwright.acceptance.config.ts acceptance/specs/acceptance.spec.ts --grep 'virtual source cleanup'",
     "package": "npm run build:production && node scripts/package-local.mjs && npm run verify:package",
     "verify:package": "node scripts/verify-code-moniker-vsix.mjs",
     "checksum:package": "node scripts/checksum-file.mjs",

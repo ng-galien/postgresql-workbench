@@ -74,8 +74,8 @@ jobs:
         if: always()
         run: npm run test:e2e:down
 
-  vscode-integration:
-    name: VS Code Integration
+  vscode-technical:
+    name: VS Code Technical
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -91,22 +91,17 @@ jobs:
       - run: sudo apt-get install -y xvfb
       - run: npm ci
       - run: npm --prefix vscode-extension ci
-      - name: Start PostgreSQL fixture
-        run: npm run test:e2e:up
       - run: xvfb-run -a npm --prefix vscode-extension test
       - name: Upload logs
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: vscode-integration-logs
+          name: vscode-technical-logs
           path: |
             vscode-extension/.vscode-test/user-data/logs/**
             vscode-extension/.vscode-test/user-data/**/*.log
             /home/runner/.config/Code/logs/**
           if-no-files-found: ignore
-      - name: Stop PostgreSQL fixture
-        if: always()
-        run: npm run test:e2e:down
 
   vscode-compatibility:
     name: VS Code Compatibility

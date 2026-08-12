@@ -18,7 +18,8 @@ export interface DebugSessionRoutine {
 
 export interface DebugSessionSource {
   name: string;
-  path: string;
+  path?: string;
+  sourceReference: number;
   line: number;
 }
 

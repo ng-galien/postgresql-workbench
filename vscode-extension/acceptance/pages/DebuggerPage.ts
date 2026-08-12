@@ -177,9 +177,30 @@ export class DebuggerPage {
     argumentValue: string,
     resultValue: string,
   ): Promise<void> {
+    const previousStop = await this.inspectDebugState();
+    const previousTimestamp = previousStop.extensionSession?.status?.timestamp;
+    if (previousStop.extensionSession?.state !== "suspended" || !previousTimestamp) {
+      throw new Error(
+        `Recursive continue requires a suspended debugger with a timestamped DAP status: ${JSON.stringify(previousStop)}`,
+      );
+    }
     const continueAction = this.debugToolbar().locator(".codicon-debug-continue").first();
     await expect(continueAction).toBeVisible({ timeout: 5_000 });
     await continueAction.click();
+    await expect
+      .poll(
+        async () => {
+          const current = await this.inspectDebugState();
+          return current.extensionSession?.state === "suspended"
+            ? current.extensionSession.status?.timestamp
+            : previousTimestamp;
+        },
+        {
+          timeout: 10_000,
+          message: "The debugger must publish a new suspended DAP status after Continue",
+        },
+      )
+      .not.toBe(previousTimestamp);
     await this.expectArgument("n", argumentValue);
     await this.expectStoppedAt(sourceLine);
     await this.expectVariable("result", resultValue);
@@ -257,24 +278,32 @@ export class DebuggerPage {
   }
 
   private async nearestCodeLens(line: Locator, label: RegExp): Promise<Locator> {
-    const lineBox = await line.boundingBox();
-    expect(lineBox, `The SQL line must be laid out before locating ${label}`).not.toBeNull();
     const lenses = this.page.getByRole("button", { name: label });
-    await expect(lenses.first()).toBeVisible({ timeout: 5_000 });
-    let nearest: { distance: number; index: number } | undefined;
-    for (let index = 0; index < (await lenses.count()); index++) {
-      const box = await lenses.nth(index).boundingBox();
-      if (!box) continue;
-      const lineCenter = lineBox!.y + lineBox!.height / 2;
-      const lensCenter = box.y + box.height / 2;
-      if (lensCenter > lineCenter) continue;
-      const distance = lineCenter - lensCenter;
-      if (!nearest || distance < nearest.distance) nearest = { distance, index };
-    }
-    if (!nearest)
-      throw new Error(
-        `No visible CodeLens ${label} precedes the SQL line ${await line.innerText()}`,
-      );
-    return lenses.nth(nearest.index);
+    let nearestIndex = -1;
+    await expect
+      .poll(
+        async () => {
+          const lineBox = await line.boundingBox();
+          if (!lineBox) return false;
+          let nearest: { distance: number; index: number } | undefined;
+          for (let index = 0; index < (await lenses.count()); index++) {
+            const box = await lenses.nth(index).boundingBox();
+            if (!box) continue;
+            const lineCenter = lineBox.y + lineBox.height / 2;
+            const lensCenter = box.y + box.height / 2;
+            if (lensCenter > lineCenter) continue;
+            const distance = lineCenter - lensCenter;
+            if (!nearest || distance < nearest.distance) nearest = { distance, index };
+          }
+          nearestIndex = nearest?.index ?? -1;
+          return nearestIndex >= 0;
+        },
+        {
+          timeout: 5_000,
+          message: `A visible CodeLens ${label} must precede the SQL line ${await line.innerText()}`,
+        },
+      )
+      .toBe(true);
+    return lenses.nth(nearestIndex);
   }
 }

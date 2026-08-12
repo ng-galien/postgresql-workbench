@@ -40,6 +40,21 @@ export class WorkbenchPage {
   async ensureServer(connectionUrl: string, expectedServer: RegExp): Promise<void> {
     const existing = this.tree.item(expectedServer);
     if (await existing.isVisible()) {
+      if (!(await existing.innerText()).includes("connected")) {
+        await existing.hover();
+        const connect = this.page.getByRole("button", { name: "Connect", exact: true });
+        await expect(connect).toBeVisible({ timeout: 5_000 });
+        await connect.click();
+        const password = new URL(connectionUrl).password;
+        const passwordPrompt = this.quickInput.input;
+        const passwordRequested = await passwordPrompt
+          .waitFor({ state: "visible", timeout: 2_000 })
+          .then(() => true)
+          .catch(() => false);
+        if (password && passwordRequested) {
+          await this.quickInput.submitSecret(password, /Password for /i);
+        }
+      }
       await expect(existing).toContainText("connected", { timeout: 5_000 });
       return;
     }
@@ -61,12 +76,13 @@ export class WorkbenchPage {
     await this.tree.expand(/^Sources/);
   }
 
-  async reindexActiveDatabase(server: RegExp, database: RegExp): Promise<void> {
-    await this.ensureActiveDatabaseIndexed(server, database);
-    await this.tree.clickHeaderAction(/Reindex Active Database/);
+  async expectActiveDatabaseIndexed(server: RegExp, database: RegExp): Promise<void> {
+    await this.tree.expandPath([server, database]);
     const sources = this.tree.item(/^Sources/);
-    await expect(sources).toContainText(/indexing|available/, { timeout: 5_000 });
-    await expect(sources).toContainText("available", { timeout: 30_000 });
+    await expect(sources).toContainText("available", {
+      timeout: 5_000,
+    });
+    await this.tree.expand(/^Sources/);
   }
 
   async openRoutineSource(
@@ -75,10 +91,19 @@ export class WorkbenchPage {
     schema: RegExp,
     routine: RegExp,
   ): Promise<void> {
+    await this.openIndexedDefinition(server, database, schema, routine);
+  }
+
+  async openIndexedDefinition(
+    server: RegExp,
+    database: RegExp,
+    schema: RegExp,
+    object: RegExp,
+  ): Promise<void> {
     await this.tree.scrollToTop();
-    await this.ensureActiveDatabaseIndexed(server, database);
+    await this.expectActiveDatabaseIndexed(server, database);
     await this.tree.expandPath([server, database, /^Sources/, schema]);
-    const item = await this.tree.findItem(routine);
+    const item = await this.tree.findItem(object);
     await expect(item).toBeVisible({ timeout: 5_000 });
     await item.click();
     await item.hover();
@@ -96,7 +121,7 @@ export class WorkbenchPage {
     routine: RegExp,
   ): Promise<void> {
     await this.tree.scrollToTop();
-    await this.ensureActiveDatabaseIndexed(server, database);
+    await this.expectActiveDatabaseIndexed(server, database);
     await this.tree.expandPath([server, database, /^Sources/, schema]);
     const item = await this.tree.findItem(routine);
     await item.scrollIntoViewIfNeeded();

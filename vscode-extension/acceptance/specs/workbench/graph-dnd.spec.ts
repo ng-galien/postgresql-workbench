@@ -13,7 +13,7 @@ async function openCockpitFromTree(
   expectedFocus: string,
 ): Promise<void> {
   await workbench.ensureServer(demoConnectionUrl, server);
-  await workbench.ensureActiveDatabaseIndexed(server, database);
+  await workbench.expectActiveDatabaseIndexed(server, database);
   await workbench.tree.expandPath([server, database, /^Sources/, /^shop/]);
   const item = workbench.tree.item(source);
   await expect(item).toBeVisible({ timeout: 5_000 });
@@ -28,7 +28,7 @@ test.describe("Workbench Cockpit TreeView journeys", () => {
   test("phase 1 — opens the graph from a TreeView drop", async ({ workbench, cockpit }) => {
     await test.step("prepare the indexed demo database through the Workbench UI", async () => {
       await workbench.ensureServer(demoConnectionUrl, server);
-      await workbench.ensureActiveDatabaseIndexed(server, database);
+      await workbench.expectActiveDatabaseIndexed(server, database);
       await expect(workbench.tree.item(/^shop/)).toBeVisible();
     });
 

@@ -1,9 +1,25 @@
 # VS Code acceptance tests
 
 This suite drives the real VS Code Electron workbench with Playwright. It is
-separate from the extension-host integration tests under `src/test`: those
-tests remain useful for fast API and protocol checks, while this suite proves
-complete user-visible journeys.
+separate from the six extension-host technical checks in
+`src/test/extension.test.ts`: those checks cover activation and narrow VS Code
+API adapters without PostgreSQL, while this suite proves complete user-visible
+journeys.
+
+## Test boundary
+
+User journeys belong in Playwright, including TreeView commands, Quick Picks,
+notebooks, Testing and coverage, debugger navigation, webviews, editor cleanup,
+and visible schema synchronization. The extension-host suite must not grow a
+second database-backed integration campaign. It is limited to checks that are
+both faster and more precise below the UI boundary: activation and command
+registration, the shared syntax adapter, inline-value projection, semantic
+token projection, stateless PL/pgSQL analysis, and virtual-source writes.
+
+Protocol and PostgreSQL backend contracts remain in the root Vitest/E2E suites;
+they are not duplicated through the extension host. When a regression is only
+observable after composing VS Code UI, extension code, and PostgreSQL, add or
+extend a Playwright journey instead of a `src/test` integration test.
 
 ## Structure
 

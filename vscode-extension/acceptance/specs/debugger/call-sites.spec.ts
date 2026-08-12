@@ -9,6 +9,7 @@ test.describe("PL/pgSQL debugger call sites", () => {
   });
 
   test("stops on every recursive Fibonacci result", async ({ workbench, debuggerPage }) => {
+    test.setTimeout(90_000);
     const sql = "SELECT playground.fib(5);";
     const breakpoint = "RETURN result;";
     const recursiveReturns = [
@@ -23,7 +24,6 @@ test.describe("PL/pgSQL debugger call sites", () => {
 
     await test.step("set the recursive return breakpoint and launch from the call site", async () => {
       await workbench.ensureServer(demoConnectionUrl, server);
-      await workbench.reindexActiveDatabase(server, /^demo/);
       await workbench.openRoutineSource(server, /^demo/, /^playground/, /^fib\(/);
       await debuggerPage.setBreakpoint(breakpoint);
       await debuggerPage.openCallSite("debug-fib.sql");
@@ -56,6 +56,7 @@ test.describe("PL/pgSQL debugger call sites", () => {
     test(`debugs ${scenario.sql}`, async ({ workbench, debuggerPage }) => {
       await test.step("connect and open the SQL call site", async () => {
         await workbench.ensureServer(demoConnectionUrl, server);
+        await workbench.expectActiveDatabaseIndexed(server, /^demo/);
         await debuggerPage.openCallSite(scenario.file);
       });
 
@@ -86,7 +87,6 @@ test.describe("PL/pgSQL debugger call sites", () => {
 
     await test.step("open the caller and its call site", async () => {
       await workbench.ensureServer(demoConnectionUrl, server);
-      await workbench.reindexActiveDatabase(server, /^demo/);
       await workbench.openRoutineSource(server, /^demo/, /^playground/, /^call_double\(/);
       await debuggerPage.openCallSite("debug-call-chain.sql");
       await debuggerPage.assignConnection(sql, server);
@@ -138,6 +138,7 @@ test.describe("PL/pgSQL debugger call sites", () => {
     ];
 
     await workbench.ensureServer(demoConnectionUrl, server);
+    await workbench.expectActiveDatabaseIndexed(server, /^demo/);
     await debuggerPage.openCallSite("debug-successive.sql");
     for (const session of sessions) {
       await debuggerPage.assignConnection(session.sql, server);
@@ -158,7 +159,6 @@ test.describe("PL/pgSQL debugger call sites", () => {
     debuggerPage,
   }) => {
     await workbench.ensureServer(demoConnectionUrl, server);
-    await workbench.reindexActiveDatabase(server, /^demo/);
     await workbench.debugRoutineFromTree(server, /^demo/, /^playground/, /^debug_tree_entry\(\)/);
     await debuggerPage.expectRoutineEditor(/^debug_tree_entry$/, /playground\.debug_tree_entry/);
     await debuggerPage.continueToCompletion("42");

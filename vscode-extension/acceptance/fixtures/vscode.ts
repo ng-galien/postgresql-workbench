@@ -1,5 +1,14 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  createWriteStream,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import type { ElectronApplication, Page } from "@playwright/test";
@@ -8,6 +17,7 @@ import { preparedAcceptanceVSCode } from "./vscodeDownload";
 
 const extensionRoot = resolve(__dirname, "../..");
 const workspace = resolve(extensionRoot, "test-workspace");
+const activationTarget = resolve(workspace, "debug-fib.sql");
 const artifactsRoot = resolve(extensionRoot, "test-results", "acceptance-worker");
 const workbenchActivityLabel = "PostgreSQL Workbench";
 
@@ -110,13 +120,13 @@ async function writeWindowFailureDiagnostic(
   let snapshot = 0;
   for (const page of app.windows()) {
     if (page.isClosed()) continue;
-    const state = await electronWindowState(app, page).catch(() => undefined);
-    if (!state) continue;
-    windows.push(state);
     snapshot += 1;
     await page
       .screenshot({ path: join(artifactsRoot, `${name}-window-${snapshot}.png`) })
       .catch(() => undefined);
+    const state = await electronWindowState(app, page).catch(() => undefined);
+    if (!state) continue;
+    windows.push(state);
   }
   writeFileSync(
     join(artifactsRoot, `${name}.json`),
@@ -175,6 +185,7 @@ async function waitForActivation(
   previousActivationId: string | undefined,
   timeout: number,
   description: string,
+  app?: ElectronApplication,
 ): Promise<ExtensionReadyState> {
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
@@ -182,16 +193,29 @@ async function waitForActivation(
     if (state && state.activationId !== previousActivationId) return state;
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
-  throw new Error(`${description} did not complete within ${timeout} ms`);
+  const windows = app
+    ? await writeWindowFailureDiagnostic(app, "extension-activation-error", timeout)
+    : [];
+  throw new Error(
+    `${description} did not complete within ${timeout} ms. BrowserWindow states:\n${JSON.stringify(windows, null, 2)}. Snapshots: ${artifactsRoot}/extension-activation-error-window-*.png`,
+  );
 }
 
 export interface VSCodeInstance {
   app: ElectronApplication;
   page: Page;
-  executeCommand(command: "workbench.action.quickOpen"): Promise<void>;
+  executeCommand(
+    command:
+      | "testing.coverageAll"
+      | "testing.runAll"
+      | "workbench.action.quickOpen"
+      | "workbench.view.testing.focus",
+    timeout?: number,
+  ): Promise<void>;
   executeInfrastructureCommand(command: "workbench.action.reloadWindow"): Promise<void>;
   inspectActiveNotebook(): Promise<ActiveNotebookSnapshot | undefined>;
   inspectDebugState(): Promise<DebugStateSnapshot>;
+  inspectTestingState(): Promise<TestingStateSnapshot>;
   resetWorkbenchUI(): Promise<void>;
   resizeWindow(width: number, height: number): Promise<void>;
   dispose(): Promise<void>;
@@ -213,9 +237,35 @@ export interface DebugStateSnapshot {
   extensionSession?: {
     adapterSessionId?: string;
     state?: string;
+    status?: {
+      state?: string;
+      timestamp?: string;
+    };
     vscodeSessionId?: string;
   };
   vscodeSessionId?: string;
+}
+
+export interface TestingStateSnapshot {
+  index?: {
+    database?: string;
+    generation?: number | null;
+    revision?: string;
+    serverId?: string;
+    status: string;
+  };
+  coverage?: {
+    files: Array<{
+      branch?: { covered: number; total: number };
+      statement: { covered: number; total: number };
+      uri: string;
+    }>;
+    sequence: number;
+  };
+  run?: {
+    outcomes: Record<string, string>;
+    sequence: number;
+  };
 }
 
 async function resizeWindow(
@@ -292,6 +342,19 @@ async function resizeWindow(
   }
 }
 
+async function focusWindow(app: ElectronApplication, page: Page): Promise<void> {
+  await page.bringToFront();
+  const browserWindow = await app.browserWindow(page);
+  try {
+    await browserWindow.evaluate((window) => {
+      window.show();
+      window.focus();
+    });
+  } finally {
+    await browserWindow.dispose();
+  }
+}
+
 export async function launchVSCode(): Promise<VSCodeInstance> {
   const { executablePath } = preparedAcceptanceVSCode();
   const profileRoot = mkdtempSync(
@@ -335,6 +398,10 @@ export async function launchVSCode(): Promise<VSCodeInstance> {
         .catch(() => {});
     }
     await app?.close().catch(() => undefined);
+    const vscodeLogs = join(userDataDir, "logs");
+    if (existsSync(vscodeLogs)) {
+      cpSync(vscodeLogs, join(artifactsRoot, "vscode-logs"), { recursive: true });
+    }
     rmSync(profileRoot, { recursive: true, force: true });
   };
 
@@ -343,14 +410,17 @@ export async function launchVSCode(): Promise<VSCodeInstance> {
       executablePath,
       env: {
         ...process.env,
+        ELECTRON_ENABLE_LOGGING: "1",
         POSTGRESQL_WORKBENCH_ACCEPTANCE_CONTROL_FILE: controlFile,
       },
       args: [
         "--disable-gpu-sandbox",
         "--disable-updates",
         "--force-disable-user-env",
+        "--use-inmemory-secretstorage",
         "--locale=en",
         "--new-window",
+        "--verbose",
         "--skip-release-notes",
         "--skip-welcome",
         "--no-sandbox",
@@ -358,9 +428,12 @@ export async function launchVSCode(): Promise<VSCodeInstance> {
         `--extensions-dir=${extensionsDir}`,
         `--extensionDevelopmentPath=${extensionRoot}`,
         workspace,
+        activationTarget,
       ],
       recordVideo: { dir: join(artifactsRoot, "video"), size: { width: 1440, height: 900 } },
     });
+    app.process().stdout?.pipe(createWriteStream(join(artifactsRoot, "electron-stdout.log")));
+    app.process().stderr?.pipe(createWriteStream(join(artifactsRoot, "electron-stderr.log")));
     await app.context().tracing.start({ screenshots: true, snapshots: true });
     tracingStarted = true;
     let ready = await waitForActivation(
@@ -368,17 +441,21 @@ export async function launchVSCode(): Promise<VSCodeInstance> {
       undefined,
       30_000,
       "PostgreSQL Workbench extension activation",
+      app,
     );
 
     const runningApp = app;
-    const runAcceptanceCommand = async (command: string): Promise<ExtensionReadyState> => {
+    const runAcceptanceCommand = async (
+      command: string,
+      timeout = 5_000,
+    ): Promise<ExtensionReadyState> => {
       const nonce = randomUUID();
       writeFileSync(controlFile, JSON.stringify({ command, nonce }));
       ready = await waitForCommand(
         readyFile,
         ready.activationId,
         nonce,
-        5_000,
+        timeout,
         `VS Code command ${command}`,
       );
       return ready;
@@ -389,8 +466,9 @@ export async function launchVSCode(): Promise<VSCodeInstance> {
     return {
       app: runningApp,
       page,
-      async executeCommand(command) {
-        await runAcceptanceCommand(command);
+      async executeCommand(command, timeout) {
+        await focusWindow(runningApp, page);
+        await runAcceptanceCommand(command, timeout);
       },
       async executeInfrastructureCommand(command) {
         const previousActivationId = ready.activationId;
@@ -400,6 +478,7 @@ export async function launchVSCode(): Promise<VSCodeInstance> {
           previousActivationId,
           30_000,
           `VS Code command ${command} and subsequent extension activation`,
+          runningApp,
         );
         await waitForVSCodeWindow(runningApp, 30_000);
       },
@@ -414,6 +493,12 @@ export async function launchVSCode(): Promise<VSCodeInstance> {
           "postgresql-workbench.acceptance.inspectDebugState",
         );
         return state.result as DebugStateSnapshot;
+      },
+      async inspectTestingState() {
+        const state = await runAcceptanceCommand(
+          "postgresql-workbench.acceptance.inspectTestingState",
+        );
+        return (state.result ?? {}) as TestingStateSnapshot;
       },
       async resetWorkbenchUI() {
         const state = await runAcceptanceCommand("postgresql-workbench.acceptance.resetWorkbench");

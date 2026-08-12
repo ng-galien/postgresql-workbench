@@ -26,11 +26,13 @@ export interface CodeLensConnection {
 export interface CodeLensConnections {
   active(): CodeLensConnection | undefined;
   forCall(call: CommandCallSite): CodeLensConnection | undefined;
+  canDebug(connection: CodeLensConnection): boolean;
 }
 
 const NO_CONNECTIONS: CodeLensConnections = {
   active: () => undefined,
   forCall: () => undefined,
+  canDebug: () => false,
 };
 
 function connectionLens(
@@ -81,13 +83,15 @@ export class SqlCodeLensProvider implements vscode.CodeLensProvider {
         documentVersion: document.version,
         ...(activeConnection ? { serverId: activeConnection.id } : {}),
       } satisfies CommandFunctionDefinition;
-      lenses.push(
-        new vscode.CodeLens(range, {
-          title: `$(debug-start) Debug PL/pgSQL ${def.kind}`,
-          command: "postgresql-workbench.debugDefinition",
-          arguments: [target],
-        }),
-      );
+      if (activeConnection && this.connections.canDebug(activeConnection)) {
+        lenses.push(
+          new vscode.CodeLens(range, {
+            title: `$(debug-start) Debug PL/pgSQL ${def.kind}`,
+            command: "postgresql-workbench.debugDefinition",
+            arguments: [target],
+          }),
+        );
+      }
       if (!isVirtualPlpgsql) {
         lenses.push(
           new vscode.CodeLens(range, {
@@ -116,17 +120,21 @@ export class SqlCodeLensProvider implements vscode.CodeLensProvider {
         );
         continue;
       }
+      if (this.connections.canDebug(connection)) {
+        lenses.push(
+          new vscode.CodeLens(range, {
+            title: "$(debug-start) Debug PL/pgSQL",
+            command: "postgresql-workbench.debugCall",
+            arguments: [
+              {
+                ...target,
+                serverId: connection.id,
+              } satisfies CommandCallSite,
+            ],
+          }),
+        );
+      }
       lenses.push(
-        new vscode.CodeLens(range, {
-          title: "$(debug-start) Debug PL/pgSQL",
-          command: "postgresql-workbench.debugCall",
-          arguments: [
-            {
-              ...target,
-              serverId: connection.id,
-            } satisfies CommandCallSite,
-          ],
-        }),
         connectionLens(range, connection, "postgresql-workbench.assignCallConnection", target),
       );
     }

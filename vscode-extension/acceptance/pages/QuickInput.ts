@@ -24,4 +24,14 @@ export class QuickInput {
     await this.input.press("Enter");
     await this.input.waitFor({ state: "hidden", timeout: 5_000 });
   }
+
+  async submitSecret(value: string, prompt: RegExp): Promise<void> {
+    const widget = this.page.locator(".quick-input-widget:visible");
+    await this.input.waitFor({ state: "visible", timeout: 5_000 });
+    await expect(this.input).toHaveAttribute("type", "password", { timeout: 5_000 });
+    await expect(widget).toContainText(prompt, { timeout: 5_000 });
+    await this.input.fill(value);
+    await this.input.press("Enter");
+    await this.input.waitFor({ state: "hidden", timeout: 5_000 });
+  }
 }

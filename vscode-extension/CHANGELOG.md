@@ -61,8 +61,8 @@
   authorities, so the Workbench client and its compiled DAP use the same Code
   Moniker identities
 - Kept standalone source retrieval independent from Workbench indexing through
-  standard positive DAP source references when no host URI is available, with
-  context- and session-scoped fallback URIs that cannot collide across databases
+  standard positive DAP source references when no host URI is available, without
+  inventing an adapter-owned fallback URI
 - Hardened the private syntax worker lifecycle with bounded graceful shutdown,
   SIGTERM and SIGKILL fallbacks, cleanup tests, and an executable architecture
   guard for the reduced DAP boundary

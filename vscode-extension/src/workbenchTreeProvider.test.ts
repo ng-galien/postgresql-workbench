@@ -244,7 +244,7 @@ describe("Workbench tree incremental refresh", () => {
       },
     ];
     const index = {
-      state: { status: "available", serverId: server.id, result } as WorkbenchIndexState,
+      state: { status: "not-indexed", serverId: server.id } as WorkbenchIndexState,
       indexedSymbols,
       objectOrigin: () => undefined,
       relations: async (
@@ -294,8 +294,14 @@ describe("Workbench tree incremental refresh", () => {
     const reportingSchema = new SchemaItem("reporting");
     const object = new WorkbenchObjectItem(table, snapshot);
     const unchangedObject = new WorkbenchObjectItem(unchangedTable, snapshot);
+    const routine = new FunctionItem(
+      { ...table, name: "refresh_inventory", kind: "function", plpgsql: true },
+      snapshot,
+    );
     provider.getTreeItem(sources);
     expect(provider.activeSourcesItem()).toBe(sources);
+    expect(provider.getTreeItem(routine).contextValue).toBe("postgresql-workbench-function");
+    provider.setExpanded(sources, false);
     const changes: Array<{ kind?: string } | undefined> = [];
     provider.onDidChangeTreeData((item) => changes.push(item));
 
@@ -321,6 +327,10 @@ describe("Workbench tree incremental refresh", () => {
     expect(sources.description).toBe("available");
     expect(sources.iconPath).toMatchObject({ id: "files" });
     expect(sources.tooltip).toBe("Indexed sources for testdb");
+    expect(provider.getTreeItem(routine).contextValue).toBe(
+      "postgresql-workbench-function-debuggable",
+    );
+    provider.setExpanded(sources, false);
 
     changes.length = 0;
     provider.setExpanded(sources, true);
