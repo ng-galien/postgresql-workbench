@@ -156,6 +156,37 @@ describe("DAP client e2e", () => {
     expect(repeatedStops).toBe(0);
   });
 
+  it("returns Fibonacci variables from the recursive stack frame requested by the client", async () => {
+    const entry = await launchAndWaitForStop(dc, launchConfig("SELECT playground.fib(5)"));
+    const threadId = entry.body.threadId;
+    const entryStack = await dc.stackTraceRequest({ threadId });
+    const source = entryStack.body.stackFrames[0]?.source;
+    expect(source?.path).toBeTruthy();
+
+    const breakpoint = await dc.setBreakpointsRequest({
+      source: { path: source?.path ?? "" },
+      breakpoints: [{ line: 12 }],
+    });
+    expect(breakpoint.body.breakpoints[0]?.verified).toBe(true);
+
+    await runAndWaitForStop(dc, () => dc.continueRequest({ threadId }));
+    const recursiveStack = await dc.stackTraceRequest({ threadId });
+    expect(recursiveStack.body.stackFrames.length).toBeGreaterThanOrEqual(3);
+
+    const argumentValue = async (frameId: number) => {
+      const scopes = await dc.scopesRequest({ frameId });
+      const args = await dc.variablesRequest({
+        variablesReference: scopes.body.scopes[0].variablesReference,
+      });
+      return args.body.variables.find((variable) => variable.name === "n")?.value;
+    };
+
+    expect(await argumentValue(recursiveStack.body.stackFrames[0].id)).toBe("2");
+    expect(await argumentValue(recursiveStack.body.stackFrames[1].id)).toBe("3");
+
+    await dc.disconnectRequest();
+  });
+
   it("streams a large target result into a bounded structured preview", async () => {
     const pending = dc.waitForEvent(DEBUG_RESULT_STATUS_EVENT, 15_000);
     await launchAndWaitForStop(dc, {

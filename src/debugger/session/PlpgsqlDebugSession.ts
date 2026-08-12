@@ -219,6 +219,11 @@ interface BreakpointInfo {
   logMessage?: string;
 }
 
+interface ScopeReference {
+  frameId: number;
+  kind: "arguments" | "locals";
+}
+
 // The DAP framework requires one stateful session owner for protocol ordering and request handlers;
 // parsing, PostgreSQL access, source registration, and launch orchestration already live in helpers.
 // code-moniker: ignore[smell-large-class]
@@ -235,6 +240,7 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
   private targetQueryPromise: Promise<void> | undefined;
   private expandableVars = new Map<number, DebugProtocol.Variable[]>();
   private nextVarRef = 10;
+  private scopeReferences = new Map<number, ScopeReference>();
   /** Resolves when the target has hit the global breakpoint and is ready for stepping. */
   private targetReady!: Promise<void>;
   private resolveTargetReady!: () => void;
@@ -787,9 +793,21 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
     response: DebugProtocol.ScopesResponse,
     args: DebugProtocol.ScopesArguments,
   ): void {
-    this.selectedFrameAnalysis = this.frameAnalyses.get(args.frameId);
+    const argumentsReference = this.nextVarRef++;
+    const localsReference = this.nextVarRef++;
+    this.scopeReferences.set(argumentsReference, {
+      frameId: args.frameId,
+      kind: "arguments",
+    });
+    this.scopeReferences.set(localsReference, {
+      frameId: args.frameId,
+      kind: "locals",
+    });
     response.body = {
-      scopes: [new Scope("Arguments", 1, false), new Scope("Local Variables", 2, false)],
+      scopes: [
+        new Scope("Arguments", argumentsReference, false),
+        new Scope("Local Variables", localsReference, false),
+      ],
     };
     this.sendResponse(response);
   }
@@ -808,15 +826,15 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
 
     response.body = { variables: [] };
     await this.guarded("variablesRequest", response, async () => {
+      const scope = this.scopeReferences.get(scopeRef);
+      if (!scope) return;
+      await this.listenerExecutor.selectFrame(scope.frameId);
+      this.selectedFrameAnalysis = this.frameAnalyses.get(scope.frameId);
       const vars = await this.listenerExecutor.getVariables();
       this.lastKnownVariables = vars;
 
       const filtered =
-        scopeRef === 1
-          ? vars.filter((v) => v.isArg)
-          : scopeRef === 2
-            ? vars.filter((v) => !v.isArg)
-            : vars;
+        scope.kind === "arguments" ? vars.filter((v) => v.isArg) : vars.filter((v) => !v.isArg);
 
       const byName = new Map<string, (typeof filtered)[number]>();
       for (const v of filtered) {
@@ -1353,6 +1371,7 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
     }
     this.expandableVars.clear();
     this.nextVarRef = 10;
+    this.scopeReferences.clear();
     this.sendEvent(new StoppedEvent(reason, THREAD_ID));
     this.sendSessionStatus("suspended", { source });
   }

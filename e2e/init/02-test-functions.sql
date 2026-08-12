@@ -203,6 +203,21 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- Same recursive Fibonacci routine used by the VS Code Playwright debugger journey.
+CREATE SCHEMA IF NOT EXISTS playground;
+CREATE OR REPLACE FUNCTION playground.fib(n int)
+RETURNS bigint AS $$
+DECLARE
+  result bigint;
+BEGIN
+  IF n < 2 THEN
+    RETURN n;
+  END IF;
+  result := playground.fib(n - 1) + playground.fib(n - 2);
+  RETURN result;
+END;
+$$ LANGUAGE plpgsql;
+
 -- Set-returning function used to verify bounded result streaming.
 CREATE OR REPLACE FUNCTION test_many_rows(n int)
 RETURNS TABLE(id int, payload jsonb) AS $$

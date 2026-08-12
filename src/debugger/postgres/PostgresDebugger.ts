@@ -66,6 +66,8 @@ const SQL = {
          LEFT JOIN pg_type t_type ON t_var.dtype = t_type.oid
          LEFT JOIN pg_type t_sub ON t_type.typelem = t_sub.oid;`,
 
+  SELECT_FRAME: `SELECT * FROM pldbg_select_frame($1, $2);`,
+
   GET_SHARED_LIBRARIES: `
     SELECT setting
     FROM pg_settings
@@ -260,6 +262,11 @@ export class PostgresDebugger {
   async getVariables(): Promise<PlApiStackVariable[]> {
     if (this.invalidSession()) return [];
     return readVariables(this.client, this.session, SQL.GET_RAW_VARIABLES);
+  }
+
+  async selectFrame(frame: number): Promise<void> {
+    if (this.invalidSession()) return;
+    await this.client.query(SQL.SELECT_FRAME, [this.session, frame]);
   }
 
   async getBreakpoints(): Promise<PlApiStep[]> {

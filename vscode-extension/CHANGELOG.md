@@ -60,6 +60,9 @@
 - Preserved exact host-provided source URIs, including their schemes and
   authorities, so the Workbench client and its compiled DAP use the same Code
   Moniker identities
+- Fixed recursive stack inspection so argument and local-variable scopes select
+  the frame requested by the DAP client instead of reusing PostgreSQL's current
+  frame
 - Kept standalone source retrieval independent from Workbench indexing through
   standard positive DAP source references when no host URI is available, without
   inventing an adapter-owned fallback URI
