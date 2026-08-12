@@ -770,7 +770,11 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
 
     if (this.lifecycle.beginExecution()) {
       this.sendSessionStatus("resuming");
-      await this.safeStep(() => this.listenerExecutor.stepContinue(), "breakpoint");
+      if (entryLineBreakpoints > 0) {
+        await this.continueFromEntryToLineBreakpoint();
+      } else {
+        await this.safeStep(() => this.listenerExecutor.stepContinue(), "breakpoint");
+      }
     }
   }
 
@@ -1297,6 +1301,7 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
   private async safeStep(
     stepFn: () => Promise<import("../postgres/index.js").PlApiStep | null>,
     reason: string,
+    requireRegisteredLineBreakpoint = false,
   ): Promise<void> {
     log(`safeStep: starting (reason=${reason})`);
     if (!this.listenerExecutor) return;
@@ -1308,16 +1313,12 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
         // the authoritative identity for breakpoints and the technical entry.
         const stop = (await this.currentStopPosition().catch(() => undefined)) ?? step;
         log(`safeStep: stopped raw=${step.oid}:${step.line} stack=${stop.oid}:${stop.line}`);
-        if (this.isReleasedTechnicalEntryStop(stop)) {
-          log(`safeStep: ignoring residual released entry stop oid=${stop.oid} line=${stop.line}`);
-          // The copied entry breakpoint can surface once after its release.
-          // Consume that identity before continuing so this recovery can never
-          // turn into an automatic chain of continue requests.
-          this.entryStopPosition = undefined;
+        const bpInfo = this.getBreakpointInfo(stop.oid, stop.line);
+        if (requireRegisteredLineBreakpoint && !bpInfo) {
+          log(`safeStep: bootstrap ignored non-user stop oid=${stop.oid} line=${stop.line}`);
           step = await this.runStepCommand(() => this.listenerExecutor.stepContinue());
           continue;
         }
-        const bpInfo = this.getBreakpointInfo(stop.oid, stop.line);
         const source = await this.sourceForPosition(stop.oid, stop.line).catch(() => undefined);
 
         if (bpInfo?.logMessage || bpInfo?.condition) {
@@ -1378,6 +1379,16 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
     }
   }
 
+  /**
+   * Leave the temporary attach stop and wait for the line breakpoint that the
+   * client registered before configurationDone. Each continue request waits for
+   * PostgreSQL to suspend again; this bootstrap path is never used by user step
+   * commands.
+   */
+  private async continueFromEntryToLineBreakpoint(): Promise<void> {
+    await this.safeStep(() => this.listenerExecutor.stepContinue(), "breakpoint", true);
+  }
+
   private postgresFrameLevelForEvaluation(frameId: number | undefined): number | undefined {
     if (frameId === undefined || frameId === 0) {
       return this.selectedPostgresFrameLevel ?? 0;
@@ -1416,15 +1427,6 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
 
   private getBreakpointInfo(oid: number, bodyLine: number): BreakpointInfo | undefined {
     return this.activeBreakpoints.get(oid)?.get(bodyLine);
-  }
-
-  private isReleasedTechnicalEntryStop(step: DebugStopPosition): boolean {
-    return (
-      this.entryBreakpointReleased &&
-      step.oid === this.entryStopPosition?.oid &&
-      step.line === this.entryStopPosition.line &&
-      !this.activeBreakpoints.get(step.oid)?.has(step.line)
-    );
   }
 
   private async evaluateCondition(
