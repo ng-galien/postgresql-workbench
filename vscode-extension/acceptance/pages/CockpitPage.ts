@@ -1,5 +1,5 @@
 import { expect, type Frame, type Locator, type Page } from "@playwright/test";
-import { installDragProbe, readDragProbe } from "../support/dragProbe";
+import { installDragProbe, readDragProbe, startNativeTreeDrag } from "../support/dragProbe";
 
 export class CockpitPage {
   private frame?: Frame;
@@ -138,22 +138,11 @@ export class CockpitPage {
 
   async dragTreeItem(source: Locator): Promise<void> {
     await source.scrollIntoViewIfNeeded();
-    await installDragProbe(this.page);
     await installDragProbe(this.frame!);
-    const sourceBox = await source.boundingBox();
     const targetBox = await this.canvas.boundingBox();
     const frameBox = await (await this.frame!.frameElement()).boundingBox();
-    expect(sourceBox, "The TreeView source must have screen coordinates").not.toBeNull();
     expect(targetBox, "The Cockpit canvas must have screen coordinates").not.toBeNull();
-
-    await this.page.mouse.move(
-      sourceBox!.x + sourceBox!.width / 2,
-      sourceBox!.y + sourceBox!.height / 2,
-    );
-    await this.page.mouse.down();
-    await this.page.mouse.move(sourceBox!.x + sourceBox!.width / 2 + 12, sourceBox!.y + 4, {
-      steps: 4,
-    });
+    const { sourceBox, failedAttempts } = await startNativeTreeDrag(this.page, source);
     await this.page.mouse.move(
       targetBox!.x + targetBox!.width / 2,
       targetBox!.y + targetBox!.height / 2,
@@ -183,7 +172,7 @@ export class CockpitPage {
       const sourceEvents = (await readDragProbe(this.page)).slice(-40);
       const targetEvents = (await readDragProbe(this.frame!)).slice(-40);
       throw new Error(
-        `Drag feedback did not appear. sourceBox=${JSON.stringify(sourceBox)}; frameBox=${JSON.stringify(frameBox)}; targetBox=${JSON.stringify(targetBox)}; Workbench events=${JSON.stringify(sourceEvents)}; Cockpit events=${JSON.stringify(targetEvents)}.`,
+        `Drag feedback did not appear. sourceBox=${JSON.stringify(sourceBox)}; frameBox=${JSON.stringify(frameBox)}; targetBox=${JSON.stringify(targetBox)}; Workbench events=${JSON.stringify(sourceEvents)}; Cockpit events=${JSON.stringify(targetEvents)}; failedStartAttempts=${JSON.stringify(failedAttempts)}.`,
         { cause },
       );
     } finally {
@@ -193,18 +182,9 @@ export class CockpitPage {
 
   async previewRejectedTreeItem(source: Locator, reason: RegExp): Promise<void> {
     await source.scrollIntoViewIfNeeded();
-    const sourceBox = await source.boundingBox();
     const targetBox = await this.canvas.boundingBox();
-    expect(sourceBox, "The rejected TreeView source must have screen coordinates").not.toBeNull();
     expect(targetBox, "The Cockpit canvas must have screen coordinates").not.toBeNull();
-    await this.page.mouse.move(
-      sourceBox!.x + sourceBox!.width / 2,
-      sourceBox!.y + sourceBox!.height / 2,
-    );
-    await this.page.mouse.down();
-    await this.page.mouse.move(sourceBox!.x + sourceBox!.width / 2 + 12, sourceBox!.y + 4, {
-      steps: 4,
-    });
+    await startNativeTreeDrag(this.page, source);
     await this.page.mouse.move(
       targetBox!.x + targetBox!.width / 2,
       targetBox!.y + targetBox!.height / 2,

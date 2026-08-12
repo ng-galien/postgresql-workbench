@@ -83,6 +83,50 @@ describe("PlpgsqlDebugSession stack frames", () => {
     expect(internal.entryBreakpointReleased).toBe(true);
   });
 
+  it("continues past one residual technical entry stop after releasing it", async () => {
+    const session = new PlpgsqlDebugSession(async () => {
+      throw new Error("The syntax parser must not be used while stepping");
+    });
+    const steps = [
+      { oid: 4242, line: 4, md5: "" },
+      { oid: 4242, line: 8, md5: "" },
+    ];
+    const stopped: Array<{ reason: string; line?: number }> = [];
+    const internal = session as unknown as {
+      activeBreakpoints: Map<number, Map<number, unknown>>;
+      entryBreakpointReleased: boolean;
+      entryStopPosition: { oid: number; line: number };
+      listenerExecutor: {
+        stepContinue(): Promise<{ oid: number; line: number; md5: string } | null>;
+      };
+      safeStep(
+        step: () => Promise<{ oid: number; line: number; md5: string } | null>,
+        reason: string,
+      ): Promise<void>;
+      sendStoppedAndReset(reason: string, source?: { line?: number }): void;
+      sourceForPosition(oid: number, line: number): Promise<{ line: number }>;
+      currentStopSource(): Promise<undefined>;
+    };
+    internal.entryBreakpointReleased = true;
+    internal.entryStopPosition = { oid: 4242, line: 4 };
+    internal.activeBreakpoints.set(4242, new Map([[8, {}]]));
+    internal.listenerExecutor = {
+      async stepContinue() {
+        return steps.shift() ?? null;
+      },
+    };
+    internal.currentStopSource = async () => undefined;
+    internal.sourceForPosition = async (_oid, line) => ({ line });
+    internal.sendStoppedAndReset = (reason, source) => {
+      stopped.push({ reason, line: source?.line });
+    };
+
+    await internal.safeStep(() => internal.listenerExecutor.stepContinue(), "breakpoint");
+
+    expect(steps).toEqual([]);
+    expect(stopped).toEqual([{ reason: "breakpoint", line: 8 }]);
+  });
+
   it("does not reuse DAP variable handles across suspended states", () => {
     const session = new PlpgsqlDebugSession(async () => {
       throw new Error("The syntax parser must not be used to allocate DAP variable handles");
@@ -112,6 +156,67 @@ describe("PlpgsqlDebugSession stack frames", () => {
     const secondReferences = second.body!.scopes.map((scope) => scope.variablesReference);
     expect(secondReferences).not.toEqual(firstReferences);
     expect(Math.min(...secondReferences)).toBeGreaterThan(Math.max(...firstReferences));
+  });
+
+  it("does not reselect the PostgreSQL frame that already has debugger focus", async () => {
+    const session = new PlpgsqlDebugSession(async () => {
+      throw new Error("The syntax parser must not be used to select a stack frame");
+    });
+    const selectFrame = vi.fn(async (_frame: number) => {});
+    const internal = session as unknown as {
+      listenerExecutor: { selectFrame(frame: number): Promise<void> };
+      selectedPostgresFrameLevel: number | undefined;
+      selectPostgresFrame(frame: number): Promise<void>;
+    };
+    internal.listenerExecutor = { selectFrame };
+    internal.selectedPostgresFrameLevel = 0;
+
+    await internal.selectPostgresFrame(0);
+    await internal.selectPostgresFrame(2);
+    await internal.selectPostgresFrame(2);
+    await internal.selectPostgresFrame(0);
+
+    expect(selectFrame.mock.calls).toEqual([[2], [0]]);
+  });
+
+  it("reads variables once per PostgreSQL frame and suspended state", async () => {
+    const session = new PlpgsqlDebugSession(async () => {
+      throw new Error("The syntax parser must not be used to inspect variables");
+    });
+    const variables = [
+      {
+        isArg: true,
+        line: 1,
+        value: {
+          arrayType: "text",
+          isArray: false,
+          isText: false,
+          kind: "b",
+          name: "n",
+          oid: 23,
+          pretty: "3",
+          type: "integer",
+          value: "3",
+        },
+        varNo: 0,
+      },
+    ];
+    const getVariables = vi.fn(async () => variables);
+    const internal = session as unknown as {
+      frameVariables(frame: number): Promise<typeof variables>;
+      listenerExecutor: {
+        getVariables(): Promise<typeof variables>;
+        selectFrame(frame: number): Promise<void>;
+      };
+      selectedPostgresFrameLevel: number | undefined;
+    };
+    internal.listenerExecutor = { getVariables, selectFrame: vi.fn() };
+    internal.selectedPostgresFrameLevel = 0;
+
+    expect(await internal.frameVariables(0)).toBe(variables);
+    expect(await internal.frameVariables(0)).toBe(variables);
+
+    expect(getVariables).toHaveBeenCalledTimes(1);
   });
 });
 

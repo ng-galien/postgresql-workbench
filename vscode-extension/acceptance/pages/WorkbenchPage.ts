@@ -1,5 +1,5 @@
 import { expect, type Page } from "@playwright/test";
-import { installDragProbe, readDragProbe } from "../support/dragProbe";
+import { readDragProbe, startNativeTreeDrag } from "../support/dragProbe";
 import { QuickInput } from "./QuickInput";
 import { WorkbenchTree } from "./WorkbenchTree";
 
@@ -177,20 +177,10 @@ export class WorkbenchPage {
 
   async dragTreeItemToEditor(source: import("@playwright/test").Locator): Promise<void> {
     await source.scrollIntoViewIfNeeded();
-    await installDragProbe(this.page);
     const target = this.page.locator(".editor-group-container").first();
-    const sourceBox = await source.boundingBox();
     const targetBox = await target.boundingBox();
-    expect(sourceBox, "The TreeView source must have screen coordinates").not.toBeNull();
     expect(targetBox, "The VS Code editor area must have screen coordinates").not.toBeNull();
-    await this.page.mouse.move(
-      sourceBox!.x + sourceBox!.width / 2,
-      sourceBox!.y + sourceBox!.height / 2,
-    );
-    await this.page.mouse.down();
-    await this.page.mouse.move(sourceBox!.x + sourceBox!.width / 2 + 12, sourceBox!.y + 4, {
-      steps: 4,
-    });
+    const { sourceBox, failedAttempts } = await startNativeTreeDrag(this.page, source);
     await this.page.mouse.move(
       targetBox!.x + targetBox!.width / 2,
       targetBox!.y + targetBox!.height / 2,
@@ -214,7 +204,7 @@ export class WorkbenchPage {
     } catch (cause) {
       const events = (await readDragProbe(this.page)).slice(-40);
       throw new Error(
-        `The editor did not become ready for the graph drop. sourceBox=${JSON.stringify(sourceBox)}; targetBox=${JSON.stringify(targetBox)}; events=${JSON.stringify(events)}.`,
+        `The editor did not become ready for the graph drop. sourceBox=${JSON.stringify(sourceBox)}; targetBox=${JSON.stringify(targetBox)}; events=${JSON.stringify(events)}; failedStartAttempts=${JSON.stringify(failedAttempts)}.`,
         { cause },
       );
     } finally {

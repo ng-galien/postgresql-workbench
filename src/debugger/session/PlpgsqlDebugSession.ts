@@ -49,7 +49,7 @@ import {
   prepareDebugLaunch,
   startDebugTarget,
 } from "../launch/startDebugLaunch.js";
-import type { PlApiFunctionDef, PostgresDebugger } from "../postgres/index.js";
+import type { PlApiFunctionDef, PlApiStackVariable, PostgresDebugger } from "../postgres/index.js";
 import { DebugSessionLifecycle } from "./DebugSessionLifecycle.js";
 import { clientSourceUris } from "./sourceRegistry.js";
 
@@ -225,6 +225,11 @@ interface ScopeReference {
   kind: "arguments" | "locals";
 }
 
+interface DebugStopPosition {
+  oid: number;
+  line: number;
+}
+
 // The DAP framework requires one stateful session owner for protocol ordering and request handlers;
 // parsing, PostgreSQL access, source registration, and launch orchestration already live in helpers.
 // code-moniker: ignore[smell-large-class]
@@ -237,6 +242,8 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
   private frameLevelById = new Map<number, number>();
   private nextFrameId = 1;
   private selectedFrameAnalysis: PlSourceAnalysis | undefined;
+  /** PostgreSQL resets debugger focus to the deepest frame at every stop. */
+  private selectedPostgresFrameLevel: number | undefined;
   private entryOid: number = 0;
   private entryBreakpointReleased = false;
   private entryFunctionBreakpointRequested = false;
@@ -254,7 +261,9 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
   /** Active exception breakpoint filters */
   private exceptionFilters = new Set<string>();
   /** Cached variables for completions (updated on variablesRequest/evaluateRequest) */
-  private lastKnownVariables: import("../postgres/index.js").PlApiStackVariable[] = [];
+  private lastKnownVariables: PlApiStackVariable[] = [];
+  /** One immutable variable snapshot per frame while the target is suspended. */
+  private variablesByPostgresFrameLevel = new Map<number, PlApiStackVariable[]>();
   /** Unique per-session suffix for application_name — keeps concurrent sessions from interfering. */
   private sessionSuffix = crypto.randomBytes(4).toString("hex");
   /** Connection config kept for the auxiliary connection used to terminate blocked backends. */
@@ -276,6 +285,8 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
   private listenerPid = 0;
   private targetBackendPid = 0;
   private entrySource: DebugSessionSource | undefined;
+  /** Exact PostgreSQL position of the temporary global entry stop. */
+  private entryStopPosition: DebugStopPosition | undefined;
   private sourceUris = new Map<number, string>();
   private sourceOids = new Map<string, number>();
   private sourceReferences = new Map<number, number>();
@@ -332,6 +343,7 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
     this.stopOnEntry = args.stopOnEntry !== false;
     this.entryBreakpointReleased = false;
     this.entryFunctionBreakpointRequested = false;
+    this.entryStopPosition = undefined;
     this.sendLifecycleOutput("Preparing PL/pgSQL debug session");
     this.sendSessionStatus("preparing", {
       query: args.sql,
@@ -459,7 +471,13 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
           return;
         }
         this.lifecycle.transition("suspended");
-        this.entrySource = await this.currentStopSource().catch(() => undefined);
+        this.entryStopPosition = await this.currentStopPosition().catch(() => undefined);
+        this.entrySource = this.entryStopPosition
+          ? await this.sourceForPosition(
+              this.entryStopPosition.oid,
+              this.entryStopPosition.line,
+            ).catch(() => undefined)
+          : undefined;
         this.sendLifecycleOutput(`Attached to PostgreSQL backend ${prepared.targetPid}`);
         this.resolveTargetReady();
       })
@@ -853,9 +871,8 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
         if (this.lifecycle.state !== "suspended" || this.scopeReferences.get(scopeRef) !== scope) {
           return [];
         }
-        await this.listenerExecutor.selectFrame(scope.postgresFrameLevel);
         this.selectedFrameAnalysis = this.frameAnalyses.get(scope.dapFrameId);
-        return this.listenerExecutor.getVariables();
+        return this.frameVariables(scope.postgresFrameLevel);
       });
       if (this.scopeReferences.get(scopeRef) !== scope) return;
       this.lastKnownVariables = vars;
@@ -1002,11 +1019,11 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
       const vars = await this.runInspection(async () => {
         if (this.lifecycle.state !== "suspended") return [];
         const postgresFrameLevel =
-          args.frameId === undefined ? undefined : this.frameLevelById.get(args.frameId);
-        if (postgresFrameLevel !== undefined) {
-          await this.listenerExecutor.selectFrame(postgresFrameLevel);
-        }
-        return this.listenerExecutor.getVariables();
+          args.frameId === undefined
+            ? (this.selectedPostgresFrameLevel ?? 0)
+            : this.frameLevelById.get(args.frameId);
+        if (postgresFrameLevel === undefined) return [];
+        return this.frameVariables(postgresFrameLevel);
       });
       this.lastKnownVariables = vars;
       const resolved = this.resolveExpression(expr, vars);
@@ -1095,7 +1112,8 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
         return;
       }
 
-      const updated = await this.listenerExecutor.getVariables();
+      this.variablesByPostgresFrameLevel.clear();
+      const updated = await this.frameVariables(this.selectedPostgresFrameLevel ?? 0);
       const u = updated.find((v) => v.value.name === args.name);
       const displayValue = u ? this.displayValue(u.value) : args.value;
 
@@ -1201,10 +1219,15 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
   }
 
   private async currentStopSource(): Promise<DebugSessionSource | undefined> {
-    if (!this.listenerExecutor) return undefined;
-    const frame = (await this.listenerExecutor.getStack())[0];
+    const frame = await this.currentStopPosition();
     if (!frame) return undefined;
     return this.sourceForPosition(frame.oid, frame.line);
+  }
+
+  private async currentStopPosition(): Promise<DebugStopPosition | undefined> {
+    if (!this.listenerExecutor) return undefined;
+    const frame = (await this.listenerExecutor.getStack())[0];
+    return frame ? { oid: frame.oid, line: frame.line } : undefined;
   }
 
   private async sourceForPosition(
@@ -1282,6 +1305,11 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
     try {
       let step = await this.runStepCommand(stepFn);
       while (step && step.oid !== 0) {
+        if (this.isReleasedTechnicalEntryStop(step)) {
+          log(`safeStep: ignoring residual released entry stop oid=${step.oid} line=${step.line}`);
+          step = await this.runStepCommand(() => this.listenerExecutor.stepContinue());
+          continue;
+        }
         const bpInfo = this.getBreakpointInfo(step.oid, step.line);
         const source =
           (await this.currentStopSource().catch(() => undefined)) ??
@@ -1378,6 +1406,15 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
     return this.activeBreakpoints.get(oid)?.get(bodyLine);
   }
 
+  private isReleasedTechnicalEntryStop(step: DebugStopPosition): boolean {
+    return (
+      this.entryBreakpointReleased &&
+      step.oid === this.entryStopPosition?.oid &&
+      step.line === this.entryStopPosition.line &&
+      !this.activeBreakpoints.get(step.oid)?.has(step.line)
+    );
+  }
+
   private async evaluateCondition(
     condition: string,
     vars: import("../postgres/index.js").PlApiStackVariable[],
@@ -1421,6 +1458,8 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
     this.frameIdByLevel.clear();
     this.frameLevelById.clear();
     this.selectedFrameAnalysis = undefined;
+    this.selectedPostgresFrameLevel = 0;
+    this.variablesByPostgresFrameLevel.clear();
     this.sendEvent(new StoppedEvent(reason, THREAD_ID));
     this.sendSessionStatus("suspended", { source });
   }
@@ -1432,6 +1471,21 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
       () => undefined,
     );
     return run;
+  }
+
+  private async selectPostgresFrame(frame: number): Promise<void> {
+    if (this.selectedPostgresFrameLevel === frame) return;
+    await this.listenerExecutor.selectFrame(frame);
+    this.selectedPostgresFrameLevel = frame;
+  }
+
+  private async frameVariables(frame: number): Promise<PlApiStackVariable[]> {
+    const cached = this.variablesByPostgresFrameLevel.get(frame);
+    if (cached) return cached;
+    await this.selectPostgresFrame(frame);
+    const variables = await this.listenerExecutor.getVariables();
+    this.variablesByPostgresFrameLevel.set(frame, variables);
+    return variables;
   }
 
   private displayValue(v: import("../postgres/index.js").PlApiValue): string {

@@ -164,8 +164,20 @@ describe("DAP human debug lifecycle", () => {
         });
         for (const { name, value } of variables.body.variables) values.set(name, value);
       }
+      const evaluatedN = await dc.evaluateRequest({
+        context: "watch",
+        expression: "n",
+        frameId,
+      });
+      const evaluatedResult = await dc.evaluateRequest({
+        context: "watch",
+        expression: "result",
+        frameId,
+      });
       expect(values.get("n")).toBe(expected.n);
       expect(values.get("result")).toBe(expected.result);
+      expect(evaluatedN.body.result).toBe(expected.n);
+      expect(evaluatedResult.body.result).toBe(expected.result);
       if (expected !== expectedReturns.at(-1)) {
         const nextStop = dc.waitForEvent("stopped", 15_000);
         await dc.continueRequest({ threadId: stopped.body.threadId });

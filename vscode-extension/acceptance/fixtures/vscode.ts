@@ -549,7 +549,10 @@ export async function launchVSCode(options: LaunchVSCodeOptions = {}): Promise<V
         ]);
       },
       async resetWorkbenchUI() {
-        const state = await runAcceptanceCommand("postgresql-workbench.acceptance.resetWorkbench");
+        const state = await runAcceptanceCommand(
+          "postgresql-workbench.acceptance.resetWorkbench",
+          10_000,
+        );
         const result = state.result as { remainingTabCount?: unknown } | undefined;
         if (result?.remainingTabCount !== 0) {
           throw new Error(

@@ -67,8 +67,11 @@
   the frame requested by the DAP client instead of reusing PostgreSQL's current
   frame
 - Made stack-frame and variable handles unique across recursive suspensions and
-  serialized frame selection with variable inspection, preventing VS Code from
-  displaying stale or empty scopes while continuing through repeated stops
+  serialized frame selection with variable inspection; each suspended frame now
+  serves one immutable variable snapshot to Arguments, Locals, watches, and
+  inline values instead of repeatedly stressing the pldebugger proxy
+- Continued past an exact residual technical entry stop after releasing its
+  temporary global breakpoint, without skipping user breakpoints on that line
 - Kept standalone source retrieval independent from Workbench indexing through
   standard positive DAP source references when no host URI is available, without
   inventing an adapter-owned fallback URI
