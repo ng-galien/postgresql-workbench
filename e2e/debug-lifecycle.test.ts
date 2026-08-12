@@ -116,12 +116,19 @@ describe("DAP human debug lifecycle", () => {
     expect(sourcePath).toMatch(/^code\+moniker:\/\//);
 
     const initialized = dc.waitForEvent("initialized", 15_000);
-    await dc.initializeRequest();
+    // VS Code uses zero-based editor lines in its DAP session. Prove that the
+    // adapter converts that client convention to PostgreSQL's one-based lines.
+    await dc.initializeRequest({
+      adapterID: "plpgsql",
+      linesStartAt1: false,
+      columnsStartAt1: false,
+      pathFormat: "path",
+    });
     await initialized;
 
     const pending = await dc.setBreakpointsRequest({
       source: { path: sourcePath },
-      breakpoints: [{ line: 12 }],
+      breakpoints: [{ line: 11 }],
     });
     expect(pending.body.breakpoints[0]?.verified).toBe(false);
 
@@ -150,7 +157,7 @@ describe("DAP human debug lifecycle", () => {
     for (const expected of expectedReturns) {
       expect(stopped.body.reason).toBe("breakpoint");
       const stack = await dc.stackTraceRequest({ threadId: stopped.body.threadId });
-      expect(stack.body.stackFrames[0]?.line).toBe(12);
+      expect(stack.body.stackFrames[0]?.line).toBe(11);
       const frameId = stack.body.stackFrames[0].id;
       expect(seenFrameIds.has(frameId)).toBe(false);
       seenFrameIds.add(frameId);

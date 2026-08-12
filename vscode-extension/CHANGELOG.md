@@ -72,6 +72,12 @@
   inline values instead of repeatedly stressing the pldebugger proxy
 - Continued past an exact residual technical entry stop after releasing its
   temporary global breakpoint, without skipping user breakpoints on that line
+- Used the actually suspended PostgreSQL stack frame, rather than the differing
+  `pldbg_continue()` tuple, to identify breakpoints and residual entry stops
+- Normalized DAP client line bases at the protocol boundary so VS Code's
+  zero-based editor breakpoints map to PostgreSQL's one-based source lines
+- Restored watch evaluation without an explicit stack selection by treating DAP
+  frame ID `0` as the current PostgreSQL frame
 - Kept standalone source retrieval independent from Workbench indexing through
   standard positive DAP source references when no host URI is available, without
   inventing an adapter-owned fallback URI

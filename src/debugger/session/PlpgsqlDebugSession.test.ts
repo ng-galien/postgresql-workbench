@@ -88,8 +88,12 @@ describe("PlpgsqlDebugSession stack frames", () => {
       throw new Error("The syntax parser must not be used while stepping");
     });
     const steps = [
-      { oid: 4242, line: 4, md5: "" },
-      { oid: 4242, line: 8, md5: "" },
+      { oid: 4242, line: 6, md5: "" },
+      { oid: 4242, line: 10, md5: "" },
+    ];
+    const stackStops = [
+      { oid: 4242, line: 4 },
+      { oid: 4242, line: 8 },
     ];
     const stopped: Array<{ reason: string; line?: number }> = [];
     const internal = session as unknown as {
@@ -103,9 +107,9 @@ describe("PlpgsqlDebugSession stack frames", () => {
         step: () => Promise<{ oid: number; line: number; md5: string } | null>,
         reason: string,
       ): Promise<void>;
+      currentStopPosition(): Promise<{ oid: number; line: number } | undefined>;
       sendStoppedAndReset(reason: string, source?: { line?: number }): void;
       sourceForPosition(oid: number, line: number): Promise<{ line: number }>;
-      currentStopSource(): Promise<undefined>;
     };
     internal.entryBreakpointReleased = true;
     internal.entryStopPosition = { oid: 4242, line: 4 };
@@ -115,7 +119,7 @@ describe("PlpgsqlDebugSession stack frames", () => {
         return steps.shift() ?? null;
       },
     };
-    internal.currentStopSource = async () => undefined;
+    internal.currentStopPosition = async () => stackStops.shift();
     internal.sourceForPosition = async (_oid, line) => ({ line });
     internal.sendStoppedAndReset = (reason, source) => {
       stopped.push({ reason, line: source?.line });
@@ -125,6 +129,25 @@ describe("PlpgsqlDebugSession stack frames", () => {
 
     expect(steps).toEqual([]);
     expect(stopped).toEqual([{ reason: "breakpoint", line: 8 }]);
+    expect(internal.entryStopPosition).toBeUndefined();
+  });
+
+  it("uses the current PostgreSQL frame for absent or zero DAP frame IDs", () => {
+    const session = new PlpgsqlDebugSession(async () => {
+      throw new Error("The syntax parser must not be used to resolve a DAP frame");
+    });
+    const internal = session as unknown as {
+      frameLevelById: Map<number, number>;
+      postgresFrameLevelForEvaluation(frameId: number | undefined): number | undefined;
+      selectedPostgresFrameLevel: number | undefined;
+    };
+    internal.selectedPostgresFrameLevel = 3;
+    internal.frameLevelById.set(17, 2);
+
+    expect(internal.postgresFrameLevelForEvaluation(undefined)).toBe(3);
+    expect(internal.postgresFrameLevelForEvaluation(0)).toBe(3);
+    expect(internal.postgresFrameLevelForEvaluation(17)).toBe(2);
+    expect(internal.postgresFrameLevelForEvaluation(99)).toBeUndefined();
   });
 
   it("does not reuse DAP variable handles across suspended states", () => {

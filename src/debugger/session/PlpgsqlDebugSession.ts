@@ -295,6 +295,10 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
 
   constructor(private readonly syntaxParser: () => Promise<SyntaxParser>) {
     super("postgresql-workbench-debug.log");
+    // PostgreSQL and pldebugger report one-based lines. DAP clients advertise
+    // their own convention during initialize, so every protocol boundary must
+    // use DebugSession's conversion helpers instead of assuming a shared base.
+    this.setDebuggerLinesStartAt1(true);
   }
 
   protected initializeRequest(
@@ -561,7 +565,8 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
     );
 
     for (const bp of breakpoints) {
-      const bodyLine = bp.line - bodyOffset;
+      const debuggerLine = this.convertClientLineToDebugger(bp.line);
+      const bodyLine = debuggerLine - bodyOffset;
 
       if (bodyLine < 1 || (steppable && !steppable.has(bodyLine))) {
         results.push({ id: bp.id, verified: false, line: bp.line });
@@ -806,7 +811,9 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
             )
           : undefined;
 
-        const absLine = frame.line + (cached?.bodyLineOffset ?? 0);
+        const absLine = this.convertDebuggerLineToClient(
+          frame.line + (cached?.bodyLineOffset ?? 0),
+        );
         stackFrames.push(
           new StackFrame(frameId, funcDef?.name ?? `<oid:${frame.oid}>`, source, absLine),
         );
@@ -1018,10 +1025,7 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
     try {
       const vars = await this.runInspection(async () => {
         if (this.lifecycle.state !== "suspended") return [];
-        const postgresFrameLevel =
-          args.frameId === undefined
-            ? (this.selectedPostgresFrameLevel ?? 0)
-            : this.frameLevelById.get(args.frameId);
+        const postgresFrameLevel = this.postgresFrameLevelForEvaluation(args.frameId);
         if (postgresFrameLevel === undefined) return [];
         return this.frameVariables(postgresFrameLevel);
       });
@@ -1218,12 +1222,6 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
     this.sendEvent(new Event(DEBUG_SESSION_STATUS_EVENT, status));
   }
 
-  private async currentStopSource(): Promise<DebugSessionSource | undefined> {
-    const frame = await this.currentStopPosition();
-    if (!frame) return undefined;
-    return this.sourceForPosition(frame.oid, frame.line);
-  }
-
   private async currentStopPosition(): Promise<DebugStopPosition | undefined> {
     if (!this.listenerExecutor) return undefined;
     const frame = (await this.listenerExecutor.getStack())[0];
@@ -1305,15 +1303,22 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
     try {
       let step = await this.runStepCommand(stepFn);
       while (step && step.oid !== 0) {
-        if (this.isReleasedTechnicalEntryStop(step)) {
-          log(`safeStep: ignoring residual released entry stop oid=${step.oid} line=${step.line}`);
+        // pldbg_continue() and pldbg_get_stack() do not always report the same
+        // line for a suspension. The stack is what DAP clients display, so it is
+        // the authoritative identity for breakpoints and the technical entry.
+        const stop = (await this.currentStopPosition().catch(() => undefined)) ?? step;
+        log(`safeStep: stopped raw=${step.oid}:${step.line} stack=${stop.oid}:${stop.line}`);
+        if (this.isReleasedTechnicalEntryStop(stop)) {
+          log(`safeStep: ignoring residual released entry stop oid=${stop.oid} line=${stop.line}`);
+          // The copied entry breakpoint can surface once after its release.
+          // Consume that identity before continuing so this recovery can never
+          // turn into an automatic chain of continue requests.
+          this.entryStopPosition = undefined;
           step = await this.runStepCommand(() => this.listenerExecutor.stepContinue());
           continue;
         }
-        const bpInfo = this.getBreakpointInfo(step.oid, step.line);
-        const source =
-          (await this.currentStopSource().catch(() => undefined)) ??
-          (await this.sourceForPosition(step.oid, step.line).catch(() => undefined));
+        const bpInfo = this.getBreakpointInfo(stop.oid, stop.line);
+        const source = await this.sourceForPosition(stop.oid, stop.line).catch(() => undefined);
 
         if (bpInfo?.logMessage || bpInfo?.condition) {
           const vars = await this.listenerExecutor.getVariables();
@@ -1335,10 +1340,10 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
         }
 
         if (this.exceptionFilters.size > 0) {
-          const cached = await this.getSource(step.oid);
+          const cached = await this.getSource(stop.oid);
           if (cached) {
             const handler = cached.analysis.exceptionHandlers.find(
-              (eh) => step!.line === eh.startLine,
+              (eh) => stop.line === eh.startLine,
             );
             if (handler) {
               const shouldStop =
@@ -1371,6 +1376,13 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
         true,
       );
     }
+  }
+
+  private postgresFrameLevelForEvaluation(frameId: number | undefined): number | undefined {
+    if (frameId === undefined || frameId === 0) {
+      return this.selectedPostgresFrameLevel ?? 0;
+    }
+    return this.frameLevelById.get(frameId);
   }
 
   /**
