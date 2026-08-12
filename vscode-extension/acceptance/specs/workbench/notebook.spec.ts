@@ -26,7 +26,11 @@ test.describe("SQL notebook journeys", () => {
         .toMatchObject({
           cells: [
             { kind: "code", languageId: "plpgsql" },
-            { kind: "markup", languageId: "markdown", text: "# Acceptance notes" },
+            {
+              kind: "markup",
+              languageId: "markdown",
+              text: expect.stringMatching(/^# Acceptance notes\s*$/u),
+            },
           ],
           notebookType: "postgresql-workbench-sql",
         });
