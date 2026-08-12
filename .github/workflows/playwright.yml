@@ -18,7 +18,7 @@ jobs:
             package-lock.json
             vscode-extension/package-lock.json
       - run: sudo apt-get update
-      - run: sudo apt-get install -y xvfb
+      - run: sudo apt-get install -y scrot xvfb
       - run: npm ci
       - run: npm --prefix vscode-extension ci
       - name: Report runner resources
@@ -30,9 +30,26 @@ jobs:
       - name: Probe VS Code and extension bootstrap
         env:
           DEBUG: pw:browser
-        run: >-
-          xvfb-run -a -s "-screen 0 1600x1000x24"
-          npm --prefix vscode-extension run test:bootstrap
+          PGWB_PLAYWRIGHT_MINIMAL_DIAGNOSTICS: "1"
+        run: |
+          xvfb-run -a -s "-screen 0 1600x1000x24" bash -c '
+            mkdir -p vscode-extension/test-results
+            (
+              sleep 15
+              scrot vscode-extension/test-results/runner-screen-15s.png
+              sleep 10
+              scrot vscode-extension/test-results/runner-screen-25s.png
+              sleep 10
+              scrot vscode-extension/test-results/runner-screen-35s.png
+            ) &
+            capture_pid=$!
+            set +e
+            npm --prefix vscode-extension run test:bootstrap
+            status=$?
+            kill "$capture_pid" 2>/dev/null || true
+            wait "$capture_pid" 2>/dev/null || true
+            exit "$status"
+          '
       - name: Upload Playwright evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

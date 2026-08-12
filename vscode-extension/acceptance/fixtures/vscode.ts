@@ -376,6 +376,7 @@ export interface LaunchVSCodeOptions {
 }
 
 export async function launchVSCode(options: LaunchVSCodeOptions = {}): Promise<VSCodeInstance> {
+  const minimalDiagnostics = process.env.PGWB_PLAYWRIGHT_MINIMAL_DIAGNOSTICS === "1";
   const activationTimeout = options.activationTimeout ?? 30_000;
   const viewTimeout = options.viewTimeout ?? 30_000;
   const windowTimeout = options.windowTimeout ?? 30_000;
@@ -451,12 +452,16 @@ export async function launchVSCode(options: LaunchVSCodeOptions = {}): Promise<V
         `--extensionDevelopmentPath=${extensionRoot}`,
         workspace,
       ],
-      recordVideo: { dir: join(artifactsRoot, "video"), size: { width: 1440, height: 900 } },
+      recordVideo: minimalDiagnostics
+        ? undefined
+        : { dir: join(artifactsRoot, "video"), size: { width: 1440, height: 900 } },
     });
     app.process().stdout?.pipe(createWriteStream(join(artifactsRoot, "electron-stdout.log")));
     app.process().stderr?.pipe(createWriteStream(join(artifactsRoot, "electron-stderr.log")));
-    await app.context().tracing.start({ screenshots: true, snapshots: true });
-    tracingStarted = true;
+    if (!minimalDiagnostics) {
+      await app.context().tracing.start({ screenshots: true, snapshots: true });
+      tracingStarted = true;
+    }
     recordBootstrapStage("waiting-for-vscode-window");
     const page = await waitForVSCodeWindow(app, windowTimeout);
     recordBootstrapStage("waiting-for-extension-activation");
