@@ -25,7 +25,7 @@ jobs:
         env:
           DEBUG: pw:browser
         run: >-
-          xvfb-run -a -s "-screen 0 1600x1000x24"
+          dbus-run-session -- xvfb-run -a -s "-screen 0 1600x1000x24"
           npm --prefix vscode-extension run test:acceptance --
           acceptance.spec.ts
           --grep "phase 1 — opens the graph from a TreeView drop"
