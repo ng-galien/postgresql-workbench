@@ -170,8 +170,12 @@ describe("DAP client e2e", () => {
     expect(breakpoint.body.breakpoints[0]?.verified).toBe(true);
 
     await runAndWaitForStop(dc, () => dc.continueRequest({ threadId }));
-    const recursiveStack = await dc.stackTraceRequest({ threadId });
-    expect(recursiveStack.body.stackFrames.length).toBeGreaterThanOrEqual(3);
+    let recursiveStack = await dc.stackTraceRequest({ threadId });
+    for (let returns = 1; returns < 7 && recursiveStack.body.stackFrames.length < 4; returns++) {
+      await runAndWaitForStop(dc, () => dc.continueRequest({ threadId }));
+      recursiveStack = await dc.stackTraceRequest({ threadId });
+    }
+    expect(recursiveStack.body.stackFrames).toHaveLength(4);
 
     const argumentValue = async (frameId: number) => {
       const scopes = await dc.scopesRequest({ frameId });
@@ -181,8 +185,11 @@ describe("DAP client e2e", () => {
       return args.body.variables.find((variable) => variable.name === "n")?.value;
     };
 
-    expect(await argumentValue(recursiveStack.body.stackFrames[0].id)).toBe("2");
-    expect(await argumentValue(recursiveStack.body.stackFrames[1].id)).toBe("3");
+    const values: Array<string | undefined> = [];
+    for (const frame of recursiveStack.body.stackFrames) {
+      values.push(await argumentValue(frame.id));
+    }
+    expect(values).toEqual(["2", "3", "4", "5"]);
 
     await dc.disconnectRequest();
   });
