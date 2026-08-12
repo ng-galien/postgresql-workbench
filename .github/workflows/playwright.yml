@@ -22,6 +22,8 @@ jobs:
       - run: npm ci
       - run: npm --prefix vscode-extension ci
       - name: Run one Playwright scenario
+        env:
+          DEBUG: pw:browser
         run: >-
           xvfb-run -a -s "-screen 0 1600x1000x24"
           npm --prefix vscode-extension run test:acceptance --
