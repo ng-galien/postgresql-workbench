@@ -114,6 +114,11 @@ verify the real VS Code and PostgreSQL paths affected by the release.
   crashes the Electron renderer with code 5 without marking the container
   `OOMKilled`, and making `xvfb-run` PID 1 prevents its `SIGUSR1` readiness
   handshake.
+- Do not enable Playwright `recordVideo` or trace screenshots/snapshots for the
+  VS Code Electron renderer on GitHub-hosted Linux runners: that instrumentation
+  can leave the renderer unresponsive even though VS Code created its window.
+  CI uses `scripts/run-playwright-ci.sh` to retain VS Code logs and a raw
+  1600x1000 Xvfb screenshot on failure; local runs keep the richer artifacts.
 - `playwright.bootstrap.config.ts` is the database-free runner smoke. Keep it
   separate from the full acceptance suite so Electron or extension bootstrap
   failures are diagnosed without indexing or PostgreSQL fixture noise.

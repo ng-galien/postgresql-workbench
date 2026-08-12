@@ -43,7 +43,7 @@ jobs:
       - name: Install integration test dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb
+          sudo apt-get install -y scrot xvfb
 
       - name: Start PostgreSQL integration fixture
         run: npm run test:e2e:up
@@ -52,7 +52,9 @@ jobs:
       - name: VS Code Technical
         run: xvfb-run -a npm --prefix vscode-extension test
       - name: Playwright
-        run: xvfb-run -a -s "-screen 0 1600x1000x24" npm --prefix vscode-extension run test:acceptance
+        run: >-
+          xvfb-run -a -s "-screen 0 1600x1000x24"
+          bash vscode-extension/scripts/run-playwright-ci.sh test:acceptance
       - name: Upload Playwright evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

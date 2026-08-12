@@ -376,7 +376,11 @@ export interface LaunchVSCodeOptions {
 }
 
 export async function launchVSCode(options: LaunchVSCodeOptions = {}): Promise<VSCodeInstance> {
-  const minimalDiagnostics = process.env.PGWB_PLAYWRIGHT_MINIMAL_DIAGNOSTICS === "1";
+  // Video recording and trace snapshots can deadlock VS Code's Electron renderer on
+  // GitHub-hosted Linux runners. Keep the richer artifacts for local diagnosis;
+  // CI captures the Xvfb root window and VS Code logs instead.
+  const minimalDiagnostics =
+    process.env.CI === "true" || process.env.PGWB_PLAYWRIGHT_MINIMAL_DIAGNOSTICS === "1";
   const activationTimeout = options.activationTimeout ?? 30_000;
   const viewTimeout = options.viewTimeout ?? 30_000;
   const windowTimeout = options.windowTimeout ?? 30_000;
