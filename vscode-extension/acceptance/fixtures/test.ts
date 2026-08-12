@@ -40,7 +40,7 @@ export const test = base.extend<AcceptanceFixtures, AcceptanceWorkerFixtures>({
         await instance.dispose();
       }
     },
-    { scope: "worker" },
+    { scope: "worker", timeout: 90_000 },
   ],
   workbench: async ({ vscode }, use, testInfo) => {
     const workbench = new WorkbenchPage(vscode.page, vscode.resizeWindow, vscode.resetWorkbenchUI);

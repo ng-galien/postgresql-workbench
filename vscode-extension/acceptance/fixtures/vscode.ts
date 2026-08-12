@@ -52,11 +52,15 @@ async function waitForCommand(
 
 interface ElectronWindowState {
   area: number;
+  devicePixelRatio: number;
   focused: boolean;
   id: number;
+  rendererHeight: number;
+  rendererWidth: number;
   title: string;
   url: string;
   visible: boolean;
+  workbenchActivityVisible: boolean;
 }
 
 async function electronWindowState(
@@ -65,7 +69,7 @@ async function electronWindowState(
 ): Promise<ElectronWindowState> {
   const browserWindow = await app.browserWindow(page);
   try {
-    return await browserWindow.evaluate((window) => {
+    const state = await browserWindow.evaluate((window) => {
       const [width, height] = window.getContentSize();
       return {
         area: width * height,
@@ -76,9 +80,49 @@ async function electronWindowState(
         visible: window.isVisible(),
       };
     });
+    const renderer = await page.evaluate(() => ({
+      devicePixelRatio: window.devicePixelRatio,
+      height: window.innerHeight,
+      width: window.innerWidth,
+    }));
+    return {
+      ...state,
+      devicePixelRatio: renderer.devicePixelRatio,
+      rendererHeight: renderer.height,
+      rendererWidth: renderer.width,
+      workbenchActivityVisible: await page
+        .getByLabel(workbenchActivityLabel, { exact: true })
+        .first()
+        .isVisible()
+        .catch(() => false),
+    };
   } finally {
     await browserWindow.dispose();
   }
+}
+
+async function writeWindowFailureDiagnostic(
+  app: ElectronApplication,
+  name: string,
+  timeout: number,
+): Promise<ElectronWindowState[]> {
+  const windows: ElectronWindowState[] = [];
+  let snapshot = 0;
+  for (const page of app.windows()) {
+    if (page.isClosed()) continue;
+    const state = await electronWindowState(app, page).catch(() => undefined);
+    if (!state) continue;
+    windows.push(state);
+    snapshot += 1;
+    await page
+      .screenshot({ path: join(artifactsRoot, `${name}-window-${snapshot}.png`) })
+      .catch(() => undefined);
+  }
+  writeFileSync(
+    join(artifactsRoot, `${name}.json`),
+    `${JSON.stringify({ timeout, windows }, null, 2)}\n`,
+  );
+  return windows;
 }
 
 async function waitForVSCodeWindow(app: ElectronApplication, timeout: number): Promise<Page> {
@@ -98,8 +142,9 @@ async function waitForVSCodeWindow(app: ElectronApplication, timeout: number): P
     if (candidates[0]) return candidates[0].page;
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
+  const windows = await writeWindowFailureDiagnostic(app, "vscode-window-error", timeout);
   throw new Error(
-    `No visible VS Code Electron window appeared within ${timeout} ms. BrowserWindow states:\n${JSON.stringify(lastStates, null, 2)}`,
+    `No visible VS Code Electron window appeared within ${timeout} ms. BrowserWindow states:\n${JSON.stringify(windows.length > 0 ? windows : lastStates, null, 2)}. Snapshots: ${artifactsRoot}/vscode-window-error-window-*.png`,
   );
 }
 
@@ -119,8 +164,9 @@ async function waitForWorkbenchWindow(app: ElectronApplication, timeout: number)
     lastStates = states;
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
+  const windows = await writeWindowFailureDiagnostic(app, "workbench-window-error", timeout);
   throw new Error(
-    `No visible VS Code window exposed the ${JSON.stringify(workbenchActivityLabel)} activity within ${timeout} ms. BrowserWindow states:\n${JSON.stringify(lastStates, null, 2)}`,
+    `No visible VS Code window exposed the ${JSON.stringify(workbenchActivityLabel)} activity within ${timeout} ms. BrowserWindow states:\n${JSON.stringify(windows.length > 0 ? windows : lastStates, null, 2)}. Snapshots: ${artifactsRoot}/workbench-window-error-window-*.png`,
   );
 }
 
@@ -317,10 +363,6 @@ export async function launchVSCode(): Promise<VSCodeInstance> {
     });
     await app.context().tracing.start({ screenshots: true, snapshots: true });
     tracingStarted = true;
-    const page = await waitForWorkbenchWindow(app, 30_000);
-    const workbenchActivity = page.getByLabel(workbenchActivityLabel, { exact: true }).first();
-    await resizeWindow(app, page, 1440, 900);
-    await workbenchActivity.click();
     let ready = await waitForActivation(
       readyFile,
       undefined,
@@ -342,6 +384,8 @@ export async function launchVSCode(): Promise<VSCodeInstance> {
       return ready;
     };
     await runAcceptanceCommand("postgresql-workbench-connections.focus");
+    const page = await waitForWorkbenchWindow(app, 30_000);
+    await resizeWindow(app, page, 1440, 900);
     return {
       app: runningApp,
       page,
