@@ -1,0 +1,39 @@
+name: Playwright Debug
+
+on:
+  workflow_dispatch:
+
+jobs:
+  playwright:
+    name: Single Playwright scenario
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            vscode-extension/package-lock.json
+      - run: sudo apt-get update
+      - run: sudo apt-get install -y xvfb
+      - run: npm ci
+      - run: npm --prefix vscode-extension ci
+      - name: Run one Playwright scenario
+        run: >-
+          xvfb-run -a -s "-screen 0 1600x1000x24"
+          npm --prefix vscode-extension run test:acceptance --
+          acceptance.spec.ts
+          --grep "phase 1 — opens the graph from a TreeView drop"
+      - name: Upload Playwright evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: playwright-debug-results
+          path: vscode-extension/test-results/**
+          if-no-files-found: ignore
+      - name: Stop acceptance database fixture
+        if: always()
+        run: docker compose -f demo/docker-compose.yml down -v

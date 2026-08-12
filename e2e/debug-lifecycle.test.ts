@@ -296,6 +296,7 @@ describe("DAP human debug lifecycle", () => {
       name: "public.test_inner",
       path: topFrame?.source?.path,
       line: topFrame?.line,
+      sourceReference: 0,
     });
     expect(
       statuses.some(

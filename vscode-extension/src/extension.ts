@@ -1653,8 +1653,6 @@ export function activate(context: vscode.ExtensionContext): PlpgsqlExtensionApi 
     await callSiteConnections.clearAll();
     await vscode.commands.executeCommand("workbench.action.closePanel");
     await workbenchGraph.close();
-    const [neutralRoot] = await treeProvider.getChildren();
-    if (neutralRoot) await graphTreeSync.resetSelection(neutralRoot);
     graphTreeSync.invalidateDatabaseContext();
   };
   const syncGraphFromTree = graphTreeSync.bind();

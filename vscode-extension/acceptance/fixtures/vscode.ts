@@ -21,6 +21,20 @@ const activationTarget = resolve(workspace, "debug-fib.sql");
 const artifactsRoot = resolve(extensionRoot, "test-results", "acceptance-worker");
 const workbenchActivityLabel = "PostgreSQL Workbench";
 
+async function bounded<T>(promise: Promise<T>, timeout: number): Promise<T | undefined> {
+  return Promise.race([
+    promise.catch(() => undefined),
+    new Promise<undefined>((resolve) => setTimeout(resolve, timeout)),
+  ]);
+}
+
+function recordBootstrapStage(stage: string): void {
+  writeFileSync(
+    join(artifactsRoot, "bootstrap-stage.json"),
+    `${JSON.stringify({ stage, timestamp: new Date().toISOString() }, null, 2)}\n`,
+  );
+}
+
 interface ExtensionReadyState {
   activationId: string;
   commandNonce?: string;
@@ -121,10 +135,11 @@ async function writeWindowFailureDiagnostic(
   for (const page of app.windows()) {
     if (page.isClosed()) continue;
     snapshot += 1;
-    await page
-      .screenshot({ path: join(artifactsRoot, `${name}-window-${snapshot}.png`) })
-      .catch(() => undefined);
-    const state = await electronWindowState(app, page).catch(() => undefined);
+    await bounded(
+      page.screenshot({ path: join(artifactsRoot, `${name}-window-${snapshot}.png`) }),
+      2_000,
+    );
+    const state = await bounded(electronWindowState(app, page), 2_000);
     if (!state) continue;
     windows.push(state);
   }
@@ -142,7 +157,7 @@ async function waitForVSCodeWindow(app: ElectronApplication, timeout: number): P
     const candidates: Array<{ page: Page; state: ElectronWindowState }> = [];
     for (const page of app.windows()) {
       if (page.isClosed()) continue;
-      const state = await electronWindowState(app, page).catch(() => undefined);
+      const state = await bounded(electronWindowState(app, page), 2_000);
       if (state?.visible) candidates.push({ page, state });
     }
     lastStates = candidates.map(({ state }) => state);
@@ -165,7 +180,7 @@ async function waitForWorkbenchWindow(app: ElectronApplication, timeout: number)
     const states: ElectronWindowState[] = [];
     for (const page of app.windows()) {
       if (page.isClosed()) continue;
-      const state = await electronWindowState(app, page).catch(() => undefined);
+      const state = await bounded(electronWindowState(app, page), 2_000);
       if (!state?.visible) continue;
       states.push(state);
       const activity = page.getByLabel(workbenchActivityLabel, { exact: true }).first();
@@ -436,6 +451,13 @@ export async function launchVSCode(): Promise<VSCodeInstance> {
     app.process().stderr?.pipe(createWriteStream(join(artifactsRoot, "electron-stderr.log")));
     await app.context().tracing.start({ screenshots: true, snapshots: true });
     tracingStarted = true;
+    recordBootstrapStage("waiting-for-vscode-window");
+    const page = await waitForVSCodeWindow(app, 30_000);
+    recordBootstrapStage("opening-workbench-activity");
+    const workbenchActivity = page.getByLabel(workbenchActivityLabel, { exact: true }).first();
+    await workbenchActivity.waitFor({ state: "visible", timeout: 30_000 });
+    await workbenchActivity.click({ timeout: 5_000 });
+    recordBootstrapStage("waiting-for-extension-activation");
     let ready = await waitForActivation(
       readyFile,
       undefined,
@@ -443,6 +465,7 @@ export async function launchVSCode(): Promise<VSCodeInstance> {
       "PostgreSQL Workbench extension activation",
       app,
     );
+    recordBootstrapStage("extension-ready");
 
     const runningApp = app;
     const runAcceptanceCommand = async (
@@ -461,8 +484,9 @@ export async function launchVSCode(): Promise<VSCodeInstance> {
       return ready;
     };
     await runAcceptanceCommand("postgresql-workbench-connections.focus");
-    const page = await waitForWorkbenchWindow(app, 30_000);
+    await waitForWorkbenchWindow(app, 30_000);
     await resizeWindow(app, page, 1440, 900);
+    recordBootstrapStage("ready");
     return {
       app: runningApp,
       page,
