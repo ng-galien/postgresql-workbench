@@ -1,0 +1,89 @@
+name: Bug report
+description: Report incorrect PostgreSQL Workbench behavior.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not include passwords, connection strings, private database data, or logs containing them.
+  - type: dropdown
+    id: capability
+    attributes:
+      label: Primary capability
+      description: Choose the primary capability. Maintainers apply the matching capability label during triage; cross-capability work may receive more than one.
+      options:
+        - Cockpit
+        - Scratchpads
+        - Testing and coverage
+        - Debugger
+        - Cross-capability or unsure
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: Describe the user need and its impact.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: Describe the intended user-visible behavior, constraints, and important non-behavior.
+      placeholder: |
+        - ...
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Describe what happens now, including useful error text.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include extension version, VS Code version, PostgreSQL version, and operating system when relevant.
+      value: |
+        - PostgreSQL Workbench:
+        - VS Code:
+        - PostgreSQL:
+        - Operating system:
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: List observable outcomes that demonstrate the behavior.
+      placeholder: |
+        - ...
+    validations:
+      required: true
+  - type: textarea
+    id: delivery
+    attributes:
+      label: Delivery requirements
+      description: Keep the delivery workflow explicit for the eventual implementation.
+      value: |
+        - Use a dedicated branch for this ticket; do not share an implementation branch with another ticket.
+        - Cover the user-visible workflow with a Playwright journey as the primary proof.
+        - Add focused unit, integration, or other internal tests when the code contract warrants them; these complement rather than replace the Playwright proof.
+        - After implementation is complete and all validations pass, obtain an independent read-only review as the final gate before delivery. Address actionable findings and rerun the relevant validations before delivery.
+    validations:
+      required: true

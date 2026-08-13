@@ -148,6 +148,42 @@ verify the real VS Code and PostgreSQL paths affected by the release.
 - Keep authentication checks, repository settings, workflow dispatch, run
   polling, and Actions log retrieval outside the sandbox for the entire task.
 
+## GitHub issue workflow
+
+- `scripts/issue-workflow.mjs` is the canonical source for technical labels,
+  durable capabilities, body sections, and delivery requirements. The script
+  consumes it directly. GitHub requires static forms, so
+  `scripts/check-issue-templates.mjs`, run by `npm run check`, compares each
+  committed form byte-for-byte to its complete projection and rejects drift.
+- Use the repository issue forms in `.github/ISSUE_TEMPLATE/` for human-created
+  issues. `bug.yml` applies `bug`; `product-improvement.yml` applies
+  `enhancement`. Both capture the product capability, but GitHub forms cannot
+  convert a dropdown choice into a label dynamically.
+- Apply one technical label (`bug`, `enhancement`, `documentation`,
+  `dependencies`, or `github_actions`) and the relevant durable capability
+  label during triage: `capability:cockpit`, `capability:scratchpads`,
+  `capability:testing-coverage`, and/or `capability:debugger`. Use more than
+  one capability only for a genuine cross-capability workflow.
+- Agents can preview a body rendered from the canonical workflow without a GitHub write using
+  `node scripts/create-issue.mjs`. It requires a type, title, problem,
+  expected behavior, and acceptance-criteria files, which must not be empty;
+  use `--context-file` for
+  optional context, and bug reports also require actual behavior, reproduction
+  steps, and environment files. The supported `--type` values are the technical
+  labels above. Add `--create` only when issue creation is explicitly
+  authorized. Pass one or more
+  `--capability capability:<name>` options so the approved labels are applied
+  with the issue.
+- Every implementation issue uses a dedicated branch; do not share an
+  implementation branch between tickets. A user-visible change needs a
+  Playwright journey as its primary proof. Add focused unit, integration, or
+  other tests when the affected code contract warrants them; they complement
+  rather than replace the Playwright proof.
+- Before delivery, run the relevant validations and obtain an independent
+  read-only review as the final gate. Address actionable findings and rerun the
+  relevant validations and review on the final diff. Never put passwords,
+  connection strings, or private database data in an issue.
+
 ## Change safety
 
 - Preserve unrelated user WIP and stage explicit paths only.

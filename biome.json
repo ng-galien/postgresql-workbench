@@ -10,6 +10,9 @@
       "site/**",
       "scripts/build-site.mjs",
       "scripts/dev-site.mjs",
+      "scripts/create-issue.mjs",
+      "scripts/check-issue-templates.mjs",
+      "scripts/issue-workflow.mjs",
       "!!**/dist/",
       "!!**/node_modules/"
     ]
