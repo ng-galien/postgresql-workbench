@@ -15,8 +15,8 @@ esbuild.mjs
 scripts/**
 code-moniker.fragment.toml
 icons/concepts/**
-!media/marketplace/**
 media/marketplace/raw/**
+media/marketplace/.gitignore
 .DS_Store
 *.sha256
 **/*.ts

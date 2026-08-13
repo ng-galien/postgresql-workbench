@@ -45,13 +45,20 @@ side margins without changing the layout used by the showcase scenes.
 
 ## Prepare and exercise the runner
 
-Prepare the PostgreSQL demo, build the extension and compile the showcase code:
+Package the target-specific VSIX named by `docs/marketplace-showcase.json`, then
+prepare the PostgreSQL demo and compile the showcase code:
 
 ```bash
+npm run package:ext
 npm run marketplace:media -- prepare
 ```
 
-Pass `--install` when the normal, user-facing VSIX should also be refreshed:
+Every `run` and `capture` command extracts that VSIX into a temporary directory,
+loads the extracted extension, and verifies its ID, version, and runtime path.
+This prevents a capture from silently exercising the development checkout.
+
+Pass `--install` to package and install the same VSIX into the normal VS Code
+profile as an additional manual preview step:
 
 ```bash
 npm run marketplace:media -- prepare --install

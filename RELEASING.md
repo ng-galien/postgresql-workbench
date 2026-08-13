@@ -22,15 +22,15 @@ Marketplace job.
 
 ### Triggers
 
-CI runs automatically for pull requests targeting `main`. It does not run
-automatically for direct pushes to `main`. It can also be started manually:
+CI runs automatically for pushes to `main` and pull requests targeting `main`.
+It can also be started manually:
 
 ```bash
 gh workflow run ci.yml --ref main
 ```
 
-If changes reached `main` without a pull request, run CI manually and wait for
-all jobs to succeed before creating a release tag.
+Wait for all jobs on the exact release-preparation commit to succeed before
+creating a release tag.
 
 ### Jobs
 
@@ -50,9 +50,13 @@ release and artifact-handling actions.
 | `Biome` | Installs root dependencies and runs `npm run check`. |
 | `Type Check` | Type-checks the DAP server and the VS Code extension. |
 | `Unit Tests` | Runs the root Vitest suite. |
-| `Integration Tests` | Starts `galien0xffffff/postgres-debugger:17`, loads the E2E and demo fixtures, runs the DAP tests and the real VS Code integration suite, then activates the extension and Code Moniker in a focused smoke test on the minimum supported VS Code 1.109.0. |
+| `DAP Integration` | Starts `galien0xffffff/postgres-debugger:17` and runs the real PostgreSQL DAP and Workbench integration suite. |
+| `VS Code Technical` | Runs the extension-host integration suite in a real VS Code instance. |
+| `Playwright` | Runs the end-user Workbench, notebook, and debugger journeys in VS Code and retains failure evidence. |
+| `VS Code Compatibility` | Activates the extension and Code Moniker on the minimum supported VS Code 1.109.0. |
 | `EnterpriseDB pldebugger Compatibility` | Builds and tests against the pinned unpatched EnterpriseDB pldebugger implementation. |
-| `Package Artifacts` | Builds the four native production VSIX files, validates their contents and executables, smoke-tests the standalone npm DAP with the matching Code Moniker native package, and uploads one target-specific VSIX artifact per platform. |
+| `Smoke standalone DAP` | Packs, installs, and smoke-tests the standalone npm DAP on Linux, macOS ARM64/x64, and Windows x64. |
+| `Package extension` | Builds, validates, and smoke-tests one target-specific VSIX for Linux x64, macOS ARM64/x64, and Windows x64. |
 
 The integration job uploads VS Code logs even when tests fail. Download the
 `vscode-test-logs` artifact from the failed workflow run before rerunning a
@@ -78,10 +82,10 @@ Start from a clean `main` synchronized with `origin/main`.
 1. Update the extension version and its lockfile:
 
    ```bash
-   npm --prefix vscode-extension version 1.0.1 --no-git-tag-version
+   npm --prefix vscode-extension version 1.1.0 --no-git-tag-version
    ```
 
-2. Add a dated, non-empty `## [1.0.1]` section to
+2. Add a dated, non-empty `## [1.1.0]` section to
    `vscode-extension/CHANGELOG.md`. The release workflow extracts GitHub Release
    notes from this exact heading.
 3. Update user documentation when behavior, requirements, commands, or
@@ -97,6 +101,7 @@ Start from a clean `main` synchronized with `origin/main`.
    npm run test:e2e
    npm run test:e2e:legacy
    npm --prefix vscode-extension run test:min-vscode
+   npm --prefix vscode-extension run test:acceptance
    npm run package:ext
    ```
 
@@ -116,7 +121,7 @@ Install the local artifact into a clean VS Code profile:
 
 ```bash
 code --install-extension \
-  vscode-extension/postgresql-workbench-1.0.1-darwin-arm64.vsix \
+  vscode-extension/postgresql-workbench-1.1.0-darwin-arm64.vsix \
   --force
 ```
 
@@ -131,8 +136,8 @@ Create an annotated tag whose version exactly matches
 `vscode-extension/package.json`:
 
 ```bash
-git tag -a extension-v1.0.1 -m "PostgreSQL Workbench 1.0.1"
-git push origin main extension-v1.0.1
+git tag -a extension-v1.1.0 -m "PostgreSQL Workbench 1.1.0"
+git push origin main extension-v1.1.0
 ```
 
 Pushing the tag starts the `Extension Release` workflow. Its jobs:

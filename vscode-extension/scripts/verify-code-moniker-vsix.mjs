@@ -20,7 +20,10 @@ import {
 
 const target = resolveCodeMonikerTarget();
 const targetPackage = CODE_MONIKER_TARGETS[target];
-const [argument = `postgresql-workbench-${process.env.npm_package_version ?? "1.0.0"}-${target}.vsix`] =
+const extensionVersion = JSON.parse(
+  readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+).version;
+const [argument = `postgresql-workbench-${process.env.npm_package_version ?? extensionVersion}-${target}.vsix`] =
   process.argv.slice(2);
 const vsix = resolve(argument);
 const zip = await JSZip.loadAsync(readFileSync(vsix));
@@ -33,6 +36,11 @@ const required = [
   "extension/SECURITY.md",
   "extension/SUPPORT.md",
   "extension/THIRD_PARTY_NOTICES.md",
+  "extension/media/marketplace/01-cockpit.gif",
+  "extension/media/marketplace/01-cockpit.png",
+  "extension/media/marketplace/02-sql-notebook.gif",
+  "extension/media/marketplace/03-tests-coverage.gif",
+  "extension/media/marketplace/04-debugger.gif",
   "extension/runtime/code-moniker/manifest.json",
   "extension/runtime/code-moniker/client/index.cjs",
   "extension/runtime/code-moniker/client/node.cjs",
@@ -48,6 +56,7 @@ if (missing.length > 0) {
 const forbidden = [...entries].filter(
   (entry) =>
     /(^|\/)node_modules\//.test(entry) ||
+    /(^|\/)media\/marketplace\/raw\//.test(entry) ||
     /(^|\/)test-workspace\//.test(entry) ||
     /\.wasm$/i.test(entry) ||
     /\.sha256$/i.test(entry) ||

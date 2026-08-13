@@ -8,6 +8,7 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  realpath,
   rm,
   stat,
   writeFile,
@@ -33,6 +34,7 @@ if (process.platform === "darwin" && !process.env.PATH?.split(":").includes(dock
 }
 
 const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+const configuredVsixPath = path.join(extensionRoot, manifest.extensionVsix);
 const [command = "help", ...args] = process.argv.slice(2);
 
 const commands = {
@@ -90,6 +92,7 @@ async function doctor() {
     "ffprobe",
     "screencapture",
     "osascript",
+    "unzip",
   ]) {
     const location = findBinary(binary);
     if (location) console.log(`✓ ${binary.padEnd(14)} ${location}`);
@@ -104,6 +107,13 @@ async function doctor() {
     failed = true;
   } else {
     console.log("✓ showcase runner installed");
+  }
+
+  if (!(await isReadableFile(configuredVsixPath))) {
+    console.log(`✗ showcase VSIX  missing ${path.relative(repoRoot, configuredVsixPath)}`);
+    failed = true;
+  } else {
+    console.log(`✓ showcase VSIX  ${path.relative(repoRoot, configuredVsixPath)}`);
   }
 
   if (process.platform === "darwin" && findBinary("screencapture")) {
@@ -159,9 +169,8 @@ async function prepare(...options) {
   if (options.includes("--install")) {
     console.log("Packaging and installing the current extension…");
     await run("npm", ["run", "package:ext"], { cwd: repoRoot });
-    const vsix = path.join(extensionRoot, manifest.extensionVsix);
-    await access(vsix, constants.R_OK);
-    await run("code", ["--install-extension", vsix, "--force"]);
+    await access(configuredVsixPath, constants.R_OK);
+    await run("code", ["--install-extension", configuredVsixPath, "--force"]);
   }
 
   console.log("✓ deterministic demo and showcase bundle are ready");
@@ -170,35 +179,41 @@ async function prepare(...options) {
 async function runScene(sceneId, ...options) {
   const scene = requireScene(sceneId);
   const { theme } = parseThemeOptions(options);
-  await startDemoDatabase(false);
-  await buildShowcase();
-  await executeShowcase(scene, false, theme);
+  await withShowcaseExtension(async (extension) => {
+    await startDemoDatabase(false);
+    await buildShowcase();
+    await executeShowcase(scene, false, theme, extension);
+  });
 }
 
 async function capture(sceneId, ...options) {
   const scene = requireScene(sceneId);
   const { theme, remaining } = parseThemeOptions(options);
   await ensureCaptureTools();
-  await startDemoDatabase(false);
-  if (!remaining.includes("--no-build")) await buildShowcase();
-  await executeShowcase(scene, true, theme);
-  await optimize(scene.id);
+  await withShowcaseExtension(async (extension) => {
+    await startDemoDatabase(false);
+    if (!remaining.includes("--no-build")) await buildShowcase();
+    await executeShowcase(scene, true, theme, extension);
+    await optimize(scene.id);
+  });
 }
 
 async function captureAll(...options) {
   const { theme } = parseThemeOptions(options);
   await ensureCaptureTools();
-  await startDemoDatabase(false);
-  await buildShowcase();
-  for (const scene of manifest.scenes) {
-    await executeShowcase(scene, true, theme);
-    await optimize(scene.id);
-  }
-  await validate();
-  await preview();
+  await withShowcaseExtension(async (extension) => {
+    await startDemoDatabase(false);
+    await buildShowcase();
+    for (const scene of manifest.scenes) {
+      await executeShowcase(scene, true, theme, extension);
+      await optimize(scene.id);
+    }
+    await validate();
+    await preview();
+  });
 }
 
-async function executeShowcase(scene, withCapture, theme) {
+async function executeShowcase(scene, withCapture, theme, extension) {
   await mkdir(rawRoot, { recursive: true });
   const controlDir = await mkdtemp(path.join(tmpdir(), `postgresql-workbench-${scene.id}-`));
   const profileDir = await mkdtemp("/private/tmp/pgw-showcase-");
@@ -225,6 +240,8 @@ async function executeShowcase(scene, withCapture, theme) {
           POSTGRESQL_WORKBENCH_SHOWCASE_CONTROL_DIR: controlDir,
           POSTGRESQL_WORKBENCH_SHOWCASE_PROFILE_DIR: profileDir,
           POSTGRESQL_WORKBENCH_SHOWCASE_THEME: theme,
+          POSTGRESQL_WORKBENCH_SHOWCASE_EXTENSION_PATH: extension.path,
+          POSTGRESQL_WORKBENCH_SHOWCASE_EXTENSION_VERSION: extension.version,
         },
         stdio: "inherit",
       },
@@ -263,6 +280,63 @@ async function executeShowcase(scene, withCapture, theme) {
     }
     await rm(controlDir, { recursive: true, force: true });
     await rm(profileDir, { recursive: true, force: true });
+  }
+}
+
+async function withShowcaseExtension(callback) {
+  const extension = await extractConfiguredVsix();
+  try {
+    return await callback(extension);
+  } finally {
+    await rm(extension.root, { recursive: true, force: true });
+    console.log(`✓ removed isolated VSIX ${extension.root}`);
+  }
+}
+
+async function extractConfiguredVsix() {
+  ensureBinary("unzip");
+  if (!(await isReadableFile(configuredVsixPath))) {
+    fail(`Missing configured showcase VSIX: ${configuredVsixPath}\n`);
+  }
+
+  const expectedPackage = JSON.parse(
+    await readFile(path.join(extensionRoot, "package.json"), "utf8"),
+  );
+  const expectedName =
+    `${expectedPackage.name}-${expectedPackage.version}-${process.platform}-${process.arch}.vsix`;
+  if (path.basename(configuredVsixPath) !== expectedName) {
+    fail(
+      `Configured showcase VSIX is ${path.basename(configuredVsixPath)}; ` +
+        `expected ${expectedName}.\n`,
+    );
+  }
+
+  const root = await mkdtemp(path.join(tmpdir(), "postgresql-workbench-showcase-vsix-"));
+  try {
+    await run("unzip", ["-q", configuredVsixPath, "-d", root]);
+    const extensionPath = await realpath(path.join(root, "extension"));
+    const extensionPackage = JSON.parse(
+      await readFile(path.join(extensionPath, "package.json"), "utf8"),
+    );
+    const expectedId = `${expectedPackage.publisher}.${expectedPackage.name}`;
+    const extensionId = `${extensionPackage.publisher}.${extensionPackage.name}`;
+    if (extensionId !== expectedId || extensionPackage.version !== expectedPackage.version) {
+      fail(
+        `Configured showcase VSIX contains ${extensionId}@${extensionPackage.version}; ` +
+          `expected ${expectedId}@${expectedPackage.version}.\n`,
+      );
+    }
+    if (!(await isReadableFile(path.join(extensionPath, extensionPackage.main)))) {
+      fail(`Configured showcase VSIX has no readable ${extensionPackage.main}.\n`);
+    }
+    console.log(
+      `✓ extracted ${path.basename(configuredVsixPath)} as ` +
+        `${extensionId}@${extensionPackage.version} in ${extensionPath}`,
+    );
+    return { root, path: extensionPath, version: extensionPackage.version };
+  } catch (error) {
+    await rm(root, { recursive: true, force: true });
+    throw error;
   }
 }
 

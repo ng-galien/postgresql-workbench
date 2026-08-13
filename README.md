@@ -93,8 +93,12 @@ Build the installable extension with:
 
 ```bash
 npm run package:ext
-code --install-extension vscode-extension/postgresql-workbench-1.0.0.vsix
+code --install-extension \
+  vscode-extension/postgresql-workbench-1.1.0-darwin-arm64.vsix \
+  --force
 ```
+
+Replace `darwin-arm64` with the target produced for your host.
 
 The CI jobs, release checklist, VSIX contract, tag convention, GitHub Release
 workflow, Marketplace publication procedure, and recovery steps are documented

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## [1.1.0] - 2026-08-13
+
+PostgreSQL Workbench 1.1.0 expands Cockpit and SQL scratchpad workflows and
+hardens recursive PL/pgSQL debugging across local and CI execution paths.
+
 ### PostgreSQL Workbench
 
 - Refined Cockpit graph cards with an exclusive drag handle, border-only

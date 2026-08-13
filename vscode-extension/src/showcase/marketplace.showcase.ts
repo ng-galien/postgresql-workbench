@@ -1,6 +1,6 @@
 import * as assert from "node:assert";
 import { constants } from "node:fs";
-import { access, mkdir, writeFile } from "node:fs/promises";
+import { access, mkdir, realpath, writeFile } from "node:fs/promises";
 import * as net from "node:net";
 import path from "node:path";
 import { TextDecoder } from "node:util";
@@ -16,6 +16,8 @@ import { buildWorkbenchObjects, type WorkbenchObjectModel } from "../workbenchTr
 const SCENE = process.env.POSTGRESQL_WORKBENCH_SHOWCASE_SCENE;
 const CONTROL_DIR = process.env.POSTGRESQL_WORKBENCH_SHOWCASE_CONTROL_DIR;
 const THEME = process.env.POSTGRESQL_WORKBENCH_SHOWCASE_THEME ?? "light";
+const EXPECTED_EXTENSION_PATH = process.env.POSTGRESQL_WORKBENCH_SHOWCASE_EXTENSION_PATH;
+const EXPECTED_EXTENSION_VERSION = process.env.POSTGRESQL_WORKBENCH_SHOWCASE_EXTENSION_VERSION;
 const SERVER = {
   id: "showcase:localhost:5434/demo:postgres",
   name: "postgres@localhost:5434/demo",
@@ -33,11 +35,30 @@ suite("PostgreSQL Workbench Marketplace showcase", function () {
   suiteSetup(async () => {
     assert.ok(SCENE, "POSTGRESQL_WORKBENCH_SHOWCASE_SCENE is required");
     assert.ok(CONTROL_DIR, "POSTGRESQL_WORKBENCH_SHOWCASE_CONTROL_DIR is required");
+    assert.ok(EXPECTED_EXTENSION_PATH, "POSTGRESQL_WORKBENCH_SHOWCASE_EXTENSION_PATH is required");
+    assert.ok(
+      EXPECTED_EXTENSION_VERSION,
+      "POSTGRESQL_WORKBENCH_SHOWCASE_EXTENSION_VERSION is required",
+    );
     assert.ok(await postgresAvailable(), "The PostgreSQL demo is not available on port 5434");
     await forceShowcaseTheme();
 
     const extension = vscode.extensions.getExtension<PlpgsqlExtensionApi>(EXT_ID);
     assert.ok(extension, "PostgreSQL Workbench extension is unavailable");
+    assert.strictEqual(
+      await realpath(extension.extensionPath),
+      await realpath(EXPECTED_EXTENSION_PATH),
+      "The showcase must load PostgreSQL Workbench from the extracted VSIX",
+    );
+    assert.strictEqual(
+      extension.packageJSON.version,
+      EXPECTED_EXTENSION_VERSION,
+      "The showcase must load the configured VSIX version",
+    );
+    process.stdout.write(
+      `Verified showcase extension ${EXT_ID}@${extension.packageJSON.version} ` +
+        `from ${extension.extensionPath}\n`,
+    );
     api = extension.isActive ? extension.exports : await extension.activate();
     await api.connectionManager.store.add(SERVER, "postgres");
     assert.strictEqual(
@@ -229,10 +250,10 @@ function coverageLine(statement: vscode.StatementCoverage): number {
 
 async function debuggerScene(api: PlpgsqlExtensionApi): Promise<void> {
   await resetShopDebugData(api);
-  const extensionUri = vscode.extensions.getExtension(EXT_ID)?.extensionUri;
-  assert.ok(extensionUri);
+  const workspace = vscode.workspace.workspaceFolders?.[0];
+  assert.ok(workspace, "The showcase demo workspace is unavailable");
   const callsite = await vscode.workspace.openTextDocument(
-    vscode.Uri.joinPath(extensionUri, "..", "demo", "debug-me.sql"),
+    vscode.Uri.joinPath(workspace.uri, "debug-me.sql"),
   );
   await vscode.window.showTextDocument(callsite, { preview: false, preserveFocus: false });
 
