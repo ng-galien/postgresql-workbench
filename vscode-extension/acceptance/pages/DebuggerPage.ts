@@ -9,6 +9,13 @@ export class DebuggerPage {
     private readonly page: Page,
     private readonly openWorkspaceFile: (fileName: string) => Promise<void>,
     private readonly inspectDebugState: () => Promise<DebugStateSnapshot>,
+    private readonly executeCommand: (
+      command:
+        | "workbench.action.debug.continue"
+        | "workbench.action.debug.stepInto"
+        | "workbench.action.debug.stepOver",
+      timeout?: number,
+    ) => Promise<void>,
   ) {
     this.quickInput = new QuickInput(page);
   }
@@ -53,8 +60,7 @@ export class DebuggerPage {
 
   async assignConnection(sql: string, connection: RegExp): Promise<void> {
     const line = await this.revealLine(sql);
-    const chooser = await this.nearestCodeLens(line, /Choose PostgreSQL connection/);
-    await chooser.click();
+    await this.clickNearestCodeLens(line, /Choose PostgreSQL connection/);
     await this.quickInput.chooseOption(connection);
     await this.quickInput.input.waitFor({ state: "hidden", timeout: 5_000 });
     await expect(await this.nearestCodeLens(line, /Debug PL\/pgSQL/)).toBeVisible({
@@ -69,8 +75,7 @@ export class DebuggerPage {
     expectedStopLine?: string,
   ): Promise<void> {
     const line = await this.revealLine(sql);
-    const debug = await this.nearestCodeLens(line, /Debug PL\/pgSQL/);
-    await debug.click();
+    await this.clickNearestCodeLens(line, /Debug PL\/pgSQL/);
     await this.expectRoutineEditor(sourceTab, routineSource, expectedStopLine);
   }
 
@@ -92,9 +97,8 @@ export class DebuggerPage {
   }
 
   async continueToCompletion(expectedResult?: string): Promise<void> {
-    const continueAction = this.debugToolbar().locator(".codicon-debug-continue").first();
-    await expect(continueAction).toBeVisible({ timeout: 5_000 });
-    await continueAction.click();
+    await expect(this.debugToolbar()).toBeVisible({ timeout: 5_000 });
+    await this.executeCommand("workbench.action.debug.continue");
     const results = await this.resultsFrame();
     await expect(results.locator(".badge.status-success")).toHaveText("Completed", {
       timeout: 20_000,
@@ -129,9 +133,8 @@ export class DebuggerPage {
     routineSource: RegExp,
     expectedStopLine: string,
   ): Promise<void> {
-    const continueAction = this.debugToolbar().locator(".codicon-debug-continue").first();
-    await expect(continueAction).toBeVisible({ timeout: 5_000 });
-    await continueAction.click();
+    await expect(this.debugToolbar()).toBeVisible({ timeout: 5_000 });
+    await this.executeCommand("workbench.action.debug.continue");
     await expect(this.page.getByRole("tab", { name: sourceTab })).toBeVisible({ timeout: 10_000 });
     await expect(
       this.page.locator(".view-line:visible").filter({ hasText: routineSource }).first(),
@@ -144,9 +147,8 @@ export class DebuggerPage {
     routineSource: RegExp,
     expectedStopLine: string,
   ): Promise<void> {
-    const stepIntoAction = this.debugToolbar().locator(".codicon-debug-step-into").first();
-    await expect(stepIntoAction).toBeVisible({ timeout: 5_000 });
-    await stepIntoAction.click();
+    await expect(this.debugToolbar()).toBeVisible({ timeout: 5_000 });
+    await this.executeCommand("workbench.action.debug.stepInto");
     await expect(this.page.getByRole("tab", { name: sourceTab })).toBeVisible({ timeout: 10_000 });
     await expect(
       this.page.locator(".view-line:visible").filter({ hasText: routineSource }).first(),
@@ -155,9 +157,8 @@ export class DebuggerPage {
   }
 
   async stepOver(expectedStopLine: string): Promise<void> {
-    const stepOverAction = this.debugToolbar().locator(".codicon-debug-step-over").first();
-    await expect(stepOverAction).toBeVisible({ timeout: 5_000 });
-    await stepOverAction.click();
+    await expect(this.debugToolbar()).toBeVisible({ timeout: 5_000 });
+    await this.executeCommand("workbench.action.debug.stepOver");
     await this.expectStoppedAt(expectedStopLine);
   }
 
@@ -187,9 +188,8 @@ export class DebuggerPage {
         `Recursive continue requires a suspended debugger with a timestamped DAP status: ${JSON.stringify(previousStop)}`,
       );
     }
-    const continueAction = this.debugToolbar().locator(".codicon-debug-continue").first();
-    await expect(continueAction).toBeVisible({ timeout: 5_000 });
-    await continueAction.click();
+    await expect(this.debugToolbar()).toBeVisible({ timeout: 5_000 });
+    await this.executeCommand("workbench.action.debug.continue");
     await expect
       .poll(
         async () => {
@@ -311,5 +311,19 @@ export class DebuggerPage {
       )
       .toBe(true);
     return lenses.nth(nearestIndex);
+  }
+
+  private async clickNearestCodeLens(line: Locator, label: RegExp): Promise<void> {
+    const lens = await this.nearestCodeLens(line, label);
+    const box = await this.waitForBoundingBox(
+      lens,
+      `The visible CodeLens ${label} must have screen coordinates`,
+    );
+    // VS Code recreates CodeLens anchors when another lens on the same document
+    // changes. A locator click can therefore retain an nth() target that is
+    // detached during actionability checks. Clicking the freshly measured
+    // screen position preserves the real UI interaction without retaining the
+    // transient DOM node.
+    await this.page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
   }
 }

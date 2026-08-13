@@ -222,6 +222,9 @@ export interface VSCodeInstance {
     command:
       | "testing.coverageAll"
       | "testing.runAll"
+      | "workbench.action.debug.continue"
+      | "workbench.action.debug.stepInto"
+      | "workbench.action.debug.stepOver"
       | "workbench.action.quickOpen"
       | "workbench.view.testing.focus",
     timeout?: number,
@@ -296,7 +299,6 @@ async function resizeWindow(
 ): Promise<void> {
   const tolerance = 32;
   const deadline = Date.now() + 5_000;
-  const browserWindow = await app.browserWindow(page);
   let lastDimensions:
     | {
         devicePixelRatio: number;
@@ -306,15 +308,11 @@ async function resizeWindow(
         rendererWidth: number;
       }
     | undefined;
-  try {
-    await browserWindow.evaluate((window, size) => window.setContentSize(size.width, size.height), {
-      width,
-      height,
-    });
-    while (Date.now() < deadline) {
-      const [nativeWidth, nativeHeight] = await browserWindow.evaluate((window) =>
-        window.getContentSize(),
-      );
+  let lastError: string | undefined;
+  await setNativeWindowSize(app, page, width, height);
+  while (Date.now() < deadline) {
+    try {
+      const [nativeWidth, nativeHeight] = await readNativeWindowSize(app, page);
       const renderer = await page.evaluate(() => ({
         devicePixelRatio: window.devicePixelRatio,
         height: window.innerHeight,
@@ -335,28 +333,59 @@ async function resizeWindow(
       ) {
         return;
       }
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      lastError = undefined;
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
     }
-    const diagnostic = {
-      actual: lastDimensions,
-      delta: lastDimensions
-        ? {
-            nativeHeight: lastDimensions.nativeHeight - height,
-            nativeWidth: lastDimensions.nativeWidth - width,
-            rendererHeight: lastDimensions.rendererHeight - height,
-            rendererWidth: lastDimensions.rendererWidth - width,
-          }
-        : undefined,
-      requested: { height, width },
-      tolerance,
-    };
-    const diagnosticPath = join(artifactsRoot, "window-resize-error.json");
-    const screenshotPath = join(artifactsRoot, "window-resize-error.png");
-    writeFileSync(diagnosticPath, `${JSON.stringify(diagnostic, null, 2)}\n`);
-    await page.screenshot({ path: screenshotPath }).catch(() => undefined);
-    throw new Error(
-      `VS Code window did not settle within 5000 ms. Dimensions: ${JSON.stringify(diagnostic)}. Snapshot: ${screenshotPath}`,
-    );
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  const diagnostic = {
+    actual: lastDimensions,
+    delta: lastDimensions
+      ? {
+          nativeHeight: lastDimensions.nativeHeight - height,
+          nativeWidth: lastDimensions.nativeWidth - width,
+          rendererHeight: lastDimensions.rendererHeight - height,
+          rendererWidth: lastDimensions.rendererWidth - width,
+        }
+      : undefined,
+    error: lastError,
+    requested: { height, width },
+    tolerance,
+  };
+  const diagnosticPath = join(artifactsRoot, "window-resize-error.json");
+  const screenshotPath = join(artifactsRoot, "window-resize-error.png");
+  writeFileSync(diagnosticPath, `${JSON.stringify(diagnostic, null, 2)}\n`);
+  await page.screenshot({ path: screenshotPath }).catch(() => undefined);
+  throw new Error(
+    `VS Code window did not settle within 5000 ms. Dimensions: ${JSON.stringify(diagnostic)}. Snapshot: ${screenshotPath}`,
+  );
+}
+
+async function setNativeWindowSize(
+  app: ElectronApplication,
+  page: Page,
+  width: number,
+  height: number,
+): Promise<void> {
+  const browserWindow = await app.browserWindow(page);
+  try {
+    await browserWindow.evaluate((window, size) => window.setContentSize(size.width, size.height), {
+      height,
+      width,
+    });
+  } finally {
+    await browserWindow.dispose();
+  }
+}
+
+async function readNativeWindowSize(
+  app: ElectronApplication,
+  page: Page,
+): Promise<[number, number]> {
+  const browserWindow = await app.browserWindow(page);
+  try {
+    return await browserWindow.evaluate((window) => window.getContentSize());
   } finally {
     await browserWindow.dispose();
   }

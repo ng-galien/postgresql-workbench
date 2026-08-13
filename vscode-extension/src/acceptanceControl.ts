@@ -8,6 +8,9 @@ const QUICK_OPEN_COMMAND = "workbench.action.quickOpen";
 const FOCUS_TESTING_COMMAND = "workbench.view.testing.focus";
 const RUN_ALL_TESTS_COMMAND = "testing.runAll";
 const COVERAGE_ALL_TESTS_COMMAND = "testing.coverageAll";
+const DEBUG_CONTINUE_COMMAND = "workbench.action.debug.continue";
+const DEBUG_STEP_INTO_COMMAND = "workbench.action.debug.stepInto";
+const DEBUG_STEP_OVER_COMMAND = "workbench.action.debug.stepOver";
 const FOCUS_WORKBENCH_COMMAND = "postgresql-workbench-connections.focus";
 const INSPECT_TESTING_STATE_COMMAND = "postgresql-workbench.acceptance.inspectTestingState";
 const INSPECT_ACTIVE_NOTEBOOK_COMMAND = "postgresql-workbench.acceptance.inspectActiveNotebook";
@@ -20,6 +23,9 @@ const ACCEPTANCE_COMMANDS = new Set([
   FOCUS_TESTING_COMMAND,
   RUN_ALL_TESTS_COMMAND,
   COVERAGE_ALL_TESTS_COMMAND,
+  DEBUG_CONTINUE_COMMAND,
+  DEBUG_STEP_INTO_COMMAND,
+  DEBUG_STEP_OVER_COMMAND,
   FOCUS_WORKBENCH_COMMAND,
   INSPECT_TESTING_STATE_COMMAND,
   INSPECT_ACTIVE_NOTEBOOK_COMMAND,
