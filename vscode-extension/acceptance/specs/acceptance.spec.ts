@@ -2,6 +2,7 @@
 // The reload scenario invalidates the in-memory index; schema synchronization is therefore
 // the only scenario allowed to rebuild it, and remains last.
 import "./workbench/graph-dnd.spec.js";
+import "./workbench/indexing-feedback.spec.js";
 import "./workbench/search.spec.js";
 import "./workbench/notebook.spec.js";
 import "./workbench/testing-coverage.spec.js";

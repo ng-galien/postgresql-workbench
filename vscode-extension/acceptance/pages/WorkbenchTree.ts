@@ -12,7 +12,8 @@ export class WorkbenchTree {
   }
 
   headerAction(label: RegExp): Locator {
-    return this.page.getByLabel(label).first();
+    const sidebar = this.page.locator('[id="workbench.parts.sidebar"]');
+    return sidebar.getByLabel(label).filter({ visible: true }).first();
   }
 
   async clickHeaderAction(label: RegExp): Promise<void> {
@@ -22,9 +23,15 @@ export class WorkbenchTree {
   }
 
   async collapseAll(): Promise<void> {
+    await this.page.getByRole("tree", { name: "Workbench" }).waitFor({
+      state: "visible",
+      timeout: 5_000,
+    });
     const action = this.headerAction(/^Collapse All$/);
-    await action.waitFor({ state: "visible", timeout: 5_000 });
-    if (await action.isEnabled()) await action.click();
+    if ((await this.page.locator('[role="treeitem"][aria-expanded="true"]:visible').count()) > 0) {
+      await action.waitFor({ state: "visible", timeout: 5_000 });
+      if (await action.isEnabled()) await action.click();
+    }
     await expect
       .poll(() => this.page.locator('[role="treeitem"][aria-expanded="true"]:visible').count(), {
         timeout: 5_000,

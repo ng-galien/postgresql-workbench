@@ -15,6 +15,7 @@ vi.mock("vscode", () => {
     }
   }
   class TreeItem {
+    accessibilityInformation?: { label: string };
     command?: unknown;
     contextValue?: string;
     description?: string;
@@ -47,6 +48,7 @@ vi.mock("vscode", () => {
 import type { WorkbenchIndexState } from "./workbenchIndexController.js";
 import type { WorkbenchObjectModel } from "./workbenchTreeModel.js";
 import {
+  DatabaseSourceItem,
   FunctionItem,
   SchemaItem,
   SourcesSnapshotItem,
@@ -88,7 +90,7 @@ const createdTable: WorkbenchObjectModel = {
 };
 
 describe("Workbench tree object navigation", () => {
-  it("makes the Sources node itself start indexing without a redundant status child", () => {
+  it("presents distinct initial indexing and available states on the active database", () => {
     const server = {
       id: "server",
       name: "postgres@localhost:5432/testdb",
@@ -98,28 +100,45 @@ describe("Workbench tree object navigation", () => {
       user: "postgres",
     };
     const notIndexed = new SourcesSnapshotItem(server, true, { status: "not-indexed" });
+    const initialIndex = new SourcesSnapshotItem(server, true, {
+      status: "indexing",
+      progress: { phase: "reading-catalog" },
+    });
+    const availableResult = {
+      serverId: server.id,
+      database: server.database,
+      revision: "revision",
+      documents: 1,
+      symbols: 1,
+      generation: 1,
+      introspectionMs: 1,
+      materializationMs: 1,
+      publicationMs: 1,
+      symbolQueryMs: 1,
+      indexingMs: 1,
+      graphQueryMs: 1,
+    };
     const available = new SourcesSnapshotItem(server, true, {
       status: "available",
-      result: {
-        serverId: server.id,
-        database: server.database,
-        revision: "revision",
-        documents: 1,
-        symbols: 1,
-        generation: 1,
-        introspectionMs: 1,
-        materializationMs: 1,
-        publicationMs: 1,
-        symbolQueryMs: 1,
-        indexingMs: 1,
-        graphQueryMs: 1,
-      },
+      result: availableResult,
     });
 
     expect(notIndexed.command).toMatchObject({
       command: "postgresql-workbench.indexActiveDatabase",
       title: "Index Database",
     });
+    expect(initialIndex.description).toBe("indexing · reading catalog");
+    expect(initialIndex.contextValue).toBe("postgresql-workbench-sources-indexing");
+    expect(initialIndex.accessibilityInformation?.label).toBe(
+      "Sources, testdb, indexing, reading catalog",
+    );
+    expect(new DatabaseSourceItem(server, { status: "indexing" }, true).description).toBe(
+      "active · indexing",
+    );
+    expect(
+      new DatabaseSourceItem(server, { status: "indexing", result: availableResult }, true)
+        .description,
+    ).toBe("active · refreshing");
     expect(available.command).toBeUndefined();
   });
 
@@ -298,6 +317,8 @@ describe("Workbench tree incremental refresh", () => {
       { ...table, name: "refresh_inventory", kind: "function", plpgsql: true },
       snapshot,
     );
+    const activeDatabase = new DatabaseSourceItem(server, { status: "not-indexed" }, true);
+    provider.getTreeItem(activeDatabase);
     provider.getTreeItem(sources);
     expect(provider.activeSourcesItem()).toBe(sources);
     expect(provider.getTreeItem(routine).contextValue).toBe("postgresql-workbench-function");
@@ -305,14 +326,26 @@ describe("Workbench tree incremental refresh", () => {
     const changes: Array<{ kind?: string } | undefined> = [];
     provider.onDidChangeTreeData((item) => changes.push(item));
 
-    index.state = { status: "indexing", serverId: server.id, result };
+    index.state = {
+      status: "indexing",
+      serverId: server.id,
+      result,
+      progress: { phase: "reading-catalog" },
+    };
     indexChanges.fire(index.state);
-    expect(changes).toHaveLength(1);
-    expect(changes[0]).toBe(sources);
-    expect(sources.description).toBe("indexing");
+    expect(changes).toEqual([activeDatabase, sources]);
+    expect(activeDatabase.description).toBe("active · refreshing");
+    expect(sources.description).toBe("refreshing · reading catalog");
     expect(sources.iconPath).toMatchObject({ id: "loading~spin" });
-    expect(sources.tooltip).toBe("Indexing PostgreSQL sources for testdb…");
+    expect(sources.tooltip).toBe(
+      "Refreshing PostgreSQL sources for testdb: reading catalog\nPrevious snapshot available: 1 source, 1 symbol, 1 millisecond",
+    );
+    expect(sources.accessibilityInformation?.label).toBe(
+      "Sources, testdb, refreshing, reading catalog, previous snapshot available",
+    );
+    expect(sources.contextValue).toBe("postgresql-workbench-sources-indexing");
     expect(sources.command).toBeUndefined();
+    expect(provider.getTreeItem(routine).contextValue).toBe("postgresql-workbench-function");
 
     changes.length = 0;
     index.state = {
@@ -322,11 +355,11 @@ describe("Workbench tree incremental refresh", () => {
       change: { kind: "full", schemas: [], sourceUris: [] },
     };
     indexChanges.fire(index.state);
-    expect(changes).toHaveLength(1);
-    expect(changes[0]).toBe(sources);
-    expect(sources.description).toBe("available");
+    expect(changes).toEqual([activeDatabase, sources, routine]);
+    expect(activeDatabase.description).toBe("active");
+    expect(sources.description).toBe("available · 1 source · 1 symbol");
     expect(sources.iconPath).toMatchObject({ id: "files" });
-    expect(sources.tooltip).toBe("Indexed sources for testdb");
+    expect(sources.tooltip).toBe("Indexed sources for testdb: 1 source, 1 symbol, 1 millisecond");
     expect(provider.getTreeItem(routine).contextValue).toBe(
       "postgresql-workbench-function-debuggable",
     );
@@ -336,11 +369,13 @@ describe("Workbench tree incremental refresh", () => {
     provider.setExpanded(sources, true);
     provider.setExpanded(schema, true);
     provider.setExpanded(reportingSchema, true);
-    await provider.getChildren(sources);
     provider.getTreeItem(schema);
     provider.getTreeItem(reportingSchema);
+    await provider.getChildren(sources);
     provider.getTreeItem(object);
     provider.getTreeItem(unchangedObject);
+    expect(provider.getParent(schema)).toBe(sources);
+    expect(provider.getParent(sources)).toBe(activeDatabase);
 
     connectionChanges.fire();
     expect(changes).toEqual([undefined]);
@@ -353,19 +388,40 @@ describe("Workbench tree incremental refresh", () => {
       change: { kind: "full", schemas: [], sourceUris: [] },
     };
     indexChanges.fire(index.state);
-    expect(changes).toHaveLength(5);
-    expect(changes[0]).toBe(sources);
-    expect(changes[1]).toBe(schema);
-    expect(changes[2]).toBe(reportingSchema);
-    expect(changes.slice(3).map((item) => item?.kind)).toEqual(["object", "object"]);
+    expect(changes).toHaveLength(6);
+    expect(changes[0]).toBe(activeDatabase);
+    expect(changes[1]).toBe(sources);
+    expect(changes[2]).toBe(schema);
+    expect(changes[3]).toBe(reportingSchema);
+    expect(changes.slice(4).map((item) => item?.kind)).toEqual(["object", "object"]);
 
     changes.length = 0;
     index.state = { status: "stale", serverId: server.id, result };
     indexChanges.fire(index.state);
-    expect(changes).toHaveLength(1);
-    expect(changes[0]).toBe(sources);
-    expect(sources.description).toBe("stale");
-    expect(sources.tooltip).toBe("PostgreSQL sources for testdb are stale and require reindexing");
+    expect(changes).toEqual([activeDatabase, sources]);
+    expect(provider.getTreeItem(routine).contextValue).toBe(
+      "postgresql-workbench-function-debuggable",
+    );
+    expect(sources.description).toBe("stale · previous snapshot available");
+    expect(sources.tooltip).toBe(
+      "PostgreSQL sources for testdb are stale and require reindexing\nPrevious snapshot available: 1 source, 1 symbol, 1 millisecond",
+    );
+    expect(sources.command).toMatchObject({
+      command: "postgresql-workbench.indexActiveDatabase",
+      title: "Reindex Database",
+    });
+
+    changes.length = 0;
+    index.state = { status: "cancelled", serverId: server.id, result };
+    indexChanges.fire(index.state);
+    expect(changes).toEqual([activeDatabase, sources]);
+    expect(provider.getTreeItem(routine).contextValue).toBe(
+      "postgresql-workbench-function-debuggable",
+    );
+    expect(sources.description).toBe("cancelled · previous snapshot available");
+    expect(sources.tooltip).toBe(
+      "PostgreSQL source indexing for testdb was cancelled\nPrevious snapshot available: 1 source, 1 symbol, 1 millisecond",
+    );
     expect(sources.command).toMatchObject({
       command: "postgresql-workbench.indexActiveDatabase",
       title: "Reindex Database",
@@ -374,10 +430,16 @@ describe("Workbench tree incremental refresh", () => {
     changes.length = 0;
     index.state = { status: "error", serverId: server.id, message: "daemon unavailable", result };
     indexChanges.fire(index.state);
-    expect(changes).toHaveLength(1);
-    expect(changes[0]).toBe(sources);
+    expect(changes).toEqual([activeDatabase, sources]);
+    expect(provider.getTreeItem(routine).contextValue).toBe(
+      "postgresql-workbench-function-debuggable",
+    );
     expect(sources.tooltip).toBe(
-      "PostgreSQL source indexing failed for testdb: daemon unavailable",
+      "PostgreSQL source indexing failed for testdb: daemon unavailable\nPrevious snapshot available: 1 source, 1 symbol, 1 millisecond\nSelect to retry",
+    );
+    expect(sources.description).toBe("failed · previous snapshot available · retry");
+    expect(sources.accessibilityInformation?.label).toBe(
+      "Sources, testdb, indexing failed, daemon unavailable, previous snapshot available, select to retry",
     );
 
     changes.length = 0;
@@ -396,12 +458,13 @@ describe("Workbench tree incremental refresh", () => {
     indexChanges.fire(index.state);
 
     expect(changes.map((item) => item?.kind)).toEqual([
+      "databaseSource",
       "sourcesSnapshot",
       "schema",
       "object",
       "object",
     ]);
-    expect(sources.description).toBe("available");
+    expect(sources.description).toBe("available · 1 source · 1 symbol");
     expect(changes).toContain(unchangedObject);
     expect(changes).not.toContain(reportingSchema);
     expect(unchangedObject.snapshot).toMatchObject({ revision: "revision-2", generation: 8 });
@@ -440,6 +503,7 @@ describe("Workbench tree incremental refresh", () => {
       "workbench_ddl_sync_probe",
     );
     expect(changes.map((item) => item?.kind)).toEqual([
+      "databaseSource",
       "sourcesSnapshot",
       "schema",
       "object",
@@ -460,12 +524,16 @@ describe("Workbench tree incremental refresh", () => {
     changes.length = 0;
     provider.setExpanded(schema, false);
     indexChanges.fire(index.state);
-    expect(changes.map((item) => item?.kind)).toEqual(["sourcesSnapshot", "object"]);
+    expect(changes.map((item) => item?.kind)).toEqual([
+      "databaseSource",
+      "sourcesSnapshot",
+      "object",
+    ]);
 
     changes.length = 0;
     provider.setExpanded(sources, false);
     indexChanges.fire(index.state);
-    expect(changes.map((item) => item?.kind)).toEqual(["sourcesSnapshot"]);
+    expect(changes.map((item) => item?.kind)).toEqual(["databaseSource", "sourcesSnapshot"]);
     provider.dispose();
   });
 });

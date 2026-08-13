@@ -474,6 +474,7 @@ export async function launchVSCode(options: LaunchVSCodeOptions = {}): Promise<V
       env: {
         ...process.env,
         POSTGRESQL_WORKBENCH_ACCEPTANCE_CONTROL_FILE: controlFile,
+        POSTGRESQL_WORKBENCH_ACCEPTANCE_INDEX_PHASE_DELAY_MS: "350",
       },
       args: [
         "--disable-gpu-sandbox",

@@ -37,6 +37,7 @@ suite("Extension basics", () => {
       "postgresql-workbench.openFunction",
       "postgresql-workbench.refreshTests",
       "postgresql-workbench.revealRoutineTests",
+      "postgresql-workbench.cancelDatabaseIndex",
     ]) {
       assert.ok(commands.includes(cmd), `Missing: ${cmd}`);
     }
