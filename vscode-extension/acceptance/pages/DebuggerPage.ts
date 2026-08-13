@@ -230,8 +230,11 @@ export class DebuggerPage {
     const deadline = Date.now() + 5_000;
     while (Date.now() < deadline) {
       for (const frame of this.page.frames()) {
-        if (frame !== this.page.mainFrame() && (await frame.locator("#history").count()) > 0) {
-          return frame;
+        if (frame === this.page.mainFrame() || frame.isDetached()) continue;
+        try {
+          if ((await frame.locator("#history").count()) > 0) return frame;
+        } catch (error) {
+          if (!frame.isDetached()) throw error;
         }
       }
       await this.page.waitForTimeout(50);
