@@ -65,13 +65,16 @@ export class WorkbenchPage {
   async ensureActiveDatabaseIndexed(server: RegExp, database: RegExp): Promise<void> {
     await this.tree.expandPath([server, database]);
     const sources = this.tree.item(/^Sources/);
-    await expect(sources).toContainText(/not-indexed|indexing|available|stale|error/, {
-      timeout: 5_000,
-    });
+    await expect(sources).toContainText(
+      /not indexed|indexing|refreshing|available|stale|cancelled|failed/,
+      {
+        timeout: 5_000,
+      },
+    );
     const state = await sources.innerText();
     if (!state.includes("available")) {
-      if (!state.includes("indexing")) await sources.click();
-      await expect(sources).toContainText(/indexing|available/, { timeout: 5_000 });
+      if (!state.includes("indexing") && !state.includes("refreshing")) await sources.click();
+      await expect(sources).toContainText(/indexing|refreshing|available/, { timeout: 5_000 });
       await expect(sources).toContainText("available", { timeout: 30_000 });
     }
     await this.tree.expand(/^Sources/);

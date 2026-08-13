@@ -297,6 +297,10 @@
           "when": "false"
         },
         {
+          "command": "postgresql-workbench.cancelDatabaseIndex",
+          "when": "false"
+        },
+        {
           "command": "postgresql-workbench.provisionWorkbenchSchemaSync",
           "when": "false"
         },
@@ -391,6 +395,11 @@
         {
           "command": "postgresql-workbench.indexActiveDatabase",
           "when": "view == postgresql-workbench-connections && viewItem == postgresql-workbench-sources-active",
+          "group": "inline@1"
+        },
+        {
+          "command": "postgresql-workbench.cancelDatabaseIndex",
+          "when": "view == postgresql-workbench-connections && viewItem == postgresql-workbench-sources-indexing",
           "group": "inline@1"
         },
         {
@@ -549,6 +558,11 @@
         "command": "postgresql-workbench.indexActiveDatabase",
         "title": "PL/pgSQL Workbench: Reindex Active Database",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "postgresql-workbench.cancelDatabaseIndex",
+        "title": "PostgreSQL Workbench: Cancel Database Indexing",
+        "icon": "$(debug-stop)"
       },
       {
         "command": "postgresql-workbench.configureWorkbenchSchemaSync",

@@ -109,11 +109,24 @@ describe("Workbench tree model", () => {
       ),
     ).toMatchObject({ icon: "$(refresh)" });
     expect(
+      manifest.contributes.commands.find(
+        ({ command }) => command === "postgresql-workbench.cancelDatabaseIndex",
+      ),
+    ).toMatchObject({ icon: "$(debug-stop)" });
+    expect(
       manifest.contributes.menus["view/item/context"].find(
         ({ command, when }) =>
           command === "postgresql-workbench.indexActiveDatabase" &&
           when ===
             "view == postgresql-workbench-connections && viewItem == postgresql-workbench-sources-active",
+      ),
+    ).toMatchObject({ group: "inline@1" });
+    expect(
+      manifest.contributes.menus["view/item/context"].find(
+        ({ command, when }) =>
+          command === "postgresql-workbench.cancelDatabaseIndex" &&
+          when ===
+            "view == postgresql-workbench-connections && viewItem == postgresql-workbench-sources-indexing",
       ),
     ).toMatchObject({ group: "inline@1" });
     expect(

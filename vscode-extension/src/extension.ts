@@ -496,6 +496,7 @@ interface WorkbenchCommandOptions {
 
 interface SqlWorkbenchCommandOptions extends WorkbenchCommandOptions {
   revealSources(): Thenable<void>;
+  selectedTreeItems(): readonly PlpgsqlTreeItem[];
 }
 
 function registerSqlWorkbenchCommands(options: SqlWorkbenchCommandOptions): void {
@@ -565,45 +566,46 @@ function registerSqlWorkbenchCommands(options: SqlWorkbenchCommandOptions): void
       return result;
     }),
     vscode.commands.registerCommand("postgresql-workbench.indexActiveDatabase", async () => {
+      await options.revealSources();
       try {
-        const indexing = vscode.window.withProgress(
-          {
-            location: vscode.ProgressLocation.Notification,
-            title: "Reindexing PostgreSQL database…",
-            cancellable: false,
-          },
-          () => index.indexActiveDatabase(),
-        );
-        await options.revealSources();
-        const result = await indexing;
-        void vscode.window.showInformationMessage(
-          `Indexed ${result.documents} PostgreSQL definitions as ${result.symbols} symbols in ${result.indexingMs.toFixed(0)} ms.`,
-        );
-        return result;
+        return await index.indexActiveDatabase();
       } catch (error) {
+        if (index.state.status === "cancelled") return undefined;
         const message = error instanceof Error ? error.message : String(error);
-        void vscode.window.showErrorMessage(`PostgreSQL indexing failed: ${message}`);
+        if (index.state.status !== "error" && index.state.status !== "stale") {
+          void vscode.window.showErrorMessage(`PostgreSQL indexing failed: ${message}`);
+        }
         return undefined;
       }
     }),
+    vscode.commands.registerCommand("postgresql-workbench.cancelDatabaseIndex", () =>
+      index.cancelActiveDatabaseIndex(),
+    ),
     vscode.commands.registerCommand(
       "postgresql-workbench.openDatabaseObject",
       async (
-        input:
+        input?:
           | WorkbenchObjectModel
           | FunctionItem
           | WorkbenchObjectItem
           | WorkbenchRelationTargetItem,
         requestedSnapshot?: { revision: string; generation: number | null },
       ) => {
+        const selected = input ?? options.selectedTreeItems()[0];
+        if (!selected) return undefined;
         const object =
-          "target" in input ? input.target.object : "object" in input ? input.object : input;
+          "target" in selected
+            ? selected.target.object
+            : "object" in selected
+              ? selected.object
+              : "symbolUri" in selected
+                ? selected
+                : undefined;
         if (!object) return undefined;
-        const itemSnapshot = "snapshot" in input ? input.snapshot : undefined;
+        const itemSnapshot = "snapshot" in selected ? selected.snapshot : undefined;
         const snapshot = requestedSnapshot ?? itemSnapshot;
         const result = index.state.result;
         if (
-          index.state.status !== "available" ||
           !result ||
           (snapshot &&
             (snapshot.revision !== result.revision || snapshot.generation !== result.generation))
@@ -642,7 +644,7 @@ function registerGraphWorkbenchCommands(options: WorkbenchCommandOptions): void 
   context.subscriptions.push(
     vscode.commands.registerCommand("postgresql-workbench.openDatabaseGraph", async () => {
       const result = index.state.result;
-      if (index.state.status !== "available" || !result) {
+      if (index.state.status === "indexing" || !result) {
         void vscode.window.showInformationMessage(
           "Index the active PostgreSQL database before opening its graph.",
         );
@@ -684,7 +686,7 @@ function registerGraphWorkbenchCommands(options: WorkbenchCommandOptions): void 
         const itemSnapshot = "snapshot" in input ? input.snapshot : undefined;
         const snapshot = requestedSnapshot ?? itemSnapshot ?? result;
         if (
-          index.state.status !== "available" ||
+          index.state.status === "indexing" ||
           !result ||
           !snapshot ||
           snapshot.revision !== result.revision ||
@@ -705,7 +707,7 @@ function registerGraphWorkbenchCommands(options: WorkbenchCommandOptions): void 
         const result = index.state.result;
         if (
           !object ||
-          index.state.status !== "available" ||
+          index.state.status === "indexing" ||
           !result ||
           item.snapshot.revision !== result.revision ||
           item.snapshot.generation !== result.generation
@@ -726,7 +728,7 @@ function registerGraphWorkbenchCommands(options: WorkbenchCommandOptions): void 
         surface: WorkbenchObjectActionSurface = "default",
       ) => {
         const result = index.state.result;
-        if (!input || index.state.status !== "available" || !result) return false;
+        if (!input || !result) return false;
         const object = "object" in input ? input.object : input;
         const itemSnapshot = "snapshot" in input ? input.snapshot : undefined;
         const snapshot = requestedSnapshot ?? itemSnapshot ?? result;
@@ -741,7 +743,12 @@ function registerGraphWorkbenchCommands(options: WorkbenchCommandOptions): void 
           );
           return false;
         }
-        const actions = actionsForWorkbenchSurface(await objectActions(object), surface);
+        const actions = actionsForWorkbenchSurface(await objectActions(object), surface).filter(
+          (action) =>
+            index.state.status !== "indexing" ||
+            action.id === "open-definition" ||
+            action.id === "open-deployed-source",
+        );
         if (actions.length === 0) return false;
         const selected = await vscode.window.showQuickPick(
           actions.map((action) => ({
@@ -764,7 +771,7 @@ function registerGraphWorkbenchCommands(options: WorkbenchCommandOptions): void 
         const query = typeof context === "string" ? context : undefined;
         if (query !== undefined) search.query = query;
         const result = index.state.result;
-        if (index.state.status !== "available" || !result) {
+        if (!result) {
           const action = await vscode.window.showInformationMessage(
             "Index the active PostgreSQL database before searching its objects.",
             "Index Database",
@@ -1302,7 +1309,7 @@ function registerDebugInfrastructure(options: DebugInfrastructureOptions): Debug
         }
         const indexed = index.state.result;
         if (
-          index.state.status !== "available" ||
+          index.state.status === "indexing" ||
           indexed?.serverId !== serverId ||
           indexed.database !== database
         ) {
@@ -1452,7 +1459,7 @@ export function activate(context: vscode.ExtensionContext): PlpgsqlExtensionApi 
       if (!server) throw new Error(`Unknown PostgreSQL connection: ${serverId}`);
       const indexed = workbenchIndex.state.result;
       if (
-        workbenchIndex.state.status === "available" &&
+        workbenchIndex.state.status !== "indexing" &&
         indexed?.serverId === serverId &&
         indexed.database === server.database
       ) {
@@ -1530,7 +1537,9 @@ export function activate(context: vscode.ExtensionContext): PlpgsqlExtensionApi 
   ): Promise<unknown> => {
     const result = workbenchIndex.state.result;
     if (
-      workbenchIndex.state.status !== "available" ||
+      (workbenchIndex.state.status === "indexing" &&
+        action !== "open-definition" &&
+        action !== "open-deployed-source") ||
       !result ||
       result.serverId !== object.serverId ||
       result.database !== object.database ||
@@ -1733,7 +1742,7 @@ export function activate(context: vscode.ExtensionContext): PlpgsqlExtensionApi 
     canDebug: (connection) => {
       const indexed = workbenchIndex.state.result;
       return (
-        workbenchIndex.state.status === "available" &&
+        workbenchIndex.state.status !== "indexing" &&
         indexed?.serverId === connection.id &&
         indexed.database === cm.store.get(connection.id)?.database
       );
@@ -1780,6 +1789,7 @@ export function activate(context: vscode.ExtensionContext): PlpgsqlExtensionApi 
     runObjectAction: runWorkbenchObjectAction,
     search: workbenchSearch,
     revealSources: () => revealActiveSources(workbenchTree, treeProvider),
+    selectedTreeItems: () => workbenchTree.selection,
   });
   registerGraphWorkbenchCommands({
     context,

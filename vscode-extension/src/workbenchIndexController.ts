@@ -24,6 +24,7 @@ import {
   readPostgresCatalog,
   readPostgresCatalogDocuments,
   type VirtualSqlDocument,
+  type VirtualSqlSourceSet,
 } from "../../src/workbench/postgresCatalog.js";
 import type { PostgresDdlObject } from "../../src/workbench/postgresDdlSync.js";
 import {
@@ -50,13 +51,35 @@ import {
   workbenchObjectFromSymbol,
 } from "./workbenchTreeModel.js";
 
-export type WorkbenchIndexStatus = "not-indexed" | "indexing" | "available" | "stale" | "error";
+export type WorkbenchIndexStatus =
+  | "not-indexed"
+  | "indexing"
+  | "available"
+  | "stale"
+  | "cancelled"
+  | "error";
+
+export type WorkbenchIndexPhase =
+  | "reading-catalog"
+  | "connecting-index"
+  | "publishing-sources"
+  | "reading-symbols"
+  | "checking-relations"
+  | "cancelling";
+
+export interface WorkbenchIndexProgress {
+  phase: WorkbenchIndexPhase;
+  completed?: number;
+  total?: number;
+  unit?: "sources" | "symbols";
+}
 
 export interface WorkbenchIndexState {
   status: WorkbenchIndexStatus;
   serverId?: string;
   message?: string;
   result?: WorkbenchIndexResult;
+  progress?: WorkbenchIndexProgress;
   change?: {
     kind: "full" | "incremental";
     schemas: string[];
@@ -124,11 +147,26 @@ interface PublishedSourceSet {
 interface IndexedPostgresRegistry {
   result: WorkbenchIndexResult;
   symbols: CodeMonikerSymbol[];
+  sourceSet: VirtualSqlSourceSet;
   documents: Map<string, VirtualSqlDocument>;
   origins: Map<string, PostgresCatalogObjectOrigin>;
   foreignKeys: PostgresForeignKey[];
   viewDependencies: PostgresViewDependency[];
   resources: Map<string, IndexedPostgresResource>;
+}
+
+interface ActiveIndexRun {
+  cancelled: boolean;
+  retainedResult?: WorkbenchIndexResult;
+  scope: string;
+  serverId: string;
+}
+
+class WorkbenchIndexCancelledError extends Error {
+  constructor() {
+    super("PostgreSQL source indexing was cancelled");
+    this.name = "WorkbenchIndexCancelledError";
+  }
 }
 
 // Explicit debt exception: this snapshot owner still exposes registry lookup, Code Moniker
@@ -146,6 +184,7 @@ export class WorkbenchIndexController implements vscode.Disposable {
   private sessionEpoch = 0;
   private syntaxParserPromise?: Promise<SyntaxParser>;
   private currentRun?: Promise<WorkbenchIndexResult>;
+  private activeIndexRun?: ActiveIndexRun;
   private currentSymbols: CodeMonikerSymbol[] = [];
   private currentDocuments = new Map<string, VirtualSqlDocument>();
   private currentOrigins = new Map<string, PostgresCatalogObjectOrigin>();
@@ -327,7 +366,7 @@ export class WorkbenchIndexController implements vscode.Disposable {
     const database = { serverId: server.id, database: server.database };
     let result = this.currentState.result;
     if (
-      this.currentState.status !== "available" ||
+      this.currentState.status === "indexing" ||
       result?.serverId !== database.serverId ||
       result.database !== database.database
     ) {
@@ -506,7 +545,7 @@ export class WorkbenchIndexController implements vscode.Disposable {
     const result = this.currentState.result;
     if (
       this.disposed ||
-      this.currentState.status !== "available" ||
+      this.currentState.status === "indexing" ||
       !result ||
       result.serverId !== object.serverId ||
       result.database !== object.database ||
@@ -615,6 +654,7 @@ export class WorkbenchIndexController implements vscode.Disposable {
       const epoch = this.sessionEpoch;
       this.currentRun = this.runIndex()
         .catch((error) => {
+          if (error instanceof WorkbenchIndexCancelledError) throw error;
           if (this.sessionEpoch === epoch) throw error;
           this.output.appendLine(
             "Code Moniker connection closed during indexing; reconnecting once",
@@ -626,6 +666,24 @@ export class WorkbenchIndexController implements vscode.Disposable {
         });
     }
     return this.currentRun;
+  }
+
+  cancelActiveDatabaseIndex(): boolean {
+    const run = this.activeIndexRun;
+    if (!run || run.cancelled) return false;
+    run.cancelled = true;
+    if (this.activeScope() === run.scope) {
+      this.setState({
+        status: "indexing",
+        serverId: run.serverId,
+        result: run.retainedResult,
+        message: run.retainedResult
+          ? "Cancelling refresh; the previous snapshot remains available"
+          : "Cancelling PostgreSQL source indexing",
+        progress: { phase: "cancelling" },
+      });
+    }
+    return true;
   }
 
   markDatabaseStale(serverId: string, database: string, message: string): void {
@@ -728,6 +786,13 @@ export class WorkbenchIndexController implements vscode.Disposable {
     const database = server.database;
     const scope = databaseScope(serverId, database);
     const retainedResult = this.stateScope === scope ? this.currentState.result : undefined;
+    const run: ActiveIndexRun = {
+      cancelled: false,
+      retainedResult,
+      scope,
+      serverId,
+    };
+    this.activeIndexRun = run;
     if (!retainedResult) {
       this.currentSymbols = [];
       this.currentDocuments.clear();
@@ -739,12 +804,15 @@ export class WorkbenchIndexController implements vscode.Disposable {
       serverId,
       result: retainedResult,
       message: retainedResult ? "Refreshing the PostgreSQL source snapshot" : undefined,
+      progress: { phase: "reading-catalog" },
     });
     try {
+      await this.pauseForAcceptance(run);
       const catalog = await readPostgresCatalog(catalogClient(postgres), {
         serverId,
         database,
       });
+      this.throwIfCancelled(run);
       if (this.activeScope() !== scope) {
         throw new Error("The active PostgreSQL connection changed during indexing");
       }
@@ -755,6 +823,8 @@ export class WorkbenchIndexController implements vscode.Disposable {
         database,
         indexingStarted,
         () => this.activeScope() === scope,
+        (progress) => this.reportProgress(run, progress),
+        () => this.throwIfCancelled(run),
       );
       const { result, registry, session } = indexed;
       this.currentSymbols = registry.symbols;
@@ -770,11 +840,20 @@ export class WorkbenchIndexController implements vscode.Disposable {
       this.logResult(result, session);
       return result;
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const failure = run.cancelled ? new WorkbenchIndexCancelledError() : error;
+      const message = failure instanceof Error ? failure.message : String(failure);
       if (this.activeScope() === scope) {
-        if (retainedResult) {
-          this.staleScopes.add(scope);
-          this.setState({ status: "stale", serverId, message, result: retainedResult });
+        if (failure instanceof WorkbenchIndexCancelledError) {
+          this.setState({
+            status: "cancelled",
+            serverId,
+            message: retainedResult
+              ? "Refresh cancelled; showing the previous snapshot"
+              : "Indexing cancelled",
+            result: retainedResult,
+          });
+        } else if (retainedResult) {
+          this.setState({ status: "error", serverId, message, result: retainedResult });
         } else {
           this.currentSymbols = [];
           this.currentDocuments.clear();
@@ -785,8 +864,14 @@ export class WorkbenchIndexController implements vscode.Disposable {
         this.stateScope = undefined;
         this.setState({ status: "not-indexed" });
       }
-      this.output.appendLine(`workbench index failed: ${message}`);
-      throw error;
+      this.output.appendLine(
+        failure instanceof WorkbenchIndexCancelledError
+          ? `workbench index cancelled: ${message}`
+          : `workbench index failed: ${message}`,
+      );
+      throw failure;
+    } finally {
+      if (this.activeIndexRun === run) this.activeIndexRun = undefined;
     }
   }
 
@@ -869,49 +954,88 @@ export class WorkbenchIndexController implements vscode.Disposable {
     database: string,
     indexingStarted: number,
     isCurrent: () => boolean,
+    reportProgress?: (progress: WorkbenchIndexProgress) => Promise<void>,
+    assertRunActive?: () => void,
   ): Promise<{
     result: WorkbenchIndexResult;
     registry: IndexedPostgresRegistry;
     session: LocalCodeMonikerSession;
   }> {
     const scope = databaseScope(serverId, database);
+    const previousRegistry = this.registries.get(scope);
+    const previousPublished = this.published.get(scope);
+    let sourceSetReplaced = false;
     if (!isCurrent()) throw new Error("The PostgreSQL source scope changed during indexing");
+    await reportProgress?.({ phase: "connecting-index" });
     const session = await this.ensureSession();
-    this.assertCapabilities(session);
-    await waitForWorkspaceMutationReady(session.client);
-    const publicationMs = await this.publishCatalog(session, catalog, scope, serverId, isCurrent);
-    const indexed = await this.readDatabaseSymbols(session, serverId, database);
-    const documents = new Map(
-      catalog.sourceSet.documents.map((document) => [document.uri, document]),
-    );
-    const symbols = indexed.rows.map((symbol) => enrichSymbol(symbol, documents));
-    const graphQueryMs = await this.probeGraph(session, symbols[0]);
-    if (!isCurrent()) throw new Error("The PostgreSQL source scope changed during indexing");
-    const result: WorkbenchIndexResult = {
-      serverId,
-      database,
-      revision: catalog.sourceSet.revision,
-      documents: catalog.metrics.documentCount,
-      symbols: indexed.rows.length,
-      generation: indexed.generation,
-      introspectionMs: catalog.metrics.introspectionMs,
-      materializationMs: catalog.metrics.materializationMs,
-      publicationMs,
-      symbolQueryMs: indexed.symbolQueryMs,
-      indexingMs: performance.now() - indexingStarted,
-      graphQueryMs,
-    };
-    const registry: IndexedPostgresRegistry = {
-      result,
-      symbols,
-      documents,
-      origins: new Map(catalog.origins),
-      foreignKeys: catalog.foreignKeys,
-      viewDependencies: catalog.viewDependencies,
-      resources: buildPostgresResourceIndex(documents, symbols),
-    };
-    this.registries.set(scope, registry);
-    return { result, registry, session };
+    try {
+      this.assertCapabilities(session);
+      await waitForWorkspaceMutationReady(session.client);
+      await reportProgress?.({
+        phase: "publishing-sources",
+        completed: catalog.metrics.documentCount,
+        total: catalog.metrics.documentCount,
+        unit: "sources",
+      });
+      const publicationMs = await this.publishCatalog(
+        session,
+        catalog,
+        scope,
+        serverId,
+        isCurrent,
+        () => {
+          sourceSetReplaced = true;
+        },
+      );
+      if (!isCurrent()) throw new Error("The PostgreSQL source scope changed during indexing");
+      await reportProgress?.({ phase: "reading-symbols", completed: 0, unit: "symbols" });
+      const indexed = await this.readDatabaseSymbols(
+        session,
+        serverId,
+        database,
+        async (completed) =>
+          reportProgress?.({ phase: "reading-symbols", completed, unit: "symbols" }),
+      );
+      const documents = new Map(
+        catalog.sourceSet.documents.map((document) => [document.uri, document]),
+      );
+      const symbols = indexed.rows.map((symbol) => enrichSymbol(symbol, documents));
+      await reportProgress?.({ phase: "checking-relations" });
+      const graphQueryMs = await this.probeGraph(session, symbols[0]);
+      assertRunActive?.();
+      if (!isCurrent()) throw new Error("The PostgreSQL source scope changed during indexing");
+      const result: WorkbenchIndexResult = {
+        serverId,
+        database,
+        revision: catalog.sourceSet.revision,
+        documents: catalog.metrics.documentCount,
+        symbols: indexed.rows.length,
+        generation: indexed.generation,
+        introspectionMs: catalog.metrics.introspectionMs,
+        materializationMs: catalog.metrics.materializationMs,
+        publicationMs,
+        symbolQueryMs: indexed.symbolQueryMs,
+        indexingMs: performance.now() - indexingStarted,
+        graphQueryMs,
+      };
+      const registry: IndexedPostgresRegistry = {
+        result,
+        symbols,
+        sourceSet: catalog.sourceSet,
+        documents,
+        origins: new Map(catalog.origins),
+        foreignKeys: catalog.foreignKeys,
+        viewDependencies: catalog.viewDependencies,
+        resources: buildPostgresResourceIndex(documents, symbols),
+      };
+      this.registries.set(scope, registry);
+      return { result, registry, session };
+    } catch (error) {
+      if (sourceSetReplaced) {
+        await this.restorePublishedSnapshot(session, scope, previousRegistry, previousPublished);
+      }
+      throw error;
+    }
   }
 
   private assertCapabilities(session: LocalCodeMonikerSession): void {
@@ -938,6 +1062,7 @@ export class WorkbenchIndexController implements vscode.Disposable {
     scope: string,
     serverId: string,
     isCurrent: () => boolean,
+    onReplaced: () => void,
   ): Promise<number> {
     const publicationStarted = performance.now();
     await this.mutateSources(async () => {
@@ -945,10 +1070,6 @@ export class WorkbenchIndexController implements vscode.Disposable {
         throw new Error("The PostgreSQL source scope changed during indexing");
       }
       const previous = this.published.get(scope);
-      if (previous && previous.srcset !== catalog.sourceSet.srcset) {
-        await session.client.sources.remove(previous.srcset);
-        this.published.delete(scope);
-      }
       await session.client.sources.replace({
         ...catalog.sourceSet,
         documents: catalog.sourceSet.documents.map(({ uri, language, content }) => ({
@@ -957,23 +1078,58 @@ export class WorkbenchIndexController implements vscode.Disposable {
           content,
         })),
       });
-      if (!isCurrent()) {
-        await session.client.sources.remove(catalog.sourceSet.srcset);
-        throw new Error("The PostgreSQL source scope changed during indexing");
-      }
       this.published.set(scope, {
         scope,
         serverId,
         srcset: catalog.sourceSet.srcset,
       });
+      onReplaced();
+      if (previous && previous.srcset !== catalog.sourceSet.srcset) {
+        await session.client.sources.remove(previous.srcset);
+      }
     });
     return performance.now() - publicationStarted;
+  }
+
+  private async restorePublishedSnapshot(
+    session: LocalCodeMonikerSession,
+    scope: string,
+    previousRegistry: IndexedPostgresRegistry | undefined,
+    previousPublished: PublishedSourceSet | undefined,
+  ): Promise<void> {
+    const previousSourceSet = previousRegistry?.sourceSet;
+    await this.mutateSources(async () => {
+      const current = this.published.get(scope);
+      if (previousSourceSet) {
+        if (current && current.srcset !== previousSourceSet.srcset) {
+          await session.client.sources.remove(current.srcset);
+        }
+        await session.client.sources.replace({
+          ...previousSourceSet,
+          documents: previousSourceSet.documents.map(({ uri, language, content }) => ({
+            uri,
+            language,
+            content,
+          })),
+        });
+      } else {
+        if (current) await session.client.sources.remove(current.srcset);
+      }
+      if (previousPublished) this.published.set(scope, previousPublished);
+      else this.published.delete(scope);
+    });
+    if (previousRegistry) {
+      await waitForWorkspaceMutationReady(session.client);
+      const status = await session.client.workspace.status();
+      previousRegistry.result.generation = workspaceGeneration(status.generation ?? null);
+    }
   }
 
   private async readDatabaseSymbols(
     session: LocalCodeMonikerSession,
     serverId: string,
     database: string,
+    reportProgress?: (completed: number) => Promise<void>,
   ): Promise<{
     generation: number | null;
     symbolQueryMs: number;
@@ -1004,6 +1160,7 @@ export class WorkbenchIndexController implements vscode.Disposable {
         { consistency: "stale_ok", limit: 500, cursor },
       );
       rows.push(...page.data.rows);
+      await reportProgress?.(rows.length);
       generation = workspaceGeneration(page.generation) ?? generation;
       cursor = page.nextCursor;
     } while (cursor !== null);
@@ -1156,7 +1313,7 @@ export class WorkbenchIndexController implements vscode.Disposable {
   ): boolean {
     return (
       !this.disposed &&
-      this.currentState.status === "available" &&
+      this.currentState.status !== "indexing" &&
       this.currentState.result === result &&
       result.revision === snapshot.revision &&
       result.generation === snapshot.generation
@@ -1167,11 +1324,7 @@ export class WorkbenchIndexController implements vscode.Disposable {
     snapshot: Pick<WorkbenchIndexResult, "revision" | "generation">,
   ): WorkbenchIndexResult {
     const result = this.currentState.result;
-    if (
-      !result ||
-      this.currentState.status !== "available" ||
-      !this.matchesSnapshot(result, snapshot)
-    ) {
+    if (!result || !this.matchesSnapshot(result, snapshot)) {
       throw new Error("This graph belongs to an outdated PostgreSQL Workbench snapshot.");
     }
     return result;
@@ -1192,6 +1345,43 @@ export class WorkbenchIndexController implements vscode.Disposable {
     }
     this.currentState = state;
     this.stateEmitter.fire(state);
+  }
+
+  private async reportProgress(
+    run: ActiveIndexRun,
+    progress: WorkbenchIndexProgress,
+  ): Promise<void> {
+    this.throwIfCancelled(run);
+    if (this.activeScope() !== run.scope) {
+      throw new Error("The PostgreSQL source scope changed during indexing");
+    }
+    this.setState({
+      status: "indexing",
+      serverId: run.serverId,
+      result: run.retainedResult,
+      message: run.retainedResult ? "Refreshing the PostgreSQL source snapshot" : undefined,
+      progress,
+    });
+    await this.pauseForAcceptance(run);
+  }
+
+  private throwIfCancelled(run: ActiveIndexRun): void {
+    if (run.cancelled) throw new WorkbenchIndexCancelledError();
+  }
+
+  private async pauseForAcceptance(run: ActiveIndexRun): Promise<void> {
+    const delay = Number.parseInt(
+      process.env.POSTGRESQL_WORKBENCH_ACCEPTANCE_INDEX_PHASE_DELAY_MS ?? "0",
+      10,
+    );
+    if (
+      delay > 0 &&
+      process.env.POSTGRESQL_WORKBENCH_ACCEPTANCE_CONTROL_FILE &&
+      this.context.extensionMode !== vscode.ExtensionMode.Production
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, Math.min(delay, 2_000)));
+    }
+    this.throwIfCancelled(run);
   }
 
   private logResult(result: WorkbenchIndexResult, session: LocalCodeMonikerSession): void {

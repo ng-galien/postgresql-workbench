@@ -94,7 +94,9 @@ export class DatabaseSourceItem extends vscode.TreeItem {
       ? "postgresql-workbench-database-context-active"
       : "postgresql-workbench-database-context";
     this.tooltip = `PostgreSQL source ${server.database} on ${server.host}:${server.port}`;
-    if (active && state.status === "indexing") this.description = "active · indexing";
+    if (active && state.status === "indexing") {
+      this.description = state.result ? "active · refreshing" : "active · indexing";
+    }
     if (!active) {
       this.command = {
         command: "postgresql-workbench.useDatabaseContextAsActive",
@@ -122,15 +124,25 @@ export class SourcesSnapshotItem extends vscode.TreeItem {
       active && state.status === "indexing" ? "loading~spin" : "files",
     );
     this.contextValue = active
-      ? "postgresql-workbench-sources-active"
+      ? state.status === "indexing"
+        ? "postgresql-workbench-sources-indexing"
+        : "postgresql-workbench-sources-active"
       : "postgresql-workbench-sources-inactive";
-    this.description = active ? state.status : "inactive";
+    this.description = active ? sourcesDescription(state) : "inactive";
     this.tooltip = active
       ? sourcesTooltip(server.database, state)
       : "Set this database context active to browse its sources";
+    this.accessibilityInformation = {
+      label: active
+        ? sourcesAccessibilityLabel(server.database, state)
+        : `Sources, ${server.database}, inactive`,
+    };
     if (
       active &&
-      (state.status === "not-indexed" || state.status === "stale" || state.status === "error")
+      (state.status === "not-indexed" ||
+        state.status === "stale" ||
+        state.status === "cancelled" ||
+        state.status === "error")
     ) {
       this.command = {
         command: "postgresql-workbench.indexActiveDatabase",
@@ -140,20 +152,117 @@ export class SourcesSnapshotItem extends vscode.TreeItem {
   }
 }
 
+function sourcesDescription(state: WorkbenchIndexState): string {
+  switch (state.status) {
+    case "not-indexed":
+      return "not indexed";
+    case "indexing":
+      return `${state.result ? "refreshing" : "indexing"} · ${indexProgressLabel(state)}`;
+    case "available":
+      return state.result
+        ? `available · ${countLabel(state.result.documents, "source")} · ${countLabel(state.result.symbols, "symbol")}`
+        : "available";
+    case "stale":
+      return state.result ? "stale · previous snapshot available" : "stale";
+    case "cancelled":
+      return state.result ? "cancelled · previous snapshot available" : "cancelled · retry";
+    case "error":
+      return state.result ? "failed · previous snapshot available · retry" : "failed · retry";
+  }
+}
+
+function indexProgressLabel(state: WorkbenchIndexState): string {
+  const progress = state.progress;
+  if (!progress) return "starting";
+  switch (progress.phase) {
+    case "reading-catalog":
+      return "reading catalog";
+    case "connecting-index":
+      return "connecting index";
+    case "publishing-sources":
+      return progress.completed === undefined
+        ? "publishing sources"
+        : `publishing ${progress.completed} sources`;
+    case "reading-symbols":
+      return progress.completed ? `reading ${progress.completed} symbols` : "reading symbols";
+    case "checking-relations":
+      return "checking relations";
+    case "cancelling":
+      return "cancelling";
+  }
+}
+
+function resultSummary(result: WorkbenchIndexResult): string {
+  const milliseconds = Math.round(result.indexingMs);
+  return `${countLabel(result.documents, "source")}, ${countLabel(result.symbols, "symbol")}, ${milliseconds} ${milliseconds === 1 ? "millisecond" : "milliseconds"}`;
+}
+
+function countLabel(count: number, singular: string): string {
+  return `${count} ${singular}${count === 1 ? "" : "s"}`;
+}
+
 function sourcesTooltip(database: string, state: WorkbenchIndexState): string {
   switch (state.status) {
     case "not-indexed":
       return `PostgreSQL sources for ${database} are not indexed`;
     case "indexing":
-      return `Indexing PostgreSQL sources for ${database}…`;
+      return [
+        `${state.result ? "Refreshing" : "Indexing"} PostgreSQL sources for ${database}: ${indexProgressLabel(state)}`,
+        state.result ? `Previous snapshot available: ${resultSummary(state.result)}` : undefined,
+      ]
+        .filter(Boolean)
+        .join("\n");
     case "available":
-      return `Indexed sources for ${database}`;
+      return state.result
+        ? `Indexed sources for ${database}: ${resultSummary(state.result)}`
+        : `Indexed sources for ${database}`;
     case "stale":
-      return `PostgreSQL sources for ${database} are stale and require reindexing`;
+      return [
+        `PostgreSQL sources for ${database} are stale and require reindexing`,
+        state.message,
+        state.result ? `Previous snapshot available: ${resultSummary(state.result)}` : undefined,
+      ]
+        .filter(Boolean)
+        .join("\n");
+    case "cancelled":
+      return [
+        `PostgreSQL source indexing for ${database} was cancelled`,
+        state.result
+          ? `Previous snapshot available: ${resultSummary(state.result)}`
+          : "Select to retry",
+      ].join("\n");
     case "error":
-      return state.message
-        ? `PostgreSQL source indexing failed for ${database}: ${state.message}`
-        : `PostgreSQL source indexing failed for ${database}`;
+      return [
+        state.message
+          ? `PostgreSQL source indexing failed for ${database}: ${state.message}`
+          : `PostgreSQL source indexing failed for ${database}`,
+        state.result ? `Previous snapshot available: ${resultSummary(state.result)}` : undefined,
+        "Select to retry",
+      ]
+        .filter(Boolean)
+        .join("\n");
+  }
+}
+
+function sourcesAccessibilityLabel(database: string, state: WorkbenchIndexState): string {
+  switch (state.status) {
+    case "not-indexed":
+      return `Sources, ${database}, not indexed, select to index`;
+    case "indexing":
+      return [
+        `Sources, ${database}, ${state.result ? "refreshing" : "indexing"}, ${indexProgressLabel(state)}`,
+        state.result ? "previous snapshot available" : undefined,
+      ]
+        .filter(Boolean)
+        .join(", ");
+    case "available":
+      return `Sources, ${database}, available${state.result ? `, ${resultSummary(state.result)}` : ""}`;
+    case "stale":
+      return `Sources, ${database}, stale${state.result ? ", previous snapshot available" : ""}, select to reindex`;
+    case "cancelled":
+      return `Sources, ${database}, indexing cancelled${state.result ? ", previous snapshot available" : ""}, select to retry`;
+    case "error":
+      return `Sources, ${database}, indexing failed${state.message ? `, ${state.message}` : ""}${state.result ? ", previous snapshot available" : ""}, select to retry`;
   }
 }
 
@@ -762,7 +871,7 @@ export class WorkbenchTreeProvider
 
   searchObjects(query: string, limit = 100): WorkbenchObjectModel[] {
     const result = this.index.state.result;
-    if (this.index.state.status !== "available" || !result) {
+    if (!result) {
       return [];
     }
     return searchWorkbenchObjects(
@@ -776,14 +885,16 @@ export class WorkbenchTreeProvider
   }
 
   getTreeItem(element: PlpgsqlTreeItem): vscode.TreeItem {
-    if (element.id) this.visibleItems.set(element.id, element);
+    if (element.id && !this.visibleItems.has(element.id)) {
+      this.visibleItems.set(element.id, element);
+    }
     if (element.kind === "function" || element.kind === "object") {
       this.visibleObjects.set(element.object.sourceUri, element);
     }
     if (element.kind === "function") {
       const result = this.index.state.result;
       element.contextValue =
-        this.index.state.status === "available" &&
+        this.index.state.status !== "indexing" &&
         result?.serverId === element.object.serverId &&
         result.database === element.object.database
           ? "postgresql-workbench-function-debuggable"
@@ -805,14 +916,18 @@ export class WorkbenchTreeProvider
   getParent(element: PlpgsqlTreeItem): PlpgsqlTreeItem | undefined {
     if (element.kind === "schema") {
       const server = this.connections.activeServer;
-      return server ? new SourcesSnapshotItem(server, true, this.index.state) : undefined;
+      return server
+        ? this.canonicalItem(new SourcesSnapshotItem(server, true, this.index.state))
+        : undefined;
     }
     if (element.kind === "databaseSource") {
-      return new ServerItem(
-        element.server,
-        element.active,
-        this.connections.isActiveServer(element.server.id),
-        this.connections.pldbgapiAvailable,
+      return this.canonicalItem(
+        new ServerItem(
+          element.server,
+          element.active,
+          this.connections.isActiveServer(element.server.id),
+          this.connections.pldbgapiAvailable,
+        ),
       );
     }
     if (
@@ -824,18 +939,20 @@ export class WorkbenchTreeProvider
       const server =
         element.kind === "debugSessions" ? this.connections.activeServer : element.server;
       return server
-        ? new DatabaseSourceItem(
-            server,
-            this.index.state,
-            this.connections.isActiveServer(server.id),
+        ? this.canonicalItem(
+            new DatabaseSourceItem(
+              server,
+              this.index.state,
+              this.connections.isActiveServer(server.id),
+            ),
           )
         : undefined;
     }
     if (element.kind === "sqlNotebook") {
       if (element.binding.status === "bound") {
-        return new ScratchpadsItem(element.binding.server);
+        return this.canonicalItem(new ScratchpadsItem(element.binding.server));
       }
-      return new UnboundScratchpadsItem();
+      return this.canonicalItem(new UnboundScratchpadsItem());
     }
     if (element.kind === "notebookBinding") {
       return element.notebook;
@@ -845,8 +962,8 @@ export class WorkbenchTreeProvider
       element.kind === "object" ||
       element.kind === "extensionGroup"
     ) {
-      return new SchemaItem(
-        element.kind === "extensionGroup" ? element.schema : element.object.schema,
+      return this.canonicalItem(
+        new SchemaItem(element.kind === "extensionGroup" ? element.schema : element.object.schema),
       );
     }
     return undefined;
@@ -855,21 +972,33 @@ export class WorkbenchTreeProvider
   itemForObject(object: WorkbenchObjectModel): FunctionItem | WorkbenchObjectItem | undefined {
     const result = this.index.state.result;
     if (
-      this.index.state.status !== "available" ||
+      this.index.state.status === "indexing" ||
       !result ||
       result.serverId !== object.serverId ||
       result.database !== object.database
     ) {
       return undefined;
     }
-    return objectTreeItem(object, result);
+    const item = this.canonicalItem(objectTreeItem(object, result));
+    return item.kind === "function" || item.kind === "object" ? item : undefined;
   }
 
   async getChildren(element?: PlpgsqlTreeItem): Promise<PlpgsqlTreeItem[]> {
     if (element?.kind === "sourcesSnapshot") {
       this.knownSchemas = this.indexedSchemaNames();
     }
-    return this.children.getChildren(element);
+    return (await this.children.getChildren(element)).map((child) => this.canonicalItem(child));
+  }
+
+  private canonicalItem<T extends PlpgsqlTreeItem>(candidate: T): T {
+    if (!candidate.id) return candidate;
+    const current = this.visibleItems.get(candidate.id);
+    if (!current) {
+      this.visibleItems.set(candidate.id, candidate);
+      return candidate;
+    }
+    if (current !== candidate) synchronizeTreeItem(current, candidate);
+    return current as T;
   }
 
   setExpanded(element: PlpgsqlTreeItem, expanded: boolean): void {
@@ -895,6 +1024,7 @@ export class WorkbenchTreeProvider
     if (state.status === "available" || !state.result) this.children.refresh();
     const server = this.connections.activeServer;
     if (!server || !this.connections.isActiveServer(server.id)) return;
+    this.emitUpdated(new DatabaseSourceItem(server, state, true));
 
     if (!state.result) {
       this.knownSchemas = [];
@@ -903,15 +1033,17 @@ export class WorkbenchTreeProvider
     }
 
     this.emitUpdated(new SourcesSnapshotItem(server, true, state));
-    if (state.status !== "available") {
-      for (const item of this.visibleObjects.values()) {
-        if (item.kind === "function") {
-          item.contextValue = "postgresql-workbench-function";
-          this.emitUpdated(item);
-        }
+    const functionContext =
+      state.status === "indexing"
+        ? "postgresql-workbench-function"
+        : "postgresql-workbench-function-debuggable";
+    for (const item of this.visibleObjects.values()) {
+      if (item.kind === "function" && item.contextValue !== functionContext) {
+        item.contextValue = functionContext;
+        this.emitUpdated(item);
       }
-      return;
     }
+    if (state.status !== "available") return;
 
     const nextSchemas = this.indexedSchemaNames();
     const objects = buildWorkbenchObjects(this.index.indexedSymbols, {
