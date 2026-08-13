@@ -1,5 +1,5 @@
 import { Client } from "pg";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { parseCall } from "../src/callParser.js";
 import { PostgresDebugger } from "../src/debugger/postgres/index.js";
 import { analyzeFunction } from "../src/functionSource.js";
@@ -11,7 +11,33 @@ const PG_CONFIG = {
   database: "testdb",
   user: "postgres",
   password: "postgres",
+  application_name: "plpgsql_dap_e2e_direct",
 };
+
+async function waitForDirectDebuggerClientsToClose(): Promise<number> {
+  const inspector = new Client({
+    ...PG_CONFIG,
+    application_name: "plpgsql_dap_e2e_inspector",
+  });
+  await inspector.connect();
+  try {
+    const deadline = Date.now() + 3_000;
+    let count = Number.POSITIVE_INFINITY;
+    do {
+      const result = await inspector.query<{ count: number }>(`
+        SELECT count(*)::int AS count
+        FROM pg_stat_activity
+        WHERE application_name = 'plpgsql_dap_e2e_direct'
+      `);
+      count = Number(result.rows[0]?.count ?? 0);
+      if (count === 0) return count;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    } while (Date.now() < deadline);
+    return count;
+  } finally {
+    await inspector.end();
+  }
+}
 
 describe("e2e: pldbgapi integration", () => {
   let listenerClient: Client;
@@ -21,7 +47,7 @@ describe("e2e: pldbgapi integration", () => {
 
   beforeAll(async () => {
     codeMoniker = await startCodeMonikerTestRuntime();
-    listenerClient = new Client(PG_CONFIG);
+    listenerClient = new Client({ ...PG_CONFIG, application_name: "plpgsql_dap_e2e_metadata" });
     await listenerClient.connect();
     executor = new PostgresDebugger(listenerClient);
   });
@@ -29,6 +55,12 @@ describe("e2e: pldbgapi integration", () => {
   afterAll(async () => {
     await listenerClient.end().catch(() => {});
     await codeMoniker.dispose();
+  });
+
+  afterEach(async () => {
+    // Every per-test listener and target must have disappeared before another
+    // test can acquire the process-global pldebugger breakpoint owner.
+    expect(await waitForDirectDebuggerClientsToClose()).toBe(0);
   });
 
   it("checks debugger prerequisites", async () => {
@@ -97,7 +129,10 @@ describe("e2e: pldbgapi integration", () => {
     let debugExecutor: PostgresDebugger;
 
     beforeAll(async () => {
-      debugListener = new Client(PG_CONFIG);
+      debugListener = new Client({
+        ...PG_CONFIG,
+        application_name: "plpgsql_dap_e2e_nested_listener",
+      });
       await debugListener.connect();
       debugExecutor = new PostgresDebugger(debugListener);
     });

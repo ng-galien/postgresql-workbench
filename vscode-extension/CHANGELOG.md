@@ -70,9 +70,9 @@
   serialized frame selection with variable inspection; each suspended frame now
   serves one immutable variable snapshot to Arguments, Locals, watches, and
   inline values instead of repeatedly stressing the pldebugger proxy
-- Kept debugger bootstrap suspended only at a registered line breakpoint after
-  releasing the temporary attach breakpoint, including recursive routines that
-  expose several technical entry stops, without auto-chaining user step commands
+- Kept **Continue** from surfacing residual copies of the exact temporary entry
+  stop after it is released, without hiding other unregistered suspensions;
+  Step Over, Step Into, and Step Out still execute exactly one user step command
 - Used the actually suspended PostgreSQL stack frame, rather than the differing
   `pldbg_continue()` tuple, to identify breakpoints and residual entry stops
 - Normalized DAP client line bases at the protocol boundary so VS Code's

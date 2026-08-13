@@ -230,6 +230,8 @@ interface DebugStopPosition {
   line: number;
 }
 
+type ExecutionStopPolicy = "first-suspension" | "skip-technical-entry";
+
 // The DAP framework requires one stateful session owner for protocol ordering and request handlers;
 // parsing, PostgreSQL access, source registration, and launch orchestration already live in helpers.
 // code-moniker: ignore[smell-large-class]
@@ -762,6 +764,12 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
 
     await this.releaseEntryBreakpoint();
 
+    if (this.entryFunctionBreakpointRequested) {
+      log("configurationDone: exposing the current entry as the requested function breakpoint");
+      this.sendStoppedAndReset("function breakpoint", this.entrySource);
+      return;
+    }
+
     if (entryLineBreakpoints > 0) {
       log(
         `configurationDone: skipping technical entry stop and continuing to ${entryLineBreakpoints} user breakpoint(s)`,
@@ -770,11 +778,7 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
 
     if (this.lifecycle.beginExecution()) {
       this.sendSessionStatus("resuming");
-      if (entryLineBreakpoints > 0) {
-        await this.continueFromEntryToLineBreakpoint();
-      } else {
-        await this.safeStep(() => this.listenerExecutor.stepContinue(), "breakpoint");
-      }
+      await this.continueToVisibleStop();
     }
   }
 
@@ -982,6 +986,7 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
       () => this.listenerExecutor.stepContinue(),
       "breakpoint",
       "continue",
+      "skip-technical-entry",
     );
   }
 
@@ -994,6 +999,7 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
       () => this.listenerExecutor.stepOver(),
       "step",
       "step over",
+      "first-suspension",
     );
   }
 
@@ -1006,6 +1012,7 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
       () => this.listenerExecutor.stepInto(),
       "step",
       "step into",
+      "first-suspension",
     );
   }
 
@@ -1018,6 +1025,7 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
       () => this.listenerExecutor.stepContinue(),
       "step",
       "step out",
+      "first-suspension",
     );
   }
 
@@ -1274,6 +1282,7 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
     stepFn: () => Promise<import("../postgres/index.js").PlApiStep | null>,
     reason: string,
     command: string,
+    stopPolicy: ExecutionStopPolicy,
   ): Promise<void> {
     if (!this.listenerExecutor || this.lifecycle.state !== "suspended") {
       this.sendErrorResponse(
@@ -1295,15 +1304,15 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
     }
     this.sendSessionStatus("resuming");
     this.sendResponse(response);
-    await this.safeStep(stepFn, reason);
+    await this.safeStep(stepFn, reason, stopPolicy);
   }
 
   private async safeStep(
     stepFn: () => Promise<import("../postgres/index.js").PlApiStep | null>,
     reason: string,
-    requireRegisteredLineBreakpoint = false,
+    stopPolicy: ExecutionStopPolicy,
   ): Promise<void> {
-    log(`safeStep: starting (reason=${reason})`);
+    log(`safeStep: starting (reason=${reason}, policy=${stopPolicy})`);
     if (!this.listenerExecutor) return;
     try {
       let step = await this.runStepCommand(stepFn);
@@ -1314,32 +1323,9 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
         const stop = (await this.currentStopPosition().catch(() => undefined)) ?? step;
         log(`safeStep: stopped raw=${step.oid}:${step.line} stack=${stop.oid}:${stop.line}`);
         const bpInfo = this.getBreakpointInfo(stop.oid, stop.line);
-        if (requireRegisteredLineBreakpoint && !bpInfo) {
-          log(`safeStep: bootstrap ignored non-user stop oid=${stop.oid} line=${stop.line}`);
-          step = await this.runStepCommand(() => this.listenerExecutor.stepContinue());
-          continue;
-        }
         const source = await this.sourceForPosition(stop.oid, stop.line).catch(() => undefined);
 
-        if (bpInfo?.logMessage || bpInfo?.condition) {
-          const vars = await this.listenerExecutor.getVariables();
-          this.lastKnownVariables = vars;
-
-          if (bpInfo.logMessage) {
-            this.emitLogpoint(bpInfo.logMessage, vars);
-            step = await this.runStepCommand(() => this.listenerExecutor.stepContinue());
-            continue;
-          }
-
-          if (bpInfo.condition) {
-            const condMet = await this.evaluateCondition(bpInfo.condition, vars);
-            if (!condMet) {
-              step = await this.runStepCommand(() => this.listenerExecutor.stepContinue());
-              continue;
-            }
-          }
-        }
-
+        let exceptionConditions: string[] | undefined;
         if (this.exceptionFilters.size > 0) {
           const cached = await this.getSource(stop.oid);
           if (cached) {
@@ -1352,17 +1338,50 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
                 (this.exceptionFilters.has("raise") &&
                   handler.conditions.some((c) => c === "others" || c.includes("exception")));
               if (shouldStop) {
-                this.sendEvent(
-                  new OutputEvent(
-                    `Exception caught: ${handler.conditions.join(", ")}\n`,
-                    "console",
-                  ),
-                );
-                this.sendStoppedAndReset("exception", source);
-                return;
+                exceptionConditions = handler.conditions;
               }
             }
           }
+        }
+
+        const logMessage = bpInfo?.logMessage;
+        const condition =
+          stopPolicy === "skip-technical-entry" && !exceptionConditions && !logMessage
+            ? bpInfo?.condition
+            : undefined;
+        if (logMessage || condition) {
+          const vars = await this.listenerExecutor.getVariables();
+          this.lastKnownVariables = vars;
+
+          if (logMessage) {
+            this.emitLogpoint(logMessage, vars);
+            if (stopPolicy === "skip-technical-entry" && !exceptionConditions) {
+              step = await this.runStepCommand(() => this.listenerExecutor.stepContinue());
+              continue;
+            }
+          }
+
+          if (condition) {
+            const condMet = await this.evaluateCondition(condition, vars);
+            if (!condMet) {
+              step = await this.runStepCommand(() => this.listenerExecutor.stepContinue());
+              continue;
+            }
+          }
+        }
+
+        if (exceptionConditions) {
+          this.sendEvent(
+            new OutputEvent(`Exception caught: ${exceptionConditions.join(", ")}\n`, "console"),
+          );
+          this.sendStoppedAndReset("exception", source);
+          return;
+        }
+
+        if (stopPolicy === "skip-technical-entry" && this.isTechnicalEntryStop(stop, bpInfo)) {
+          log(`safeStep: Continue ignored residual entry stop oid=${stop.oid} line=${stop.line}`);
+          step = await this.runStepCommand(() => this.listenerExecutor.stepContinue());
+          continue;
         }
 
         this.sendStoppedAndReset(reason, source);
@@ -1380,13 +1399,32 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
   }
 
   /**
-   * Leave the temporary attach stop and wait for the line breakpoint that the
-   * client registered before configurationDone. Each continue request waits for
-   * PostgreSQL to suspend again; this bootstrap path is never used by user step
-   * commands.
+   * Continue past only the exact temporary entry position captured at attach.
+   * Every other PostgreSQL suspension remains visible, even when the adapter
+   * cannot associate it with a registered line breakpoint. Step commands use
+   * the separate first-suspension policy and are never auto-chained.
    */
-  private async continueFromEntryToLineBreakpoint(): Promise<void> {
-    await this.safeStep(() => this.listenerExecutor.stepContinue(), "breakpoint", true);
+  private async continueToVisibleStop(): Promise<void> {
+    await this.safeStep(
+      () => this.listenerExecutor.stepContinue(),
+      "breakpoint",
+      "skip-technical-entry",
+    );
+  }
+
+  private isTechnicalEntryStop(
+    stop: DebugStopPosition,
+    breakpoint: BreakpointInfo | undefined,
+  ): boolean {
+    const entry = this.entryStopPosition;
+    return (
+      this.entryBreakpointReleased &&
+      !this.entryFunctionBreakpointRequested &&
+      !breakpoint &&
+      entry !== undefined &&
+      stop.oid === entry.oid &&
+      stop.line === entry.line
+    );
   }
 
   private postgresFrameLevelForEvaluation(frameId: number | undefined): number | undefined {
@@ -1688,7 +1726,12 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
     }
     this.entryBreakpointReleased = true;
     if (this.entryFunctionBreakpointRequested) {
-      await this.listenerExecutor.setGlobalBreakpoint(this.entryOid);
+      const restored = await this.listenerExecutor.setBreakpoint(this.entryOid, -1);
+      if (!restored) {
+        throw new Error(
+          `Cannot restore the PL/pgSQL function breakpoint for routine OID ${this.entryOid}`,
+        );
+      }
     }
   }
 

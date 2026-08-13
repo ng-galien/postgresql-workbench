@@ -33,6 +33,28 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+async function stopDebugClient(client: DebugClient, timeout = 3_000): Promise<void> {
+  const forceStop = () => {
+    (client as unknown as { stopAdapter(): void }).stopAdapter();
+  };
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      client.stop(),
+      new Promise<void>((resolve) => {
+        timer = setTimeout(() => {
+          forceStop();
+          resolve();
+        }, timeout);
+      }),
+    ]);
+  } catch {
+    forceStop();
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 async function launchAndWaitForEntry(dc: DebugClient, sql: string) {
   const stopped = dc.waitForEvent("stopped", 15_000);
   await Promise.all([
@@ -82,7 +104,7 @@ describe("DAP human debug lifecycle", () => {
   let dc: DebugClient;
   let outputs: string[];
   let terminatedCount: number;
-  let codeMoniker: CodeMonikerTestRuntime;
+  let codeMoniker: CodeMonikerTestRuntime | undefined;
 
   beforeAll(async () => {
     codeMoniker = await startCodeMonikerTestRuntime();
@@ -90,13 +112,15 @@ describe("DAP human debug lifecycle", () => {
   }, 30_000);
 
   afterAll(async () => {
-    await codeMoniker.dispose();
+    await codeMoniker?.dispose();
   });
 
   beforeEach(async () => {
+    if (!codeMoniker) throw new Error("Code Moniker test runtime did not start");
     dc = new DebugClient("node", DAP_SERVER, "plpgsql", {
       env: codeMoniker.dapEnvironment(),
     });
+    dc.defaultTimeout = 15_000;
     outputs = [];
     terminatedCount = 0;
     dc.on("output", (event) => outputs.push(String(event.body.output ?? "")));
@@ -107,10 +131,15 @@ describe("DAP human debug lifecycle", () => {
   });
 
   afterEach(async () => {
-    await Promise.race([dc.stop(), delay(3_000)]).catch(() => {});
-  }, 10_000);
+    await stopDebugClient(dc);
+    expect(await waitForDebuggerBackendsToClose()).toBe(0);
+  }, 15_000);
 
   it("skips the recursive technical entry and reports every recursive line-breakpoint frame", async () => {
+    let stoppedCount = 0;
+    dc.on("stopped", () => {
+      stoppedCount++;
+    });
     const oid = await routineOid("playground.fib(integer)");
     const sourcePath = canonicalSourceUris[String(oid)];
     expect(sourcePath).toMatch(/^code\+moniker:\/\//);
@@ -191,6 +220,15 @@ describe("DAP human debug lifecycle", () => {
         stopped = await nextStop;
       }
     }
+
+    expect(stoppedCount).toBe(expectedReturns.length);
+    const terminated = dc.waitForEvent("terminated", 15_000);
+    await dc.continueRequest({ threadId: stopped.body.threadId });
+    await terminated;
+    await delay(100);
+    expect(stoppedCount).toBe(expectedReturns.length);
+    expect(terminatedCount).toBe(1);
+    expect(await waitForDebuggerBackendsToClose()).toBe(0);
   }, 30_000);
 
   it("reconciles repeated and replaced breakpoints without leaving stale server state", async () => {

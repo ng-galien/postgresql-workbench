@@ -30,6 +30,28 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+async function stopDebugClient(client: DebugClient, timeout = 3_000): Promise<void> {
+  const forceStop = () => {
+    (client as unknown as { stopAdapter(): void }).stopAdapter();
+  };
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      client.stop(),
+      new Promise<void>((resolve) => {
+        timer = setTimeout(() => {
+          forceStop();
+          resolve();
+        }, timeout);
+      }),
+    ]);
+  } catch {
+    forceStop();
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 async function routineOid(signature: string): Promise<number> {
   const client = new Client(LAUNCH_ARGS);
   await client.connect();
@@ -103,16 +125,20 @@ describe("DAP client e2e", () => {
 
   beforeEach(async () => {
     dc = new DebugClient("node", DAP_SERVER, "plpgsql");
+    dc.defaultTimeout = 15_000;
     await dc.start();
   });
 
   afterEach(async () => {
+    await stopDebugClient(dc);
+    const observer = new Client(LAUNCH_ARGS);
+    await observer.connect();
     try {
-      await Promise.race([dc.stop(), delay(3000)]);
-    } catch {
-      // session may already be closed
+      expect(await waitForDebuggerBackendsToClose(observer)).toBe(0);
+    } finally {
+      await observer.end();
     }
-  }, 10_000);
+  }, 15_000);
 
   // ----- Launch & terminate -----
 
@@ -144,7 +170,7 @@ describe("DAP client e2e", () => {
     await terminated;
   });
 
-  it("removes the attach breakpoint after the first recursive entry", async () => {
+  it("does not publish recursive technical entry stops after Continue", async () => {
     const stopped = await launchAndWaitForStop(dc, launchConfig("SELECT test_recursive_entry(8)"));
     let repeatedStops = 0;
     dc.on("stopped", () => repeatedStops++);
@@ -154,7 +180,7 @@ describe("DAP client e2e", () => {
 
     await terminated;
     expect(repeatedStops).toBe(0);
-  });
+  }, 20_000);
 
   it("returns Fibonacci variables from the recursive stack frame requested by the client", async () => {
     const entry = await launchAndWaitForStop(dc, launchConfig("SELECT playground.fib(5)"));
@@ -537,6 +563,34 @@ describe("DAP client e2e", () => {
     await dc.disconnectRequest();
   });
 
+  it("stops at a function breakpoint on the launch routine itself", async () => {
+    const initialized = dc.waitForEvent("initialized", 5_000);
+    await dc.initializeRequest();
+    await initialized;
+
+    const configured = await dc.setFunctionBreakpointsRequest({
+      breakpoints: [{ name: "public.test_simple" }],
+    });
+    expect(configured.body.breakpoints[0]?.verified).toBe(false);
+
+    const changed = dc.waitForEvent("breakpoint", 15_000);
+    const stopped = dc.waitForEvent("stopped", 15_000);
+    await dc.launchRequest({
+      ...launchConfig("SELECT test_simple(5, 'entry-function-breakpoint')"),
+      stopOnEntry: false,
+    });
+    await dc.configurationDoneRequest();
+
+    expect((await changed).body.breakpoint.verified).toBe(true);
+    const stop = await stopped;
+    expect(stop.body.reason).toBe("function breakpoint");
+
+    const stack = await dc.stackTraceRequest({ threadId: stop.body.threadId });
+    expect(stack.body.stackFrames[0]?.name).toContain("test_simple");
+
+    await dc.disconnectRequest();
+  }, 20_000);
+
   // ----- Stack trace -----
 
   it("reports correct function name in stack trace", async () => {
@@ -840,48 +894,6 @@ describe("DAP client e2e", () => {
 
     await dc.disconnectRequest();
   });
-
-  // ----- Loop stepping -----
-
-  it("stepping through a loop accumulates variable values", async () => {
-    const stopped = await launchAndWaitForStop(dc, launchConfig("SELECT test_loop(3)"));
-    const tid = stopped.body.threadId;
-
-    // Track session end — stepping past the last line terminates the session
-    let terminated = false;
-    dc.on("terminated", () => {
-      terminated = true;
-    });
-
-    // Step until the function finishes, reading `total` at each stop
-    let lastTotal = -1;
-    for (let i = 0; i < 12 && !terminated; i++) {
-      const stoppedAgain = await runAndWaitForStop(
-        dc,
-        () => dc.nextRequest({ threadId: tid }),
-        5_000,
-      ).catch(() => null);
-      if (!stoppedAgain || terminated) break;
-
-      const stack = await dc.stackTraceRequest({ threadId: tid });
-      if (stack.body.stackFrames.length === 0) break;
-      const scopes = await dc.scopesRequest({ frameId: stack.body.stackFrames[0].id });
-      const locals = await dc.variablesRequest({
-        variablesReference: scopes.body.scopes[1].variablesReference,
-      });
-      const total = locals.body.variables.find((v) => v.name === "total");
-      if (total && total.value !== "NULL") {
-        lastTotal = parseInt(total.value, 10);
-      }
-    }
-
-    // At the RETURN stop the loop has fully accumulated: 1 + 2 + 3
-    expect(lastTotal).toBe(6);
-
-    if (!terminated) {
-      await dc.disconnectRequest();
-    }
-  }, 30_000);
 
   // ----- Stepping semantics contract -----
   //

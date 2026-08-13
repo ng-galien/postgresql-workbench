@@ -60,7 +60,7 @@ describe("PlpgsqlDebugSession stack frames", () => {
       entryOid: number;
       listenerExecutor: {
         dropGlobalBreakpoint(oid: number): Promise<boolean>;
-        setGlobalBreakpoint(oid: number): Promise<void>;
+        setBreakpoint(oid: number, line: number): Promise<boolean>;
       };
       releaseEntryBreakpoint(): Promise<void>;
     };
@@ -71,19 +71,20 @@ describe("PlpgsqlDebugSession stack frames", () => {
         calls.push(`drop:${oid}`);
         return true;
       },
-      async setGlobalBreakpoint(oid) {
-        calls.push(`set:${oid}`);
+      async setBreakpoint(oid, line) {
+        calls.push(`set:${oid}:${line}`);
+        return true;
       },
     };
 
     await internal.releaseEntryBreakpoint();
     await internal.releaseEntryBreakpoint();
 
-    expect(calls).toEqual(["drop:4242", "set:4242"]);
+    expect(calls).toEqual(["drop:4242", "set:4242:-1"]);
     expect(internal.entryBreakpointReleased).toBe(true);
   });
 
-  it("continues from technical entry stops to the registered line breakpoint", async () => {
+  it("continues past repeated copies of the exact technical entry stop", async () => {
     const session = new PlpgsqlDebugSession(async () => {
       throw new Error("The syntax parser must not be used while stepping");
     });
@@ -100,14 +101,20 @@ describe("PlpgsqlDebugSession stack frames", () => {
     const stopped: Array<{ reason: string; line?: number }> = [];
     const internal = session as unknown as {
       activeBreakpoints: Map<number, Map<number, unknown>>;
+      entryBreakpointReleased: boolean;
+      entryFunctionBreakpointRequested: boolean;
+      entryStopPosition: { oid: number; line: number };
       listenerExecutor: {
         stepContinue(): Promise<{ oid: number; line: number; md5: string } | null>;
       };
-      continueFromEntryToLineBreakpoint(): Promise<void>;
+      continueToVisibleStop(): Promise<void>;
       currentStopPosition(): Promise<{ oid: number; line: number } | undefined>;
       sendStoppedAndReset(reason: string, source?: { line?: number }): void;
       sourceForPosition(oid: number, line: number): Promise<{ line: number }>;
     };
+    internal.entryBreakpointReleased = true;
+    internal.entryFunctionBreakpointRequested = false;
+    internal.entryStopPosition = { oid: 4242, line: 4 };
     internal.activeBreakpoints.set(4242, new Map([[8, {}]]));
     internal.listenerExecutor = {
       async stepContinue() {
@@ -120,7 +127,7 @@ describe("PlpgsqlDebugSession stack frames", () => {
       stopped.push({ reason, line: source?.line });
     };
 
-    await internal.continueFromEntryToLineBreakpoint();
+    await internal.continueToVisibleStop();
 
     expect(steps).toEqual([]);
     expect(stopped).toEqual([{ reason: "breakpoint", line: 8 }]);
@@ -142,6 +149,7 @@ describe("PlpgsqlDebugSession stack frames", () => {
       safeStep(
         step: () => Promise<{ oid: number; line: number; md5: string } | null>,
         reason: string,
+        stopPolicy: "first-suspension" | "skip-technical-entry",
       ): Promise<void>;
       currentStopPosition(): Promise<{ oid: number; line: number } | undefined>;
       sendStoppedAndReset(reason: string, source?: { line?: number }): void;
@@ -158,10 +166,235 @@ describe("PlpgsqlDebugSession stack frames", () => {
       stopped.push({ reason, line: source?.line });
     };
 
-    await internal.safeStep(() => internal.listenerExecutor.stepContinue(), "step");
+    await internal.safeStep(
+      () => internal.listenerExecutor.stepContinue(),
+      "step",
+      "first-suspension",
+    );
 
     expect(steps).toHaveLength(1);
     expect(stopped).toEqual([{ reason: "step", line: 4 }]);
+  });
+
+  it.each([
+    ["logpoint", { logMessage: "n={n}" }],
+    ["false condition", { condition: "n > 10" }],
+  ])("does not auto-continue a user step that lands on a %s", async (_label, breakpoint) => {
+    const session = new PlpgsqlDebugSession(async () => {
+      throw new Error("The syntax parser must not be used while stepping");
+    });
+    const steps = [
+      { oid: 4242, line: 4, md5: "" },
+      { oid: 4242, line: 8, md5: "" },
+    ];
+    const stopped: Array<{ reason: string; line?: number }> = [];
+    const getVariables = vi.fn(async () => []);
+    const internal = session as unknown as {
+      activeBreakpoints: Map<number, Map<number, unknown>>;
+      emitLogpoint(template: string, variables: never[]): void;
+      evaluateCondition(condition: string, variables: never[]): Promise<boolean>;
+      listenerExecutor: {
+        getVariables(): Promise<never[]>;
+        stepContinue(): Promise<{ oid: number; line: number; md5: string } | null>;
+      };
+      safeStep(
+        step: () => Promise<{ oid: number; line: number; md5: string } | null>,
+        reason: string,
+        stopPolicy: "first-suspension" | "skip-technical-entry",
+      ): Promise<void>;
+      currentStopPosition(): Promise<{ oid: number; line: number } | undefined>;
+      sendStoppedAndReset(reason: string, source?: { line?: number }): void;
+      sourceForPosition(oid: number, line: number): Promise<{ line: number }>;
+    };
+    internal.activeBreakpoints.set(4242, new Map([[4, breakpoint]]));
+    internal.listenerExecutor = {
+      getVariables,
+      async stepContinue() {
+        return steps.shift() ?? null;
+      },
+    };
+    internal.currentStopPosition = async () => ({ oid: 4242, line: 4 });
+    internal.sourceForPosition = async (_oid, line) => ({ line });
+    internal.emitLogpoint = vi.fn();
+    internal.evaluateCondition = vi.fn(async () => false);
+    internal.sendStoppedAndReset = (reason, source) => {
+      stopped.push({ reason, line: source?.line });
+    };
+
+    await internal.safeStep(
+      () => internal.listenerExecutor.stepContinue(),
+      "step",
+      "first-suspension",
+    );
+
+    expect(steps).toHaveLength(1);
+    expect(stopped).toEqual([{ reason: "step", line: 4 }]);
+    if ("condition" in breakpoint) {
+      expect(getVariables).not.toHaveBeenCalled();
+      expect(internal.evaluateCondition).not.toHaveBeenCalled();
+    }
+  });
+
+  it("emits a logpoint before prioritizing an enabled exception", async () => {
+    const session = new PlpgsqlDebugSession(async () => {
+      throw new Error("The syntax parser must not be used while continuing");
+    });
+    const steps = [
+      { oid: 4242, line: 4, md5: "" },
+      { oid: 4242, line: 8, md5: "" },
+    ];
+    const stopped: string[] = [];
+    const getVariables = vi.fn(async () => []);
+    const internal = session as unknown as {
+      activeBreakpoints: Map<number, Map<number, unknown>>;
+      emitLogpoint(template: string, variables: never[]): void;
+      exceptionFilters: Set<string>;
+      getSource(oid: number): Promise<{
+        analysis: { exceptionHandlers: Array<{ conditions: string[]; startLine: number }> };
+      }>;
+      listenerExecutor: {
+        getVariables(): Promise<never[]>;
+        stepContinue(): Promise<{ oid: number; line: number; md5: string } | null>;
+      };
+      safeStep(
+        step: () => Promise<{ oid: number; line: number; md5: string } | null>,
+        reason: string,
+        stopPolicy: "first-suspension" | "skip-technical-entry",
+      ): Promise<void>;
+      currentStopPosition(): Promise<{ oid: number; line: number } | undefined>;
+      sendEvent(event: unknown): void;
+      sendStoppedAndReset(reason: string): void;
+      sourceForPosition(oid: number, line: number): Promise<{ line: number }>;
+    };
+    internal.activeBreakpoints.set(4242, new Map([[4, { logMessage: "ignored" }]]));
+    internal.exceptionFilters = new Set(["all"]);
+    internal.listenerExecutor = {
+      getVariables,
+      async stepContinue() {
+        return steps.shift() ?? null;
+      },
+    };
+    internal.currentStopPosition = async () => ({ oid: 4242, line: 4 });
+    internal.sourceForPosition = async (_oid, line) => ({ line });
+    internal.getSource = async () => ({
+      analysis: { exceptionHandlers: [{ conditions: ["others"], startLine: 4 }] },
+    });
+    internal.emitLogpoint = vi.fn();
+    internal.sendEvent = vi.fn();
+    internal.sendStoppedAndReset = (reason) => {
+      stopped.push(reason);
+    };
+
+    await internal.safeStep(
+      () => internal.listenerExecutor.stepContinue(),
+      "breakpoint",
+      "skip-technical-entry",
+    );
+
+    expect(steps).toHaveLength(1);
+    expect(getVariables).toHaveBeenCalledOnce();
+    expect(internal.emitLogpoint).toHaveBeenCalledWith("ignored", []);
+    expect(stopped).toEqual(["exception"]);
+  });
+
+  it("does not hide the exact entry position when a function breakpoint requested it", async () => {
+    const session = new PlpgsqlDebugSession(async () => {
+      throw new Error("The syntax parser must not be used while continuing");
+    });
+    const steps = [
+      { oid: 4242, line: 6, md5: "" },
+      { oid: 4242, line: 10, md5: "" },
+    ];
+    const stopped: Array<{ reason: string; line?: number }> = [];
+    const internal = session as unknown as {
+      entryBreakpointReleased: boolean;
+      entryFunctionBreakpointRequested: boolean;
+      entryStopPosition: { oid: number; line: number };
+      listenerExecutor: {
+        stepContinue(): Promise<{ oid: number; line: number; md5: string } | null>;
+      };
+      safeStep(
+        step: () => Promise<{ oid: number; line: number; md5: string } | null>,
+        reason: string,
+        stopPolicy: "first-suspension" | "skip-technical-entry",
+      ): Promise<void>;
+      currentStopPosition(): Promise<{ oid: number; line: number } | undefined>;
+      sendStoppedAndReset(reason: string, source?: { line?: number }): void;
+      sourceForPosition(oid: number, line: number): Promise<{ line: number }>;
+    };
+    internal.entryBreakpointReleased = true;
+    internal.entryFunctionBreakpointRequested = true;
+    internal.entryStopPosition = { oid: 4242, line: 4 };
+    internal.listenerExecutor = {
+      async stepContinue() {
+        return steps.shift() ?? null;
+      },
+    };
+    internal.currentStopPosition = async () => ({ oid: 4242, line: 4 });
+    internal.sourceForPosition = async (_oid, line) => ({ line });
+    internal.sendStoppedAndReset = (reason, source) => {
+      stopped.push({ reason, line: source?.line });
+    };
+
+    await internal.safeStep(
+      () => internal.listenerExecutor.stepContinue(),
+      "breakpoint",
+      "skip-technical-entry",
+    );
+
+    expect(steps).toHaveLength(1);
+    expect(stopped).toEqual([{ reason: "breakpoint", line: 4 }]);
+  });
+
+  it("surfaces an unexpected unregistered stop during Continue", async () => {
+    const session = new PlpgsqlDebugSession(async () => {
+      throw new Error("The syntax parser must not be used while continuing");
+    });
+    const steps = [
+      { oid: 4242, line: 8, md5: "" },
+      { oid: 4242, line: 10, md5: "" },
+    ];
+    const stopped: Array<{ reason: string; line?: number }> = [];
+    const internal = session as unknown as {
+      activeBreakpoints: Map<number, Map<number, unknown>>;
+      entryBreakpointReleased: boolean;
+      entryFunctionBreakpointRequested: boolean;
+      entryStopPosition: { oid: number; line: number };
+      listenerExecutor: {
+        stepContinue(): Promise<{ oid: number; line: number; md5: string } | null>;
+      };
+      safeStep(
+        step: () => Promise<{ oid: number; line: number; md5: string } | null>,
+        reason: string,
+        stopPolicy: "first-suspension" | "skip-technical-entry",
+      ): Promise<void>;
+      currentStopPosition(): Promise<{ oid: number; line: number } | undefined>;
+      sendStoppedAndReset(reason: string, source?: { line?: number }): void;
+      sourceForPosition(oid: number, line: number): Promise<{ line: number }>;
+    };
+    internal.entryBreakpointReleased = true;
+    internal.entryFunctionBreakpointRequested = false;
+    internal.entryStopPosition = { oid: 4242, line: 4 };
+    internal.activeBreakpoints.set(4242, new Map([[8, {}]]));
+    internal.listenerExecutor = {
+      async stepContinue() {
+        return steps.shift() ?? null;
+      },
+    };
+    internal.currentStopPosition = async () => ({ oid: 4242, line: 6 });
+    internal.sourceForPosition = async (_oid, line) => ({ line });
+    internal.sendStoppedAndReset = (reason, source) => {
+      stopped.push({ reason, line: source?.line });
+    };
+
+    await internal.safeStep(
+      () => internal.listenerExecutor.stepContinue(),
+      "breakpoint",
+      "skip-technical-entry",
+    );
+
+    expect(steps).toHaveLength(1);
+    expect(stopped).toEqual([{ reason: "breakpoint", line: 6 }]);
   });
 
   it("uses the current PostgreSQL frame for absent or zero DAP frame IDs", () => {
