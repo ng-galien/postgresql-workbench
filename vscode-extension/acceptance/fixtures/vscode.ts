@@ -225,6 +225,7 @@ export interface VSCodeInstance {
       | "testing.runAll"
       | "testing.toggleInlineCoverage"
       | "postgresql-workbench-connections.focus"
+      | "workbench.action.files.saveAll"
       | "workbench.action.debug.continue"
       | "workbench.action.debug.stepInto"
       | "workbench.action.debug.stepOver"

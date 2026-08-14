@@ -82,7 +82,7 @@ test.describe("Scratchpads", () => {
     });
 
     await test.step("leave the Transaction active when the Scratchpad editor closes", async () => {
-      await workbench.page.keyboard.press("Meta+S");
+      await vscode.executeCommand("workbench.action.files.saveAll");
       const activeTab = workbench.page.locator(".editor-group-container .tab.active");
       await activeTab.hover();
       await activeTab.locator(".codicon-close").click();
@@ -119,6 +119,11 @@ test.describe("Scratchpads", () => {
       const failing = await notebook.addCodeCell();
       await notebook.typeInCell(failing, "INSERT INTO public.table_that_does_not_exist VALUES (1)");
       await notebook.executeCode(failing);
+      await expect
+        .poll(async () => (await notebook.snapshot())?.cells.at(-1)?.outputGroups.length, {
+          timeout: 10_000,
+        })
+        .toBeGreaterThan(0);
       const failed = workbench.tree.item(/^Transaction failed/u);
       await expect(failed).toBeVisible({ timeout: 5_000 });
       await failed.hover();
@@ -155,7 +160,7 @@ test.describe("Scratchpads", () => {
       );
       await notebook.executeCode(shutdownWork);
       await expect(workbench.tree.item(/^Transaction in progress/u)).toContainText("1 Statement");
-      await workbench.page.keyboard.press("Meta+S");
+      await vscode.executeCommand("workbench.action.files.saveAll");
 
       await vscode.executeInfrastructureCommand("workbench.action.reloadWindow");
       await expect

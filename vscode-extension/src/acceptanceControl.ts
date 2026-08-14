@@ -4,6 +4,7 @@ import { readFile, rm } from "node:fs/promises";
 import * as vscode from "vscode";
 
 const RELOAD_WINDOW_COMMAND = "workbench.action.reloadWindow";
+const SAVE_ALL_COMMAND = "workbench.action.files.saveAll";
 const QUICK_OPEN_COMMAND = "workbench.action.quickOpen";
 const FOCUS_TESTING_COMMAND = "workbench.view.testing.focus";
 const RUN_ALL_TESTS_COMMAND = "testing.runAll";
@@ -21,6 +22,7 @@ const RESET_WORKBENCH_COMMAND = "postgresql-workbench.acceptance.resetWorkbench"
 const OPEN_WORKSPACE_FILE_COMMAND = "postgresql-workbench.acceptance.openWorkspaceFile";
 const ACCEPTANCE_COMMANDS = new Set([
   RELOAD_WINDOW_COMMAND,
+  SAVE_ALL_COMMAND,
   QUICK_OPEN_COMMAND,
   FOCUS_TESTING_COMMAND,
   RUN_ALL_TESTS_COMMAND,
@@ -115,7 +117,7 @@ export function registerAcceptanceControl(
           return;
         }
         if (instruction.command === RESET_WORKBENCH_COMMAND) {
-          await vscode.commands.executeCommand("workbench.action.files.saveAll");
+          await vscode.commands.executeCommand(SAVE_ALL_COMMAND);
           await options.resetWorkbench();
           const tabs = vscode.window.tabGroups.all.flatMap((group) => group.tabs);
           if (tabs.length > 0) await vscode.window.tabGroups.close(tabs, false);
