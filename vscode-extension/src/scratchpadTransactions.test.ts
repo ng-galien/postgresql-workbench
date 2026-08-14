@@ -87,6 +87,19 @@ describe("ScratchpadTransactionManager", () => {
     expect(client.end).toHaveBeenCalledTimes(1);
   });
 
+  it("exposes a fallback only when one Scratchpad owns a Transaction", async () => {
+    const { transactions } = fixture();
+
+    await transactions.execute("scratchpad:1", "Scratch 1", association, async () => undefined);
+    expect(transactions.soleTransaction()?.scratchpadUri).toBe("scratchpad:1");
+
+    await transactions.execute("scratchpad:2", "Scratch 2", association, async () => undefined);
+    expect(transactions.soleTransaction()).toBeUndefined();
+
+    await transactions.rollback("scratchpad:1");
+    expect(transactions.soleTransaction()?.scratchpadUri).toBe("scratchpad:2");
+  });
+
   it("waits for in-flight work, rolls back, and refuses new work on shutdown", async () => {
     const { client, queries, transactions } = fixture();
     const action = deferred();

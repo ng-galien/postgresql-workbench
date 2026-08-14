@@ -55,6 +55,11 @@ export class ScratchpadTransactionManager implements vscode.Disposable {
     return this.transactions.get(scratchpadUri);
   }
 
+  soleTransaction(): ScratchpadTransaction | undefined {
+    if (this.transactions.size !== 1) return undefined;
+    return this.transactions.values().next().value;
+  }
+
   transactionsForConnection(connectionId: string): readonly ScratchpadTransaction[] {
     return [...this.transactions.values()].filter(
       ({ association }) => association.serverId === connectionId,

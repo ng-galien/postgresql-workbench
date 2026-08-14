@@ -218,15 +218,23 @@ export function registerSqlNotebook(
     vscode.commands.registerCommand(
       COMMIT_SCRATCHPAD_TRANSACTION_COMMAND,
       async (target?: unknown) => {
-        const uri = scratchpadUriFromTarget(target);
-        return uri ? transactions.commit(uri) : false;
+        const uri = scratchpadTransactionUriFromTarget(target, transactions);
+        if (uri && (await transactions.commit(uri))) return true;
+        void vscode.window.showWarningMessage(
+          "The Scratchpad Transaction changed while the Workbench refreshed. Retry the action.",
+        );
+        return false;
       },
     ),
     vscode.commands.registerCommand(
       ROLLBACK_SCRATCHPAD_TRANSACTION_COMMAND,
       async (target?: unknown) => {
-        const uri = scratchpadUriFromTarget(target);
-        return uri ? transactions.rollback(uri) : false;
+        const uri = scratchpadTransactionUriFromTarget(target, transactions);
+        if (uri && (await transactions.rollback(uri))) return true;
+        void vscode.window.showWarningMessage(
+          "The Scratchpad Transaction changed while the Workbench refreshed. Retry the action.",
+        );
+        return false;
       },
     ),
     vscode.commands.registerCommand(
@@ -375,19 +383,32 @@ function scratchpadUriFromTarget(target: unknown): string | undefined {
   const candidate = target as {
     scratchpadUri?: unknown;
     transaction?: { scratchpadUri?: unknown };
+    id?: unknown;
     entry?: { uri?: { toString(): string } };
     notebook?: { entry?: { uri?: { toString(): string } } };
+    resourceUri?: { toString(): string };
     uri?: { toString(): string };
   };
   if (typeof candidate.scratchpadUri === "string") return candidate.scratchpadUri;
   if (typeof candidate.transaction?.scratchpadUri === "string") {
     return candidate.transaction.scratchpadUri;
   }
+  if (typeof candidate.id === "string" && candidate.id.endsWith(":transaction")) {
+    return candidate.id.slice(0, -":transaction".length);
+  }
   return (
     candidate.entry?.uri?.toString() ??
     candidate.notebook?.entry?.uri?.toString() ??
+    candidate.resourceUri?.toString() ??
     candidate.uri?.toString()
   );
+}
+
+function scratchpadTransactionUriFromTarget(
+  target: unknown,
+  transactions: ScratchpadTransactionManager,
+): string | undefined {
+  return scratchpadUriFromTarget(target) ?? transactions.soleTransaction()?.scratchpadUri;
 }
 
 async function selectSqlNotebook(

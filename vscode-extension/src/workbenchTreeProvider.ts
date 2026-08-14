@@ -384,6 +384,7 @@ export class ScratchpadTransactionItem extends vscode.TreeItem {
       vscode.TreeItemCollapsibleState.Collapsed,
     );
     this.id = `${transaction.scratchpadUri}:transaction`;
+    this.resourceUri = vscode.Uri.parse(transaction.scratchpadUri);
     const count = transaction.statements.length;
     this.description = `${count} Statement${count === 1 ? "" : "s"}`;
     this.iconPath = new vscode.ThemeIcon(transaction.status === "failed" ? "error" : "sync");
