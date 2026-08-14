@@ -8,6 +8,7 @@ export interface MappedBranchCoverage {
 
 export interface MappedStatementCoverage {
   line: number;
+  endLine: number;
   executed: number;
   syntheticDecision: boolean;
   branches: MappedBranchCoverage[];
@@ -31,6 +32,7 @@ export function mapCoverageToSource(
     .filter(({ point }) => point.kind === "statement")
     .map(({ point, executed }) => ({
       line: bodyStartLine + point.line - 1,
+      endLine: bodyStartLine + point.endLine - 1,
       executed,
       syntheticDecision: false,
       branches: [],
@@ -56,6 +58,7 @@ export function mapCoverageToSource(
     } else {
       statements.push({
         line,
+        endLine: line,
         executed: branches.reduce((sum, branch) => sum + branch.executed, 0),
         syntheticDecision: true,
         branches,

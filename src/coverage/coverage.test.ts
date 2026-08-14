@@ -67,6 +67,7 @@ function point(id: string, kind: "statement" | "branch", line: number) {
     id,
     kind,
     line,
+    endLine: line,
     label: id,
     placement: { kind: "before" as const, line, siteKey: id },
   };
