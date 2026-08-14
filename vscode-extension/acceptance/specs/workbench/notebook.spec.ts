@@ -380,6 +380,7 @@ test.describe("Scratchpads", () => {
   test("creates an unassociated Scratchpad when a multiple-Connexion choice is cancelled", async ({
     workbench,
     notebook,
+    vscode,
   }) => {
     const secondConnexion = /postgres@127\.0\.0\.1:5434/;
     await workbench.addServer(
@@ -402,5 +403,10 @@ test.describe("Scratchpads", () => {
     await workbench.tree.expand(/^Scratchpads/);
     await expect(scratchpads).toHaveCount(before + 1);
     await expect(scratchpads.last()).toContainText(/No connection.*AUTO/u);
+
+    await vscode.removeServer("127.0.0.1:5434/demo:postgres");
+    await expect(workbench.tree.item(secondConnexion)).toHaveCount(0);
+    await workbench.ensureServer(demoConnectionUrl, server);
+    await workbench.ensureActiveDatabaseIndexed(server, database);
   });
 });

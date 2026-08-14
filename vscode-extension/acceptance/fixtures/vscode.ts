@@ -237,6 +237,7 @@ export interface VSCodeInstance {
   inspectActiveNotebook(): Promise<ActiveNotebookSnapshot | undefined>;
   inspectDebugState(): Promise<DebugStateSnapshot>;
   inspectTestingState(): Promise<TestingStateSnapshot>;
+  removeServer(id: string): Promise<void>;
   openWorkspaceFile(fileName: string): Promise<void>;
   resetWorkbenchUI(): Promise<void>;
   resizeWindow(width: number, height: number): Promise<void>;
@@ -576,6 +577,9 @@ export async function launchVSCode(options: LaunchVSCodeOptions = {}): Promise<V
           "postgresql-workbench.acceptance.inspectTestingState",
         );
         return (state.result ?? {}) as TestingStateSnapshot;
+      },
+      async removeServer(id) {
+        await runAcceptanceCommand("postgresql-workbench.acceptance.removeServer", 5_000, [id]);
       },
       async openWorkspaceFile(fileName) {
         await runAcceptanceCommand("postgresql-workbench.acceptance.openWorkspaceFile", 5_000, [

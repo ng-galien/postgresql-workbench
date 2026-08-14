@@ -1409,14 +1409,19 @@ export function activate(context: vscode.ExtensionContext): PlpgsqlExtensionApi 
     vscodeSessionId: vscode.debug.activeDebugSession?.id,
   });
   let inspectAcceptanceTestingState = (): unknown => ({});
+  let removeAcceptanceServer = (_id: string): Promise<void> | void => {};
   const acceptanceControl = registerAcceptanceControl(context, {
     inspectDebugState: () => inspectAcceptanceDebugState(),
     inspectTestingState: () => inspectAcceptanceTestingState(),
+    removeServer: (id) => removeAcceptanceServer(id),
     resetWorkbench: () => resetAcceptanceWorkbench(),
   });
   if (acceptanceControl) context.subscriptions.push(acceptanceControl);
 
   const cm = new ConnectionManager(context, out);
+  removeAcceptanceServer = async (id) => {
+    await cm.removeDatabaseContextConfiguration(id);
+  };
   context.subscriptions.push(cm);
   const workbenchIndex = new WorkbenchIndexController(context, cm, out);
   context.subscriptions.push(workbenchIndex);

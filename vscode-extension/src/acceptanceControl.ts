@@ -18,6 +18,7 @@ const FOCUS_WORKBENCH_COMMAND = "postgresql-workbench-connections.focus";
 const INSPECT_TESTING_STATE_COMMAND = "postgresql-workbench.acceptance.inspectTestingState";
 const INSPECT_ACTIVE_NOTEBOOK_COMMAND = "postgresql-workbench.acceptance.inspectActiveNotebook";
 const INSPECT_DEBUG_STATE_COMMAND = "postgresql-workbench.acceptance.inspectDebugState";
+const REMOVE_SERVER_COMMAND = "postgresql-workbench.acceptance.removeServer";
 const RESET_WORKBENCH_COMMAND = "postgresql-workbench.acceptance.resetWorkbench";
 const OPEN_WORKSPACE_FILE_COMMAND = "postgresql-workbench.acceptance.openWorkspaceFile";
 const ACCEPTANCE_COMMANDS = new Set([
@@ -36,6 +37,7 @@ const ACCEPTANCE_COMMANDS = new Set([
   INSPECT_TESTING_STATE_COMMAND,
   INSPECT_ACTIVE_NOTEBOOK_COMMAND,
   INSPECT_DEBUG_STATE_COMMAND,
+  REMOVE_SERVER_COMMAND,
   RESET_WORKBENCH_COMMAND,
   OPEN_WORKSPACE_FILE_COMMAND,
 ]);
@@ -47,6 +49,7 @@ export interface AcceptanceControl extends vscode.Disposable {
 export interface AcceptanceControlOptions {
   inspectDebugState(): unknown;
   inspectTestingState(): unknown;
+  removeServer(id: string): Promise<void> | void;
   resetWorkbench(): Promise<void> | void;
 }
 
@@ -114,6 +117,17 @@ export function registerAcceptanceControl(
         }
         if (instruction.command === INSPECT_TESTING_STATE_COMMAND) {
           markReady(instruction.nonce, options.inspectTestingState());
+          return;
+        }
+        if (instruction.command === REMOVE_SERVER_COMMAND) {
+          const serverId = Array.isArray(instruction.arguments)
+            ? instruction.arguments[0]
+            : undefined;
+          if (typeof serverId !== "string" || serverId.length === 0) {
+            throw new Error("Remove server requires a non-empty server id");
+          }
+          await options.removeServer(serverId);
+          markReady(instruction.nonce);
           return;
         }
         if (instruction.command === RESET_WORKBENCH_COMMAND) {
