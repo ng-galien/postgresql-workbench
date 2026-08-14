@@ -141,12 +141,19 @@ function analyzeStatement(wrapper: SyntaxNode, state: AnalyzerState, path: strin
 
   const label = statementLabel(statement);
   if (label) {
-    addPoint(state, statement.start.line, "statement", label, {
-      kind: "before",
-      line: statement.start.line,
-      siteKey: path,
-      byteOffset: statement.byteRange[0],
-    });
+    addPoint(
+      state,
+      statement.start.line,
+      "statement",
+      label,
+      {
+        kind: "before",
+        line: statement.start.line,
+        siteKey: path,
+        byteOffset: statement.byteRange[0],
+      },
+      statementCoverageEndLine(statement),
+    );
   }
 
   if (statement.kind === "stmt_if") {
@@ -167,6 +174,15 @@ function analyzeStatement(wrapper: SyntaxNode, state: AnalyzerState, path: strin
       analyzeBlock(block, state, `${path}.block`);
     }
   }
+}
+
+function statementCoverageEndLine(statement: SyntaxNode): number {
+  if (!LOOP_KINDS.has(statement.kind)) return statement.end.line;
+  const bodyIndex = statement.children.findIndex((child) => child.kind === "loop_body");
+  if (bodyIndex <= 0) return statement.start.line;
+  return statement.children
+    .slice(0, bodyIndex)
+    .reduce((endLine, child) => Math.max(endLine, child.end.line), statement.start.line);
 }
 
 function analyzeIf(statement: SyntaxNode, state: AnalyzerState, path: string): void {
@@ -383,10 +399,12 @@ function addPoint(
   kind: CoveragePoint["kind"],
   label: string,
   placement: CoverageProbePlacement,
+  endLine = line,
 ): void {
   state.points.push({
     id: `p${state.nextPoint++}`,
     line,
+    endLine,
     kind,
     label,
     placement,

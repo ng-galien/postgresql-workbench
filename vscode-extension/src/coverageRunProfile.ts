@@ -559,13 +559,24 @@ function toNativeDetails(
   const mapped = mapCoverageToSource(bodyStartLine, coverage);
   const lines = ddl.split(/\r?\n/);
   return mapped.statements.map((statement) => {
-    const location = lineRange(lines, statement.line);
+    const location = statementRange(lines, statement.line, statement.endLine);
     const branches = statement.branches.map(
       (branch) =>
         new vscode.BranchCoverage(branch.executed, lineRange(lines, branch.line), branch.label),
     );
     return new vscode.StatementCoverage(statement.executed, location, branches);
   });
+}
+
+function statementRange(
+  lines: readonly string[],
+  requestedStartLine: number,
+  requestedEndLine: number,
+): vscode.Range {
+  const lastLine = Math.max(0, lines.length - 1);
+  const startLine = Math.max(0, Math.min(requestedStartLine, lastLine));
+  const endLine = Math.max(startLine, Math.min(requestedEndLine, lastLine));
+  return new vscode.Range(startLine, 0, endLine, lines[endLine]?.length ?? 0);
 }
 
 function lineRange(lines: readonly string[], requestedLine: number): vscode.Range {

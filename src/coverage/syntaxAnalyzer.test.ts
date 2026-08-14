@@ -188,16 +188,16 @@ END;
     expect(
       analysis.points
         .filter((point) => point.kind === "statement")
-        .map(({ line, label }) => ({ line, label })),
+        .map(({ line, endLine, label }) => ({ line, endLine, label })),
     ).toEqual([
-      { line: 2, label: "for" },
-      { line: 3, label: "perform" },
-      { line: 5, label: "foreach" },
-      { line: 6, label: "perform" },
-      { line: 8, label: "while" },
-      { line: 9, label: "perform" },
-      { line: 11, label: "loop" },
-      { line: 12, label: "perform" },
+      { line: 2, endLine: 2, label: "for" },
+      { line: 3, endLine: 3, label: "perform" },
+      { line: 5, endLine: 5, label: "foreach" },
+      { line: 6, endLine: 6, label: "perform" },
+      { line: 8, endLine: 8, label: "while" },
+      { line: 9, endLine: 9, label: "perform" },
+      { line: 11, endLine: 11, label: "loop" },
+      { line: 12, endLine: 12, label: "perform" },
     ]);
     expect(
       analysis.points.filter((point) => point.kind === "branch").map((point) => point.label),
@@ -210,6 +210,47 @@ END;
       "loop exit @8",
       "loop enter @11",
     ]);
+  });
+
+  it("preserves the complete source span of multiline statements", () => {
+    const syntax = tree(
+      block(
+        section(
+          statement("stmt_assign", 2, node("sql_expression", 2, leaf("case_expression_tail", 6))),
+        ),
+      ),
+    );
+
+    const analysis = analyzeCoverageSyntax("", syntax);
+
+    expect(analysis.points).toContainEqual(
+      expect.objectContaining({ kind: "statement", line: 2, endLine: 6, label: "assign" }),
+    );
+  });
+
+  it("covers a multiline loop header without covering its body", () => {
+    const syntax = tree(
+      block(
+        section(
+          statement(
+            "stmt_for",
+            2,
+            node("for_control", 2, leaf("sql_expression", 4)),
+            leaf("kw_loop", 5),
+            node("loop_body", 6, section(statement("stmt_perform", 6))),
+          ),
+        ),
+      ),
+    );
+
+    const analysis = analyzeCoverageSyntax("", syntax);
+
+    expect(analysis.points).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: "statement", line: 2, endLine: 5, label: "for" }),
+        expect.objectContaining({ kind: "statement", line: 6, endLine: 6, label: "perform" }),
+      ]),
+    );
   });
 
   it("walks the direct nested block shape returned by Code Moniker", () => {

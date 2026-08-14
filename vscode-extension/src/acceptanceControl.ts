@@ -8,6 +8,8 @@ const QUICK_OPEN_COMMAND = "workbench.action.quickOpen";
 const FOCUS_TESTING_COMMAND = "workbench.view.testing.focus";
 const RUN_ALL_TESTS_COMMAND = "testing.runAll";
 const COVERAGE_ALL_TESTS_COMMAND = "testing.coverageAll";
+const OPEN_COVERAGE_COMMAND = "testing.openCoverage";
+const TOGGLE_INLINE_COVERAGE_COMMAND = "testing.toggleInlineCoverage";
 const DEBUG_CONTINUE_COMMAND = "workbench.action.debug.continue";
 const DEBUG_STEP_INTO_COMMAND = "workbench.action.debug.stepInto";
 const DEBUG_STEP_OVER_COMMAND = "workbench.action.debug.stepOver";
@@ -23,6 +25,8 @@ const ACCEPTANCE_COMMANDS = new Set([
   FOCUS_TESTING_COMMAND,
   RUN_ALL_TESTS_COMMAND,
   COVERAGE_ALL_TESTS_COMMAND,
+  OPEN_COVERAGE_COMMAND,
+  TOGGLE_INLINE_COVERAGE_COMMAND,
   DEBUG_CONTINUE_COMMAND,
   DEBUG_STEP_INTO_COMMAND,
   DEBUG_STEP_OVER_COMMAND,

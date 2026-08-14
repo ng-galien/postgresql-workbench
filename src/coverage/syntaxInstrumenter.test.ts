@@ -20,6 +20,7 @@ END;`;
         {
           id: "p0",
           line: 2,
+          endLine: 2,
           kind: "statement",
           label: "for",
           placement: {
@@ -32,6 +33,7 @@ END;`;
         {
           id: "p1",
           line: 2,
+          endLine: 2,
           kind: "branch",
           label: "loop enter @2",
           placement: {
@@ -47,6 +49,7 @@ END;`;
         {
           id: "p2",
           line: 2,
+          endLine: 2,
           kind: "branch",
           label: "loop exit @2",
           placement: {

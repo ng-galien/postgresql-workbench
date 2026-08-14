@@ -13,6 +13,7 @@ describe("native coverage source mapping", () => {
     expect(mapped.statements).toEqual([
       {
         line: 5,
+        endLine: 5,
         executed: 1,
         syntheticDecision: true,
         branches: [
@@ -22,12 +23,14 @@ describe("native coverage source mapping", () => {
       },
       {
         line: 6,
+        endLine: 8,
         executed: 1,
         syntheticDecision: false,
         branches: [],
       },
       {
         line: 8,
+        endLine: 8,
         executed: 0,
         syntheticDecision: false,
         branches: [],
@@ -62,6 +65,7 @@ function coverageResult(): CoverageResult {
         point: {
           id: "p0",
           line: 4,
+          endLine: 6,
           kind: "statement",
           label: "return",
           placement: { kind: "before", line: 4, siteKey: "return:4" },
@@ -72,6 +76,7 @@ function coverageResult(): CoverageResult {
         point: {
           id: "p1",
           line: 6,
+          endLine: 6,
           kind: "statement",
           label: "return",
           placement: { kind: "before", line: 6, siteKey: "return:6" },
@@ -82,6 +87,7 @@ function coverageResult(): CoverageResult {
         point: {
           id: "p2",
           line: 3,
+          endLine: 3,
           kind: "branch",
           label: "IF true @3",
           placement: { kind: "before", line: 3, siteKey: "if:3:true" },
@@ -92,6 +98,7 @@ function coverageResult(): CoverageResult {
         point: {
           id: "p3",
           line: 3,
+          endLine: 3,
           kind: "branch",
           label: "IF false @3",
           placement: { kind: "inject_else", decisionLine: 3, searchAfter: 3 },

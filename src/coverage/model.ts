@@ -61,6 +61,7 @@ export type CoverageProbePlacement =
 export interface CoveragePoint {
   id: string;
   line: number;
+  endLine: number;
   kind: CoveragePointKind;
   label: string;
   placement: CoverageProbePlacement;

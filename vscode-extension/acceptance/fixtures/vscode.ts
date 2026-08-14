@@ -221,7 +221,10 @@ export interface VSCodeInstance {
   executeCommand(
     command:
       | "testing.coverageAll"
+      | "testing.openCoverage"
       | "testing.runAll"
+      | "testing.toggleInlineCoverage"
+      | "postgresql-workbench-connections.focus"
       | "workbench.action.debug.continue"
       | "workbench.action.debug.stepInto"
       | "workbench.action.debug.stepOver"
