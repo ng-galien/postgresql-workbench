@@ -32,6 +32,12 @@ vi.mock("vscode", () => {
   }
 
   return {
+    Disposable: class {
+      constructor(private readonly callback: () => void) {}
+      dispose(): void {
+        this.callback();
+      }
+    },
     EventEmitter,
     ProgressLocation: { Notification: 15 },
     StatusBarAlignment: { Left: 1 },
@@ -135,6 +141,134 @@ beforeEach(() => {
 });
 
 describe("ConnectionManager active database transitions", () => {
+  it("keeps the active Connexion open when a Scratchpad Transaction guard cancels disconnect", async () => {
+    const { manager } = fixture();
+    await manager.store.add(OLD_SERVER, "old-password");
+    const oldClient = {} as Client;
+    const mutable = manager as unknown as {
+      client: Client;
+      _activeServerId: string;
+      _connected: boolean;
+    };
+    mutable.client = oldClient;
+    mutable._activeServerId = OLD_SERVER.id;
+    mutable._connected = true;
+    const guard = vi.fn().mockResolvedValue(undefined);
+    manager.registerBeforeConnectionChange(guard);
+
+    await expect(manager.disconnect()).resolves.toBe(false);
+
+    expect(guard).toHaveBeenCalledWith(OLD_SERVER.id, "disconnecting the Connexion");
+    expect(service.disconnect).not.toHaveBeenCalled();
+    expect(manager.activeServer).toEqual(OLD_SERVER);
+    expect(manager.isConnected).toBe(true);
+    manager.dispose();
+  });
+
+  it("holds the Connexion guard lease until the disconnect mutation finishes", async () => {
+    const { manager } = fixture();
+    await manager.store.add(OLD_SERVER, "old-password");
+    const oldClient = {} as Client;
+    const mutable = manager as unknown as {
+      client: Client;
+      _activeServerId: string;
+      _connected: boolean;
+    };
+    mutable.client = oldClient;
+    mutable._activeServerId = OLD_SERVER.id;
+    mutable._connected = true;
+    let finishDisconnect = () => {};
+    service.disconnect.mockReturnValue(
+      new Promise<void>((resolve) => {
+        finishDisconnect = resolve;
+      }),
+    );
+    const release = vi.fn();
+    manager.registerBeforeConnectionChange(async () => new vscode.Disposable(release));
+
+    const disconnect = manager.disconnect();
+    await vi.waitFor(() => expect(service.disconnect).toHaveBeenCalledWith(oldClient));
+    expect(release).not.toHaveBeenCalled();
+
+    finishDisconnect();
+    await expect(disconnect).resolves.toBe(true);
+    expect(release).toHaveBeenCalledOnce();
+    manager.dispose();
+  });
+
+  it("serializes concurrent Connexion transitions", async () => {
+    const { manager } = fixture();
+    await manager.store.add(OLD_SERVER, "old-password");
+    const oldClient = {} as Client;
+    const mutable = manager as unknown as {
+      client: Client;
+      _activeServerId: string;
+      _connected: boolean;
+    };
+    mutable.client = oldClient;
+    mutable._activeServerId = OLD_SERVER.id;
+    mutable._connected = true;
+    let finishFirst = () => {};
+    service.disconnect.mockReturnValue(
+      new Promise<void>((resolve) => {
+        finishFirst = resolve;
+      }),
+    );
+    manager.registerBeforeConnectionChange(async () => new vscode.Disposable(() => {}));
+
+    const first = manager.disconnect();
+    const second = manager.disconnect();
+    await vi.waitFor(() => expect(service.disconnect).toHaveBeenCalledTimes(1));
+    expect(manager.isConnected).toBe(true);
+
+    finishFirst();
+    await expect(Promise.all([first, second])).resolves.toEqual([true, true]);
+    expect(service.disconnect).toHaveBeenCalledTimes(1);
+    expect(manager.isConnected).toBe(false);
+    manager.dispose();
+  });
+
+  it("does not create a replacement Connexion when the Transaction guard cancels", async () => {
+    const { manager } = fixture();
+    await manager.store.add(OLD_SERVER, "old-password");
+    const guard = vi.fn().mockResolvedValue(undefined);
+    manager.registerBeforeConnectionChange(guard);
+
+    await expect(
+      manager.replaceDatabaseContextConfiguration(OLD_SERVER.id, NEXT_SERVER, "old-password"),
+    ).resolves.toBe(false);
+
+    expect(guard).toHaveBeenCalledWith(OLD_SERVER.id, "replacing the Connexion");
+    expect(manager.store.get(OLD_SERVER.id)).toEqual(OLD_SERVER);
+    expect(manager.store.get(NEXT_SERVER.id)).toBeUndefined();
+    manager.dispose();
+  });
+
+  it("forces a real reconnect after a saved password changes", async () => {
+    const { manager } = fixture();
+    await manager.store.add(OLD_SERVER, "new-password");
+    const oldClient = {} as Client;
+    const mutable = manager as unknown as {
+      client: Client;
+      _activeServerId: string;
+      _connected: boolean;
+    };
+    mutable.client = oldClient;
+    mutable._activeServerId = OLD_SERVER.id;
+    mutable._connected = true;
+    const guard = vi.fn().mockResolvedValue(new vscode.Disposable(() => {}));
+    manager.registerBeforeConnectionChange(guard);
+
+    await expect(manager.connectServer(OLD_SERVER.id, { force: true })).resolves.toBe(false);
+
+    expect(guard).toHaveBeenCalledWith(OLD_SERVER.id, "reconnecting the Connexion");
+    expect(service.disconnect).toHaveBeenCalledWith(oldClient);
+    expect(service.connect).toHaveBeenCalledWith(
+      expect.objectContaining({ password: "new-password" }),
+    );
+    manager.dispose();
+  });
+
   it("publishes a disconnected context when a promoted connection is cancelled", async () => {
     const { manager, workspaceState } = fixture();
     await manager.store.add(OLD_SERVER, "old-password");

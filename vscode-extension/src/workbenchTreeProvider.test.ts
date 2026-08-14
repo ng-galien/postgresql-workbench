@@ -302,10 +302,16 @@ describe("Workbench tree incremental refresh", () => {
       }),
       onDidChangeState: ddlChanges.event,
     };
+    const transactionChanges = new Emitter<string | undefined>();
+    const transactions = {
+      transaction: () => undefined,
+      onDidChange: transactionChanges.event,
+    };
     const provider = new WorkbenchTreeProvider(
       connections as never,
       index as never,
       notebooks as never,
+      transactions as never,
       ddlSync as never,
     );
     const sources = new SourcesSnapshotItem(server, true, { status: "not-indexed" });

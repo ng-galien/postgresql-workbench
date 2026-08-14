@@ -58,41 +58,47 @@ test.describe("pgTAP tests and coverage", () => {
       await vscode.executeCommand("testing.openCoverage");
       await vscode.executeCommand("testing.toggleInlineCoverage");
 
-      for (const sourceLine of [
+      const expectedCaseBlock = [
         "word := CASE",
         "WHEN i % 15 = 0 THEN 'FizzBuzz'",
         "WHEN i % 3 = 0 THEN 'Fizz'",
         "WHEN i % 5 = 0 THEN 'Buzz'",
         "ELSE i::text",
         "END;",
-      ]) {
-        const line = workbench.page
-          .locator(".monaco-editor:visible .view-line")
-          .filter({ hasText: sourceLine })
-          .first();
-        await expect(line, `The covered ${sourceLine} line must be visible`).toBeVisible();
-        const lineBox = await line.boundingBox();
-        expect(
-          lineBox,
-          `The covered ${sourceLine} line must have screen coordinates`,
-        ).not.toBeNull();
-        await expect
-          .poll(
-            () =>
-              workbench.page
-                .locator(".monaco-editor:visible .coverage-deco-inline.coverage-deco-hit")
-                .evaluateAll(
-                  (decorations, y) =>
-                    decorations.some((decoration) => {
-                      const box = decoration.getBoundingClientRect();
-                      return box.top <= y && box.bottom >= y;
+      ];
+      await expect
+        .poll(
+          () =>
+            workbench.page
+              .locator(".editor-group-container.active .monaco-editor:visible")
+              .evaluateAll((editors, expectedLines) => {
+                const normalize = (value: string | null) =>
+                  (value ?? "").replace(/\s+/gu, " ").trim();
+
+                return editors.some((editor) => {
+                  const coveredLineOffsets = new Set(
+                    [...editor.querySelectorAll(".coverage-deco-inline.coverage-deco-hit")].map(
+                      (decoration) => (decoration.parentElement as HTMLElement | null)?.offsetTop,
+                    ),
+                  );
+                  const lines = [...editor.querySelectorAll<HTMLElement>(".view-line")];
+                  return lines.some((_, start) =>
+                    expectedLines.every((expected, offset) => {
+                      const line = lines[start + offset];
+                      return (
+                        line !== undefined &&
+                        normalize(line.textContent).includes(expected) &&
+                        coveredLineOffsets.has(line.offsetTop)
+                      );
                     }),
-                  lineBox!.y + lineBox!.height / 2,
-                ),
-            { message: `The covered ${sourceLine} line must be highlighted by VS Code` },
-          )
-          .toBe(true);
-      }
+                  );
+                });
+              }, expectedCaseBlock),
+          {
+            message: "Every CASE, WHEN, ELSE, and END line must be highlighted by VS Code coverage",
+          },
+        )
+        .toBe(true);
     });
 
     await test.step("keep the existing Workbench index stable", async () => {

@@ -31,7 +31,12 @@ function parserWith(statements: SyntaxNode[], overrides: Partial<SyntaxTree> = {
         focusLineRange: null,
         root: node(
           "root",
-          statements.map((statement) => node("toplevel_stmt", [statement])),
+          statements.map((statement) => ({
+            ...node("toplevel_stmt", [statement]),
+            byteRange: statement.byteRange,
+            start: statement.start,
+            end: statement.end,
+          })),
         ),
         emittedNodes: 1,
         totalNodes: 1,
@@ -63,6 +68,16 @@ describe("SQL result execution classification", () => {
     await expect(
       classifySqlResultExecution("CREATE TABLE copy AS SELECT * FROM source", parser),
     ).resolves.toBe("non-paged");
+  });
+
+  it("marks transaction-control Statements structurally", async () => {
+    const parser = parserWith([
+      { ...node("TransactionStmt"), byteRange: [0, 6], end: { line: 1, column: 7 } },
+    ]);
+    await expect(planSqlResultExecution("COMMIT", parser)).resolves.toEqual({
+      status: "ready",
+      statements: [{ sql: "COMMIT", resultKind: "non-paged", line: 1, transactionControl: true }],
+    });
   });
 
   it("rejects multiple, empty, erroneous and truncated syntax trees", async () => {

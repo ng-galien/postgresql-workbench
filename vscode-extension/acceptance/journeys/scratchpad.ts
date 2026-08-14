@@ -6,10 +6,10 @@ export async function createScratchpad(
   workbench: WorkbenchPage,
   notebook: NotebookPage,
   server: RegExp,
-  database: RegExp,
+  _database: RegExp,
 ): Promise<void> {
-  await workbench.tree.expandPath([server, database]);
   const scratchpads = workbench.tree.item(/^Scratchpads/);
+  await expect(scratchpads).toBeVisible({ timeout: 5_000 });
   await scratchpads.hover();
   await scratchpads.getByLabel(/New SQL Scratchpad/i).click();
   await notebook.activateLatestScratchpad();

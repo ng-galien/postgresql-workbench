@@ -1,28 +1,53 @@
 ---
-title: SQL scratchpads
-description: Create, bind, and run SQL scratchpads.
+title: SQL Scratchpads
+description: Create, associate, and run SQL Scratchpads.
 eyebrow: SQL scratchpads
 media: notebook.gif
 mediaAlt: SQL scratchpad executing a query and showing a PostgreSQL result grid
 ---
 
-# SQL scratchpads
+# SQL Scratchpads
 
-A scratchpad is a VS Code notebook with an explicit NotebookBinding. It does
-not silently follow whichever database happens to be active.
+A Scratchpad is a persistent SQL workspace. Its Association points to a saved
+Connexion, never to a live PostgreSQL session, and never silently follows the
+active DatabaseContext.
 
 {{media}}
 
-## Create and bind
+## Create and associate
 
-1. Select a DatabaseContext in the Workbench tree.
-2. Run **PostgreSQL Workbench: New SQL Scratchpad**.
-3. Add SQL and Markdown cells, then run one cell or the whole notebook.
+Create a Scratchpad from the global **Scratchpads** root. The initial Association
+depends on the saved Connexions:
 
-The notebook header, cells, inlays, and results use its persisted binding.
-**Use Binding as Active** is an explicit promotion; ordinary execution never
-switches the global context. If the connection disappears, editing remains
-available while Run offers Reconnect or Rebind.
+- with no saved Connexion, the Scratchpad is created without an Association;
+- with one saved Connexion, the Association is automatic;
+- with several saved Connexions, a selector includes **No connection**;
+- cancelling that selector still creates the Scratchpad without an Association.
+
+The Scratchpad header, cells, inlays, and results use its persistent Association.
+**Use Association as Active** is an explicit promotion; ordinary execution never
+switches the active DatabaseContext. If the Connexion disappears, editing remains
+available while execution offers Reconnect or Change Association.
+
+## Mode and Transaction
+
+Every Scratchpad persists one Mode:
+
+- **Mode AUTO** runs each execution on a dedicated, short-lived PostgreSQL session;
+- **Mode MANUAL** opens one Transaction on the first executed Statement and keeps
+  that Transaction attached to the Scratchpad.
+
+Closing the editor does not resolve a Transaction. The Scratchpads tree keeps its
+status and ordered Statements visible, with explicit **Commit** and **Rollback**
+actions. A failed Transaction can only be rolled back. Changing the Association or
+Mode, deleting or renaming the Scratchpad, and disconnecting its Connexion require
+the active Transaction to be resolved or the operation to be cancelled.
+
+On extension deactivation or VS Code shutdown, PostgreSQL Workbench makes a
+best-effort rollback of every active Transaction and closes its dedicated session.
+Shutdown never commits implicitly. In Mode MANUAL, transaction-control Statements
+such as `BEGIN`, `COMMIT`, `ROLLBACK`, `SAVEPOINT`, and `SET TRANSACTION` are rejected
+because Transaction control belongs to the Scratchpad.
 
 ## Result navigation
 

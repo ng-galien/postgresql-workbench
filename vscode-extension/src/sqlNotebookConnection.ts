@@ -20,7 +20,7 @@ export async function createDedicatedNotebookClient(
   } catch (cause) {
     const detail = cause instanceof Error ? cause.message : String(cause);
     throw new DedicatedNotebookConnectionError(
-      `The scratchpad could not connect to its PostgreSQL binding: ${detail}`,
+      `The Scratchpad could not open its Connexion: ${detail}`,
       { cause },
     );
   }

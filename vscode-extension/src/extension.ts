@@ -105,12 +105,7 @@ function selectionMatchesDatabase(
       (object) => object.serverId === serverId && object.database === database,
     );
   }
-  if (
-    item.kind === "server" ||
-    item.kind === "databaseSource" ||
-    item.kind === "sourcesSnapshot" ||
-    item.kind === "scratchpads"
-  ) {
+  if (item.kind === "server" || item.kind === "databaseSource" || item.kind === "sourcesSnapshot") {
     return item.server.id === serverId && item.server.database === database;
   }
   return item.kind === "schema";
@@ -1403,6 +1398,8 @@ function registerDiagnosticsAndReconnect(
     .catch((error) => output.appendLine(`Auto-reconnect failed: ${error}`));
 }
 
+let shutdownScratchpads: (() => Promise<void>) | undefined;
+
 export function activate(context: vscode.ExtensionContext): PlpgsqlExtensionApi {
   out.appendLine("activate() called");
 
@@ -1412,22 +1409,29 @@ export function activate(context: vscode.ExtensionContext): PlpgsqlExtensionApi 
     vscodeSessionId: vscode.debug.activeDebugSession?.id,
   });
   let inspectAcceptanceTestingState = (): unknown => ({});
+  let removeAcceptanceServer = (_id: string): Promise<void> | void => {};
   const acceptanceControl = registerAcceptanceControl(context, {
     inspectDebugState: () => inspectAcceptanceDebugState(),
     inspectTestingState: () => inspectAcceptanceTestingState(),
+    removeServer: (id) => removeAcceptanceServer(id),
     resetWorkbench: () => resetAcceptanceWorkbench(),
   });
   if (acceptanceControl) context.subscriptions.push(acceptanceControl);
 
   const cm = new ConnectionManager(context, out);
+  removeAcceptanceServer = async (id) => {
+    await cm.removeDatabaseContextConfiguration(id);
+  };
   context.subscriptions.push(cm);
   const workbenchIndex = new WorkbenchIndexController(context, cm, out);
   context.subscriptions.push(workbenchIndex);
   const workbenchDdlSync = new WorkbenchDdlSyncController(cm, workbenchIndex, out);
   context.subscriptions.push(workbenchDdlSync);
-  const sqlNotebooks = registerSqlNotebook(context, cm, async (sql) =>
+  const scratchpads = registerSqlNotebook(context, cm, async (sql) =>
     planSqlResultExecution(sql, await workbenchIndex.syntaxParser()),
   );
+  const sqlNotebooks = scratchpads.workspace;
+  shutdownScratchpads = scratchpads.shutdown;
   let treeProvider: WorkbenchTreeProvider;
   let connectionTreeProvider: WorkbenchTreeProvider;
   let graphTreeSync: WorkbenchGraphTreeSync;
@@ -1632,6 +1636,7 @@ export function activate(context: vscode.ExtensionContext): PlpgsqlExtensionApi 
     cm,
     workbenchIndex,
     sqlNotebooks,
+    scratchpads.transactions,
     workbenchDdlSync,
     () => debugSessions.statuses,
   );
@@ -1841,7 +1846,10 @@ export function activate(context: vscode.ExtensionContext): PlpgsqlExtensionApi 
   };
 }
 
-export function deactivate(): void {}
+export async function deactivate(): Promise<void> {
+  await shutdownScratchpads?.();
+  shutdownScratchpads = undefined;
+}
 
 async function revealActiveSources(
   tree: vscode.TreeView<PlpgsqlTreeItem>,
