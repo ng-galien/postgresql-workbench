@@ -170,6 +170,8 @@ test.describe("Scratchpads", () => {
               .exists,
         )
         .toBe(false);
+      await workbench.ensureServer(demoConnectionUrl, server);
+      await workbench.ensureActiveDatabaseIndexed(server, database);
     });
   });
 
