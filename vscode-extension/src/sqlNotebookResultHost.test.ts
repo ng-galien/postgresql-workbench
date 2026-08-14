@@ -181,10 +181,10 @@ describe("SQL notebook result host", () => {
     const host = new SqlNotebookResultHost();
     await host.register(session, fakeCell(), 300_000, TEST_BINDING);
 
-    await host.closeNotebookBindingMismatch("notebook://one", { ...TEST_BINDING });
+    await host.closeNotebookAssociationMismatch("notebook://one", { ...TEST_BINDING });
     expect(session.close).not.toHaveBeenCalled();
 
-    await host.closeNotebookBindingMismatch("notebook://one", {
+    await host.closeNotebookAssociationMismatch("notebook://one", {
       ...TEST_BINDING,
       database: "otherdb",
     });
@@ -204,7 +204,7 @@ describe("SQL notebook result host", () => {
     const registration = host.register(session, fakeCell(), 300_000, TEST_BINDING, () => current);
     current = false;
 
-    await expect(registration).rejects.toThrow("binding changed");
+    await expect(registration).rejects.toThrow("Association changed");
     expect(session.close).toHaveBeenCalledOnce();
     host.dispose();
   });

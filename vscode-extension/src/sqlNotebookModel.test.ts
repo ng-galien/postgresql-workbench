@@ -6,6 +6,9 @@ import {
   normalizeSqlNotebookName,
   parseSqlNotebookFile,
   resolveNotebookBinding,
+  resolveScratchpadAssociation,
+  scratchpadCreationAssociation,
+  scratchpadExecutionMode,
   serializeSqlNotebookFile,
   sqlNotebookResultPayload,
 } from "./sqlNotebookModel.js";
@@ -26,6 +29,43 @@ const TEST_SERVER = {
 };
 
 describe("SQL notebook model", () => {
+  it("follows the Scratchpad creation Association rule for zero, one, or many Connexions", () => {
+    expect(scratchpadCreationAssociation([])).toEqual({ kind: "unassociated" });
+    expect(scratchpadCreationAssociation([TEST_SERVER])).toEqual({
+      kind: "automatic",
+      connection: TEST_SERVER,
+    });
+    expect(
+      scratchpadCreationAssociation([TEST_SERVER, { ...TEST_SERVER, id: "server-b" }]),
+    ).toEqual({ kind: "choose" });
+  });
+
+  it("persists MANUAL while treating an absent Mode as AUTO", () => {
+    expect(scratchpadExecutionMode({})).toBe("auto");
+    expect(
+      parseSqlNotebookFile(
+        serializeSqlNotebookFile({
+          version: 1,
+          metadata: { executionMode: "manual" },
+          cells: [],
+        }),
+      ).metadata,
+    ).toEqual({ executionMode: "manual" });
+  });
+
+  it("uses the domain Association states without inferring the active database context", () => {
+    expect(resolveScratchpadAssociation({}, [TEST_SERVER])).toEqual({ status: "unassociated" });
+    expect(resolveScratchpadAssociation(TEST_BINDING, [TEST_SERVER])).toEqual({
+      status: "associated",
+      snapshot: TEST_BINDING,
+      connection: TEST_SERVER,
+    });
+    expect(resolveScratchpadAssociation(TEST_BINDING, [])).toEqual({
+      status: "unavailable",
+      snapshot: TEST_BINDING,
+    });
+  });
+
   it("creates a persistent notebook with one PostgreSQL cell", () => {
     expect(emptySqlNotebook({ serverId: "server-a", database: "app" })).toEqual({
       version: 1,
@@ -75,7 +115,7 @@ describe("SQL notebook model", () => {
 
   it("rejects unknown notebook versions", () => {
     expect(() => parseSqlNotebookFile('{"version":2,"cells":[]}')).toThrow(
-      "Unsupported SQL notebook version",
+      "Unsupported Scratchpad file version",
     );
   });
 

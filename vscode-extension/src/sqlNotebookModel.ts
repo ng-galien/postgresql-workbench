@@ -7,22 +7,35 @@ export const SQL_NOTEBOOK_RESULT_MIME = "application/vnd.postgresql-workbench.sq
 export const SQL_NOTEBOOK_RENDERER_ID = "postgresql-workbench.sql-result-renderer";
 export const SQL_NOTEBOOK_VERSION = 1;
 
+/** Product-level execution mode persisted by each Scratchpad. */
+export type ScratchpadExecutionMode = "auto" | "manual";
+
 export interface SqlNotebookMetadata {
   serverId?: string;
   serverName?: string;
   database?: string;
+  executionMode?: ScratchpadExecutionMode;
 }
 
-export interface NotebookBindingSnapshot {
+/** Persistent Association between a Scratchpad and a saved Connexion. */
+export interface ScratchpadAssociationSnapshot {
   serverId: string;
   serverName: string;
   database: string;
 }
 
-export type NotebookBinding =
-  | { status: "bound"; snapshot: NotebookBindingSnapshot; server: ServerConfig }
-  | { status: "unavailable"; snapshot: NotebookBindingSnapshot }
-  | { status: "unbound" };
+export type ScratchpadAssociation =
+  | { status: "associated"; snapshot: ScratchpadAssociationSnapshot; connection: ServerConfig }
+  | { status: "unavailable"; snapshot: ScratchpadAssociationSnapshot }
+  | { status: "unassociated" };
+
+export type ScratchpadCreationAssociation =
+  | { kind: "unassociated" }
+  | { kind: "automatic"; connection: ServerConfig }
+  | { kind: "choose" };
+
+// Compatibility names are intentionally confined to the VS Code/result adapters.
+export type NotebookBindingSnapshot = ScratchpadAssociationSnapshot;
 
 export interface SqlNotebookCellFile {
   kind: "code" | "markup";
@@ -116,16 +129,16 @@ export function emptySqlNotebook(metadata: SqlNotebookMetadata = {}): SqlNoteboo
   };
 }
 
-export function resolveNotebookBinding(
+export function resolveScratchpadAssociation(
   metadata: SqlNotebookMetadata,
   servers: readonly ServerConfig[],
-): NotebookBinding {
+): ScratchpadAssociation {
   const serverId = metadata.serverId?.trim();
   const database = metadata.database?.trim();
-  if (!serverId || !database) return { status: "unbound" };
+  if (!serverId || !database) return { status: "unassociated" };
 
   const server = servers.find((candidate) => candidate.id === serverId);
-  const snapshot: NotebookBindingSnapshot = {
+  const snapshot: ScratchpadAssociationSnapshot = {
     serverId,
     serverName: metadata.serverName?.trim() || server?.name || serverId,
     database,
@@ -133,10 +146,10 @@ export function resolveNotebookBinding(
   if (!server || server.database !== database) {
     return { status: "unavailable", snapshot };
   }
-  return { status: "bound", snapshot: bindingSnapshot(server), server };
+  return { status: "associated", snapshot: associationSnapshot(server), connection: server };
 }
 
-export function bindingSnapshot(server: ServerConfig): NotebookBindingSnapshot {
+export function associationSnapshot(server: ServerConfig): ScratchpadAssociationSnapshot {
   return {
     serverId: server.id,
     serverName: server.name,
@@ -144,9 +157,44 @@ export function bindingSnapshot(server: ServerConfig): NotebookBindingSnapshot {
   };
 }
 
-export function bindingFingerprint(binding: NotebookBindingSnapshot): string {
-  return `${binding.serverId}\0${binding.database}`;
+export function scratchpadExecutionMode(metadata: SqlNotebookMetadata): ScratchpadExecutionMode {
+  return metadata.executionMode === "manual" ? "manual" : "auto";
 }
+
+export function scratchpadCreationAssociation(
+  savedConnections: readonly ServerConfig[],
+): ScratchpadCreationAssociation {
+  if (savedConnections.length === 0) return { kind: "unassociated" };
+  if (savedConnections.length === 1) {
+    return { kind: "automatic", connection: savedConnections[0] };
+  }
+  return { kind: "choose" };
+}
+
+/** @deprecated Use associationSnapshot in product code. */
+export const bindingSnapshot = associationSnapshot;
+
+/** @deprecated Use resolveScratchpadAssociation in product code. */
+export function resolveNotebookBinding(
+  metadata: SqlNotebookMetadata,
+  servers: readonly ServerConfig[],
+):
+  | { status: "bound"; snapshot: ScratchpadAssociationSnapshot; server: ServerConfig }
+  | { status: "unavailable"; snapshot: ScratchpadAssociationSnapshot }
+  | { status: "unbound" } {
+  const association = resolveScratchpadAssociation(metadata, servers);
+  if (association.status === "associated") {
+    return { status: "bound", snapshot: association.snapshot, server: association.connection };
+  }
+  return association.status === "unassociated" ? { status: "unbound" } : association;
+}
+
+export function associationFingerprint(association: ScratchpadAssociationSnapshot): string {
+  return `${association.serverId}\0${association.database}`;
+}
+
+/** @deprecated Use associationFingerprint in product code. */
+export const bindingFingerprint = associationFingerprint;
 
 export function nextSqlNotebookName(existingNames: readonly string[]): string {
   const sequence = existingNames.reduce((highest, name) => {
@@ -185,7 +233,7 @@ export function parseSqlNotebookFile(raw: string): SqlNotebookFile {
   if (!raw.trim()) return emptySqlNotebook();
   const parsed = JSON.parse(raw) as Partial<SqlNotebookFile>;
   if (parsed.version !== SQL_NOTEBOOK_VERSION) {
-    throw new Error(`Unsupported SQL notebook version: ${String(parsed.version)}`);
+    throw new Error(`Unsupported Scratchpad file version: ${String(parsed.version)}`);
   }
   const cells = Array.isArray(parsed.cells)
     ? parsed.cells.flatMap((cell) => normalizeCell(cell))
@@ -211,7 +259,7 @@ export function serializeSqlNotebookFile(file: SqlNotebookFile): string {
 
 export function sqlNotebookResultPayload(
   result: DebugResult,
-  binding: NotebookBindingSnapshot,
+  binding: ScratchpadAssociationSnapshot,
 ): SqlNotebookResultPayload {
   return {
     version: 2,
@@ -234,6 +282,7 @@ function normalizeMetadata(value: unknown): SqlNotebookMetadata {
     ...stringProperty(source, "serverId"),
     ...stringProperty(source, "serverName"),
     ...stringProperty(source, "database"),
+    ...(source.executionMode === "manual" ? { executionMode: "manual" as const } : {}),
   };
 }
 

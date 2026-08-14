@@ -156,17 +156,26 @@ describe("Workbench tree model", () => {
         manifest.contributes.menus["view/item/context"]
           .filter(
             (entry) =>
-              entry.when ===
-              "view == postgresql-workbench-connections && viewItem == postgresql-workbench-sql-notebook",
+              typeof entry.command === "string" &&
+              [
+                "postgresql-workbench.openSqlNotebook",
+                "postgresql-workbench.changeSqlNotebookConnection",
+                "postgresql-workbench.renameSqlNotebook",
+                "postgresql-workbench.duplicateSqlNotebook",
+                "postgresql-workbench.exportSqlNotebook",
+                "postgresql-workbench.deleteSqlNotebook",
+              ].includes(entry.command) &&
+              entry.when.includes("postgresql-workbench-scratchpad-auto"),
           )
           .map(({ command, group }) => [command, group]),
       ),
     ).toEqual({
       "postgresql-workbench.openSqlNotebook": "inline@1",
-      "postgresql-workbench.renameSqlNotebook": "navigation@2",
-      "postgresql-workbench.duplicateSqlNotebook": "navigation@3",
-      "postgresql-workbench.exportSqlNotebook": "navigation@4",
-      "postgresql-workbench.deleteSqlNotebook": "navigation@5",
+      "postgresql-workbench.changeSqlNotebookConnection": "navigation@1",
+      "postgresql-workbench.renameSqlNotebook": "navigation@3",
+      "postgresql-workbench.duplicateSqlNotebook": "navigation@4",
+      "postgresql-workbench.exportSqlNotebook": "navigation@5",
+      "postgresql-workbench.deleteSqlNotebook": "navigation@6",
     });
     expect(
       Object.fromEntries(

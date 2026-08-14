@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import {
-  bindingFingerprint,
-  type NotebookBindingSnapshot,
+  associationFingerprint,
+  type ScratchpadAssociationSnapshot,
   SQL_NOTEBOOK_RENDERER_ID,
   type SqlNotebookRendererRequest,
   type SqlNotebookRendererResponse,
@@ -13,7 +13,7 @@ interface HostedResultSession {
   session: SqlResultSession;
   notebookUri: string;
   cellUri: string;
-  bindingFingerprint: string;
+  associationFingerprint: string;
   idleTimeoutMs: number;
   timer?: ReturnType<typeof setTimeout>;
   busy: boolean;
@@ -36,13 +36,13 @@ export class SqlNotebookResultHost implements vscode.Disposable {
     session: SqlResultSession,
     cell: vscode.NotebookCell,
     idleTimeoutMs: number,
-    binding: NotebookBindingSnapshot,
-    isBindingCurrent: () => boolean = () => true,
+    association: ScratchpadAssociationSnapshot,
+    isAssociationCurrent: () => boolean = () => true,
   ): Promise<SqlNotebookResultPayload> {
     await this.closeCell(cell.document.uri.toString());
-    if (!isBindingCurrent()) {
+    if (!isAssociationCurrent()) {
       await session.close().catch(() => {});
-      throw new Error("The scratchpad binding changed while the result session was opening.");
+      throw new Error("The Scratchpad Association changed while the result session was opening.");
     }
     const payload = session.snapshot();
     if (!hasInteractiveNavigation(payload)) {
@@ -53,7 +53,7 @@ export class SqlNotebookResultHost implements vscode.Disposable {
       session,
       notebookUri: cell.notebook.uri.toString(),
       cellUri: cell.document.uri.toString(),
-      bindingFingerprint: bindingFingerprint(binding),
+      associationFingerprint: associationFingerprint(association),
       idleTimeoutMs,
       busy: false,
     };
@@ -70,13 +70,14 @@ export class SqlNotebookResultHost implements vscode.Disposable {
     await this.closeMatching((hosted) => hosted.notebookUri === notebookUri);
   }
 
-  async closeNotebookBindingMismatch(
+  async closeNotebookAssociationMismatch(
     notebookUri: string,
-    binding?: NotebookBindingSnapshot,
+    association?: ScratchpadAssociationSnapshot,
   ): Promise<void> {
-    const fingerprint = binding ? bindingFingerprint(binding) : undefined;
+    const fingerprint = association ? associationFingerprint(association) : undefined;
     await this.closeMatching(
-      (hosted) => hosted.notebookUri === notebookUri && hosted.bindingFingerprint !== fingerprint,
+      (hosted) =>
+        hosted.notebookUri === notebookUri && hosted.associationFingerprint !== fingerprint,
     );
   }
 

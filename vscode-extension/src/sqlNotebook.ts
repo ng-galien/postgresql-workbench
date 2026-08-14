@@ -9,6 +9,7 @@ import {
   type DebugResultStatus,
 } from "../../src/debugger/launch/index.js";
 import type { ConnectionManager } from "./connectionManager.js";
+import { ScratchpadTransactionManager } from "./scratchpadTransactions.js";
 import type { ServerConfig } from "./serverStore.js";
 import {
   createDedicatedNotebookClient,
@@ -17,20 +18,23 @@ import {
 } from "./sqlNotebookConnection.js";
 import { SQL_NOTEBOOK_SCHEME, SqlNotebookFileSystemProvider } from "./sqlNotebookFileSystem.js";
 import {
-  bindingFingerprint,
-  bindingSnapshot,
+  associationFingerprint,
+  associationSnapshot,
   emptySqlNotebook,
-  type NotebookBinding,
-  type NotebookBindingSnapshot,
   normalizeSqlNotebookName,
   parseSqlNotebookFile,
-  resolveNotebookBinding,
+  resolveScratchpadAssociation,
+  type ScratchpadAssociation,
+  type ScratchpadAssociationSnapshot,
+  type ScratchpadExecutionMode,
   SQL_NOTEBOOK_RESULT_MIME,
   SQL_NOTEBOOK_TYPE,
   type SqlNotebookErrorPayload,
   type SqlNotebookFile,
   type SqlNotebookMetadata,
   type SqlNotebookResultPayload,
+  scratchpadCreationAssociation,
+  scratchpadExecutionMode,
   serializeSqlNotebookFile,
   sqlNotebookResultPayload,
 } from "./sqlNotebookModel.js";
@@ -52,8 +56,14 @@ export const NEW_SQL_NOTEBOOK_COMMAND = "postgresql-workbench.newSqlNotebook";
 export const CHANGE_SQL_NOTEBOOK_CONNECTION_COMMAND =
   "postgresql-workbench.changeSqlNotebookConnection";
 export const RECONNECT_SQL_NOTEBOOK_COMMAND = "postgresql-workbench.reconnectSqlNotebook";
-export const USE_SQL_NOTEBOOK_BINDING_AS_ACTIVE_COMMAND =
+export const USE_SQL_NOTEBOOK_ASSOCIATION_AS_ACTIVE_COMMAND =
   "postgresql-workbench.useSqlNotebookBindingAsActive";
+export const SET_SCRATCHPAD_AUTO_MODE_COMMAND = "postgresql-workbench.setScratchpadAutoMode";
+export const SET_SCRATCHPAD_MANUAL_MODE_COMMAND = "postgresql-workbench.setScratchpadManualMode";
+export const COMMIT_SCRATCHPAD_TRANSACTION_COMMAND =
+  "postgresql-workbench.commitScratchpadTransaction";
+export const ROLLBACK_SCRATCHPAD_TRANSACTION_COMMAND =
+  "postgresql-workbench.rollbackScratchpadTransaction";
 
 type ResultPlanner = (sql: string) => Promise<SqlExecutionPlan>;
 
@@ -61,9 +71,10 @@ export function registerSqlNotebook(
   context: vscode.ExtensionContext,
   connections: ConnectionManager,
   planResult: ResultPlanner,
-): SqlNotebookWorkspace {
+): ScratchpadFeature {
   const serializer = new SqlNotebookSerializer();
-  const controller = new SqlNotebookController(connections, planResult);
+  const transactions = new ScratchpadTransactionManager(connections);
+  const controller = new SqlNotebookController(connections, planResult, transactions);
   const statusProvider = new SqlNotebookStatusProvider(connections);
   const fileSystem = new SqlNotebookFileSystemProvider(context.globalStorageUri);
   const workspace = new SqlNotebookWorkspace(fileSystem);
@@ -71,6 +82,10 @@ export function registerSqlNotebook(
   context.subscriptions.push(
     fileSystem,
     workspace,
+    transactions,
+    connections.registerBeforeConnectionChange((connectionId, action) =>
+      transactions.acquireConnectionChange(connectionId, action),
+    ),
     vscode.workspace.registerFileSystemProvider(SQL_NOTEBOOK_SCHEME, fileSystem, {
       isCaseSensitive: true,
     }),
@@ -81,14 +96,8 @@ export function registerSqlNotebook(
     statusProvider,
     vscode.notebooks.registerNotebookCellStatusBarItemProvider(SQL_NOTEBOOK_TYPE, statusProvider),
     vscode.commands.registerCommand(NEW_SQL_NOTEBOOK_COMMAND, async (target?: unknown) => {
-      const server = await pickNotebookServer(
-        connections,
-        target,
-        "Create scratchpad for database",
-      );
-      if (!server) return undefined;
-
-      const file = emptySqlNotebook(bindingSnapshot(server));
+      const connection = await pickScratchpadAssociationForCreation(connections, target);
+      const file = emptySqlNotebook(connection ? associationSnapshot(connection) : {});
       const uri = await workspace.create(new TextEncoder().encode(serializeSqlNotebookFile(file)));
       const notebook = await vscode.workspace.openNotebookDocument(uri);
       controller.prefer(notebook);
@@ -123,7 +132,12 @@ export function registerSqlNotebook(
             validateInput: validateSqlNotebookName,
           }));
         if (!name) return undefined;
-        return renameSqlNotebook(workspace, controller, entry, name);
+        const renamed = await transactions.runScratchpadChange(
+          entry.uri.toString(),
+          "renaming it",
+          () => renameSqlNotebook(workspace, controller, entry, name),
+        );
+        return renamed.accepted ? renamed.value : undefined;
       },
     ),
     vscode.commands.registerCommand(
@@ -137,7 +151,12 @@ export function registerSqlNotebook(
           "Delete Scratchpad",
         );
         if (choice !== "Delete Scratchpad") return false;
-        return deleteSqlNotebook(workspace, entry);
+        const deleted = await transactions.runScratchpadChange(
+          entry.uri.toString(),
+          "deleting it",
+          () => deleteSqlNotebook(workspace, entry),
+        );
+        return deleted.accepted && deleted.value === true;
       },
     ),
     vscode.commands.registerCommand(REFRESH_SQL_NOTEBOOKS_COMMAND, () => workspace.refresh()),
@@ -174,15 +193,40 @@ export function registerSqlNotebook(
         const notebook =
           (await notebookFromTarget(target)) ?? vscode.window.activeNotebookEditor?.notebook;
         if (!notebook || notebook.notebookType !== SQL_NOTEBOOK_TYPE) return false;
-        const server = await pickNotebookServer(
-          connections,
-          undefined,
-          "Rebind scratchpad to database",
+        const selected = await pickScratchpadAssociation(connections, "Choose a Connexion");
+        if (!selected.accepted) return false;
+        const changed = await transactions.runScratchpadChange(
+          notebook.uri.toString(),
+          "changing its Association",
+          async () => {
+            await updateNotebookMetadata(notebook, {
+              ...(selected.connection ? associationSnapshot(selected.connection) : {}),
+              executionMode: scratchpadExecutionMode(notebookMetadata(notebook.metadata)),
+            });
+            statusProvider.refresh();
+          },
         );
-        if (!server) return false;
-        await updateNotebookMetadata(notebook, bindingSnapshot(server));
-        statusProvider.refresh();
-        return true;
+        return changed.accepted;
+      },
+    ),
+    vscode.commands.registerCommand(SET_SCRATCHPAD_AUTO_MODE_COMMAND, (target?: unknown) =>
+      setScratchpadExecutionMode(target, "auto", transactions, statusProvider),
+    ),
+    vscode.commands.registerCommand(SET_SCRATCHPAD_MANUAL_MODE_COMMAND, (target?: unknown) =>
+      setScratchpadExecutionMode(target, "manual", transactions, statusProvider),
+    ),
+    vscode.commands.registerCommand(
+      COMMIT_SCRATCHPAD_TRANSACTION_COMMAND,
+      async (target?: unknown) => {
+        const uri = scratchpadUriFromTarget(target);
+        return uri ? transactions.commit(uri) : false;
+      },
+    ),
+    vscode.commands.registerCommand(
+      ROLLBACK_SCRATCHPAD_TRANSACTION_COMMAND,
+      async (target?: unknown) => {
+        const uri = scratchpadUriFromTarget(target);
+        return uri ? transactions.rollback(uri) : false;
       },
     ),
     vscode.commands.registerCommand(
@@ -191,25 +235,32 @@ export function registerSqlNotebook(
         const notebook =
           (await notebookFromTarget(target)) ?? vscode.window.activeNotebookEditor?.notebook;
         if (!notebook || notebook.notebookType !== SQL_NOTEBOOK_TYPE) return false;
-        const binding = resolveNotebookBinding(
+        const association = resolveScratchpadAssociation(
           notebookMetadata(notebook.metadata),
           connections.servers,
         );
-        if (binding.status !== "bound") {
+        if (association.status !== "associated") {
           void vscode.window.showWarningMessage(
-            "This scratchpad binding is unavailable. Rebind it to a saved database context.",
+            "This Scratchpad Association is unavailable. Choose a saved Connexion.",
           );
           return false;
         }
         try {
-          await withDedicatedNotebookClient(connections, binding.server.id, async () => undefined);
+          await withDedicatedNotebookClient(
+            connections,
+            association.connection.id,
+            async () => undefined,
+          );
           void vscode.window.showInformationMessage(
-            `Scratchpad connection to ${binding.snapshot.serverName} is available.`,
+            `Scratchpad Connexion ${association.snapshot.serverName} is available.`,
           );
           return true;
         } catch (error) {
-          const action = await vscode.window.showErrorMessage(errorMessage(error), "Rebind");
-          if (action === "Rebind") {
+          const action = await vscode.window.showErrorMessage(
+            errorMessage(error),
+            "Change Association",
+          );
+          if (action === "Change Association") {
             void vscode.commands.executeCommand(CHANGE_SQL_NOTEBOOK_CONNECTION_COMMAND, notebook);
           }
           return false;
@@ -217,21 +268,27 @@ export function registerSqlNotebook(
       },
     ),
     vscode.commands.registerCommand(
-      USE_SQL_NOTEBOOK_BINDING_AS_ACTIVE_COMMAND,
+      USE_SQL_NOTEBOOK_ASSOCIATION_AS_ACTIVE_COMMAND,
       async (target?: SqlNotebookEntry | vscode.NotebookDocument | vscode.NotebookCell) => {
         const notebook =
           (await notebookFromTarget(target)) ?? vscode.window.activeNotebookEditor?.notebook;
         if (!notebook || notebook.notebookType !== SQL_NOTEBOOK_TYPE) return false;
-        const binding = resolveNotebookBinding(
+        const association = resolveScratchpadAssociation(
           notebookMetadata(notebook.metadata),
           connections.servers,
         );
-        if (binding.status !== "bound") return false;
-        return connections.connectServer(binding.server.id);
+        if (association.status !== "associated") return false;
+        return connections.connectServer(association.connection.id);
       },
     ),
   );
-  return workspace;
+  return { workspace, transactions, shutdown: () => transactions.shutdown() };
+}
+
+export interface ScratchpadFeature {
+  readonly workspace: SqlNotebookWorkspace;
+  readonly transactions: ScratchpadTransactionManager;
+  shutdown(): Promise<void>;
 }
 
 interface SqlNotebookPick extends vscode.QuickPickItem {
@@ -245,32 +302,41 @@ type SqlNotebookCommandTarget =
   | { entry: SqlNotebookEntry };
 
 interface SqlNotebookServerPick extends vscode.QuickPickItem {
-  server: ServerConfig;
+  connection?: ServerConfig;
 }
 
-async function pickNotebookServer(
+async function pickScratchpadAssociationForCreation(
   connections: ConnectionManager,
   target: unknown,
-  placeHolder: string,
 ): Promise<ServerConfig | undefined> {
   const targetId = notebookServerId(target);
   if (targetId) return connections.store.get(targetId);
-  const servers = [...connections.servers];
-  if (servers.length === 0) {
-    void vscode.window.showInformationMessage(
-      "Add a PostgreSQL database context before creating or rebinding a scratchpad.",
-    );
-    return undefined;
-  }
+  const savedConnections = [...connections.servers];
+  const decision = scratchpadCreationAssociation(savedConnections);
+  if (decision.kind === "unassociated") return undefined;
+  if (decision.kind === "automatic") return decision.connection;
+  return (await pickScratchpadAssociation(connections, "Choose a Connexion")).connection;
+}
+
+async function pickScratchpadAssociation(
+  connections: ConnectionManager,
+  placeHolder: string,
+): Promise<{ accepted: boolean; connection?: ServerConfig }> {
   const selected = await vscode.window.showQuickPick<SqlNotebookServerPick>(
-    servers.map((server) => ({
-      label: server.name,
-      description: `${server.host}:${server.port} · ${server.database}`,
-      server,
-    })),
+    [
+      {
+        label: "$(circle-slash) No connection",
+        description: "Create or keep the Scratchpad without an Association",
+      },
+      ...connections.servers.map((connection) => ({
+        label: connection.name,
+        description: `${connection.host}:${connection.port} · ${connection.database}`,
+        connection,
+      })),
+    ],
     { placeHolder },
   );
-  return selected?.server;
+  return selected ? { accepted: true, connection: selected.connection } : { accepted: false };
 }
 
 function notebookServerId(target: unknown): string | undefined {
@@ -279,6 +345,49 @@ function notebookServerId(target: unknown): string | undefined {
   const candidate = target as { kind?: unknown; server?: { id?: unknown } };
   if (candidate.kind !== "databaseSource" && candidate.kind !== "scratchpads") return undefined;
   return typeof candidate.server?.id === "string" ? candidate.server.id : undefined;
+}
+
+async function setScratchpadExecutionMode(
+  target: unknown,
+  mode: ScratchpadExecutionMode,
+  transactions: ScratchpadTransactionManager,
+  statusProvider: SqlNotebookStatusProvider,
+): Promise<boolean> {
+  const notebook =
+    (await notebookFromTarget(target)) ?? vscode.window.activeNotebookEditor?.notebook;
+  if (!notebook || notebook.notebookType !== SQL_NOTEBOOK_TYPE) return false;
+  const changed = await transactions.runScratchpadChange(
+    notebook.uri.toString(),
+    "changing its Mode",
+    async () => {
+      const current = notebookMetadata(notebook.metadata);
+      await updateNotebookMetadata(notebook, { ...current, executionMode: mode });
+      statusProvider.refresh();
+    },
+    () => scratchpadExecutionMode(notebookMetadata(notebook.metadata)) === mode,
+  );
+  return changed.accepted;
+}
+
+function scratchpadUriFromTarget(target: unknown): string | undefined {
+  if (typeof target === "string") return target;
+  if (!target || typeof target !== "object") return undefined;
+  const candidate = target as {
+    scratchpadUri?: unknown;
+    transaction?: { scratchpadUri?: unknown };
+    entry?: { uri?: { toString(): string } };
+    notebook?: { entry?: { uri?: { toString(): string } } };
+    uri?: { toString(): string };
+  };
+  if (typeof candidate.scratchpadUri === "string") return candidate.scratchpadUri;
+  if (typeof candidate.transaction?.scratchpadUri === "string") {
+    return candidate.transaction.scratchpadUri;
+  }
+  return (
+    candidate.entry?.uri?.toString() ??
+    candidate.notebook?.entry?.uri?.toString() ??
+    candidate.uri?.toString()
+  );
 }
 
 async function selectSqlNotebook(
@@ -298,7 +407,7 @@ async function selectSqlNotebook(
   const selected = await vscode.window.showQuickPick<SqlNotebookPick>(
     entries.map((entry) => ({
       label: displaySqlNotebookName(entry.name),
-      description: notebookConnectionLabel(entry.metadata),
+      description: scratchpadAssociationLabel(entry.metadata),
       entry,
     })),
     { placeHolder },
@@ -379,7 +488,7 @@ function validateSqlNotebookName(value: string): string | undefined {
   }
 }
 
-function notebookConnectionLabel(metadata: SqlNotebookMetadata): string | undefined {
+function scratchpadAssociationLabel(metadata: SqlNotebookMetadata): string | undefined {
   if (metadata.serverName && metadata.database) {
     return `${metadata.serverName} · ${metadata.database}`;
   }
@@ -422,43 +531,44 @@ class SqlNotebookController implements vscode.Disposable {
   private readonly controller: vscode.NotebookController;
   private readonly resultHost = new SqlNotebookResultHost();
   private readonly subscriptions: vscode.Disposable[];
-  private readonly notebookBindings = new Map<string, string>();
+  private readonly scratchpadAssociations = new Map<string, string>();
 
   constructor(
     private readonly connections: ConnectionManager,
     private readonly planResult: ResultPlanner,
+    private readonly transactions: ScratchpadTransactionManager,
   ) {
     this.controller = vscode.notebooks.createNotebookController(
       "postgresql-workbench.sql",
       SQL_NOTEBOOK_TYPE,
       "PostgreSQL Workbench",
     );
-    this.controller.description = "Persistent PostgreSQL scratch notebook";
+    this.controller.description = "Persistent PostgreSQL Scratchpad";
     this.controller.supportedLanguages = ["plpgsql"];
     this.controller.supportsExecutionOrder = true;
     this.controller.executeHandler = (cells, notebook) => this.execute(cells, notebook);
     this.subscriptions = [
       connections.onChanged(() => {
         for (const notebook of vscode.workspace.notebookDocuments) {
-          if (notebook.notebookType === SQL_NOTEBOOK_TYPE) void this.observeBinding(notebook);
+          if (notebook.notebookType === SQL_NOTEBOOK_TYPE) void this.observeAssociation(notebook);
         }
       }),
       vscode.workspace.onDidOpenNotebookDocument((notebook) => {
-        if (notebook.notebookType === SQL_NOTEBOOK_TYPE) this.rememberBinding(notebook);
+        if (notebook.notebookType === SQL_NOTEBOOK_TYPE) this.rememberAssociation(notebook);
       }),
       vscode.workspace.onDidCloseNotebookDocument((notebook) => {
-        this.notebookBindings.delete(notebook.uri.toString());
+        this.scratchpadAssociations.delete(notebook.uri.toString());
         void this.resultHost.closeNotebook(notebook.uri.toString());
       }),
       vscode.workspace.onDidChangeNotebookDocument(({ notebook }) => {
         if (notebook.notebookType !== SQL_NOTEBOOK_TYPE) return;
-        void this.observeBinding(notebook);
+        void this.observeAssociation(notebook);
       }),
     ];
   }
 
   prefer(notebook: vscode.NotebookDocument): void {
-    this.rememberBinding(notebook);
+    this.rememberAssociation(notebook);
     this.controller.updateNotebookAffinity(notebook, vscode.NotebookControllerAffinity.Preferred);
   }
 
@@ -473,18 +583,18 @@ class SqlNotebookController implements vscode.Disposable {
     notebook: vscode.NotebookDocument,
   ): Promise<void> {
     this.prefer(notebook);
-    const binding = resolveNotebookBinding(
+    const association = resolveScratchpadAssociation(
       notebookMetadata(notebook.metadata),
       this.connections.servers,
     );
-    if (binding.status !== "bound") {
+    if (association.status !== "associated") {
       const message =
-        binding.status === "unavailable"
-          ? `The bound PostgreSQL database ${binding.snapshot.serverName} is no longer saved. Rebind this scratchpad.`
-          : "This scratchpad has no PostgreSQL binding. Rebind it before running SQL.";
+        association.status === "unavailable"
+          ? `The associated Connexion ${association.snapshot.serverName} is no longer saved. Change this Scratchpad Association.`
+          : "This Scratchpad has no Connexion Association. Choose one before running SQL.";
       for (const cell of cells) await this.showError(cell, message);
-      const action = await vscode.window.showWarningMessage(message, "Rebind");
-      if (action === "Rebind") {
+      const action = await vscode.window.showWarningMessage(message, "Choose Connexion");
+      if (action === "Choose Connexion") {
         void vscode.commands.executeCommand(CHANGE_SQL_NOTEBOOK_CONNECTION_COMMAND, notebook);
       }
       return;
@@ -492,12 +602,19 @@ class SqlNotebookController implements vscode.Disposable {
 
     for (const cell of cells) {
       if (cell.kind !== vscode.NotebookCellKind.Code) continue;
-      await this.executeCell(cell, binding);
+      await this.executeCell(
+        cell,
+        association,
+        scratchpadExecutionMode(notebookMetadata(notebook.metadata)),
+      );
     }
   }
 
-  private async executeCell(cell: vscode.NotebookCell, binding: NotebookBinding): Promise<void> {
-    if (binding.status !== "bound") return;
+  private async executeCell(
+    cell: vscode.NotebookCell,
+    association: Extract<ScratchpadAssociation, { status: "associated" }>,
+    mode: ScratchpadExecutionMode,
+  ): Promise<void> {
     await this.resultHost.closeCell(cell.document.uri.toString());
     const execution = this.controller.createNotebookCellExecution(cell);
     execution.executionOrder = ++this.executionOrder;
@@ -520,16 +637,33 @@ class SqlNotebookController implements vscode.Disposable {
       execution.end(false, Date.now());
       return;
     }
+    if (mode === "manual" && plan.statements.some((statement) => statement.transactionControl)) {
+      await execution.replaceOutput(
+        errorOutput(
+          notebookErrorPayload(
+            "execution",
+            "Scratchpad Transaction control",
+            "Mode MANUAL does not execute transaction-control Statements (for example BEGIN, COMMIT, ROLLBACK, SAVEPOINT, or SET TRANSACTION). Use the Scratchpad Transaction controls.",
+          ),
+        ),
+      );
+      execution.end(false, Date.now());
+      return;
+    }
 
     const settings = sqlResultSettings();
     const [singleStatement] = plan.statements;
-    if (plan.statements.length === 1 && singleStatement?.resultKind === "paged-query") {
+    if (
+      mode === "auto" &&
+      plan.statements.length === 1 &&
+      singleStatement?.resultKind === "paged-query"
+    ) {
       try {
         const payload = await this.executePagedCell(
           cell,
           singleStatement.sql,
           settings,
-          binding.snapshot,
+          association.snapshot,
         );
         await execution.replaceOutput(resultOutput(payload));
         execution.end(true, Date.now());
@@ -544,7 +678,13 @@ class SqlNotebookController implements vscode.Disposable {
     }
 
     try {
-      const outcome = await this.executeStatementPlan(cell, plan.statements, settings, binding);
+      const outcome = await this.executeStatementPlan(
+        cell,
+        plan.statements,
+        settings,
+        association,
+        mode,
+      );
       await execution.replaceOutput(outcome.outputs);
       execution.end(outcome.success, Date.now());
     } catch (error) {
@@ -560,58 +700,82 @@ class SqlNotebookController implements vscode.Disposable {
     cell: vscode.NotebookCell,
     statements: readonly SqlExecutionStatement[],
     settings: SqlResultSettings,
-    binding: Extract<NotebookBinding, { status: "bound" }>,
+    association: Extract<ScratchpadAssociation, { status: "associated" }>,
+    mode: ScratchpadExecutionMode,
   ): Promise<{ outputs: vscode.NotebookCellOutput[]; success: boolean }> {
-    return withDedicatedNotebookClient(this.connections, binding.server.id, async (client) => {
+    const execute = async (client: import("pg").Client) => {
       const outputs: vscode.NotebookCellOutput[] = [];
       for (const [index, statement] of statements.entries()) {
-        const result = await executeSqlSelection(
-          client,
-          {
-            status: "ready",
-            sql: statement.sql,
-            source: {
-              name: cell.notebook.uri.path.split("/").at(-1) ?? "SQL notebook",
-              uri: cell.notebook.uri.toString(),
-              line: statement.line,
+        try {
+          const result = await executeSqlSelection(
+            client,
+            {
+              status: "ready",
+              sql: statement.sql,
+              source: {
+                name: cell.notebook.uri.path.split("/").at(-1) ?? "Scratchpad",
+                uri: cell.notebook.uri.toString(),
+                line: statement.line,
+              },
             },
-          },
-          {
-            add: (_entry: DebugResult) => {},
-            addStatus: (_entry: DebugResultStatus) => {},
-          },
-          {
-            maxRows: settings.nonPagedMaxRows,
-            classifyStatementCount: async () => "single-statement",
-          },
-        );
+            {
+              add: (_entry: DebugResult) => {},
+              addStatus: (_entry: DebugResultStatus) => {},
+            },
+            {
+              maxRows: settings.nonPagedMaxRows,
+              classifyStatementCount: async () => "single-statement",
+            },
+          );
 
-        if ("status" in result) {
-          const error =
-            result.status === "error"
-              ? debugResultErrorPayload(result, statements.length > 1 ? index + 1 : undefined)
-              : executionErrorPayload(
-                  new Error("The SQL execution plan became invalid before execution."),
-                  statements.length > 1 ? index + 1 : undefined,
-                );
-          outputs.push(errorOutput(error));
-          return { outputs, success: false };
-        }
-        if (result.columns.length > 0) {
-          outputs.push(resultOutput(sqlNotebookResultPayload(result, binding.snapshot)));
+          if ("status" in result) {
+            if (mode === "manual") {
+              this.transactions.record(cell.notebook.uri.toString(), statement.sql, false);
+            }
+            const error =
+              result.status === "error"
+                ? debugResultErrorPayload(result, statements.length > 1 ? index + 1 : undefined)
+                : executionErrorPayload(
+                    new Error("The SQL execution plan became invalid before execution."),
+                    statements.length > 1 ? index + 1 : undefined,
+                  );
+            outputs.push(errorOutput(error));
+            return { outputs, success: false };
+          }
+          if (mode === "manual") {
+            this.transactions.record(cell.notebook.uri.toString(), statement.sql, true);
+          }
+          if (result.columns.length > 0) {
+            outputs.push(resultOutput(sqlNotebookResultPayload(result, association.snapshot)));
+          }
+        } catch (error) {
+          if (mode === "manual") {
+            this.transactions.record(cell.notebook.uri.toString(), statement.sql, false);
+          }
+          throw error;
         }
       }
       return { outputs, success: true };
-    });
+    };
+
+    if (mode === "manual") {
+      return this.transactions.execute(
+        cell.notebook.uri.toString(),
+        displaySqlNotebookName(cell.notebook.uri.path.split("/").at(-1) ?? "Scratchpad"),
+        association.snapshot,
+        execute,
+      );
+    }
+    return withDedicatedNotebookClient(this.connections, association.connection.id, execute);
   }
 
   private async executePagedCell(
     cell: vscode.NotebookCell,
     sql: string,
     settings: SqlResultSettings,
-    binding: NotebookBindingSnapshot,
+    association: ScratchpadAssociationSnapshot,
   ): Promise<SqlNotebookResultPayload> {
-    const client = await createDedicatedNotebookClient(this.connections, binding.serverId);
+    const client = await createDedicatedNotebookClient(this.connections, association.serverId);
     let reader: PostgresCursorReader | undefined;
     try {
       const resultIdleTimeoutMs = settings.cursorIdleTimeoutSeconds * 1_000;
@@ -622,10 +786,10 @@ class SqlNotebookController implements vscode.Disposable {
       const session = await SqlResultSession.open(reader, {
         pageSize: settings.pageSize,
         maxCachedRows: settings.maxCachedRows,
-        binding,
+        binding: association,
       });
-      return this.resultHost.register(session, cell, resultIdleTimeoutMs, binding, () =>
-        this.isBindingCurrent(cell.notebook, binding),
+      return this.resultHost.register(session, cell, resultIdleTimeoutMs, association, () =>
+        this.isAssociationCurrent(cell.notebook, association),
       );
     } catch (error) {
       if (reader) await reader.close().catch(() => {});
@@ -638,7 +802,9 @@ class SqlNotebookController implements vscode.Disposable {
     const execution = this.controller.createNotebookCellExecution(cell);
     execution.start(Date.now());
     await execution.replaceOutput(
-      errorOutput(notebookErrorPayload("connection", "Database binding unavailable", message)),
+      errorOutput(
+        notebookErrorPayload("connection", "Scratchpad Association unavailable", message),
+      ),
     );
     execution.end(false, Date.now());
   }
@@ -647,57 +813,61 @@ class SqlNotebookController implements vscode.Disposable {
     notebook: vscode.NotebookDocument,
     error: DedicatedNotebookConnectionError,
   ): Promise<void> {
-    const action = await vscode.window.showWarningMessage(error.message, "Reconnect", "Rebind");
+    const action = await vscode.window.showWarningMessage(
+      error.message,
+      "Reconnect",
+      "Change Association",
+    );
     if (action === "Reconnect") {
       void vscode.commands.executeCommand(RECONNECT_SQL_NOTEBOOK_COMMAND, notebook);
-    } else if (action === "Rebind") {
+    } else if (action === "Change Association") {
       void vscode.commands.executeCommand(CHANGE_SQL_NOTEBOOK_CONNECTION_COMMAND, notebook);
     }
   }
 
-  private isBindingCurrent(
+  private isAssociationCurrent(
     notebook: vscode.NotebookDocument,
-    expected: NotebookBindingSnapshot,
+    expected: ScratchpadAssociationSnapshot,
   ): boolean {
-    const binding = resolveNotebookBinding(
+    const association = resolveScratchpadAssociation(
       notebookMetadata(notebook.metadata),
       this.connections.servers,
     );
     return (
-      binding.status === "bound" &&
-      bindingFingerprint(binding.snapshot) === bindingFingerprint(expected)
+      association.status === "associated" &&
+      associationFingerprint(association.snapshot) === associationFingerprint(expected)
     );
   }
 
-  private rememberBinding(notebook: vscode.NotebookDocument): void {
-    this.notebookBindings.set(notebook.uri.toString(), this.bindingStateKey(notebook));
+  private rememberAssociation(notebook: vscode.NotebookDocument): void {
+    this.scratchpadAssociations.set(notebook.uri.toString(), this.associationStateKey(notebook));
   }
 
-  private async observeBinding(notebook: vscode.NotebookDocument): Promise<void> {
+  private async observeAssociation(notebook: vscode.NotebookDocument): Promise<void> {
     const uri = notebook.uri.toString();
-    const next = this.bindingStateKey(notebook);
-    const previous = this.notebookBindings.get(uri);
-    this.notebookBindings.set(uri, next);
+    const next = this.associationStateKey(notebook);
+    const previous = this.scratchpadAssociations.get(uri);
+    this.scratchpadAssociations.set(uri, next);
     if (previous === undefined || previous === next) return;
 
-    const binding = resolveNotebookBinding(
+    const association = resolveScratchpadAssociation(
       notebookMetadata(notebook.metadata),
       this.connections.servers,
     );
-    await this.resultHost.closeNotebookBindingMismatch(
+    await this.resultHost.closeNotebookAssociationMismatch(
       uri,
-      binding.status === "bound" ? binding.snapshot : undefined,
+      association.status === "associated" ? association.snapshot : undefined,
     );
   }
 
-  private bindingStateKey(notebook: vscode.NotebookDocument): string {
-    const binding = resolveNotebookBinding(
+  private associationStateKey(notebook: vscode.NotebookDocument): string {
+    const association = resolveScratchpadAssociation(
       notebookMetadata(notebook.metadata),
       this.connections.servers,
     );
-    return binding.status === "unbound"
-      ? "unbound"
-      : `${binding.status}:${bindingFingerprint(binding.snapshot)}`;
+    return association.status === "unassociated"
+      ? "unassociated"
+      : `${association.status}:${associationFingerprint(association.snapshot)}`;
   }
 }
 
@@ -716,27 +886,27 @@ class SqlNotebookStatusProvider
     cell: vscode.NotebookCell,
   ): vscode.NotebookCellStatusBarItem | undefined {
     if (cell.kind === vscode.NotebookCellKind.Markup) return undefined;
-    const binding = resolveNotebookBinding(
+    const association = resolveScratchpadAssociation(
       notebookMetadata(cell.notebook.metadata),
       this.connections.servers,
     );
     const label =
-      binding.status === "unbound"
-        ? "Rebind PostgreSQL database"
-        : `${binding.snapshot.serverName} · ${binding.snapshot.database}`;
+      association.status === "unassociated"
+        ? "Choose a Connexion"
+        : `${association.snapshot.serverName} · ${association.snapshot.database}`;
     const item = new vscode.NotebookCellStatusBarItem(
-      `${binding.status === "bound" ? "$(database)" : "$(warning)"} ${label}`,
+      `${association.status === "associated" ? "$(database)" : "$(warning)"} ${label}`,
       vscode.NotebookCellStatusBarAlignment.Right,
     );
     item.command = {
-      title: "Change PostgreSQL Connection",
+      title: "Change Scratchpad Connexion",
       command: CHANGE_SQL_NOTEBOOK_CONNECTION_COMMAND,
       arguments: [cell.notebook],
     };
     item.tooltip =
-      binding.status === "bound"
-        ? "Scratchpad PostgreSQL binding — click to rebind it"
-        : "Scratchpad binding unavailable — click to rebind it";
+      association.status === "associated"
+        ? "Scratchpad Association — click to change its Connexion"
+        : "Scratchpad Association unavailable — click to change its Connexion";
     item.priority = 100;
     return item;
   }
@@ -758,6 +928,7 @@ function notebookMetadata(value: unknown): SqlNotebookMetadata {
   for (const key of ["serverId", "serverName", "database"] as const) {
     if (typeof source[key] === "string" && source[key]) metadata[key] = source[key];
   }
+  if (source.executionMode === "manual") metadata.executionMode = "manual";
   return metadata;
 }
 
@@ -768,7 +939,7 @@ async function updateNotebookMetadata(
   const edit = new vscode.WorkspaceEdit();
   edit.set(notebook.uri, [vscode.NotebookEdit.updateNotebookMetadata(metadata)]);
   if (!(await vscode.workspace.applyEdit(edit))) {
-    throw new Error("Could not update SQL notebook connection metadata.");
+    throw new Error("Could not update the Scratchpad Association metadata.");
   }
   await notebook.save();
 }
@@ -785,6 +956,10 @@ async function notebookFromTarget(target: unknown): Promise<vscode.NotebookDocum
       const entry = (notebook as { entry: SqlNotebookEntry }).entry;
       return vscode.workspace.openNotebookDocument(entry.uri);
     }
+  }
+  if ("scratchpad" in target) {
+    const scratchpad = (target as { scratchpad?: { entry?: SqlNotebookEntry } }).scratchpad;
+    if (scratchpad?.entry) return vscode.workspace.openNotebookDocument(scratchpad.entry.uri);
   }
   if ("entry" in target) {
     const entry = (target as { entry: SqlNotebookEntry }).entry;
@@ -874,7 +1049,7 @@ function debugResultErrorPayload(
 function executionErrorPayload(error: unknown, statement?: number): SqlNotebookErrorPayload {
   if (error instanceof DedicatedNotebookConnectionError) {
     return {
-      ...notebookErrorPayload("connection", "PostgreSQL connection error", error.message),
+      ...notebookErrorPayload("connection", "PostgreSQL Connexion error", error.message),
       ...(statement ? { statement } : {}),
     };
   }

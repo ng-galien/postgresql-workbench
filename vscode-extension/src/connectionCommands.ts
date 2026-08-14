@@ -95,7 +95,7 @@ export class ConnectionCommands {
 
     const changesDatabaseIdentity = !sameDatabaseContextIdentity(server, updated);
     if (changesDatabaseIdentity) {
-      await this.replaceDatabaseContext(server, updated);
+      await this.replaceConnexion(server, updated);
       return;
     }
 
@@ -105,7 +105,7 @@ export class ConnectionCommands {
       edit.key === "password" ? edit.value : undefined,
     );
     if (this.connections.activeServer?.id === id) {
-      await this.connections.disconnect();
+      if (!(await this.connections.disconnect())) return;
       await this.connections.connectServer(updated.id);
     } else {
       this.connections.notifyConfigurationChanged();
@@ -129,7 +129,7 @@ export class ConnectionCommands {
         "Reconnect",
         "Later",
       );
-      if (action === "Reconnect") await this.connections.connectServer(id);
+      if (action === "Reconnect") await this.connections.connectServer(id, { force: true });
     }
   }
 
@@ -152,17 +152,24 @@ export class ConnectionCommands {
     return this.connections.connectServer(external.id);
   }
 
-  private async replaceDatabaseContext(server: ServerConfig, updated: ServerConfig): Promise<void> {
+  private async replaceConnexion(server: ServerConfig, updated: ServerConfig): Promise<void> {
     if (this.connections.store.has(updated.id)) {
       void vscode.window.showWarningMessage(
-        `${updated.name} already exists. Rebind scratchpads explicitly instead of replacing it.`,
+        `${updated.name} already exists. Change each Scratchpad Association explicitly instead of replacing it.`,
       );
       return;
     }
-    await this.connections.store.add(updated, await this.connections.getPassword(server.id));
-    await this.connections.removeDatabaseContextConfiguration(server.id);
+    if (
+      !(await this.connections.replaceDatabaseContextConfiguration(
+        server.id,
+        updated,
+        await this.connections.getPassword(server.id),
+      ))
+    ) {
+      return;
+    }
     void vscode.window.showInformationMessage(
-      `Created ${updated.name} as a new database context. Scratchpads bound to ${server.name} are now unavailable until explicitly rebound.`,
+      `Created ${updated.name} as a new Connexion. Scratchpad Associations to ${server.name} are now unavailable until explicitly changed.`,
     );
   }
 }

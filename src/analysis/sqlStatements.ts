@@ -12,6 +12,7 @@ export interface SqlExecutionStatement {
   sql: string;
   resultKind: "paged-query" | "non-paged";
   line: number;
+  transactionControl?: true;
 }
 
 export type SqlExecutionPlan =
@@ -74,6 +75,9 @@ export async function planSqlResultExecution(
             ? "paged-query"
             : "non-paged",
         line: statement.start.line,
+        ...(syntaxTreeHasKind(statement, new Set(["TransactionStmt"]))
+          ? { transactionControl: true as const }
+          : {}),
       })),
     };
   } catch (error) {

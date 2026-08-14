@@ -2,7 +2,7 @@
   "name": "postgresql-workbench",
   "displayName": "PostgreSQL Workbench",
   "version": "1.1.0",
-  "description": "Debug PL/pgSQL, run pgTAP tests with coverage, explore schemas, and query data in SQL notebooks — without leaving VS Code.",
+  "description": "Debug PL/pgSQL, run pgTAP tests with coverage, explore schemas, and query data in SQL scratchpads — without leaving VS Code.",
   "publisher": "ng-galien",
   "author": {
     "name": "Alexandre Boyer",
@@ -214,6 +214,12 @@
         "contents": "[Start a local debug database with Docker](command:postgresql-workbench.startDockerDebugDatabase)\n[Add an existing server](command:postgresql-workbench.addServer)"
       }
     ],
+    "submenus": [
+      {
+        "id": "postgresql-workbench.scratchpadExecutionMode",
+        "label": "Mode"
+      }
+    ],
     "menus": {
       "commandPalette": [
         {
@@ -294,6 +300,22 @@
         },
         {
           "command": "postgresql-workbench.refreshSqlNotebooks",
+          "when": "false"
+        },
+        {
+          "command": "postgresql-workbench.setScratchpadAutoMode",
+          "when": "false"
+        },
+        {
+          "command": "postgresql-workbench.setScratchpadManualMode",
+          "when": "false"
+        },
+        {
+          "command": "postgresql-workbench.commitScratchpadTransaction",
+          "when": "false"
+        },
+        {
+          "command": "postgresql-workbench.rollbackScratchpadTransaction",
           "when": "false"
         },
         {
@@ -414,7 +436,7 @@
         },
         {
           "command": "postgresql-workbench.newSqlNotebook",
-          "when": "viewItem == postgresql-workbench-database-context || viewItem == postgresql-workbench-database-context-active || viewItem == postgresql-workbench-scratchpads",
+          "when": "viewItem == postgresql-workbench-scratchpads",
           "group": "inline@1"
         },
         {
@@ -449,43 +471,81 @@
         },
         {
           "command": "postgresql-workbench.openSqlNotebook",
-          "when": "view == postgresql-workbench-connections && viewItem == postgresql-workbench-sql-notebook",
+          "when": "view == postgresql-workbench-connections && (viewItem == postgresql-workbench-scratchpad-auto || viewItem == postgresql-workbench-scratchpad-manual)",
           "group": "inline@1"
         },
         {
-          "command": "postgresql-workbench.renameSqlNotebook",
-          "when": "view == postgresql-workbench-connections && viewItem == postgresql-workbench-sql-notebook",
+          "command": "postgresql-workbench.changeSqlNotebookConnection",
+          "when": "viewItem == postgresql-workbench-scratchpad-auto || viewItem == postgresql-workbench-scratchpad-manual",
+          "group": "navigation@1"
+        },
+        {
+          "command": "postgresql-workbench.setScratchpadManualMode",
+          "when": "viewItem == postgresql-workbench-scratchpad-auto",
+          "group": "inline@2"
+        },
+        {
+          "command": "postgresql-workbench.setScratchpadAutoMode",
+          "when": "viewItem == postgresql-workbench-scratchpad-manual",
+          "group": "inline@2"
+        },
+        {
+          "submenu": "postgresql-workbench.scratchpadExecutionMode",
+          "when": "viewItem == postgresql-workbench-scratchpad-auto || viewItem == postgresql-workbench-scratchpad-manual",
           "group": "navigation@2"
         },
         {
-          "command": "postgresql-workbench.duplicateSqlNotebook",
-          "when": "view == postgresql-workbench-connections && viewItem == postgresql-workbench-sql-notebook",
+          "command": "postgresql-workbench.renameSqlNotebook",
+          "when": "view == postgresql-workbench-connections && (viewItem == postgresql-workbench-scratchpad-auto || viewItem == postgresql-workbench-scratchpad-manual)",
           "group": "navigation@3"
         },
         {
-          "command": "postgresql-workbench.exportSqlNotebook",
-          "when": "view == postgresql-workbench-connections && viewItem == postgresql-workbench-sql-notebook",
+          "command": "postgresql-workbench.duplicateSqlNotebook",
+          "when": "view == postgresql-workbench-connections && (viewItem == postgresql-workbench-scratchpad-auto || viewItem == postgresql-workbench-scratchpad-manual)",
           "group": "navigation@4"
         },
         {
-          "command": "postgresql-workbench.deleteSqlNotebook",
-          "when": "view == postgresql-workbench-connections && viewItem == postgresql-workbench-sql-notebook",
+          "command": "postgresql-workbench.exportSqlNotebook",
+          "when": "view == postgresql-workbench-connections && (viewItem == postgresql-workbench-scratchpad-auto || viewItem == postgresql-workbench-scratchpad-manual)",
           "group": "navigation@5"
         },
         {
+          "command": "postgresql-workbench.deleteSqlNotebook",
+          "when": "view == postgresql-workbench-connections && (viewItem == postgresql-workbench-scratchpad-auto || viewItem == postgresql-workbench-scratchpad-manual)",
+          "group": "navigation@6"
+        },
+        {
           "command": "postgresql-workbench.changeSqlNotebookConnection",
-          "when": "viewItem == postgresql-workbench-notebook-binding-bound || viewItem == postgresql-workbench-notebook-binding-unavailable || viewItem == postgresql-workbench-notebook-binding-unbound",
+          "when": "viewItem =~ /postgresql-workbench-scratchpad-association-/",
           "group": "navigation@1"
         },
         {
           "command": "postgresql-workbench.reconnectSqlNotebook",
-          "when": "viewItem == postgresql-workbench-notebook-binding-bound",
+          "when": "viewItem == postgresql-workbench-scratchpad-association-associated",
           "group": "navigation@2"
         },
         {
           "command": "postgresql-workbench.useSqlNotebookBindingAsActive",
-          "when": "viewItem == postgresql-workbench-notebook-binding-bound",
+          "when": "viewItem == postgresql-workbench-scratchpad-association-associated",
           "group": "navigation@3"
+        },
+        {
+          "command": "postgresql-workbench.commitScratchpadTransaction",
+          "when": "viewItem == postgresql-workbench-scratchpad-transaction-in-progress",
+          "group": "inline@1"
+        },
+        {
+          "command": "postgresql-workbench.rollbackScratchpadTransaction",
+          "when": "viewItem == postgresql-workbench-scratchpad-transaction-in-progress || viewItem == postgresql-workbench-scratchpad-transaction-failed",
+          "group": "inline@2"
+        }
+      ],
+      "postgresql-workbench.scratchpadExecutionMode": [
+        {
+          "command": "postgresql-workbench.setScratchpadAutoMode"
+        },
+        {
+          "command": "postgresql-workbench.setScratchpadManualMode"
         }
       ],
       "editor/title": [
@@ -646,18 +706,38 @@
       },
       {
         "command": "postgresql-workbench.changeSqlNotebookConnection",
-        "title": "PostgreSQL Workbench: Rebind Scratchpad",
+        "title": "Scratchpad Association...",
         "icon": "$(database)"
       },
       {
         "command": "postgresql-workbench.reconnectSqlNotebook",
-        "title": "PostgreSQL Workbench: Reconnect Scratchpad Binding",
+        "title": "PostgreSQL Workbench: Reconnect Scratchpad Association",
         "icon": "$(debug-restart)"
       },
       {
         "command": "postgresql-workbench.useSqlNotebookBindingAsActive",
-        "title": "PostgreSQL Workbench: Use Binding as Active",
+        "title": "PostgreSQL Workbench: Use Association as Active",
         "icon": "$(target)"
+      },
+      {
+        "command": "postgresql-workbench.setScratchpadAutoMode",
+        "title": "Mode AUTO",
+        "icon": "$(sync-ignored)"
+      },
+      {
+        "command": "postgresql-workbench.setScratchpadManualMode",
+        "title": "Mode MANUAL",
+        "icon": "$(debug-pause)"
+      },
+      {
+        "command": "postgresql-workbench.commitScratchpadTransaction",
+        "title": "Commit",
+        "icon": "$(check)"
+      },
+      {
+        "command": "postgresql-workbench.rollbackScratchpadTransaction",
+        "title": "Rollback",
+        "icon": "$(discard)"
       },
       {
         "command": "postgresql-workbench.compareRoutineWithDatabase",
@@ -786,7 +866,7 @@
           "minimum": 20,
           "maximum": 1000,
           "scope": "window",
-          "description": "Number of rows loaded initially and by each Next action for cursor-backed SQL notebook results."
+          "description": "Number of rows loaded initially and by each Next action for cursor-backed Scratchpad results."
         },
         "postgresql-workbench.results.maxCachedRows": {
           "type": "number",
@@ -802,7 +882,7 @@
           "minimum": 30,
           "maximum": 3600,
           "scope": "window",
-          "description": "Close an idle PostgreSQL notebook result cursor after this many seconds."
+          "description": "Close an idle PostgreSQL Scratchpad result cursor after this many seconds."
         },
         "postgresql-workbench.results.nonPagedMaxRows": {
           "type": "number",

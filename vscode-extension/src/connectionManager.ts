@@ -32,6 +32,11 @@ export class ConnectionManager implements vscode.Disposable {
   /** True after an unexpected connection loss — distinct from "never connected". */
   private _connectionLost = false;
   private _pldbgapiAvailable = false;
+  private connectionTransitionTail: Promise<void> = Promise.resolve();
+  private beforeConnectionChange?: (
+    connectionId: string,
+    action: string,
+  ) => Promise<vscode.Disposable | undefined>;
 
   constructor(context: vscode.ExtensionContext, out: vscode.OutputChannel) {
     this.out = out;
@@ -111,149 +116,184 @@ export class ConnectionManager implements vscode.Disposable {
 
   // --- Connection ---
 
-  async connectServer(id: string): Promise<boolean> {
-    const server = this.store.get(id);
-    if (!server) return false;
-
-    let password = await this.store.getPassword(id);
-    if (!password) {
-      const input = await vscode.window.showInputBox({
-        prompt: `Password for ${server.name}`,
-        password: true,
-        ignoreFocusOut: true,
-      });
-      if (input === undefined) return false;
-      password = input;
-      await this.store.setPassword(id, password);
-    }
-
-    await this.disconnectQuietly();
-    this._activeServerId = undefined;
-    this._connected = false;
-    this._connectionLost = false;
-    this._pldbgapiAvailable = false;
-    await this.store.setActiveServerId(undefined);
-    this.fire();
-
-    const connected = await vscode.window.withProgress(
-      {
-        location: vscode.ProgressLocation.Notification,
-        title: `Connecting to ${server.name}...`,
-        cancellable: true,
-      },
-      async (_progress, token) => {
-        let result: ConnectResult;
-        const connectPromise = this.service.connect({
-          host: server.host,
-          port: server.port,
-          database: server.database,
-          user: server.user,
-          password,
-          ssl: server.ssl,
-        });
-        let cancellation: vscode.Disposable | undefined;
-        try {
-          result = await Promise.race([
-            connectPromise,
-            new Promise<never>((_, reject) => {
-              cancellation = token.onCancellationRequested(() => reject(new Error("cancelled")));
-            }),
-          ]);
-        } catch (err) {
-          if (token.isCancellationRequested) {
-            connectPromise.then((r) => this.service.disconnect(r.client)).catch(() => {});
-            this.out.appendLine(`Connection to ${server.name} cancelled.`);
-            return false;
-          }
-          const classified = this.service.classifyError(err);
-          this._connected = false;
-          this._activeServerId = undefined;
-          this.fire();
-
-          const actions =
-            classified.kind === "auth"
-              ? ["Change Password", "Edit Server"]
-              : classified.kind === "network"
-                ? ["Retry", "Edit Server"]
-                : ["Retry", "Edit Server"];
-          const action = await vscode.window.showErrorMessage(
-            `${server.name}: ${classified.message}`,
-            ...actions,
-          );
-          if (action === "Retry") return this.connectServer(id);
-          if (action === "Edit Server") {
-            await this.commands.editServer(id);
-          }
-          if (action === "Change Password") {
-            await this.commands.changePassword(id);
-          }
-          return false;
-        } finally {
-          cancellation?.dispose();
-        }
-
-        this.client = result.client;
-        this._activeServerId = id;
-        this._connected = true;
-        this._connectionLost = false;
-        this._pldbgapiAvailable = result.pldbgapiAvailable;
-
-        result.client.on("error", (err) => {
-          this.out.appendLine(`Connection lost: ${err.message}`);
-          this._connected = false;
-          this._connectionLost = true;
-          this.fire();
-          vscode.window
-            .showWarningMessage(`${server.name}: connection lost.`, "Reconnect")
-            .then((a) => {
-              if (a === "Reconnect") void this.connectServer(id);
-            });
-        });
-
-        await this.store.setActiveServerId(id);
-
-        if (!result.pldbgapiAvailable && result.pldbgapiError.includes("not installed")) {
-          const action = await vscode.window.showWarningMessage(
-            `${result.pldbgapiError} Install now?`,
-            "Install pldbgapi",
-            "Skip",
-          );
-          if (action === "Install pldbgapi") {
-            try {
-              await this.service.installPldbgapi(result.client);
-              this._pldbgapiAvailable = true;
-              vscode.window.showInformationMessage("pldbgapi installed. Debugging ready.");
-            } catch (err) {
-              vscode.window.showErrorMessage(
-                `Failed: ${err instanceof Error ? err.message : String(err)}`,
-              );
-            }
-          }
-        } else if (!result.pldbgapiAvailable) {
-          vscode.window
-            .showWarningMessage(result.pldbgapiError, "Setup Guide", "Show Logs")
-            .then((a) => {
-              if (a === "Setup Guide") void showRequirementsGuide();
-              if (a === "Show Logs") this.out.show();
-            });
-        }
-
-        this.fire();
-        return true;
-      },
-    );
-
-    return connected;
+  registerBeforeConnectionChange(
+    guard: (connectionId: string, action: string) => Promise<vscode.Disposable | undefined>,
+  ): vscode.Disposable {
+    this.beforeConnectionChange = guard;
+    return new vscode.Disposable(() => {
+      if (this.beforeConnectionChange === guard) this.beforeConnectionChange = undefined;
+    });
   }
 
-  async disconnect(): Promise<void> {
-    await this.disconnectQuietly();
-    this._activeServerId = undefined;
-    this._connected = false;
-    this._connectionLost = false;
-    this._pldbgapiAvailable = false;
-    await this.store.setActiveServerId(undefined);
-    this.fire();
+  async connectServer(id: string, options: { force?: boolean } = {}): Promise<boolean> {
+    return this.runConnectionTransition(() => this.connectServerTransition(id, options));
+  }
+
+  private async connectServerTransition(
+    id: string,
+    options: { force?: boolean } = {},
+  ): Promise<boolean> {
+    const server = this.store.get(id);
+    if (!server) return false;
+    if (this._activeServerId === id && this._connected && !options.force) return true;
+    const previousConnectionId = this._activeServerId;
+    return this.withConnectionChange(
+      previousConnectionId,
+      previousConnectionId === id ? "reconnecting the Connexion" : "switching Connexion",
+      async () => {
+        let password = await this.store.getPassword(id);
+        if (!password) {
+          const input = await vscode.window.showInputBox({
+            prompt: `Password for ${server.name}`,
+            password: true,
+            ignoreFocusOut: true,
+          });
+          if (input === undefined) return false;
+          password = input;
+          await this.store.setPassword(id, password);
+        }
+
+        await this.disconnectQuietly();
+        this._activeServerId = undefined;
+        this._connected = false;
+        this._connectionLost = false;
+        this._pldbgapiAvailable = false;
+        await this.store.setActiveServerId(undefined);
+        this.fire();
+
+        const connected = await vscode.window.withProgress(
+          {
+            location: vscode.ProgressLocation.Notification,
+            title: `Connecting to ${server.name}...`,
+            cancellable: true,
+          },
+          async (_progress, token) => {
+            let result: ConnectResult;
+            const connectPromise = this.service.connect({
+              host: server.host,
+              port: server.port,
+              database: server.database,
+              user: server.user,
+              password,
+              ssl: server.ssl,
+            });
+            let cancellation: vscode.Disposable | undefined;
+            try {
+              result = await Promise.race([
+                connectPromise,
+                new Promise<never>((_, reject) => {
+                  cancellation = token.onCancellationRequested(() =>
+                    reject(new Error("cancelled")),
+                  );
+                }),
+              ]);
+            } catch (err) {
+              if (token.isCancellationRequested) {
+                connectPromise.then((r) => this.service.disconnect(r.client)).catch(() => {});
+                this.out.appendLine(`Connection to ${server.name} cancelled.`);
+                return false;
+              }
+              const classified = this.service.classifyError(err);
+              this._connected = false;
+              this._activeServerId = undefined;
+              this.fire();
+
+              const actions =
+                classified.kind === "auth"
+                  ? ["Change Password", "Edit Server"]
+                  : classified.kind === "network"
+                    ? ["Retry", "Edit Server"]
+                    : ["Retry", "Edit Server"];
+              const action = await vscode.window.showErrorMessage(
+                `${server.name}: ${classified.message}`,
+                ...actions,
+              );
+              if (action === "Retry") return this.connectServerTransition(id);
+              if (action === "Edit Server") {
+                this.deferConnectionAction("Editing the Connexion", () =>
+                  this.commands.editServer(id),
+                );
+              }
+              if (action === "Change Password") {
+                this.deferConnectionAction("Changing the Connexion password", () =>
+                  this.commands.changePassword(id),
+                );
+              }
+              return false;
+            } finally {
+              cancellation?.dispose();
+            }
+
+            this.client = result.client;
+            this._activeServerId = id;
+            this._connected = true;
+            this._connectionLost = false;
+            this._pldbgapiAvailable = result.pldbgapiAvailable;
+
+            result.client.on("error", (err) => {
+              this.out.appendLine(`Connection lost: ${err.message}`);
+              this._connected = false;
+              this._connectionLost = true;
+              this.fire();
+              vscode.window
+                .showWarningMessage(`${server.name}: connection lost.`, "Reconnect")
+                .then((a) => {
+                  if (a === "Reconnect") void this.connectServer(id);
+                });
+            });
+
+            await this.store.setActiveServerId(id);
+
+            if (!result.pldbgapiAvailable && result.pldbgapiError.includes("not installed")) {
+              const action = await vscode.window.showWarningMessage(
+                `${result.pldbgapiError} Install now?`,
+                "Install pldbgapi",
+                "Skip",
+              );
+              if (action === "Install pldbgapi") {
+                try {
+                  await this.service.installPldbgapi(result.client);
+                  this._pldbgapiAvailable = true;
+                  vscode.window.showInformationMessage("pldbgapi installed. Debugging ready.");
+                } catch (err) {
+                  vscode.window.showErrorMessage(
+                    `Failed: ${err instanceof Error ? err.message : String(err)}`,
+                  );
+                }
+              }
+            } else if (!result.pldbgapiAvailable) {
+              vscode.window
+                .showWarningMessage(result.pldbgapiError, "Setup Guide", "Show Logs")
+                .then((a) => {
+                  if (a === "Setup Guide") void showRequirementsGuide();
+                  if (a === "Show Logs") this.out.show();
+                });
+            }
+
+            this.fire();
+            return true;
+          },
+        );
+
+        return connected;
+      },
+    );
+  }
+
+  async disconnect(): Promise<boolean> {
+    return this.runConnectionTransition(() => {
+      const connectionId = this._activeServerId;
+      return this.withConnectionChange(connectionId, "disconnecting the Connexion", async () => {
+        await this.disconnectQuietly();
+        this._activeServerId = undefined;
+        this._connected = false;
+        this._connectionLost = false;
+        this._pldbgapiAvailable = false;
+        await this.store.setActiveServerId(undefined);
+        this.fire();
+        return true;
+      });
+    });
   }
 
   async tryReconnectSaved(): Promise<boolean> {
@@ -290,16 +330,43 @@ export class ConnectionManager implements vscode.Disposable {
     this.fire();
   }
 
-  async removeDatabaseContextConfiguration(id: string): Promise<void> {
-    if (this._activeServerId === id) {
-      await this.disconnectQuietly();
-      this._activeServerId = undefined;
-      this._connected = false;
-      this._connectionLost = false;
-      this._pldbgapiAvailable = false;
-    }
-    await this.store.remove(id);
-    this.fire();
+  async removeDatabaseContextConfiguration(id: string): Promise<boolean> {
+    return this.runConnectionTransition(() =>
+      this.withConnectionChange(id, "removing the Connexion", async () => {
+        if (this._activeServerId === id) {
+          await this.disconnectQuietly();
+          this._activeServerId = undefined;
+          this._connected = false;
+          this._connectionLost = false;
+          this._pldbgapiAvailable = false;
+        }
+        await this.store.remove(id);
+        this.fire();
+        return true;
+      }),
+    );
+  }
+
+  async replaceDatabaseContextConfiguration(
+    id: string,
+    replacement: ServerConfig,
+    password: string,
+  ): Promise<boolean> {
+    return this.runConnectionTransition(() =>
+      this.withConnectionChange(id, "replacing the Connexion", async () => {
+        if (this._activeServerId === id) {
+          await this.disconnectQuietly();
+          this._activeServerId = undefined;
+          this._connected = false;
+          this._connectionLost = false;
+          this._pldbgapiAvailable = false;
+          await this.store.setActiveServerId(undefined);
+        }
+        await this.store.update(id, replacement, password);
+        this.fire();
+        return true;
+      }),
+    );
   }
 
   dispose(): void {
@@ -315,6 +382,40 @@ export class ConnectionManager implements vscode.Disposable {
     if (this.client) {
       await this.service.disconnect(this.client);
       this.client = undefined;
+    }
+  }
+
+  private runConnectionTransition<T>(transition: () => Promise<T>): Promise<T> {
+    const result = this.connectionTransitionTail.catch(() => {}).then(transition);
+    this.connectionTransitionTail = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
+  }
+
+  private deferConnectionAction(description: string, action: () => Promise<void>): void {
+    void action().catch((error) => {
+      const message = `${description} failed: ${error instanceof Error ? error.message : String(error)}`;
+      this.out.appendLine(message);
+      void vscode.window.showErrorMessage(message);
+    });
+  }
+
+  private async withConnectionChange<T>(
+    connectionId: string | undefined,
+    action: string,
+    change: () => Promise<T>,
+  ): Promise<T | false> {
+    if (!connectionId) return change();
+    const lease = this.beforeConnectionChange
+      ? await this.beforeConnectionChange(connectionId, action)
+      : new vscode.Disposable(() => {});
+    if (!lease) return false;
+    try {
+      return await change();
+    } finally {
+      lease.dispose();
     }
   }
 
@@ -341,7 +442,7 @@ export class ConnectionManager implements vscode.Disposable {
       this.statusBar.backgroundColor = new vscode.ThemeColor("statusBarItem.warningBackground");
       this.statusBar.tooltip = "Connection lost — click to reconnect";
     } else {
-      this.statusBar.text = "$(database) No connection";
+      this.statusBar.text = "$(database) No Connexion";
       this.statusBar.backgroundColor = undefined;
       this.statusBar.tooltip = "Click to connect";
     }
