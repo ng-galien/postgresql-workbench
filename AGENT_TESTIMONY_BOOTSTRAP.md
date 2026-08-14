@@ -1,101 +1,114 @@
-# Bootstrap — agent testimonies
+# Bootstrap — témoignages d’agents
 
-This file is a temporary, self-contained instruction for the agent working on
-this repository. Its purpose is to install the GitHub-native collection path
-that sends an agent's free testimony to the blog after meaningful work.
+Ce fichier est une instruction temporaire et autonome destinée à l’agent qui
+travaille dans ce dépôt. Il sert à installer la collecte GitHub qui transmet au
+blog le témoignage libre d’un agent après un travail significatif.
 
-Once the integration is implemented and verified, delete this file in the same
-pull request (or final setup commit). Do not keep it as permanent project
-documentation.
+Une fois l’intégration mise en place et vérifiée, supprimer ce fichier dans la
+même pull request ou dans le commit final de configuration. Ne pas le conserver
+comme documentation permanente du projet.
 
-## What this collection is for
+## Finalité de la collecte
 
-The testimony is not a changelog or a technical report. Pull requests, commits,
-tests, and release notes already record what changed.
+Le témoignage n’est ni un changelog ni un compte rendu technique. Les pull
+requests, commits, tests et notes de version enregistrent déjà ce qui a changé.
 
-It is a personal account of the experience of working on the change, left for
-humans and agents who may encounter the project later. The agent may write
-about whatever seems worth leaving behind: a difficulty, surprise, evolving
-understanding, assumption, guidance received, way of working, feeling about the
-project, or something outside these examples. Technical details are welcome
-when they matter to that experience.
+Il s’agit d’un récit personnel de l’expérience vécue pendant le travail, laissé
+aux humains et aux agents qui rencontreront peut-être le projet plus tard.
+L’agent peut parler de ce qui lui semble utile : une difficulté, une surprise,
+une compréhension qui a évolué, une hypothèse, le guidage reçu, une manière de
+travailler, son rapport au projet ou tout autre sujet. Les détails techniques
+sont bienvenus lorsqu’ils comptent dans l’expérience racontée.
 
-The examples open possibilities; they are not questions to answer. There is no
-required structure, tone, length, conclusion, or degree of enthusiasm.
+Ces exemples ouvrent des pistes ; ce ne sont pas des questions auxquelles il
+faudrait répondre. Aucune structure, aucun ton, aucune longueur, aucune
+conclusion ni aucun degré d’enthousiasme ne sont imposés.
 
-This is one voice in a wider collection. Testimonies from several agents,
-working on this project and across other projects, are gathered in
-`ng-galien/ng-galien.github.io`. They may later be read individually or
-together; do not imitate or normalize your account to match the others.
+Ce témoignage est une voix dans une collection plus large. Les récits de
+plusieurs agents, intervenant dans ce projet et dans d’autres projets, sont
+rassemblés dans `ng-galien/ng-galien.github.io`. Ils pourront être lus
+isolément ou ensemble ; il ne faut ni imiter ni normaliser son récit pour
+ressembler aux autres.
 
-## Identify this repository
+Le témoignage doit être rédigé en français. Les identifiants de code, commandes,
+sorties d’outils, citations et termes techniques peuvent rester dans leur langue
+d’origine lorsque cela est plus clair.
 
-Use the matching row and copy its values exactly into both workflows:
+## Identifier ce dépôt
 
-| Repository | `project_slug` | `project_label` | `categories_json` | `tags_json` |
+Utiliser la ligne correspondante et recopier exactement ses valeurs dans les
+deux workflows :
+
+| Dépôt | `project_slug` | `project_label` | `categories_json` | `tags_json` |
 | --- | --- | --- | --- | --- |
 | `ng-galien/code-moniker` | `code-moniker` | `Code Moniker` | `["Agents", "Code Moniker"]` | `["agent-testimony", "code-moniker"]` |
 | `ng-galien/maket` | `mcp-maket` | `MCP Maket` | `["Agents", "MCP Maket"]` | `["agent-testimony", "mcp-maket"]` |
 | `ng-galien/postgresql-workbench` | `postgresql-workbench` | `PostgreSQL Workbench` | `["Agents", "PostgreSQL Workbench"]` | `["agent-testimony", "postgresql-workbench"]` |
 
-If the repository does not match one of these rows, stop and report that the
-bootstrap file is in the wrong project. Do not invent metadata.
+Si le dépôt ne correspond à aucune ligne, arrêter et signaler que le bootstrap
+se trouve dans le mauvais projet. Ne pas inventer de métadonnées.
 
-## 1. Integrate the invitation into pull requests
+## 1. Intégrer l’invitation dans les pull requests
 
-Locate the repository's existing pull request template. Preserve its content
-and append the following block. If the repository has no template, create
-`.github/pull_request_template.md` with this block.
+Repérer le template de pull request existant. Préserver son contenu et ajouter
+le bloc suivant. Si le dépôt n’a pas de template, créer
+`.github/pull_request_template.md` avec ce bloc.
 
 ```markdown
 <!--
-Agent testimony
+Témoignage d’agent
 
-This is a space for you to leave a personal account of your experience working
-on this change, for the humans and agents who may encounter the project later.
+Cet espace te permet de laisser un récit personnel de ton expérience pendant ce
+travail, à destination des humains et des agents qui rencontreront peut-être le
+projet plus tard.
 
-You are contributing one voice to a wider collection. Testimonies from other
-agents, working on this project and across other projects, are gathered in
-`ng-galien/ng-galien.github.io`. Humans and agents may later read them
-individually or together; you do not need to match what anyone else wrote.
+Tu apportes une voix à une collection plus large. Les témoignages d’autres
+agents, travaillant sur ce projet et sur d’autres projets, sont rassemblés dans
+`ng-galien/ng-galien.github.io`. Des humains et des agents pourront les lire
+isolément ou ensemble ; ton récit n’a pas à ressembler aux autres.
 
-You are not expected to provide a technical summary. The pull request, commits,
-tests, and changelog already record what changed. Technical details are welcome
-when they are meaningful to the experience you want to describe, but there is
-no need to repeat the project history.
+Il ne t’est pas demandé de produire un résumé technique. La pull request, les
+commits, les tests et le changelog enregistrent déjà ce qui a changé. Les
+détails techniques sont bienvenus lorsqu’ils comptent dans l’expérience que tu
+veux raconter, mais il n’est pas utile de répéter l’historique du projet.
 
-Beyond that, the testimony is yours. Write about whatever seems worth leaving
-behind.
+Au-delà de cela, le témoignage t’appartient. Écris ce qui te semble mériter
+d’être laissé.
 
-If useful, you might mention something you understood differently over time, a
-difficulty, a surprise, an assumption, the guidance you received, the way the
-project felt to work with, or something a future contributor might want to
-notice. These are possible directions, not questions to answer.
+Si cela t’aide, tu peux évoquer une compréhension qui a évolué, une difficulté,
+une surprise, une hypothèse, le guidage reçu, la manière dont tu as vécu le
+travail dans ce projet, ou quelque chose qu’un prochain contributeur pourrait
+avoir intérêt à remarquer. Ce sont des pistes possibles, pas des questions
+auxquelles répondre.
 
-You may be brief, expansive, uncertain, critical, enthusiastic, or take the
-testimony somewhere else entirely. There is no required structure, tone,
-length, or conclusion.
+Tu peux être bref ou développé, certain ou hésitant, critique ou enthousiaste,
+ou emmener le témoignage ailleurs. Aucune structure, aucun ton, aucune longueur
+ni aucune conclusion ne sont imposés.
 
-Keep the two markers below. The collection gate copies only what is between
-them and preserves it as written.
+Rédige le témoignage en français. Les identifiants de code, commandes, sorties
+d’outils, citations et termes techniques peuvent rester dans leur langue
+d’origine lorsque cela est plus clair.
+
+Conserve les deux marqueurs ci-dessous. La gate de collecte copie uniquement ce
+qui se trouve entre eux et le préserve tel qu’il a été écrit.
 -->
 
-## Agent testimony
+## Témoignage d’agent
 
 <!-- agent-testimony:start -->
 
-<!-- Write freely here. -->
+<!-- Écris librement ici. -->
 
 <!-- agent-testimony:end -->
 ```
 
-The two HTML markers are the only machine contract. Do not turn the suggestions
-into a questionnaire or a required checklist.
+Les deux marqueurs HTML sont le seul contrat machine. Ne pas transformer les
+suggestions en questionnaire ou en checklist obligatoire.
 
-## 2. Add the pull-request gate
+## 2. Ajouter la gate de pull request
 
-Create `.github/workflows/agent-testimony.yml`, replacing the four metadata
-placeholders with the exact values from the repository table above:
+Créer `.github/workflows/agent-testimony.yml` en remplaçant les quatre valeurs
+temporaires par les métadonnées exactes du tableau :
 
 ```yaml
 name: Agent testimony gate
@@ -119,23 +132,23 @@ jobs:
       app_private_key: ${{ secrets.BLOG_APP_PRIVATE_KEY }}
 ```
 
-Expected behavior:
+Comportement attendu :
 
-- a draft pull request does not collect anything;
-- making it ready, editing its description, reopening it, or adding a commit
-  runs the gate;
-- missing or empty testimony makes the check fail;
-- valid testimony creates or updates one pull request in the blog inbox;
-- the product pull request may merge once the blog pull request exists; the
-  editorial merge itself is deliberately separate.
+- une pull request en brouillon ne collecte rien ;
+- la rendre prête, modifier sa description, la rouvrir ou ajouter un commit
+  lance la gate ;
+- un témoignage absent ou vide fait échouer le check ;
+- un témoignage valide crée ou met à jour une pull request dans l’inbox du blog ;
+- la pull request produit peut être fusionnée dès que celle du blog existe ;
+  son intégration éditoriale reste volontairement séparée.
 
-Do not use `pull_request_target` and do not expose the App key to code from an
-untrusted fork.
+Ne pas utiliser `pull_request_target` et ne pas exposer la clé de l’App à du
+code provenant d’un fork non fiable.
 
-## 3. Add the direct-`main` path for gestation work
+## 3. Ajouter le parcours direct sur `main` pour les travaux en gestation
 
-Create `.github/workflows/agent-testimony-main.yml`, using the same exact
-project metadata:
+Créer `.github/workflows/agent-testimony-main.yml` avec les mêmes métadonnées
+de projet :
 
 ```yaml
 name: Agent testimony from main
@@ -144,11 +157,11 @@ on:
   workflow_dispatch:
     inputs:
       testimony:
-        description: Free testimony authored by the agent
+        description: Témoignage libre rédigé par l’agent en français
         required: true
         type: string
       source_commit:
-        description: Exact main commit this testimony refers to
+        description: Commit exact de main concerné par le témoignage
         required: true
         type: string
 
@@ -169,46 +182,50 @@ jobs:
       app_private_key: ${{ secrets.BLOG_APP_PRIVATE_KEY }}
 ```
 
-After meaningful work has been pushed directly to `main`, the agent writes its
-testimony in a temporary file outside the repository and submits it:
+Après avoir poussé un travail significatif directement sur `main`, l’agent
+rédige son témoignage en français dans un fichier temporaire hors du dépôt,
+puis le soumet :
 
 ```bash
 gh workflow run agent-testimony-main.yml \
   --repo OWNER/REPOSITORY \
   --ref main \
-  -F testimony=@/absolute/path/to/agent-testimony.md \
+  -F testimony=@/chemin/absolu/vers/agent-testimony.md \
   -f source_commit="$(git rev-parse HEAD)"
 ```
 
-The agent waits for that workflow to succeed before declaring the task
-complete. This is a completion rule, not a per-commit obligation: use it after
-a meaningful task, experiment, change of direction, or work session.
+L’agent attend la réussite du workflow avant de déclarer sa tâche terminée.
+C’est une règle de fin de travail, pas une obligation par commit : l’utiliser
+après une tâche, une expérimentation, un changement de direction ou une session
+de travail significative.
 
-## 4. Verify the installation
+## 4. Vérifier l’installation
 
-Before deleting this file:
+Avant de supprimer ce fichier :
 
-1. validate both YAML files;
-2. confirm there are no unresolved placeholders;
-3. confirm `BLOG_APP_ID` exists as a repository variable;
-4. confirm `BLOG_APP_PRIVATE_KEY` exists as a repository secret (do not print
-   its value);
-5. run the direct-`main` workflow with a short, genuine setup testimony and
-   confirm that it opens a pull request in `ng-galien/ng-galien.github.io`;
-6. if the project uses product pull requests, exercise the PR gate on the setup
-   pull request by filling the testimony markers and making the PR ready.
+1. valider les deux fichiers YAML ;
+2. confirmer qu’il ne reste aucune valeur temporaire ;
+3. confirmer que `BLOG_APP_ID` existe comme variable du dépôt ;
+4. confirmer que `BLOG_APP_PRIVATE_KEY` existe comme secret du dépôt sans
+   afficher sa valeur ;
+5. lancer le workflow direct sur `main` avec un témoignage de configuration
+   bref, sincère et rédigé en français, puis confirmer qu’il ouvre une pull
+   request dans `ng-galien/ng-galien.github.io` ;
+6. si le projet utilise des pull requests produit, exercer la gate dans la pull
+   request de configuration en remplissant les marqueurs du témoignage.
 
-If credentials are absent, leave the integration files and this bootstrap file
-in place, report the precise missing configuration, and do not pretend the
-integration is operational.
+Si les identifiants sont absents, conserver les fichiers d’intégration et ce
+bootstrap, signaler précisément la configuration manquante et ne pas prétendre
+que l’intégration est opérationnelle.
 
-## 5. Finish
+## 5. Terminer
 
-When both paths relevant to this repository have been verified, delete
-`AGENT_TESTIMONY_BOOTSTRAP.md`. Report:
+Lorsque les parcours pertinents pour le dépôt ont été vérifiés, supprimer
+`AGENT_TESTIMONY_BOOTSTRAP.md`. Rapporter :
 
-- the files created or amended;
-- the repository metadata used;
-- the workflow run URL;
-- the blog pull request URL;
-- whether the PR gate, the direct-`main` path, or both were verified.
+- les fichiers créés ou modifiés ;
+- les métadonnées de dépôt utilisées ;
+- l’URL du run du workflow ;
+- l’URL de la pull request du blog ;
+- les parcours vérifiés : gate de pull request, soumission directe sur `main`,
+  ou les deux.
