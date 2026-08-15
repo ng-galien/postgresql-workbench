@@ -96,7 +96,9 @@ export const test = base.extend<AcceptanceFixtures, AcceptanceWorkerFixtures>({
     await use(new NotebookPage(vscode.page, vscode.inspectActiveNotebook));
   },
   sqlEditor: async ({ vscode }, use) => {
-    await use(new SqlEditorPage(vscode.page, vscode.inspectActiveTextEditor));
+    await use(
+      new SqlEditorPage(vscode.page, vscode.inspectActiveTextEditor, vscode.executeCommand),
+    );
   },
 });
 

@@ -1,10 +1,11 @@
 import type { Locator, Page } from "@playwright/test";
-import type { ActiveTextEditorSnapshot } from "../fixtures/vscode";
+import type { ActiveTextEditorSnapshot, VSCodeInstance } from "../fixtures/vscode";
 
 export class SqlEditorPage {
   constructor(
     private readonly page: Page,
     private readonly inspectActiveTextEditor: () => Promise<ActiveTextEditorSnapshot | undefined>,
+    private readonly executeCommand: VSCodeInstance["executeCommand"],
   ) {}
 
   get editor(): Locator {
@@ -13,7 +14,7 @@ export class SqlEditorPage {
 
   async formatDocument(): Promise<void> {
     await this.editor.click();
-    await this.page.keyboard.press("Shift+Alt+F");
+    await this.executeCommand("editor.action.formatDocument");
   }
 
   async requestCompletion(): Promise<void> {

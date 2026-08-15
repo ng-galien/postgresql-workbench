@@ -5,6 +5,7 @@ import * as vscode from "vscode";
 
 const RELOAD_WINDOW_COMMAND = "workbench.action.reloadWindow";
 const SAVE_ALL_COMMAND = "workbench.action.files.saveAll";
+const FORMAT_DOCUMENT_COMMAND = "editor.action.formatDocument";
 const QUICK_OPEN_COMMAND = "workbench.action.quickOpen";
 const FOCUS_TESTING_COMMAND = "workbench.view.testing.focus";
 const RUN_ALL_TESTS_COMMAND = "testing.runAll";
@@ -27,6 +28,7 @@ const OPEN_SQL_DOCUMENT_COMMAND = "postgresql-workbench.acceptance.openSqlDocume
 const ACCEPTANCE_COMMANDS = new Set([
   RELOAD_WINDOW_COMMAND,
   SAVE_ALL_COMMAND,
+  FORMAT_DOCUMENT_COMMAND,
   QUICK_OPEN_COMMAND,
   FOCUS_TESTING_COMMAND,
   RUN_ALL_TESTS_COMMAND,
