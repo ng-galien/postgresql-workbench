@@ -1,14 +1,44 @@
 import {
+  demoConnexionQuickPickItem as connectionChoice,
   demoDatabaseTreeItem as database,
+  demoConnectionId,
   demoConnexionTreeItem as server,
 } from "../../fixtures/demoDatabase";
 import { expect, test } from "../../fixtures/test";
+import type { DebugConfigurationSnapshot } from "../../fixtures/vscode";
+
+const demoPgTapTests = [
+  "test_fibonacci",
+  "test_order_rejection",
+  "test_place_order_workflow",
+  "test_roman_numerals",
+  "test_sequence_algorithms",
+  "test_set_returning_functions",
+  "test_stock_queries",
+] as const;
+
+function expectEveryDemoPgTapTestPassed(outcomes: Record<string, string> | undefined): void {
+  const entries = Object.entries(outcomes ?? {});
+  expect(entries).toHaveLength(demoPgTapTests.length);
+  expect(entries.every(([, outcome]) => outcome === "passed")).toBe(true);
+  const discovered = entries
+    .map(([id]) => /\/function\/([^?(]+)/u.exec(decodeURIComponent(id))?.[1])
+    .sort();
+  expect(discovered).toEqual([...demoPgTapTests].sort());
+}
 
 test.describe("pgTAP tests and coverage", () => {
-  test("runs mapped pgTAP tests and publishes native PL/pgSQL coverage", async ({
+  test.afterEach(async ({ debuggerPage }) => {
+    await debuggerPage.expectNoActiveSession();
+  });
+
+  test("runs mapped pgTAP coverage and clears it before every PL/pgSQL debugger startup", async ({
     workbench,
     vscode,
+    debuggerPage,
   }) => {
+    test.setTimeout(150_000);
+    let persistedDebugConfiguration: DebugConfigurationSnapshot | undefined;
     await workbench.expectActiveDatabaseIndexed(server, database);
     const baseline = await vscode.inspectTestingState();
 
@@ -24,8 +54,7 @@ test.describe("pgTAP tests and coverage", () => {
         })
         .toBe((baseline.run?.sequence ?? 0) + 1);
       const state = await vscode.inspectTestingState();
-      expect(Object.keys(state.run?.outcomes ?? {})).not.toHaveLength(0);
-      expect(Object.values(state.run?.outcomes ?? {})).toEqual(expect.arrayContaining(["passed"]));
+      expectEveryDemoPgTapTestPassed(state.run?.outcomes);
     });
 
     await test.step("run all tests with coverage through VS Code Testing", async () => {
@@ -40,6 +69,7 @@ test.describe("pgTAP tests and coverage", () => {
     await test.step("verify the mapped routine coverage published through VS Code", async () => {
       const coverage = (await vscode.inspectTestingState()).coverage;
       expect(coverage).toBeDefined();
+      expectEveryDemoPgTapTestPassed(coverage?.outcomes);
       const source = coverage?.files.find(({ uri }) => uri.includes("restock_report"));
       expect(source).toBeDefined();
       expect(source?.statement.total).toBeGreaterThan(0);
@@ -104,6 +134,84 @@ test.describe("pgTAP tests and coverage", () => {
 
     await test.step("keep the existing Workbench index stable", async () => {
       expect((await vscode.inspectTestingState()).index).toEqual(baseline.index);
+    });
+
+    await test.step("prove coverage on the exact routine before the debugger transition", async () => {
+      const coverage = (await vscode.inspectTestingState()).coverage;
+      const coveredRoutine = coverage?.files.find(({ uri }) => uri.includes("restock_report"));
+      expect(coveredRoutine, "Coverage must include shop.restock_report").toBeDefined();
+      expect(coveredRoutine?.statement.covered ?? 0).toBeGreaterThan(0);
+      await workbench.openRoutineSource(
+        server,
+        database,
+        /^shop/u,
+        /^restock_report\(threshold: int4\)/u,
+      );
+      await expect(
+        workbench.page.locator(
+          ".editor-group-container.active .monaco-editor:visible .coverage-deco-inline",
+        ),
+      ).not.toHaveCount(0, { timeout: 5_000 });
+    });
+
+    await test.step("start the covered routine without retaining coverage decorations", async () => {
+      const sql = "SELECT shop.restock_report(10);";
+      await debuggerPage.openCallSite("debug-restock.sql");
+      await debuggerPage.assignConnection(sql, connectionChoice);
+      await debuggerPage.start(sql, /^restock_report\(threshold:int4\)/, /shop\.restock_report/);
+      await debuggerPage.expectNoCoverageDecorations();
+      await debuggerPage.continueToCompletion();
+      await debuggerPage.expectNoErrorNotification();
+    });
+
+    await test.step("publish coverage again before the persisted native relaunch", async () => {
+      const configurations = await vscode.inspectDebugConfigurations();
+      persistedDebugConfiguration = configurations.find(
+        ({ name, type }) => name === "Debug shop.restock_report" && type === "postgresql-workbench",
+      );
+      expect(persistedDebugConfiguration).toMatchObject({
+        name: "Debug shop.restock_report",
+        request: "launch",
+        server: demoConnectionId,
+        stopOnEntry: true,
+        type: "postgresql-workbench",
+      });
+      expect(persistedDebugConfiguration?.sql).toMatch(/^SELECT shop\.restock_report\(10\);?$/u);
+      const previousSequence = (await vscode.inspectTestingState()).coverage?.sequence ?? 0;
+      await vscode.executeCommand("testing.coverageAll", 30_000);
+      await expect
+        .poll(async () => (await vscode.inspectTestingState()).coverage?.sequence, {
+          timeout: 30_000,
+        })
+        .toBe(previousSequence + 1);
+      await workbench.openRoutineSource(
+        server,
+        database,
+        /^shop/u,
+        /^restock_report\(threshold: int4\)/u,
+      );
+      await vscode.executeCommand("testing.openCoverage");
+      await expect(
+        workbench.page.locator(
+          ".editor-group-container.active .monaco-editor:visible .coverage-deco-inline",
+        ),
+      ).not.toHaveCount(0, { timeout: 5_000 });
+    });
+
+    await test.step("relaunch the persisted configuration through native F5", async () => {
+      expect(persistedDebugConfiguration).toBeDefined();
+      // Drive the exact F5 command with the persisted configuration so repeated local runs do not
+      // inherit an unrelated launch selection from a previous acceptance session.
+      await vscode.executeCommand("workbench.action.debug.start", 20_000, [
+        { config: persistedDebugConfiguration },
+      ]);
+      await debuggerPage.expectRoutineEditor(
+        /^restock_report\(threshold:int4\)/,
+        /shop\.restock_report/,
+      );
+      await debuggerPage.expectNoCoverageDecorations();
+      await debuggerPage.continueToCompletion();
+      await debuggerPage.expectNoErrorNotification();
     });
   });
 });

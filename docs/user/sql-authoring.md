@@ -53,18 +53,25 @@ without duplicating it.
 
 Extending an existing projection or adding a JOIN requires its indexed
 relations to be schema-qualified in one top-level `SELECT`. Unqualified
-relations, CTEs, nested queries, set operations, `SELECT INTO`, `WINDOW`,
-`FETCH`, and locking clauses are left unchanged because PostgreSQL Workbench
-cannot resolve or rewrite those forms reliably without their complete query
-scope and session search path.
+relations, comma joins, CTEs, nested queries, set operations, `SELECT INTO`,
+`WINDOW`, `FETCH`, and locking clauses are left unchanged because PostgreSQL
+Workbench cannot resolve or rewrite those forms reliably without their complete
+query scope and session search path.
 
 Dropping a directly related table adds a `JOIN` only when the Workbench Index
-contains one reliable foreign key. When several foreign keys are valid, choose
-one explicitly. Unrelated, unsupported, stale, and cross-DatabaseContext drops
-leave the document unchanged. Composition targets the SQL Statement under the
-drop cursor, preserves existing aliases, and is applied as one editor change.
+contains one reliable foreign key: the constraint is validated and exposes
+non-empty source and target column lists of the same length. When several
+foreign keys are valid, choose one explicitly. When no direct foreign key
+connects the dropped table to the targeted `SELECT`, PostgreSQL Workbench
+appends an independent `SELECT` for that table after the targeted Statement.
+Unsupported, stale, and cross-DatabaseContext drops leave the document
+unchanged. Composition targets the SQL Statement under the drop cursor,
+preserves existing aliases, and is applied as one editor change.
 
 Automatic composition uses `JOIN` when the existing relation owns a non-nullable
 foreign key to the added table. It uses `LEFT JOIN` for nullable foreign keys and
-when composing in the reverse, parent-to-children direction, so optional related
-rows do not silently remove the rows already selected.
+when composing in the reverse, parent-to-children direction. Missing or
+misaligned nullability metadata is treated conservatively as nullable. A
+relation already null-extended by a `LEFT JOIN` or `FULL JOIN` also keeps any
+automatically chained join on its path as `LEFT JOIN`, so optional related rows
+do not silently remove the rows already selected.

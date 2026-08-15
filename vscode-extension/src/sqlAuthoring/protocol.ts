@@ -33,6 +33,7 @@ export interface SqlAuthoringForeignKey {
   sourceColumns: string[];
   sourceColumnsNullable: boolean[];
   targetColumns: string[];
+  validated: boolean;
 }
 
 export interface SqlAuthoringSnapshot extends SqlAuthoringDatabaseIdentity {
@@ -41,6 +42,11 @@ export interface SqlAuthoringSnapshot extends SqlAuthoringDatabaseIdentity {
   generation: number | null;
   objects: SqlAuthoringObject[];
   foreignKeys: SqlAuthoringForeignKey[];
+}
+
+export interface SqlAuthoringSnapshotToken extends SqlAuthoringDatabaseIdentity {
+  revision: string;
+  generation: number | null;
 }
 
 export type SqlAuthoringDocumentContext =
@@ -107,6 +113,36 @@ export interface SqlAuthoringComposeRequest {
 }
 
 export type SqlAuthoringComposeResult =
-  | { status: "edit"; text: string; title: string }
-  | { status: "ambiguous"; choices: Array<{ index: number; label: string; description: string }> }
+  | { status: "edit"; text: string; title: string; snapshot?: SqlAuthoringSnapshotToken }
+  | {
+      status: "ambiguous";
+      choices: Array<{ index: number; label: string; description: string }>;
+      snapshot?: SqlAuthoringSnapshotToken;
+    }
   | { status: "rejected"; message: string };
+
+export function sqlAuthoringSnapshotToken(
+  snapshot: SqlAuthoringSnapshot,
+): SqlAuthoringSnapshotToken {
+  return {
+    serverId: snapshot.serverId,
+    database: snapshot.database,
+    revision: snapshot.revision,
+    generation: snapshot.generation,
+  };
+}
+
+export function sqlAuthoringContextMatchesToken(
+  context: SqlAuthoringDocumentContext,
+  token: SqlAuthoringSnapshotToken | undefined,
+): boolean {
+  return (
+    token !== undefined &&
+    context.status === "available" &&
+    context.snapshot.status === "available" &&
+    context.snapshot.serverId === token.serverId &&
+    context.snapshot.database === token.database &&
+    context.snapshot.revision === token.revision &&
+    context.snapshot.generation === token.generation
+  );
+}

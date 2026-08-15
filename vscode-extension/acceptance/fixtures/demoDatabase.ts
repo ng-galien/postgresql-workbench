@@ -6,6 +6,7 @@ const repositoryRoot = resolve(__dirname, "../../..");
 const demoCompose = resolve(repositoryRoot, "demo", "docker-compose.yml");
 
 export const demoConnectionUrl = "postgresql://postgres:postgres@localhost:5434/demo";
+export const demoConnectionId = "localhost:5434/demo:postgres";
 export const demoAssociationText = /postgres@localhost:5434\/demo/u;
 export const demoAutomaticAssociationText = /postgres@localhost:5434\/demo.*AUTO/u;
 export const demoConnexionQuickPickItem = /^postgres@localhost:5434\/demo(?:\s*Connected)?$/u;
@@ -25,6 +26,7 @@ export const loopbackConnexionTreeItem =
 export const loopbackConnectionId = "127.0.0.1:5434/demo:postgres";
 
 export interface DemoDatabase {
+  resetSchemaSyncFixture(): Promise<void>;
   inspectSchemaSync(supportSchema: string): Promise<{
     ddlFunction: boolean;
     ddlTrigger: boolean;
@@ -44,9 +46,10 @@ export interface DemoDatabase {
 }
 
 export function startDemoDatabase(): DemoDatabase {
-  const running = compose(["ps", "--status", "running", "--services"], true)
-    .split(/\r?\n/)
-    .includes("postgres");
+  const external = process.env.PGWB_ACCEPTANCE_EXTERNAL_DEMO === "1";
+  const running =
+    external ||
+    compose(["ps", "--status", "running", "--services"], true).split(/\r?\n/).includes("postgres");
   if (!running) {
     try {
       compose(["up", "-d", "--build", "--wait"]);
@@ -56,6 +59,19 @@ export function startDemoDatabase(): DemoDatabase {
     }
   }
   return {
+    async resetSchemaSyncFixture() {
+      await withDemoClient(async (client) => {
+        await client.query(`
+          DROP EVENT TRIGGER IF EXISTS plpgsql_workbench_ddl_command_end;
+          DROP EVENT TRIGGER IF EXISTS plpgsql_workbench_sql_drop;
+          DROP TABLE IF EXISTS public.ddl_sync_probe CASCADE;
+          DROP TABLE IF EXISTS public.ddl_sync_probe_renamed CASCADE;
+          DROP FUNCTION IF EXISTS public.ddl_sync_probe_touch() CASCADE;
+          DROP FUNCTION IF EXISTS workbench.notify_ddl_command_end() CASCADE;
+          DROP FUNCTION IF EXISTS workbench.notify_sql_drop() CASCADE;
+        `);
+      });
+    },
     async inspectSchemaSync(supportSchema) {
       return withDemoClient(async (client) => {
         const result = await client.query({

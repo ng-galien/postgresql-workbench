@@ -1,10 +1,15 @@
-import { expect, type Frame, type Locator, type Page } from "@playwright/test";
+import { expect, type Frame, type Locator } from "@playwright/test";
 import { installDragProbe, readDragProbe, startNativeTreeDrag } from "../support/dragProbe";
+import { currentPage, type PageProvider } from "./PageProvider";
 
 export class CockpitPage {
   private frame?: Frame;
 
-  constructor(private readonly page: Page) {}
+  constructor(private readonly pageProvider: PageProvider) {}
+
+  private get page() {
+    return currentPage(this.pageProvider);
+  }
 
   async waitUntilOpen(): Promise<void> {
     this.frame = await this.findFrame();

@@ -1,10 +1,10 @@
 import { defineVSCodePlaywrightConfig } from "./playwright.vscode.config";
 
 export default defineVSCodePlaywrightConfig({
-  lane: "core",
+  lane: "schema-sync",
   testDir: "./acceptance/specs",
-  testMatch: ["**/acceptance.spec.ts"],
+  testMatch: ["**/schema-sync.acceptance.spec.ts"],
   timeout: 60_000,
-  junitFile: "test-results/core-junit.xml",
-  outputDir: "test-results/core",
+  junitFile: "test-results/schema-sync-junit.xml",
+  outputDir: "test-results/schema-sync",
 });

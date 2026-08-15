@@ -17,7 +17,12 @@ import { preparedAcceptanceVSCode } from "./vscodeDownload";
 
 const extensionRoot = resolve(__dirname, "../..");
 const workspace = resolve(extensionRoot, "test-workspace");
-const artifactsRoot = resolve(extensionRoot, "test-results", "acceptance-worker");
+const artifactsRoot = resolve(
+  extensionRoot,
+  "test-results",
+  "acceptance-worker",
+  process.env.PGWB_ACCEPTANCE_LANE ?? "default",
+);
 const workbenchActivityLabel = "PostgreSQL Workbench";
 
 async function bounded<T>(promise: Promise<T>, timeout: number): Promise<T | undefined> {
@@ -194,6 +199,23 @@ async function waitForWorkbenchWindow(app: ElectronApplication, timeout: number)
   );
 }
 
+async function waitForWorkbenchViews(app: ElectronApplication, timeout: number): Promise<Page> {
+  const page = await waitForWorkbenchWindow(app, timeout);
+  await Promise.all(
+    ["Workbench", "Scratchpads"].map((name) =>
+      page
+        .locator(".pane-header")
+        .filter({ hasText: new RegExp(`^${name}$`, "iu") })
+        .first()
+        .waitFor({ state: "visible", timeout }),
+    ),
+  );
+  await page
+    .getByRole("tree", { name: "Workbench", exact: true })
+    .waitFor({ state: "visible", timeout });
+  return page;
+}
+
 async function waitForActivation(
   path: string,
   previousActivationId: string | undefined,
@@ -218,6 +240,7 @@ async function waitForActivation(
 export interface VSCodeInstance {
   app: ElectronApplication;
   page: Page;
+  armIndexPhaseGate(phases: readonly WorkbenchIndexPhase[]): Promise<void>;
   executeCommand(
     command:
       | "testing.coverageAll"
@@ -228,23 +251,141 @@ export interface VSCodeInstance {
       | "editor.action.formatDocument"
       | "workbench.action.files.saveAll"
       | "workbench.action.debug.continue"
+      | "workbench.action.debug.start"
       | "workbench.action.debug.stepInto"
       | "workbench.action.debug.stepOver"
       | "workbench.action.quickOpen"
       | "workbench.view.testing.focus",
     timeout?: number,
+    arguments_?: unknown[],
   ): Promise<void>;
   executeInfrastructureCommand(command: "workbench.action.reloadWindow"): Promise<void>;
   inspectActiveNotebook(): Promise<ActiveNotebookSnapshot | undefined>;
   inspectActiveTextEditor(): Promise<ActiveTextEditorSnapshot | undefined>;
+  inspectDebugConfigurations(): Promise<DebugConfigurationSnapshot[]>;
   inspectDebugState(): Promise<DebugStateSnapshot>;
   inspectTestingState(): Promise<TestingStateSnapshot>;
+  inspectWorkbenchState(): Promise<WorkbenchStateSnapshot>;
   removeServer(id: string): Promise<void>;
   openWorkspaceFile(fileName: string): Promise<void>;
   openSqlDocument(content: string): Promise<void>;
   resetWorkbenchUI(): Promise<void>;
+  releaseIndexPhaseGate(runId: number, phase: WorkbenchIndexPhase): Promise<void>;
   resizeWindow(width: number, height: number): Promise<void>;
   dispose(): Promise<void>;
+}
+
+export interface DebugConfigurationSnapshot extends Record<string, unknown> {
+  name?: string;
+  request?: string;
+  server?: string;
+  sql?: string;
+  stopOnEntry?: boolean;
+  type?: string;
+}
+
+export type WorkbenchIndexPhase =
+  | "reading-catalog"
+  | "connecting-index"
+  | "publishing-sources"
+  | "reading-symbols"
+  | "checking-relations"
+  | "cancelling";
+
+export interface WorkbenchStateSnapshot {
+  connection: {
+    activeServerId?: string;
+    connected: boolean;
+  };
+  schemaSync: Array<{
+    serverId: string;
+    desired?: {
+      enabled: boolean;
+      supportSchema: string;
+    };
+    state: {
+      serverId: string;
+      status:
+        | "disabled"
+        | "provisioning-required"
+        | "listening"
+        | "insufficient-privilege"
+        | "unavailable"
+        | "desynchronized";
+      supportSchema: string;
+      message?: string;
+    };
+    listener?: {
+      processId?: number;
+      supportSchema: string;
+      databaseOid: number;
+      queuedNotifications: number;
+      flushScheduled: boolean;
+      flushActive: boolean;
+    };
+    lifecycle: {
+      epoch: number;
+      active: boolean;
+      starting: boolean;
+      reconnectScheduled: boolean;
+      queued: number;
+    };
+    refresh: {
+      active: boolean;
+      queued: number;
+    };
+    lastReceivedTransactionId?: string;
+    lastCompletedTransactionId?: string;
+  }>;
+  index: {
+    activeRun?: {
+      cancelled: boolean;
+      id: number;
+      retainedGeneration?: number | null;
+      scope: string;
+    };
+    currentRunPending: boolean;
+    events: Array<{
+      changeKind?: "full" | "incremental";
+      generation?: number | null;
+      phase?: WorkbenchIndexPhase;
+      runId?: number;
+      sequence: number;
+      status: string;
+    }>;
+    gate?: {
+      nextPhase?: WorkbenchIndexPhase;
+      phases: WorkbenchIndexPhase[];
+      reachedPhase?: WorkbenchIndexPhase;
+      runId?: number;
+    };
+    lastSettledRun?: { id: number; status: string };
+    runSequence: number;
+    sourceMutationsActive: number;
+    state: {
+      change?: {
+        kind: "full" | "incremental";
+        schemas: string[];
+        sourceUris: string[];
+      };
+      progress?: {
+        completed?: number;
+        phase: WorkbenchIndexPhase;
+        total?: number;
+        unit?: "sources" | "symbols";
+      };
+      result?: {
+        database: string;
+        documents: number;
+        generation: number | null;
+        revision: string;
+        serverId: string;
+        symbols: number;
+      };
+      serverId?: string;
+      status: string;
+    };
+  };
 }
 
 export interface ActiveNotebookSnapshot {
@@ -297,6 +438,7 @@ export interface TestingStateSnapshot {
       statement: { covered: number; total: number };
       uri: string;
     }>;
+    outcomes: Record<string, string>;
     sequence: number;
   };
   run?: {
@@ -489,7 +631,6 @@ export async function launchVSCode(options: LaunchVSCodeOptions = {}): Promise<V
       env: {
         ...process.env,
         POSTGRESQL_WORKBENCH_ACCEPTANCE_CONTROL_FILE: controlFile,
-        POSTGRESQL_WORKBENCH_ACCEPTANCE_INDEX_PHASE_DELAY_MS: "350",
       },
       args: [
         "--disable-gpu-sandbox",
@@ -518,7 +659,7 @@ export async function launchVSCode(options: LaunchVSCodeOptions = {}): Promise<V
       tracingStarted = true;
     }
     recordBootstrapStage("waiting-for-vscode-window");
-    const page = await waitForVSCodeWindow(app, windowTimeout);
+    await waitForVSCodeWindow(app, windowTimeout);
     recordBootstrapStage("waiting-for-extension-activation");
     let ready = await waitForActivation(
       readyFile,
@@ -548,15 +689,22 @@ export async function launchVSCode(options: LaunchVSCodeOptions = {}): Promise<V
     };
     await runAcceptanceCommand("postgresql-workbench-connections.focus");
     recordBootstrapStage("waiting-for-workbench-window");
-    await waitForWorkbenchWindow(app, viewTimeout);
+    let page = await waitForWorkbenchViews(app, viewTimeout);
     await resizeWindow(app, page, 1440, 900);
     recordBootstrapStage("ready");
     return {
       app: runningApp,
-      page,
-      async executeCommand(command, timeout) {
+      get page() {
+        return page;
+      },
+      async armIndexPhaseGate(phases) {
+        await runAcceptanceCommand("postgresql-workbench.acceptance.armIndexPhaseGate", 5_000, [
+          phases,
+        ]);
+      },
+      async executeCommand(command, timeout, arguments_) {
         await focusWindow(runningApp, page);
-        await runAcceptanceCommand(command, timeout);
+        await runAcceptanceCommand(command, timeout, arguments_);
       },
       async executeInfrastructureCommand(command) {
         const previousActivationId = ready.activationId;
@@ -569,6 +717,8 @@ export async function launchVSCode(options: LaunchVSCodeOptions = {}): Promise<V
           runningApp,
         );
         await waitForVSCodeWindow(runningApp, 30_000);
+        await runAcceptanceCommand("postgresql-workbench-connections.focus", viewTimeout);
+        page = await waitForWorkbenchViews(runningApp, viewTimeout);
       },
       async inspectActiveNotebook() {
         const state = await runAcceptanceCommand(
@@ -582,6 +732,12 @@ export async function launchVSCode(options: LaunchVSCodeOptions = {}): Promise<V
         );
         return state.result as ActiveTextEditorSnapshot | undefined;
       },
+      async inspectDebugConfigurations() {
+        const state = await runAcceptanceCommand(
+          "postgresql-workbench.acceptance.inspectDebugConfigurations",
+        );
+        return (state.result ?? []) as DebugConfigurationSnapshot[];
+      },
       async inspectDebugState() {
         const state = await runAcceptanceCommand(
           "postgresql-workbench.acceptance.inspectDebugState",
@@ -593,6 +749,12 @@ export async function launchVSCode(options: LaunchVSCodeOptions = {}): Promise<V
           "postgresql-workbench.acceptance.inspectTestingState",
         );
         return (state.result ?? {}) as TestingStateSnapshot;
+      },
+      async inspectWorkbenchState() {
+        const state = await runAcceptanceCommand(
+          "postgresql-workbench.acceptance.inspectWorkbenchState",
+        );
+        return state.result as WorkbenchStateSnapshot;
       },
       async removeServer(id) {
         await runAcceptanceCommand("postgresql-workbench.acceptance.removeServer", 5_000, [id]);
@@ -618,6 +780,13 @@ export async function launchVSCode(options: LaunchVSCodeOptions = {}): Promise<V
             `VS Code still exposes ${String(result?.remainingTabCount)} editor tabs after the acceptance reset`,
           );
         }
+        page = await waitForWorkbenchViews(runningApp, viewTimeout);
+      },
+      async releaseIndexPhaseGate(runId, phase) {
+        await runAcceptanceCommand("postgresql-workbench.acceptance.releaseIndexPhaseGate", 5_000, [
+          runId,
+          phase,
+        ]);
       },
       async resizeWindow(width, height) {
         await resizeWindow(runningApp, page, width, height);

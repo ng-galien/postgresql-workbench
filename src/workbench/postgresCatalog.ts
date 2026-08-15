@@ -68,11 +68,34 @@ export interface PostgresForeignKey {
   sourceColumns: string[];
   sourceColumnsNullable: boolean[];
   targetColumns: string[];
+  validated: boolean;
 }
 
 export interface PostgresViewDependency {
   sourceViewOid: number;
   targetRelationOid: number;
+}
+
+export function mergePostgresCatalogRelations(
+  foreignKeys: readonly PostgresForeignKey[],
+  viewDependencies: readonly PostgresViewDependency[],
+  patch: Pick<PostgresCatalogPatch, "affectedRelationOids" | "foreignKeys" | "viewDependencies">,
+): { foreignKeys: PostgresForeignKey[]; viewDependencies: PostgresViewDependency[] } {
+  const affected = new Set(patch.affectedRelationOids);
+  return {
+    foreignKeys: foreignKeys
+      .filter(
+        (foreignKey) =>
+          !affected.has(foreignKey.sourceTableOid) && !affected.has(foreignKey.targetTableOid),
+      )
+      .concat(patch.foreignKeys),
+    viewDependencies: viewDependencies
+      .filter(
+        (dependency) =>
+          !affected.has(dependency.sourceViewOid) && !affected.has(dependency.targetRelationOid),
+      )
+      .concat(patch.viewDependencies),
+  };
 }
 
 export type PostgresCatalogObjectOrigin =
@@ -108,7 +131,9 @@ interface ConstraintRow {
   definition: string;
   referencedTableOid?: string;
   sourceColumns: string[];
+  sourceColumnsNullable: boolean[];
   referencedColumns: string[];
+  validated: boolean;
 }
 
 interface ViewDependencyRow {
@@ -225,6 +250,7 @@ SELECT
   constraint_row.oid::text AS constraint_oid,
   constraint_row.conname AS constraint_name,
   pg_catalog.pg_get_constraintdef(constraint_row.oid, true) AS definition,
+  constraint_row.convalidated AS validated,
   CASE WHEN constraint_row.contype = 'f' THEN constraint_row.confrelid::text END AS referenced_table_oid,
   CASE WHEN constraint_row.contype = 'f' THEN (
     SELECT pg_catalog.jsonb_agg(attribute.attname ORDER BY key_column.ordinality)
@@ -233,6 +259,13 @@ SELECT
       ON attribute.attrelid = constraint_row.conrelid
       AND attribute.attnum = key_column.attnum
   ) END AS source_columns,
+  CASE WHEN constraint_row.contype = 'f' THEN (
+    SELECT pg_catalog.jsonb_agg(NOT attribute.attnotnull ORDER BY key_column.ordinality)
+    FROM pg_catalog.unnest(constraint_row.conkey) WITH ORDINALITY AS key_column(attnum, ordinality)
+    JOIN pg_catalog.pg_attribute AS attribute
+      ON attribute.attrelid = constraint_row.conrelid
+      AND attribute.attnum = key_column.attnum
+  ) END AS source_columns_nullable,
   CASE WHEN constraint_row.contype = 'f' THEN (
     SELECT pg_catalog.jsonb_agg(attribute.attname ORDER BY key_column.ordinality)
     FROM pg_catalog.unnest(constraint_row.confkey) WITH ORDINALITY AS key_column(attnum, ordinality)
@@ -463,8 +496,9 @@ export async function readPostgresCatalog(
               sourceTableOid: Number(constraint.tableOid),
               targetTableOid: Number(constraint.referencedTableOid),
               sourceColumns: constraint.sourceColumns,
-              sourceColumnsNullable: foreignKeySourceNullability(definitions, constraint),
+              sourceColumnsNullable: constraint.sourceColumnsNullable,
               targetColumns: constraint.referencedColumns,
+              validated: constraint.validated,
             },
           ]
         : [],
@@ -560,7 +594,10 @@ export async function readPostgresCatalogDocuments(
     upsertDocuments,
     removeDocumentUris: [...removeDocumentUris],
     origins: catalogOrigins(identity, definitions),
-    affectedRelationOids: definitions.tables.map((table) => Number(table.tableOid)),
+    affectedRelationOids: [
+      ...definitions.tables.map((table) => Number(table.tableOid)),
+      ...definitions.views.map((view) => Number(view.oid)),
+    ],
     foreignKeys: definitions.constraints.flatMap((constraint) =>
       constraint.referencedTableOid
         ? [
@@ -568,8 +605,9 @@ export async function readPostgresCatalogDocuments(
               sourceTableOid: Number(constraint.tableOid),
               targetTableOid: Number(constraint.referencedTableOid),
               sourceColumns: constraint.sourceColumns,
-              sourceColumnsNullable: foreignKeySourceNullability(definitions, constraint),
+              sourceColumnsNullable: constraint.sourceColumnsNullable,
               targetColumns: constraint.referencedColumns,
+              validated: constraint.validated,
             },
           ]
         : [],
@@ -610,23 +648,26 @@ function incrementalCatalogSql(ids: IncrementalCatalogIds): string {
   const triggers = numericList(ids.triggerIds);
   const constraints = numericList(ids.constraintIds);
   const schemas = numericList(ids.schemaIds);
-  const relationSelection = `(relation.oid IN (${relations}) OR relation.oid IN (
+  const affectedRelationSelection = (
+    relationOid: string,
+  ) => `(${relationOid} IN (${relations}) OR ${relationOid} IN (
     SELECT selected_constraint.conrelid
     FROM pg_catalog.pg_constraint AS selected_constraint
     WHERE selected_constraint.oid IN (${constraints})
   ))`;
+  const relationSelection = affectedRelationSelection("relation.oid");
   return catalogSql(
     appendCatalogFilter(SCHEMAS_SQL, `namespace.oid IN (${schemas})`),
     appendCatalogFilter(TABLES_SQL, relationSelection),
     appendCatalogFilter(COLUMNS_SQL, relationSelection),
     appendCatalogFilter(
       CONSTRAINTS_SQL,
-      `(constraint_row.conrelid IN (${relations}) OR constraint_row.oid IN (${constraints}))`,
+      `(${affectedRelationSelection("constraint_row.conrelid")} OR ${affectedRelationSelection("constraint_row.confrelid")} OR constraint_row.oid IN (${constraints}))`,
     ),
     appendCatalogFilter(VIEWS_SQL, relationSelection),
     appendCatalogFilter(
       VIEW_DEPENDENCIES_SQL,
-      `(${relationSelection.replaceAll("relation.oid", "view_relation.oid")} OR target_relation.oid IN (${relations}))`,
+      `(${affectedRelationSelection("view_relation.oid")} OR ${affectedRelationSelection("target_relation.oid")})`,
     ),
     appendCatalogFilter(ROUTINES_SQL, `routine.oid IN (${routines})`),
     appendCatalogFilter(TRIGGERS_SQL, `trigger_row.oid IN (${triggers})`),
@@ -925,21 +966,10 @@ function constraintRow(row: Record<string, unknown>): ConstraintRow {
     definition: requiredString(row.definition, "constraint definition"),
     referencedTableOid: optionalString(row.referenced_table_oid),
     sourceColumns: optionalStringArray(row.source_columns),
+    sourceColumnsNullable: optionalBooleanArray(row.source_columns_nullable),
     referencedColumns: optionalStringArray(row.referenced_columns),
+    validated: requiredBoolean(row.validated, "constraint validation flag"),
   };
-}
-
-function foreignKeySourceNullability(
-  definitions: CatalogDefinitionRows,
-  constraint: ConstraintRow,
-): boolean[] {
-  return constraint.sourceColumns.map((columnName) => {
-    const column = definitions.columns.find(
-      (candidate) =>
-        candidate.tableOid === constraint.tableOid && candidate.columnName === columnName,
-    );
-    return column ? !column.notNull : true;
-  });
 }
 
 function viewDependencyRow(row: Record<string, unknown>): ViewDependencyRow {
@@ -951,6 +981,10 @@ function viewDependencyRow(row: Record<string, unknown>): ViewDependencyRow {
 
 function optionalStringArray(value: unknown): string[] {
   return Array.isArray(value) && value.every((item) => typeof item === "string") ? value : [];
+}
+
+function optionalBooleanArray(value: unknown): boolean[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "boolean") ? value : [];
 }
 
 function definitionRow(row: Record<string, unknown>): DefinitionRow {

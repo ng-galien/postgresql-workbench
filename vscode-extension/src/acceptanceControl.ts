@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { rmSync, unwatchFile, watchFile, writeFileSync } from "node:fs";
 import { readFile, rm } from "node:fs/promises";
 import * as vscode from "vscode";
+import type { WorkbenchIndexPhase } from "./workbenchIndexController.js";
 
 const RELOAD_WINDOW_COMMAND = "workbench.action.reloadWindow";
 const SAVE_ALL_COMMAND = "workbench.action.files.saveAll";
@@ -13,6 +14,7 @@ const COVERAGE_ALL_TESTS_COMMAND = "testing.coverageAll";
 const OPEN_COVERAGE_COMMAND = "testing.openCoverage";
 const TOGGLE_INLINE_COVERAGE_COMMAND = "testing.toggleInlineCoverage";
 const DEBUG_CONTINUE_COMMAND = "workbench.action.debug.continue";
+const DEBUG_START_COMMAND = "workbench.action.debug.start";
 const DEBUG_STEP_INTO_COMMAND = "workbench.action.debug.stepInto";
 const DEBUG_STEP_OVER_COMMAND = "workbench.action.debug.stepOver";
 const FOCUS_WORKBENCH_COMMAND = "postgresql-workbench-connections.focus";
@@ -21,6 +23,11 @@ const INSPECT_ACTIVE_NOTEBOOK_COMMAND = "postgresql-workbench.acceptance.inspect
 const INSPECT_ACTIVE_TEXT_EDITOR_COMMAND =
   "postgresql-workbench.acceptance.inspectActiveTextEditor";
 const INSPECT_DEBUG_STATE_COMMAND = "postgresql-workbench.acceptance.inspectDebugState";
+const INSPECT_DEBUG_CONFIGURATIONS_COMMAND =
+  "postgresql-workbench.acceptance.inspectDebugConfigurations";
+const INSPECT_WORKBENCH_STATE_COMMAND = "postgresql-workbench.acceptance.inspectWorkbenchState";
+const ARM_INDEX_PHASE_GATE_COMMAND = "postgresql-workbench.acceptance.armIndexPhaseGate";
+const RELEASE_INDEX_PHASE_GATE_COMMAND = "postgresql-workbench.acceptance.releaseIndexPhaseGate";
 const REMOVE_SERVER_COMMAND = "postgresql-workbench.acceptance.removeServer";
 const RESET_WORKBENCH_COMMAND = "postgresql-workbench.acceptance.resetWorkbench";
 const OPEN_WORKSPACE_FILE_COMMAND = "postgresql-workbench.acceptance.openWorkspaceFile";
@@ -36,13 +43,18 @@ const ACCEPTANCE_COMMANDS = new Set([
   OPEN_COVERAGE_COMMAND,
   TOGGLE_INLINE_COVERAGE_COMMAND,
   DEBUG_CONTINUE_COMMAND,
+  DEBUG_START_COMMAND,
   DEBUG_STEP_INTO_COMMAND,
   DEBUG_STEP_OVER_COMMAND,
   FOCUS_WORKBENCH_COMMAND,
   INSPECT_TESTING_STATE_COMMAND,
   INSPECT_ACTIVE_NOTEBOOK_COMMAND,
   INSPECT_ACTIVE_TEXT_EDITOR_COMMAND,
+  INSPECT_DEBUG_CONFIGURATIONS_COMMAND,
   INSPECT_DEBUG_STATE_COMMAND,
+  INSPECT_WORKBENCH_STATE_COMMAND,
+  ARM_INDEX_PHASE_GATE_COMMAND,
+  RELEASE_INDEX_PHASE_GATE_COMMAND,
   REMOVE_SERVER_COMMAND,
   RESET_WORKBENCH_COMMAND,
   OPEN_WORKSPACE_FILE_COMMAND,
@@ -54,8 +66,11 @@ export interface AcceptanceControl extends vscode.Disposable {
 }
 
 export interface AcceptanceControlOptions {
+  armIndexPhaseGate(phases: readonly WorkbenchIndexPhase[]): Promise<void> | void;
   inspectDebugState(): unknown;
   inspectTestingState(): unknown;
+  inspectWorkbenchState(): unknown;
+  releaseIndexPhaseGate(runId: number, phase: WorkbenchIndexPhase): Promise<void> | void;
   removeServer(id: string): Promise<void> | void;
   resetWorkbench(): Promise<void> | void;
 }
@@ -135,6 +150,40 @@ export function registerAcceptanceControl(
           markReady(instruction.nonce, options.inspectDebugState());
           return;
         }
+        if (instruction.command === INSPECT_DEBUG_CONFIGURATIONS_COMMAND) {
+          const folder = vscode.workspace.workspaceFolders?.[0];
+          markReady(
+            instruction.nonce,
+            vscode.workspace
+              .getConfiguration("launch", folder?.uri)
+              .get<vscode.DebugConfiguration[]>("configurations", []),
+          );
+          return;
+        }
+        if (instruction.command === INSPECT_WORKBENCH_STATE_COMMAND) {
+          markReady(instruction.nonce, options.inspectWorkbenchState());
+          return;
+        }
+        if (instruction.command === ARM_INDEX_PHASE_GATE_COMMAND) {
+          const phases = Array.isArray(instruction.arguments)
+            ? instruction.arguments[0]
+            : undefined;
+          if (!Array.isArray(phases) || !phases.every(isWorkbenchIndexPhase)) {
+            throw new Error("Arm index phase gate requires an array of valid phases");
+          }
+          await options.armIndexPhaseGate(phases);
+          markReady(instruction.nonce);
+          return;
+        }
+        if (instruction.command === RELEASE_INDEX_PHASE_GATE_COMMAND) {
+          const [runId, phase] = Array.isArray(instruction.arguments) ? instruction.arguments : [];
+          if (!Number.isSafeInteger(runId) || !isWorkbenchIndexPhase(phase)) {
+            throw new Error("Release index phase gate requires a run id and valid phase");
+          }
+          await options.releaseIndexPhaseGate(runId as number, phase);
+          markReady(instruction.nonce);
+          return;
+        }
         if (instruction.command === INSPECT_TESTING_STATE_COMMAND) {
           markReady(instruction.nonce, options.inspectTestingState());
           return;
@@ -200,7 +249,10 @@ export function registerAcceptanceControl(
           markReady(instruction.nonce);
           return;
         }
-        await vscode.commands.executeCommand(instruction.command);
+        await vscode.commands.executeCommand(
+          instruction.command,
+          ...(Array.isArray(instruction.arguments) ? instruction.arguments : []),
+        );
         if (instruction.command !== RELOAD_WINDOW_COMMAND) markReady(instruction.nonce);
       })
       .catch((error: unknown) => {
@@ -219,6 +271,17 @@ export function registerAcceptanceControl(
       void deleteAcceptanceSqlDocuments(acceptanceSqlDocuments);
     },
   };
+}
+
+function isWorkbenchIndexPhase(value: unknown): value is WorkbenchIndexPhase {
+  return (
+    value === "reading-catalog" ||
+    value === "connecting-index" ||
+    value === "publishing-sources" ||
+    value === "reading-symbols" ||
+    value === "checking-relations" ||
+    value === "cancelling"
+  );
 }
 
 async function deleteAcceptanceSqlDocuments(uris: Set<string>): Promise<void> {

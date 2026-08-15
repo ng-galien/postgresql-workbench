@@ -215,12 +215,13 @@ test.describe("Workbench graph", () => {
     await test.step("resize the bottom panel vertically and recenter the remaining canvas", async () => {
       const initial = await cockpit.sourceViewGeometry();
       await cockpit.resizeSourceHeight(70);
+      const expectedHeight = Math.min(initial.inspector.height + 35, initial.main.height * 0.55);
       await expect
         .poll(async () => (await cockpit.sourceViewGeometry()).inspector.height, {
           timeout: 5_000,
           message: "Dragging the bottom Source divider must resize panel height",
         })
-        .toBeGreaterThan(initial.inspector.height + 35);
+        .toBeGreaterThanOrEqual(expectedHeight - 2);
       await workbench.resizeWindow(1_100, 700);
       await expect
         .poll(

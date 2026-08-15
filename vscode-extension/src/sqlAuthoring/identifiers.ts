@@ -1,3 +1,123 @@
+// PostgreSQL 17 `pg_get_keywords()` entries in the reserved (`R`) category. These identifiers
+// must be quoted when generated from catalog names, independently from the smaller grammar set
+// that cannot be interpreted as an implicit relation alias.
+const POSTGRES_RESERVED_KEYWORDS = new Set([
+  "all",
+  "analyse",
+  "analyze",
+  "and",
+  "any",
+  "array",
+  "as",
+  "asc",
+  "asymmetric",
+  "both",
+  "case",
+  "cast",
+  "check",
+  "collate",
+  "column",
+  "constraint",
+  "create",
+  "current_catalog",
+  "current_date",
+  "current_role",
+  "current_time",
+  "current_timestamp",
+  "current_user",
+  "default",
+  "deferrable",
+  "desc",
+  "distinct",
+  "do",
+  "else",
+  "end",
+  "except",
+  "false",
+  "fetch",
+  "for",
+  "foreign",
+  "from",
+  "grant",
+  "group",
+  "having",
+  "in",
+  "initially",
+  "intersect",
+  "into",
+  "lateral",
+  "leading",
+  "limit",
+  "localtime",
+  "localtimestamp",
+  "not",
+  "null",
+  "offset",
+  "on",
+  "only",
+  "or",
+  "order",
+  "placing",
+  "primary",
+  "references",
+  "returning",
+  "select",
+  "session_user",
+  "some",
+  "symmetric",
+  "system_user",
+  "table",
+  "then",
+  "to",
+  "trailing",
+  "true",
+  "union",
+  "unique",
+  "user",
+  "using",
+  "variadic",
+  "when",
+  "where",
+  "window",
+  "with",
+]);
+
+const IMPLICIT_ALIAS_BOUNDARY_KEYWORDS = new Set([
+  ...POSTGRES_RESERVED_KEYWORDS,
+  "by",
+  "cross",
+  "full",
+  "inner",
+  "join",
+  "left",
+  "natural",
+  "outer",
+  "right",
+  "tablesample",
+]);
+
+export function requiresQuotedPostgresIdentifier(identifier: string): boolean {
+  return POSTGRES_RESERVED_KEYWORDS.has(identifier.toLocaleLowerCase());
+}
+
+export function isUsableSqlAlias(token: string): boolean {
+  return (
+    token.startsWith('"') || !IMPLICIT_ALIAS_BOUNDARY_KEYWORDS.has(canonicalSqlIdentifier(token))
+  );
+}
+
+export function sqlAliasAfterRelation(
+  source: string,
+  maskedSource: string,
+  relationEnd: number,
+): string | undefined {
+  const suffix = maskedSource.slice(relationEnd);
+  const match = /^\s+(?:AS\s+)?((?:"(?:""|[^"])+"|[\w$]+))/iu.exec(suffix);
+  if (!match || !isUsableSqlAlias(match[1])) return undefined;
+  const aliasOffset = relationEnd + match[0].lastIndexOf(match[1]);
+  return source.slice(aliasOffset, aliasOffset + match[1].length);
+}
+
 export function canonicalSqlIdentifier(identifier: string): string {
   return identifier.startsWith('"') && identifier.endsWith('"')
     ? unquoteSqlIdentifier(identifier)

@@ -62,7 +62,7 @@ import { WorkbenchDdlSyncController } from "./workbenchDdlSync.js";
 import { WorkbenchGraphTreeSync } from "./workbenchGraph/treeSync.js";
 import { registerWorkbenchGraphDropBridge } from "./workbenchGraphDropBridge.js";
 import { WorkbenchGraphView } from "./workbenchGraphView.js";
-import { WorkbenchIndexController } from "./workbenchIndexController.js";
+import { WorkbenchIndexController, type WorkbenchIndexPhase } from "./workbenchIndexController.js";
 import {
   actionsForWorkbenchSurface,
   buildWorkbenchObjectActions,
@@ -254,12 +254,6 @@ async function launchDebug(
     `launchDebug: ${debugConfig.name} target=${debugConfig.routine ? "routine" : "sql"} ` +
       `${debugConfig.sql ? `sql=${debugConfig.sql.slice(0, 80)}` : ""}`,
   );
-
-  try {
-    await vscode.commands.executeCommand("testing.coverage.close");
-  } catch (error) {
-    out.appendLine(`launchDebug: failed to close native test coverage: ${error}`);
-  }
 
   let started: boolean;
   try {
@@ -1351,6 +1345,13 @@ function registerDebugInfrastructure(options: DebugInfrastructureOptions): Debug
           );
           return undefined;
         }
+        try {
+          await vscode.commands.executeCommand("testing.coverage.close");
+        } catch (error) {
+          output.appendLine(
+            `resolveDebugConfiguration: failed to close native test coverage: ${error}`,
+          );
+        }
         resolved[DEBUG_LAUNCH_TOKEN_PROPERTY] = launchToken;
         return resolved;
       },
@@ -1417,10 +1418,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
     vscodeSessionId: vscode.debug.activeDebugSession?.id,
   });
   let inspectAcceptanceTestingState = (): unknown => ({});
+  let inspectAcceptanceWorkbenchState = (): unknown => ({});
+  let armAcceptanceIndexPhaseGate = (_phases: readonly WorkbenchIndexPhase[]): void => {};
+  let releaseAcceptanceIndexPhaseGate = (_runId: number, _phase: WorkbenchIndexPhase): void => {};
   let removeAcceptanceServer = (_id: string): Promise<void> | void => {};
   const acceptanceControl = registerAcceptanceControl(context, {
+    armIndexPhaseGate: (phases) => armAcceptanceIndexPhaseGate(phases),
     inspectDebugState: () => inspectAcceptanceDebugState(),
     inspectTestingState: () => inspectAcceptanceTestingState(),
+    inspectWorkbenchState: () => inspectAcceptanceWorkbenchState(),
+    releaseIndexPhaseGate: (runId, phase) => releaseAcceptanceIndexPhaseGate(runId, phase),
     removeServer: (id) => removeAcceptanceServer(id),
     resetWorkbench: () => resetAcceptanceWorkbench(),
   });
@@ -1435,6 +1442,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
   context.subscriptions.push(workbenchIndex);
   const workbenchDdlSync = new WorkbenchDdlSyncController(cm, workbenchIndex, out);
   context.subscriptions.push(workbenchDdlSync);
+  armAcceptanceIndexPhaseGate = (phases) => workbenchIndex.armAcceptancePhaseGate(phases);
+  releaseAcceptanceIndexPhaseGate = (runId, phase) =>
+    workbenchIndex.releaseAcceptancePhaseGate(runId, phase);
+  inspectAcceptanceWorkbenchState = () => ({
+    connection: {
+      activeServerId: cm.activeServer?.id,
+      connected: cm.isConnected,
+    },
+    schemaSync: workbenchDdlSync.diagnosticStates(),
+    index: workbenchIndex.acceptanceSnapshot(),
+  });
   const scratchpads = registerSqlNotebook(context, cm, async (sql) =>
     planSqlResultExecution(sql, await workbenchIndex.syntaxParser()),
   );
@@ -1518,6 +1536,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
           },
           uri: file.uri.toString(),
         })),
+        outcomes: Object.fromEntries(snapshot.outcomes),
         sequence: acceptanceCoverageSequence,
       };
     }),
@@ -1691,6 +1710,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
     workbenchGraph,
   );
   resetAcceptanceWorkbench = async () => {
+    await vscode.commands.executeCommand("workbench.action.closeQuickOpen");
+    await workbenchIndex.settleAcceptanceOperations();
     const debugSession = vscode.debug.activeDebugSession;
     if (debugSession?.type === "postgresql-workbench") {
       const terminated = new Promise<void>((resolve, reject) => {

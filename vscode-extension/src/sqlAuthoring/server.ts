@@ -9,7 +9,7 @@ import {
 } from "vscode-languageserver/node";
 import { TextDocument } from "vscode-languageserver-textdocument";
 import { postgresCompletions } from "./completion.js";
-import { composePostgresSql } from "./composition.js";
+import { composeSqlAuthoringRequest } from "./composeRequest.js";
 import { formatPostgresSql } from "./format.js";
 import {
   SQL_AUTHORING_COMPOSE_REQUEST,
@@ -62,21 +62,15 @@ connection.onDocumentFormatting(async (params: DocumentFormattingParams) => {
 connection.onRequest(
   SQL_AUTHORING_COMPOSE_REQUEST,
   async (request: SqlAuthoringComposeRequest): Promise<SqlAuthoringComposeResult> => {
-    const context = await documentContext(request.uri);
-    if (context.status !== "available") return { status: "rejected", message: context.message };
-    if (request.text.trim().length > 0) {
-      const syntax = await connection.sendRequest<SqlAuthoringSyntaxResult>(
-        SQL_AUTHORING_SYNTAX_REQUEST,
-        { uri: request.uri, source: request.text },
-      );
-      if (syntax.hasError) {
-        return {
-          status: "rejected",
-          message: "The current SQL contains a syntax error. Fix it before composing the query.",
-        };
-      }
-    }
-    return composePostgresSql(request, context.snapshot);
+    return composeSqlAuthoringRequest(
+      request,
+      () => documentContext(request.uri),
+      (source) =>
+        connection.sendRequest<SqlAuthoringSyntaxResult>(SQL_AUTHORING_SYNTAX_REQUEST, {
+          uri: request.uri,
+          source,
+        }),
+    );
   },
 );
 

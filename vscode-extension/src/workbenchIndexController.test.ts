@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type * as vscode from "vscode";
+import * as vscode from "vscode";
 import type { LocalCodeMonikerSession } from "../../src/workbench/localCodeMoniker.js";
 import type {
   PostgresCatalogSnapshot,
@@ -29,7 +29,14 @@ vi.mock("vscode", () => {
     }
   }
 
-  return { EventEmitter };
+  return {
+    EventEmitter,
+    ExtensionMode: {
+      Production: 1,
+      Development: 2,
+      Test: 3,
+    },
+  };
 });
 
 import type { WorkbenchIndexResult } from "./workbenchIndexController.js";
@@ -68,6 +75,136 @@ class FakeConnections {
 }
 
 describe("WorkbenchIndexController connection state", () => {
+  it("holds an acceptance index phase until that exact run and phase are released", async () => {
+    const previousControlFile = process.env.POSTGRESQL_WORKBENCH_ACCEPTANCE_CONTROL_FILE;
+    process.env.POSTGRESQL_WORKBENCH_ACCEPTANCE_CONTROL_FILE = "/tmp/workbench-control.json";
+    const connections = new FakeConnections();
+    const controller = new WorkbenchIndexController(
+      {
+        extensionMode: vscode.ExtensionMode.Test,
+        extensionPath: "/extension",
+        globalStorageUri: { fsPath: "/storage" },
+      } as vscode.ExtensionContext,
+      connections as unknown as ConnectionManager,
+      { appendLine: vi.fn() } as unknown as vscode.OutputChannel,
+    );
+
+    try {
+      controller.armAcceptancePhaseGate(["reading-catalog"]);
+      const refresh = controller.indexActiveDatabase();
+      await vi.waitFor(() => {
+        expect(controller.acceptanceSnapshot()).toMatchObject({
+          activeRun: { cancelled: false, id: 1 },
+          currentRunPending: true,
+          gate: {
+            nextPhase: "reading-catalog",
+            reachedPhase: "reading-catalog",
+            runId: 1,
+          },
+          state: {
+            status: "indexing",
+            progress: { phase: "reading-catalog" },
+          },
+        });
+      });
+
+      controller.releaseAcceptancePhaseGate(1, "reading-catalog");
+      await expect(refresh).rejects.toThrow("catalog unavailable");
+      expect(controller.acceptanceSnapshot()).toMatchObject({
+        activeRun: undefined,
+        currentRunPending: false,
+        gate: undefined,
+        lastSettledRun: { id: 1, status: "error" },
+      });
+    } finally {
+      controller.dispose();
+      if (previousControlFile === undefined) {
+        delete process.env.POSTGRESQL_WORKBENCH_ACCEPTANCE_CONTROL_FILE;
+      } else {
+        process.env.POSTGRESQL_WORKBENCH_ACCEPTANCE_CONTROL_FILE = previousControlFile;
+      }
+    }
+  });
+
+  it("settles a failed run from its own outcome after the active scope changes", async () => {
+    const previousControlFile = process.env.POSTGRESQL_WORKBENCH_ACCEPTANCE_CONTROL_FILE;
+    process.env.POSTGRESQL_WORKBENCH_ACCEPTANCE_CONTROL_FILE = "/tmp/workbench-control.json";
+    const connections = new FakeConnections();
+    const controller = new WorkbenchIndexController(
+      {
+        extensionMode: vscode.ExtensionMode.Test,
+        extensionPath: "/extension",
+        globalStorageUri: { fsPath: "/storage" },
+      } as vscode.ExtensionContext,
+      connections as unknown as ConnectionManager,
+      { appendLine: vi.fn() } as unknown as vscode.OutputChannel,
+    );
+    const result: WorkbenchIndexResult = {
+      serverId: "server-b",
+      database: "database-b",
+      revision: "revision-b",
+      documents: 1,
+      symbols: 1,
+      generation: 2,
+      introspectionMs: 1,
+      materializationMs: 1,
+      publicationMs: 1,
+      symbolQueryMs: 1,
+      indexingMs: 1,
+      graphQueryMs: 1,
+    };
+    const internals = controller as unknown as {
+      registries: Map<
+        string,
+        {
+          result: WorkbenchIndexResult;
+          symbols: [];
+          documents: Map<string, never>;
+          origins: Map<string, never>;
+          foreignKeys: [];
+          viewDependencies: [];
+          resources: Map<string, never>;
+        }
+      >;
+    };
+    internals.registries.set("server-b\0database-b", {
+      result,
+      symbols: [],
+      documents: new Map<string, never>(),
+      origins: new Map<string, never>(),
+      foreignKeys: [],
+      viewDependencies: [],
+      resources: new Map<string, never>(),
+    });
+
+    try {
+      controller.armAcceptancePhaseGate(["reading-catalog"]);
+      const refresh = controller.indexActiveDatabase();
+      await vi.waitFor(() => {
+        expect(controller.acceptanceSnapshot().gate).toMatchObject({
+          reachedPhase: "reading-catalog",
+          runId: 1,
+        });
+      });
+
+      connections.switchTo({ id: "server-b", database: "database-b" });
+      expect(controller.state).toMatchObject({ status: "available", serverId: "server-b" });
+      controller.releaseAcceptancePhaseGate(1, "reading-catalog");
+      await expect(refresh).rejects.toThrow("catalog unavailable");
+      expect(controller.acceptanceSnapshot()).toMatchObject({
+        lastSettledRun: { id: 1, status: "error" },
+        state: { status: "available", serverId: "server-b" },
+      });
+    } finally {
+      controller.dispose();
+      if (previousControlFile === undefined) {
+        delete process.env.POSTGRESQL_WORKBENCH_ACCEPTANCE_CONTROL_FILE;
+      } else {
+        process.env.POSTGRESQL_WORKBENCH_ACCEPTANCE_CONTROL_FILE = previousControlFile;
+      }
+    }
+  });
+
   it("clears a pre-publication indexing error on switch and disconnect", async () => {
     const connections = new FakeConnections();
     const controller = new WorkbenchIndexController(

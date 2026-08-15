@@ -1,21 +1,11 @@
-import { defineConfig } from "@playwright/test";
+import { defineVSCodePlaywrightConfig } from "./playwright.vscode.config";
 
-export default defineConfig({
+export default defineVSCodePlaywrightConfig({
+  lane: "bootstrap",
   testDir: "./acceptance/specs/bootstrap",
   testMatch: ["**/bootstrap.spec.ts"],
-  globalSetup: "./acceptance/globalSetup.ts",
-  fullyParallel: false,
-  workers: 1,
-  maxFailures: 1,
   timeout: 45_000,
-  expect: { timeout: 5_000 },
   forbidOnly: true,
-  retries: 0,
-  reporter: [["list"], ["junit", { outputFile: "test-results/bootstrap-junit.xml" }]],
-  use: {
-    trace: "retain-on-failure",
-    screenshot: "only-on-failure",
-    video: "retain-on-failure",
-  },
+  junitFile: "test-results/bootstrap-junit.xml",
   outputDir: "test-results/bootstrap",
 });

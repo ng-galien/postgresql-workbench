@@ -7,8 +7,13 @@ import {
   TransportKind,
 } from "vscode-languageclient/node";
 import type { ConnectionManager } from "../connectionManager.js";
-import { resolveScratchpadAssociation, type SqlNotebookMetadata } from "../sqlNotebookModel.js";
+import {
+  resolveScratchpadAssociation,
+  SQL_NOTEBOOK_TYPE,
+  type SqlNotebookMetadata,
+} from "../sqlNotebookModel.js";
 import type { WorkbenchIndexController } from "../workbenchIndexController.js";
+import { sqlAuthoringEditStillApplies } from "./composeRequest.js";
 import {
   parseSqlAuthoringDrag,
   SQL_AUTHORING_COMPOSE_REQUEST,
@@ -19,6 +24,7 @@ import {
   type SqlAuthoringComposeResult,
   type SqlAuthoringDocumentContext,
   type SqlAuthoringSyntaxResult,
+  sqlAuthoringContextMatchesToken,
 } from "./protocol.js";
 
 const SQL_DOCUMENT_SELECTOR = [
@@ -89,6 +95,13 @@ export async function registerSqlAuthoring(
         );
         if (token.isCancellationRequested) return undefined;
         if (result.status === "ambiguous") {
+          const current = resolveDocumentContext(document.uri.toString(), connections, index);
+          if (!sqlAuthoringContextMatchesToken(current, result.snapshot)) {
+            void vscode.window.showWarningMessage(
+              "The Workbench Index changed while composing SQL. Retry the drop on the fresh snapshot.",
+            );
+            return unchangedDropEdit("Leave stale SQL composition unchanged");
+          }
           const selected = await vscode.window.showQuickPick(
             result.choices.map((choice) => ({ ...choice, detail: choice.description })),
             {
@@ -96,7 +109,7 @@ export async function registerSqlAuthoring(
               placeHolder: "No JOIN is added until you choose",
             },
           );
-          if (!selected) return undefined;
+          if (!selected) return unchangedDropEdit("Leave SQL unchanged");
           request = { ...request, relationChoice: selected.index };
           result = await client.sendRequest<SqlAuthoringComposeResult>(
             SQL_AUTHORING_COMPOSE_REQUEST,
@@ -106,9 +119,16 @@ export async function registerSqlAuthoring(
         }
         if (result.status === "rejected") {
           void vscode.window.showWarningMessage(result.message);
-          return undefined;
+          return unchangedDropEdit("Leave unsupported SQL unchanged");
         }
-        if (result.status !== "edit") return undefined;
+        if (result.status !== "edit") return unchangedDropEdit("Leave SQL unchanged");
+        const current = resolveDocumentContext(document.uri.toString(), connections, index);
+        if (!sqlAuthoringEditStillApplies(result, current, request.text, document.getText())) {
+          void vscode.window.showWarningMessage(
+            "The Workbench Index or SQL document changed while composing. Retry the drop.",
+          );
+          return unchangedDropEdit("Leave changed SQL unchanged");
+        }
         const edit = new vscode.DocumentDropEdit("", result.title);
         edit.additionalEdit = new vscode.WorkspaceEdit();
         edit.additionalEdit.replace(
@@ -125,15 +145,32 @@ export async function registerSqlAuthoring(
   return vscode.Disposable.from(dropProvider, { dispose: () => void client.stop() });
 }
 
-function resolveDocumentContext(
+function unchangedDropEdit(title: string): vscode.DocumentDropEdit {
+  return new vscode.DocumentDropEdit("", title);
+}
+
+export function resolveDocumentContext(
   uri: string,
-  connections: ConnectionManager,
-  index: WorkbenchIndexController,
+  connections: Pick<ConnectionManager, "activeServer" | "isConnected" | "servers">,
+  index: Pick<WorkbenchIndexController, "sqlAuthoringSnapshot">,
 ): SqlAuthoringDocumentContext {
   const notebook = vscode.workspace.notebookDocuments.find((candidate) =>
     candidate.getCells().some((cell) => cell.document.uri.toString() === uri),
   );
-  if (notebook) {
+  const isNotebookCell = vscode.Uri.parse(uri).scheme === "vscode-notebook-cell";
+  if (notebook || isNotebookCell) {
+    if (!notebook) {
+      return {
+        status: "unavailable",
+        message: "This notebook cell is not attached to a PostgreSQL Workbench Scratchpad.",
+      };
+    }
+    if (notebook.notebookType !== SQL_NOTEBOOK_TYPE) {
+      return {
+        status: "unavailable",
+        message: "SQL authoring for notebook cells is limited to PostgreSQL Workbench Scratchpads.",
+      };
+    }
     const association = resolveScratchpadAssociation(
       sqlNotebookMetadata(notebook.metadata),
       connections.servers,
@@ -163,7 +200,7 @@ function resolveDocumentContext(
 }
 
 function indexedContext(
-  index: WorkbenchIndexController,
+  index: Pick<WorkbenchIndexController, "sqlAuthoringSnapshot">,
   serverId: string,
   database: string,
   label: string,

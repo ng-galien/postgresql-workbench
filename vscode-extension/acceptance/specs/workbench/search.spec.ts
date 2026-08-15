@@ -11,15 +11,14 @@ test.describe("Workbench search", () => {
     await workbench.ensureServer(demoConnectionUrl, server);
     await workbench.expectActiveDatabaseIndexed(server, database);
     await workbench.tree.clickHeaderAction(/Search Database Objects/i);
-    await workbench.quickInput.input.fill("shop product table");
-    await workbench.quickInput.chooseOption(demoProductSearchQuickPickItem);
+    await workbench.quickInput.fill("shop product table");
+    await workbench.quickInput.chooseAndClose(demoProductSearchQuickPickItem);
 
     const sourceTab = workbench.page.getByRole("tab", { name: /^product(?:, preview)?$/i });
     await expect(sourceTab).toBeVisible({ timeout: 5_000 });
     await expect(sourceTab).toHaveAttribute("aria-selected", "true", { timeout: 5_000 });
-    await expect(workbench.page.locator(".monaco-editor:visible")).toContainText(
-      /CREATE\s+TABLE\s+"shop"\."product"/i,
-      { timeout: 5_000 },
-    );
+    await expect(
+      workbench.page.locator(".editor-group-container.active .monaco-editor:visible"),
+    ).toContainText(/CREATE\s+TABLE\s+"shop"\."product"/i, { timeout: 5_000 });
   });
 });

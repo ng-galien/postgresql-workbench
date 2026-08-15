@@ -1,6 +1,7 @@
 import {
   demoConnexionTreeItem as connexion,
   demoDatabaseTreeItem as database,
+  demoConnectionUrl,
   loopbackConnectionId,
   loopbackConnectionUrl,
   loopbackConnexionTreeItem,
@@ -13,6 +14,7 @@ test.describe("Scratchpad Association", () => {
     notebook,
     vscode,
   }) => {
+    await workbench.ensureServer(demoConnectionUrl, connexion);
     await workbench.addServer(loopbackConnectionUrl, loopbackConnexionTreeItem);
     let filterApplied = false;
     try {
@@ -31,7 +33,7 @@ test.describe("Scratchpad Association", () => {
 
       await workbench.scratchpads.create();
       await expect(workbench.quickInput.input).toHaveAttribute("placeholder", "Choose a Connexion");
-      await workbench.quickInput.input.press("Escape");
+      await workbench.quickInput.cancel();
 
       await notebook.activateLatestScratchpad();
       await expect(notebook.cells).toHaveCount(1, { timeout: 5_000 });
@@ -43,9 +45,7 @@ test.describe("Scratchpad Association", () => {
         await workbench.scratchpads.filter("No connection");
         filterApplied = true;
         await expect(await workbench.scratchpads.active()).toContainText(/No connection.*AUTO/u);
-        await expect(
-          workbench.scratchpads.all().filter({ hasNotText: /No connection/u }),
-        ).toHaveCount(0);
+        await workbench.scratchpads.expectOnlyMatching(/No connection/u);
         await workbench.scratchpads.refresh();
         await expect(await workbench.scratchpads.active()).toContainText(/No connection.*AUTO/u);
         await workbench.scratchpads.filter("");
@@ -56,6 +56,6 @@ test.describe("Scratchpad Association", () => {
       if (filterApplied) await workbench.scratchpads.filter("").catch(() => {});
       await vscode.removeServer(loopbackConnectionId);
     }
-    await expect(workbench.tree.item(loopbackConnexionTreeItem)).toHaveCount(0);
+    await workbench.tree.expectItemAbsent(loopbackConnexionTreeItem);
   });
 });

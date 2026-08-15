@@ -1,12 +1,15 @@
-import { expect, type Frame, type Locator, type Page } from "@playwright/test";
+import { expect, type Frame, type Locator } from "@playwright/test";
 import type { DebugStateSnapshot } from "../fixtures/vscode";
+import { currentPage, type PageProvider } from "./PageProvider";
 import { QuickInput } from "./QuickInput";
+import { WorkbenchTree } from "./WorkbenchTree";
 
 export class DebuggerPage {
   private readonly quickInput: QuickInput;
+  private readonly variablesTree: WorkbenchTree;
 
   constructor(
-    private readonly page: Page,
+    private readonly pageProvider: PageProvider,
     private readonly openWorkspaceFile: (fileName: string) => Promise<void>,
     private readonly inspectDebugState: () => Promise<DebugStateSnapshot>,
     private readonly executeCommand: (
@@ -17,7 +20,12 @@ export class DebuggerPage {
       timeout?: number,
     ) => Promise<void>,
   ) {
-    this.quickInput = new QuickInput(page);
+    this.quickInput = new QuickInput(pageProvider);
+    this.variablesTree = new WorkbenchTree(pageProvider, "Variables");
+  }
+
+  private get page() {
+    return currentPage(this.pageProvider);
   }
 
   async openCallSite(fileName: string): Promise<void> {
@@ -61,8 +69,7 @@ export class DebuggerPage {
   async assignConnection(sql: string, connection: RegExp): Promise<void> {
     const line = await this.revealLine(sql);
     await this.clickNearestCodeLens(line, /Choose PostgreSQL connection/);
-    await this.quickInput.chooseOption(connection);
-    await this.quickInput.input.waitFor({ state: "hidden", timeout: 5_000 });
+    await this.quickInput.chooseAndClose(connection);
     await expect(await this.nearestCodeLens(line, /Debug PL\/pgSQL/)).toBeVisible({
       timeout: 5_000,
     });
@@ -89,7 +96,7 @@ export class DebuggerPage {
     await expect(tab).toBeVisible({ timeout: 10_000 });
     await expect(tab).toHaveAttribute("aria-selected", "true", { timeout: 10_000 });
     await expect(
-      this.page.locator(".view-line:visible").filter({ hasText: routineSource }).first(),
+      this.activeEditor().locator(".view-line").filter({ hasText: routineSource }).first(),
     ).toBeVisible({
       timeout: 10_000,
     });
@@ -137,7 +144,7 @@ export class DebuggerPage {
     await this.executeCommand("workbench.action.debug.continue");
     await expect(this.page.getByRole("tab", { name: sourceTab })).toBeVisible({ timeout: 10_000 });
     await expect(
-      this.page.locator(".view-line:visible").filter({ hasText: routineSource }).first(),
+      this.activeEditor().locator(".view-line").filter({ hasText: routineSource }).first(),
     ).toBeVisible({ timeout: 10_000 });
     await this.expectStoppedAt(expectedStopLine);
   }
@@ -151,7 +158,7 @@ export class DebuggerPage {
     await this.executeCommand("workbench.action.debug.stepInto");
     await expect(this.page.getByRole("tab", { name: sourceTab })).toBeVisible({ timeout: 10_000 });
     await expect(
-      this.page.locator(".view-line:visible").filter({ hasText: routineSource }).first(),
+      this.activeEditor().locator(".view-line").filter({ hasText: routineSource }).first(),
     ).toBeVisible({ timeout: 10_000 });
     await this.expectStoppedAt(expectedStopLine);
   }
@@ -222,12 +229,13 @@ export class DebuggerPage {
     name: string,
     value: string,
   ): Promise<void> {
-    const scope = this.page.getByRole("treeitem", { name: scopeName }).first();
-    await expect(scope).toBeVisible({ timeout: 5_000 });
-    if ((await scope.getAttribute("aria-expanded")) !== "true") await scope.click();
-    await expect(
-      this.page.getByRole("treeitem", { name: `${name}, value ${value}`, exact: true }),
-    ).toBeVisible({ timeout: 5_000 });
+    const scope = await this.variablesTree.findItem(scopeName);
+    await this.variablesTree.expandItem(scope, scopeName);
+    const escaped = `${name}, value ${value}`.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+    const variable = await this.variablesTree.findChild(scope, new RegExp(`^${escaped}$`, "u"));
+    await expect(variable).toHaveAccessibleName(`${name}, value ${value}`, {
+      timeout: 5_000,
+    });
   }
 
   private debugToolbar(): Locator {
@@ -340,21 +348,8 @@ export class DebuggerPage {
     }
   }
 
-  private async waitForBoundingBox(
-    locator: Locator,
-    message: string,
-  ): Promise<NonNullable<Awaited<ReturnType<Locator["boundingBox"]>>>> {
-    const deadline = Date.now() + 5_000;
-    while (Date.now() < deadline) {
-      const box = await locator.boundingBox();
-      if (box) return box;
-      await this.page.waitForTimeout(50);
-    }
-    throw new Error(`${message} within 5000 ms`);
-  }
-
   private async nearestCodeLens(line: Locator, label: RegExp): Promise<Locator> {
-    const lenses = this.page.getByRole("button", { name: label });
+    const lenses = this.activeEditor().getByRole("button", { name: label });
     let nearestIndex = -1;
     await expect
       .poll(
@@ -384,16 +379,58 @@ export class DebuggerPage {
   }
 
   private async clickNearestCodeLens(line: Locator, label: RegExp): Promise<void> {
-    const lens = await this.nearestCodeLens(line, label);
-    const box = await this.waitForBoundingBox(
-      lens,
-      `The visible CodeLens ${label} must have screen coordinates`,
-    );
+    const target = await this.stableNearestCodeLensTarget(line, label);
     // VS Code recreates CodeLens anchors when another lens on the same document
-    // changes. A locator click can therefore retain an nth() target that is
-    // detached during actionability checks. Clicking the freshly measured
-    // screen position preserves the real UI interaction without retaining the
-    // transient DOM node.
-    await this.page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    // changes. Wait for two identical editor-local geometry samples, then click
+    // their screen position without retaining the transient DOM node.
+    await this.page.mouse.click(target.x, target.y);
+  }
+
+  private async stableNearestCodeLensTarget(
+    line: Locator,
+    label: RegExp,
+  ): Promise<{ index: number; x: number; y: number }> {
+    const deadline = Date.now() + 5_000;
+    let previous: { index: number; lineY: number; x: number; y: number } | undefined;
+    while (Date.now() < deadline) {
+      const lenses = this.activeEditor().getByRole("button", { name: label });
+      const lineBox = await line.boundingBox();
+      let nearest: { distance: number; index: number; x: number; y: number } | undefined;
+      if (lineBox) {
+        const lineY = lineBox.y + lineBox.height / 2;
+        for (let index = 0; index < (await lenses.count()); index += 1) {
+          const box = await lenses.nth(index).boundingBox();
+          if (!box) continue;
+          const lensY = box.y + box.height / 2;
+          if (lensY > lineY) continue;
+          const distance = lineY - lensY;
+          if (!nearest || distance < nearest.distance) {
+            nearest = {
+              distance,
+              index,
+              x: box.x + box.width / 2,
+              y: lensY,
+            };
+          }
+        }
+        const current = nearest && { ...nearest, lineY };
+        if (
+          current &&
+          previous?.index === current.index &&
+          Math.abs(previous.lineY - current.lineY) < 0.5 &&
+          Math.abs(previous.x - current.x) < 0.5 &&
+          Math.abs(previous.y - current.y) < 0.5
+        ) {
+          return { index: current.index, x: current.x, y: current.y };
+        }
+        previous = current;
+      } else {
+        previous = undefined;
+      }
+      await this.page.waitForTimeout(50);
+    }
+    throw new Error(
+      `The active-editor CodeLens ${label} did not settle above the target line within 5000 ms`,
+    );
   }
 }

@@ -1,12 +1,25 @@
-import { expect, type Locator, type Page } from "@playwright/test";
+import { expect, type Locator } from "@playwright/test";
+import { currentPage, type PageProvider } from "./PageProvider";
 
 class TreeChildNotFoundError extends Error {}
+class TreeItemNotFoundError extends Error {}
+
+interface VisibleTreeRow {
+  expanded: boolean;
+  index: number;
+  level: number;
+  text: string;
+}
 
 export class WorkbenchTree {
   constructor(
-    private readonly page: Page,
+    private readonly pageProvider: PageProvider,
     private readonly accessibleName = "Workbench",
   ) {}
+
+  private get page() {
+    return currentPage(this.pageProvider);
+  }
 
   locator(): Locator {
     return this.page.getByRole("tree", { name: this.accessibleName });
@@ -56,27 +69,24 @@ export class WorkbenchTree {
       state: "visible",
       timeout: 5_000,
     });
+    await this.revealHeaderActions();
     const action = this.headerAction(/^Collapse All$/);
-    if (
-      (await this.locator()
-        .locator('.monaco-list-rows > [role="treeitem"][aria-expanded="true"]:visible')
-        .count()) > 0
-    ) {
-      await action.waitFor({ state: "visible", timeout: 5_000 });
-      if (await action.isEnabled()) await action.click();
+    // The command owns the complete tree model, unlike rendered rows. Invoke it
+    // whenever VS Code exposes it so expanded branches outside the virtualized
+    // viewport are collapsed as well.
+    if ((await action.count()) > 0 && (await action.isEnabled())) await action.click();
+    if (await this.hasExpandedItem()) {
+      await this.revealHeaderActions();
+      await action.waitFor({ state: "visible", timeout: 2_000 });
+      await expect(action).toBeEnabled({ timeout: 2_000 });
+      await action.click();
     }
     await expect
-      .poll(
-        () =>
-          this.locator()
-            .locator('.monaco-list-rows > [role="treeitem"][aria-expanded="true"]:visible')
-            .count(),
-        {
-          timeout: 5_000,
-          message: "The Workbench TreeView must be fully collapsed before the scenario starts",
-        },
-      )
-      .toBe(0);
+      .poll(() => this.hasExpandedItem(), {
+        timeout: 5_000,
+        message: `The ${this.accessibleName} TreeView must be fully collapsed before the scenario starts`,
+      })
+      .toBe(false);
   }
 
   async expand(label: RegExp): Promise<void> {
@@ -147,6 +157,8 @@ export class WorkbenchTree {
       `The ${this.accessibleName} TreeView must expose its scroll viewport`,
     ).not.toBeNull();
     await this.page.mouse.move(bounds!.x + bounds!.width / 2, bounds!.y + bounds!.height - 8);
+    const rows = tree.locator('.monaco-list-rows > .monaco-list-row[role="treeitem"]');
+    if ((await rows.count()) === 0) return;
     const firstRow = tree.locator(
       '.monaco-list-rows > .monaco-list-row[role="treeitem"][data-index="0"]',
     );
@@ -159,14 +171,75 @@ export class WorkbenchTree {
   }
 
   async findItem(label: RegExp): Promise<Locator> {
-    const item = this.item(label);
-    await this.scrollToTop();
-    for (let attempt = 0; attempt < 40; attempt += 1) {
-      if (await item.isVisible()) return item;
-      await this.page.mouse.wheel(0, 500);
-      await this.page.waitForTimeout(50);
+    const index = await this.scanRows((rows) => {
+      const match = rows.find(({ text }) => {
+        label.lastIndex = 0;
+        return label.test(text);
+      });
+      return match?.index;
+    });
+    if (index !== undefined) {
+      const item = this.locator()
+        .locator(`.monaco-list-rows > .monaco-list-row[role="treeitem"][data-index="${index}"]`)
+        .filter({ hasText: label });
+      await item.waitFor({ state: "visible", timeout: 2_000 });
+      return item;
     }
-    throw new Error(`The ${this.accessibleName} TreeView did not reveal ${label} after scrolling`);
+    throw new TreeItemNotFoundError(
+      `The ${this.accessibleName} TreeView does not contain ${label}`,
+    );
+  }
+
+  async hasItem(label: RegExp): Promise<boolean> {
+    try {
+      await this.findItem(label);
+      return true;
+    } catch (error) {
+      if (error instanceof TreeItemNotFoundError) return false;
+      throw error;
+    }
+  }
+
+  async waitForItem(label: RegExp, timeout = 5_000): Promise<Locator> {
+    await expect
+      .poll(() => this.hasItem(label), {
+        timeout,
+        message: `The ${this.accessibleName} TreeView must eventually contain ${label}`,
+      })
+      .toBe(true);
+    return this.findItem(label);
+  }
+
+  async expectItemAbsent(label: RegExp, timeout = 5_000): Promise<void> {
+    await expect
+      .poll(() => this.hasItem(label), {
+        timeout,
+        message: `The ${this.accessibleName} TreeView must not contain ${label}`,
+      })
+      .toBe(false);
+  }
+
+  async itemTexts(label: RegExp): Promise<string[]> {
+    const matches = new Map<number, string>();
+    await this.scanRows((rows) => {
+      for (const row of rows) {
+        label.lastIndex = 0;
+        if (label.test(row.text)) matches.set(row.index, row.text);
+      }
+      return undefined;
+    });
+    return [...matches.entries()].sort(([left], [right]) => left - right).map(([, text]) => text);
+  }
+
+  async topLevelItemTexts(): Promise<string[]> {
+    const matches = new Map<number, string>();
+    await this.scanRows((rows) => {
+      for (const row of rows) {
+        if (row.level === 1) matches.set(row.index, row.text);
+      }
+      return undefined;
+    });
+    return [...matches.entries()].sort(([left], [right]) => left - right).map(([, text]) => text);
   }
 
   async findChild(parent: Locator, label: RegExp): Promise<Locator> {
@@ -184,8 +257,11 @@ export class WorkbenchTree {
 
     const rows = this.locator().locator('.monaco-list-rows > .monaco-list-row[role="treeitem"]');
     await this.locator().hover();
+    const seen = new Map<number, { level: number; text: string }>();
+    const scrollStep = await this.scrollStep();
     let previousMaximum = parentIndex;
-    for (let attempt = 0; attempt < 40; attempt += 1) {
+    let stalledAttempts = 0;
+    for (let attempt = 0; attempt < 120; attempt += 1) {
       const scan = await rows.evaluateAll(
         (elements, expected) => {
           const expression = new RegExp(expected.source, expected.flags);
@@ -204,12 +280,9 @@ export class WorkbenchTree {
               boundary = boundary === undefined ? index : Math.min(boundary, index);
               continue;
             }
-            if (
-              match === undefined &&
-              level === expected.parentLevel + 1 &&
-              expression.test(element.innerText)
-            ) {
-              match = index;
+            if (match === undefined && level === expected.parentLevel + 1) {
+              expression.lastIndex = 0;
+              if (expression.test(element.innerText)) match = index;
             }
           }
           if (match !== undefined && (boundary === undefined || match < boundary)) {
@@ -224,6 +297,7 @@ export class WorkbenchTree {
           source: label.source,
         },
       );
+      for (const row of scan.visible) seen.set(row.index, { level: row.level, text: row.text });
       if (scan.match !== undefined) {
         const child = this.locator()
           .locator(
@@ -235,10 +309,21 @@ export class WorkbenchTree {
       }
       if (scan.boundary !== undefined) {
         throw new TreeChildNotFoundError(
-          `The ${label} item is not a child of the selected TreeView branch: ${JSON.stringify(scan.visible)}`,
+          `The ${label} item is not a child of the selected TreeView branch: ${JSON.stringify([...seen.entries()])}`,
         );
       }
-      await this.page.mouse.wheel(0, scan.maximum > previousMaximum ? 250 : 500);
+      if (await this.isAtBottom()) {
+        throw new TreeChildNotFoundError(
+          `The ${this.accessibleName} TreeView does not contain child ${label}: ${JSON.stringify([...seen.entries()])}`,
+        );
+      }
+      stalledAttempts = scan.maximum > previousMaximum ? 0 : stalledAttempts + 1;
+      if (stalledAttempts >= 3) {
+        throw new Error(
+          `The ${this.accessibleName} TreeView stopped scrolling before resolving child ${label}: ${JSON.stringify([...seen.entries()])}`,
+        );
+      }
+      await this.page.mouse.wheel(0, scrollStep);
       previousMaximum = Math.max(previousMaximum, scan.maximum);
       await this.page.waitForTimeout(50);
     }
@@ -255,6 +340,15 @@ export class WorkbenchTree {
       if (error instanceof TreeChildNotFoundError) return false;
       throw error;
     }
+  }
+
+  async expectChildAbsent(parent: Locator, label: RegExp, timeout = 5_000): Promise<void> {
+    await expect
+      .poll(() => this.hasChild(parent, label), {
+        timeout,
+        message: `The ${this.accessibleName} TreeView branch must not contain ${label}`,
+      })
+      .toBe(false);
   }
 
   async revealItem(row: Locator, description: RegExp | string): Promise<void> {
@@ -283,8 +377,95 @@ export class WorkbenchTree {
     await row.hover({ timeout: 2_000 });
   }
 
+  async waitForStableItem(row: Locator, description: RegExp | string): Promise<Locator> {
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      await row.waitFor({ state: "visible", timeout: 2_000 });
+      const marker = `pgwb-${Date.now()}-${attempt}`;
+      await row.evaluate((element, value) => {
+        element.setAttribute("data-pgwb-acceptance-stability", value);
+      }, marker);
+      await this.page.waitForTimeout(75);
+      const unchanged = await row
+        .evaluate(
+          (element, value) => element.getAttribute("data-pgwb-acceptance-stability") === value,
+          marker,
+        )
+        .catch(() => false);
+      if (unchanged) {
+        await row.evaluate((element) => {
+          element.removeAttribute("data-pgwb-acceptance-stability");
+        });
+        return row;
+      }
+    }
+    throw new Error(`The ${description} TreeView row kept being re-projected for 1500 ms`);
+  }
+
   async select(label: RegExp): Promise<void> {
     const item = await this.findItem(label);
     await item.click();
+  }
+
+  private async hasExpandedItem(): Promise<boolean> {
+    return (
+      (await this.scanRows((rows) => (rows.some(({ expanded }) => expanded) ? true : undefined))) ??
+      false
+    );
+  }
+
+  private async scanRows<T>(
+    resolve: (rows: VisibleTreeRow[]) => T | undefined,
+  ): Promise<T | undefined> {
+    await this.scrollToTop();
+    const rows = this.locator().locator('.monaco-list-rows > .monaco-list-row[role="treeitem"]');
+    if ((await rows.count()) === 0) return undefined;
+
+    await this.locator().hover();
+    const scrollStep = await this.scrollStep();
+    let previousMaximum = -1;
+    let stalledAttempts = 0;
+    for (let attempt = 0; attempt < 120; attempt += 1) {
+      const visible = await rows.evaluateAll((elements) =>
+        (elements as HTMLElement[])
+          .map((element) => ({
+            expanded: element.getAttribute("aria-expanded") === "true",
+            index: Number(element.dataset.index),
+            level: Number(element.getAttribute("aria-level")),
+            text: element.innerText,
+          }))
+          .filter(({ index, level }) => Number.isInteger(index) && Number.isInteger(level)),
+      );
+      const result = resolve(visible);
+      if (result !== undefined) return result;
+      if (await this.isAtBottom()) return undefined;
+
+      const maximum = Math.max(previousMaximum, ...visible.map(({ index }) => index));
+      stalledAttempts = maximum > previousMaximum ? 0 : stalledAttempts + 1;
+      if (stalledAttempts >= 3) {
+        throw new Error(
+          `The ${this.accessibleName} TreeView stopped scrolling before its final row`,
+        );
+      }
+      previousMaximum = maximum;
+      await this.page.mouse.wheel(0, scrollStep);
+      await this.page.waitForTimeout(50);
+    }
+    throw new Error(`The ${this.accessibleName} TreeView exceeded its bounded full-tree scan`);
+  }
+
+  private async scrollStep(): Promise<number> {
+    const bounds = await this.locator().boundingBox();
+    expect(bounds, `The ${this.accessibleName} TreeView must expose its viewport`).not.toBeNull();
+    return Math.max(40, Math.min(250, Math.floor(bounds!.height * 0.6)));
+  }
+
+  private async isAtBottom(): Promise<boolean> {
+    const scrollable = this.locator()
+      .locator(".monaco-scrollable-element:has(.monaco-list-rows)")
+      .first();
+    return scrollable.evaluate(
+      (element: HTMLElement) =>
+        element.scrollTop + element.clientHeight >= element.scrollHeight - 1,
+    );
   }
 }

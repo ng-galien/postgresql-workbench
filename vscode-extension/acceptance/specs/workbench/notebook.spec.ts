@@ -40,9 +40,7 @@ test.describe("Scratchpads", () => {
     });
 
     await test.step("switch the persistent Mode to MANUAL from the Scratchpad", async () => {
-      await workbench.scratchpads.hover(scratchpad);
-      await scratchpad.getByLabel("Mode MANUAL", { exact: true }).click();
-      await expect(scratchpad).toContainText(/MANUAL/u);
+      await workbench.scratchpads.setMode(scratchpad, "MANUAL");
     });
 
     await test.step("keep Transaction control owned by the Scratchpad", async () => {
@@ -53,7 +51,7 @@ test.describe("Scratchpads", () => {
       await expect(errorFrame.locator(".sql-error")).toContainText(
         "Use the Scratchpad Transaction controls",
       );
-      await expect(workbench.scratchpads.transactions()).toHaveCount(0);
+      await workbench.scratchpads.expectNoTransaction(scratchpad);
     });
 
     await test.step("open one Transaction on first execution and keep its work private", async () => {
@@ -68,10 +66,10 @@ test.describe("Scratchpads", () => {
       );
       await notebook.executeCode(code);
 
-      const result = await notebook.resultFrame();
+      const result = await notebook.resultFrame("1");
       await expect(result.getByText("1", { exact: true })).toBeVisible({ timeout: 10_000 });
       await workbench.scratchpads.expand(scratchpad);
-      const transaction = workbench.scratchpads.transaction("in progress");
+      const transaction = await workbench.scratchpads.transaction(scratchpad, "in progress");
       await expect(transaction).toContainText("3 Statements", { timeout: 5_000 });
       await expect
         .poll(
@@ -83,29 +81,27 @@ test.describe("Scratchpads", () => {
 
     await test.step("leave the Transaction active when the Scratchpad editor closes", async () => {
       await vscode.executeCommand("workbench.action.files.saveAll");
-      const activeTab = workbench.page.locator(".editor-group-container .tab.active");
-      await activeTab.hover();
-      await activeTab.locator(".codicon-close").click();
-      await expect(workbench.scratchpads.transaction("in progress")).toContainText("3 Statements");
+      await notebook.closeActive();
+      await expect(
+        await workbench.scratchpads.transaction(scratchpad, "in progress"),
+      ).toContainText("3 Statements");
       await scratchpad.click();
       await notebook.activateLatestScratchpad();
     });
 
     await test.step("guard a Mode change while the Transaction is active", async () => {
-      await workbench.scratchpads.hover(scratchpad);
-      await scratchpad.getByLabel("Mode AUTO", { exact: true }).click();
+      await workbench.scratchpads.requestMode(scratchpad, "AUTO");
       const cancel = workbench.page.getByRole("button", { name: "Cancel", exact: true });
       await expect(cancel).toBeVisible({ timeout: 5_000 });
       await cancel.click();
       await expect(scratchpad).toContainText(/MANUAL/u);
-      await expect(workbench.scratchpads.transaction("in progress")).toContainText("3 Statements");
+      await expect(
+        await workbench.scratchpads.transaction(scratchpad, "in progress"),
+      ).toContainText("3 Statements");
     });
 
     await test.step("commit explicitly and make the PostgreSQL change externally visible", async () => {
-      const transaction = workbench.scratchpads.transaction("in progress");
-      await workbench.scratchpads.hover(transaction, /^Transaction in progress/u);
-      await transaction.getByLabel("Commit", { exact: true }).click();
-      await expect(workbench.scratchpads.transaction("in progress")).toHaveCount(0);
+      await workbench.scratchpads.commit(scratchpad);
       await expect
         .poll(
           async () =>
@@ -123,24 +119,14 @@ test.describe("Scratchpads", () => {
           timeout: 10_000,
         })
         .toBeGreaterThan(0);
-      const failed = workbench.scratchpads.transaction("failed");
+      const failed = await workbench.scratchpads.transaction(scratchpad, "failed");
       await expect(failed).toBeVisible({ timeout: 5_000 });
       await expect(failed.getByLabel("Commit", { exact: true })).toHaveCount(0);
-      const rollback = failed.getByLabel("Rollback", { exact: true });
-      await expect
-        .poll(async () => {
-          await workbench.scratchpads.hover(failed, /^Transaction failed/u);
-          return rollback.isVisible();
-        })
-        .toBe(true);
-      await rollback.click();
-      await expect(workbench.scratchpads.transaction("failed")).toHaveCount(0);
+      await workbench.scratchpads.rollback(scratchpad);
     });
 
     await test.step("return to AUTO while idle and clean up independently", async () => {
-      await workbench.scratchpads.hover(scratchpad);
-      await scratchpad.getByLabel("Mode AUTO", { exact: true }).click();
-      await expect(scratchpad).toContainText(/AUTO/u);
+      await workbench.scratchpads.setMode(scratchpad, "AUTO");
 
       const cleanup = await notebook.addCodeCell();
       await notebook.typeInCell(cleanup, "DROP TABLE public.acceptance_scratchpad_transaction");
@@ -154,15 +140,16 @@ test.describe("Scratchpads", () => {
     });
 
     await test.step("roll back the active Transaction on extension shutdown", async () => {
-      await workbench.scratchpads.hover(scratchpad);
-      await scratchpad.getByLabel("Mode MANUAL", { exact: true }).click();
+      await workbench.scratchpads.setMode(scratchpad, "MANUAL");
       const shutdownWork = await notebook.addCodeCell();
       await notebook.typeInCell(
         shutdownWork,
         "CREATE TABLE public.acceptance_scratchpad_shutdown_rollback(id integer)",
       );
       await notebook.executeCode(shutdownWork);
-      await expect(workbench.scratchpads.transaction("in progress")).toContainText("1 Statement");
+      await expect(
+        await workbench.scratchpads.transaction(scratchpad, "in progress"),
+      ).toContainText("1 Statement");
       await vscode.executeCommand("workbench.action.files.saveAll");
 
       await vscode.executeInfrastructureCommand("workbench.action.reloadWindow");
@@ -239,7 +226,7 @@ test.describe("Scratchpads", () => {
             },
           ],
         });
-      const result = await notebook.resultFrame();
+      const result = await notebook.resultFrame("verified");
       await expect(result.getByRole("region", { name: "PostgreSQL query result" })).toBeVisible();
       await expect(result.getByText("ready", { exact: true })).toBeVisible();
       await expect(result.getByText("verified", { exact: true })).toBeVisible();
@@ -309,7 +296,7 @@ test.describe("Scratchpads", () => {
         message: "The data-modifying CTE must expose its returned rows without opening a cursor",
       })
       .toBe(1);
-    const result = await notebook.resultFrame();
+    const result = await notebook.resultFrame("3");
     await expect(result.getByRole("region", { name: "PostgreSQL query result" })).toBeVisible();
     for (const id of ["1", "2", "3"]) {
       await expect(result.getByText(id, { exact: true })).toBeVisible();
@@ -326,7 +313,7 @@ test.describe("Scratchpads", () => {
     await notebook.typeInCell(code, "SELECT value FROM generate_series(1, 1000) AS value");
     await notebook.executeCode(code);
 
-    const firstPage = await notebook.resultFrame();
+    const firstPage = await notebook.resultFrame("Rows 1–200 · more available");
     await expect(firstPage.getByText("Rows 1–200 · more available", { exact: true })).toBeVisible({
       timeout: 10_000,
     });

@@ -13,9 +13,7 @@ test.describe("Acceptance cinematics", () => {
     await test.step("keep the database tree above the dedicated Scratchpads tree", async () => {
       await expect(databaseTree).toBeVisible();
       await expect(scratchpadsTree).toBeVisible();
-      await expect(
-        databaseTree.getByRole("treeitem").filter({ hasText: /^Scratchpads$/u }),
-      ).toHaveCount(0);
+      await workbench.tree.expectItemAbsent(/^Scratchpads$/u);
       const databaseBounds = await databaseTree.boundingBox();
       const scratchpadsBounds = await scratchpadsTree.boundingBox();
       expect(databaseBounds).not.toBeNull();

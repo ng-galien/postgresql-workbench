@@ -5,6 +5,10 @@
 acceptance/**
 playwright.acceptance.config.ts
 playwright.bootstrap.config.ts
+playwright.schema-sync.config.ts
+playwright.vscode.config.ts
+Dockerfile.playwright-ci
+docker-compose.playwright-ci.yml
 test-results/**
 test-workspace/**
 src/**

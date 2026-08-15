@@ -2,7 +2,9 @@ import type { CompletionItem } from "vscode-languageserver/node";
 import { CompletionItemKind, InsertTextFormat } from "vscode-languageserver/node";
 import {
   canonicalSqlIdentifier,
+  requiresQuotedPostgresIdentifier,
   splitSqlQualifiedIdentifier,
+  sqlAliasAfterRelation,
   unquoteSqlIdentifierFragment,
 } from "./identifiers.js";
 import type { SqlAuthoringObject, SqlAuthoringSnapshot } from "./protocol.js";
@@ -11,38 +13,6 @@ import { scanPostgresSql, sqlStatementAtOffset } from "./sqlLexing.js";
 
 const MAX_COMPLETIONS = 200;
 const SIMPLE_IDENTIFIER = /^[a-z_][a-z0-9_$]*$/u;
-const RESERVED = new Set([
-  "all",
-  "and",
-  "as",
-  "by",
-  "from",
-  "fetch",
-  "for",
-  "group",
-  "having",
-  "intersect",
-  "join",
-  "left",
-  "limit",
-  "not",
-  "natural",
-  "null",
-  "on",
-  "or",
-  "order",
-  "offset",
-  "right",
-  "select",
-  "table",
-  "tablesample",
-  "union",
-  "using",
-  "where",
-  "window",
-  "except",
-]);
-
 export function postgresCompletions(
   source: string,
   offset: number,
@@ -58,6 +28,32 @@ export function postgresCompletions(
   const qualifier = /(?:^|[^\w$])((?:"(?:""|[^"])+"|[\w$]+))\.((?:"(?:""|[^"])*|[\w$]*))$/u.exec(
     maskedBefore,
   );
+  const relationPosition = /\b(?:FROM|JOIN)\s+(?:[\w$".]*)$/iu.test(maskedBefore);
+  if (relationPosition) {
+    if (qualifier) {
+      const qualifiedSuffix = `${qualifier[1]}.${qualifier[2]}`;
+      const suffixOffset = (qualifier.index ?? 0) + qualifier[0].lastIndexOf(qualifiedSuffix);
+      const ownerToken = before.slice(suffixOffset, suffixOffset + qualifier[1].length);
+      const fragmentToken = before.slice(suffixOffset + qualifier[1].length + 1);
+      const owner = canonicalSqlIdentifier(ownerToken);
+      return boundedCompletions(
+        snapshot.objects
+          .filter(
+            (object) =>
+              object.schema === owner && (object.kind === "table" || object.kind === "view"),
+          )
+          .map((object) => objectCompletion(object, false)),
+        unquoteSqlIdentifierFragment(fragmentToken),
+      );
+    }
+    return boundedCompletions(
+      snapshot.objects
+        .filter((object) => object.kind === "table" || object.kind === "view")
+        .map((object) => objectCompletion(object)),
+      completionFragment(before),
+    );
+  }
+
   const aliases = queryAliases(statement.text, lexicalScan.topLevelSource, snapshot.objects);
   if (qualifier) {
     const qualifiedSuffix = `${qualifier[1]}.${qualifier[2]}`;
@@ -73,15 +69,6 @@ export function postgresCompletions(
         .filter((object) => object.schema === owner)
         .map((object) => objectCompletion(object, false)),
       fragment,
-    );
-  }
-
-  if (/\b(?:FROM|JOIN)\s+(?:[\w$".]*)$/iu.test(maskedBefore)) {
-    return boundedCompletions(
-      snapshot.objects
-        .filter((object) => object.kind === "table" || object.kind === "view")
-        .map((object) => objectCompletion(object)),
-      completionFragment(before),
     );
   }
 
@@ -101,7 +88,7 @@ export function postgresCompletions(
 }
 
 export function quoteIdentifier(identifier: string): string {
-  if (SIMPLE_IDENTIFIER.test(identifier) && !RESERVED.has(identifier.toLocaleLowerCase())) {
+  if (SIMPLE_IDENTIFIER.test(identifier) && !requiresQuotedPostgresIdentifier(identifier)) {
     return identifier;
   }
   return `"${identifier.replaceAll('"', '""')}"`;
@@ -118,10 +105,18 @@ function queryAliases(
   objects: readonly SqlAuthoringObject[],
 ): Map<string, QueryAlias> {
   const aliases = new Map<string, QueryAlias>();
+  const from = /\bFROM\b/iu.exec(maskedSource);
+  if (!from || from.index === undefined) return aliases;
+  const boundary =
+    /\b(?:WHERE|GROUP\s+BY|ORDER\s+BY|HAVING|LIMIT|OFFSET|UNION|INTERSECT|EXCEPT|WINDOW|FETCH|FOR)\b|;/iu.exec(
+      maskedSource.slice(from.index + from[0].length),
+    );
+  const clauseEnd = boundary ? from.index + from[0].length + boundary.index : maskedSource.length;
+  const clause = maskedSource.slice(from.index, clauseEnd);
   const pattern =
-    /\b(?:FROM|JOIN)\s+((?:"(?:""|[^"])+"|[\w$]+)(?:\.(?:"(?:""|[^"])+"|[\w$]+))?)(?:\s+(?:AS\s+)?((?:"(?:""|[^"])+"|[\w$]+)))?/giu;
-  for (const match of maskedSource.matchAll(pattern)) {
-    const relationOffset = (match.index ?? 0) + match[0].indexOf(match[1]);
+    /(?:\b(?:FROM|JOIN)\s+|,\s*)((?:"(?:""|[^"])+"|[\w$]+)(?:\.(?:"(?:""|[^"])+"|[\w$]+))?)/giu;
+  for (const match of clause.matchAll(pattern)) {
+    const relationOffset = from.index + (match.index ?? 0) + match[0].indexOf(match[1]);
     const relation = source.slice(relationOffset, relationOffset + match[1].length);
     const parts = splitSqlQualifiedIdentifier(relation);
     if (parts.length !== 2) continue;
@@ -135,16 +130,8 @@ function queryAliases(
     );
     if (candidates.length !== 1) continue;
     const object = candidates[0];
-    const aliasOffset = match[2] ? (match.index ?? 0) + match[0].lastIndexOf(match[2]) : undefined;
-    const candidateAlias =
-      aliasOffset === undefined
-        ? undefined
-        : source.slice(aliasOffset, aliasOffset + match[2].length);
     const alias =
-      candidateAlias &&
-      (candidateAlias.startsWith('"') || !RESERVED.has(canonicalSqlIdentifier(candidateAlias)))
-        ? candidateAlias
-        : parts[1];
+      sqlAliasAfterRelation(source, maskedSource, relationOffset + match[1].length) ?? parts[1];
     aliases.set(canonicalSqlIdentifier(alias), { object, reference: alias });
   }
   return aliases;

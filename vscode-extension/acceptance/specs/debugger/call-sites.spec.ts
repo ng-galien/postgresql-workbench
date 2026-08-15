@@ -11,33 +11,6 @@ test.describe("PL/pgSQL debugger call sites", () => {
     await debuggerPage.expectNoActiveSession();
   });
 
-  test("clears native coverage before debugging a covered routine", async ({
-    workbench,
-    debuggerPage,
-  }) => {
-    const sql = "SELECT shop.restock_report(10);";
-
-    await test.step("connect and open the covered SQL call site", async () => {
-      await workbench.ensureServer(demoConnectionUrl, server);
-      await workbench.expectActiveDatabaseIndexed(server, database);
-      await debuggerPage.openCallSite("debug-restock.sql");
-    });
-
-    await test.step("assign the database through the visible CodeLens", async () => {
-      await debuggerPage.assignConnection(sql, connectionChoice);
-    });
-
-    await test.step("start in the routine without retaining native coverage", async () => {
-      await debuggerPage.start(sql, /^restock_report\(threshold:int4\)/, /shop\.restock_report/);
-      await debuggerPage.expectNoCoverageDecorations();
-    });
-
-    await test.step("continue to termination and reveal the query result", async () => {
-      await debuggerPage.continueToCompletion();
-      await debuggerPage.expectNoErrorNotification();
-    });
-  });
-
   test("stops on every recursive Fibonacci result", async ({ workbench, debuggerPage }) => {
     test.setTimeout(90_000);
     const sql = "SELECT playground.fib(5);";

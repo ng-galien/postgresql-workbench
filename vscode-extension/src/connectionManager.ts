@@ -108,9 +108,15 @@ export class ConnectionManager implements vscode.Disposable {
   }
 
   async setSchemaSyncOverride(id: string, override: ServerConfig["schemaSync"]): Promise<void> {
+    this.out.appendLine(
+      `Workbench schema synchronization store update requested: server=${id} override=${JSON.stringify(override)}`,
+    );
     const server = this.store.get(id);
     if (!server) throw new Error("The PostgreSQL server no longer exists.");
     await this.store.update(id, { ...server, schemaSync: override });
+    this.out.appendLine(
+      `Workbench schema synchronization store update complete: server=${id} override=${JSON.stringify(this.store.get(id)?.schemaSync)}`,
+    );
     this.fire();
   }
 
