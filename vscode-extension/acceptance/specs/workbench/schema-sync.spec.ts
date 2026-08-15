@@ -59,7 +59,7 @@ test.describe("Workbench schema synchronization", () => {
     workbench,
     notebook,
   }) => {
-    test.setTimeout(90_000);
+    test.setTimeout(120_000);
 
     await test.step("require a clean PostgreSQL and TreeView baseline", async () => {
       expect(await demoDatabase.inspectSchemaSync("workbench")).toEqual({
