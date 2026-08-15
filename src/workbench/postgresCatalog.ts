@@ -65,6 +65,8 @@ export class PostgresCatalogFullRefreshRequired extends Error {}
 export interface PostgresForeignKey {
   sourceTableOid: number;
   targetTableOid: number;
+  sourceColumns: string[];
+  sourceColumnsNullable: boolean[];
   targetColumns: string[];
 }
 
@@ -105,6 +107,7 @@ interface ConstraintRow {
   constraintName: string;
   definition: string;
   referencedTableOid?: string;
+  sourceColumns: string[];
   referencedColumns: string[];
 }
 
@@ -223,6 +226,13 @@ SELECT
   constraint_row.conname AS constraint_name,
   pg_catalog.pg_get_constraintdef(constraint_row.oid, true) AS definition,
   CASE WHEN constraint_row.contype = 'f' THEN constraint_row.confrelid::text END AS referenced_table_oid,
+  CASE WHEN constraint_row.contype = 'f' THEN (
+    SELECT pg_catalog.jsonb_agg(attribute.attname ORDER BY key_column.ordinality)
+    FROM pg_catalog.unnest(constraint_row.conkey) WITH ORDINALITY AS key_column(attnum, ordinality)
+    JOIN pg_catalog.pg_attribute AS attribute
+      ON attribute.attrelid = constraint_row.conrelid
+      AND attribute.attnum = key_column.attnum
+  ) END AS source_columns,
   CASE WHEN constraint_row.contype = 'f' THEN (
     SELECT pg_catalog.jsonb_agg(attribute.attname ORDER BY key_column.ordinality)
     FROM pg_catalog.unnest(constraint_row.confkey) WITH ORDINALITY AS key_column(attnum, ordinality)
@@ -452,6 +462,8 @@ export async function readPostgresCatalog(
             {
               sourceTableOid: Number(constraint.tableOid),
               targetTableOid: Number(constraint.referencedTableOid),
+              sourceColumns: constraint.sourceColumns,
+              sourceColumnsNullable: foreignKeySourceNullability(definitions, constraint),
               targetColumns: constraint.referencedColumns,
             },
           ]
@@ -555,6 +567,8 @@ export async function readPostgresCatalogDocuments(
             {
               sourceTableOid: Number(constraint.tableOid),
               targetTableOid: Number(constraint.referencedTableOid),
+              sourceColumns: constraint.sourceColumns,
+              sourceColumnsNullable: foreignKeySourceNullability(definitions, constraint),
               targetColumns: constraint.referencedColumns,
             },
           ]
@@ -910,8 +924,22 @@ function constraintRow(row: Record<string, unknown>): ConstraintRow {
     constraintName: requiredString(row.constraint_name, "constraint name"),
     definition: requiredString(row.definition, "constraint definition"),
     referencedTableOid: optionalString(row.referenced_table_oid),
+    sourceColumns: optionalStringArray(row.source_columns),
     referencedColumns: optionalStringArray(row.referenced_columns),
   };
+}
+
+function foreignKeySourceNullability(
+  definitions: CatalogDefinitionRows,
+  constraint: ConstraintRow,
+): boolean[] {
+  return constraint.sourceColumns.map((columnName) => {
+    const column = definitions.columns.find(
+      (candidate) =>
+        candidate.tableOid === constraint.tableOid && candidate.columnName === columnName,
+    );
+    return column ? !column.notNull : true;
+  });
 }
 
 function viewDependencyRow(row: Record<string, unknown>): ViewDependencyRow {

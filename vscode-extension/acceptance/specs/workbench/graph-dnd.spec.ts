@@ -1,10 +1,11 @@
-import { demoConnectionUrl } from "../../fixtures/demoDatabase";
+import {
+  demoDatabaseTreeItem as database,
+  demoConnectionUrl,
+  demoConnexionTreeItem as server,
+} from "../../fixtures/demoDatabase";
 import { expect, test } from "../../fixtures/test";
 import type { CockpitPage } from "../../pages/CockpitPage";
 import type { WorkbenchPage } from "../../pages/WorkbenchPage";
-
-const server = /postgres@localhost:5434/;
-const database = /^demo/;
 
 async function openCockpitFromTree(
   workbench: WorkbenchPage,
@@ -14,8 +15,8 @@ async function openCockpitFromTree(
 ): Promise<void> {
   await workbench.ensureServer(demoConnectionUrl, server);
   await workbench.expectActiveDatabaseIndexed(server, database);
-  await workbench.tree.expandPath([server, database, /^Sources/, /^shop/]);
-  const item = workbench.tree.item(source);
+  const schema = await workbench.tree.expandPath([server, database, /^Sources/, /^shop/]);
+  const item = await workbench.tree.findChild(schema, source);
   await expect(item).toBeVisible({ timeout: 5_000 });
   await workbench.dragTreeItemToEditor(item);
   await cockpit.waitUntilOpen();
@@ -25,13 +26,10 @@ async function openCockpitFromTree(
 }
 
 test.describe("Workbench graph", () => {
-  test("phase 1 — opens the graph from a TreeView drop", async ({ workbench, cockpit }) => {
-    await test.step("prepare the indexed demo database through the Workbench UI", async () => {
-      await workbench.ensureServer(demoConnectionUrl, server);
-      await workbench.expectActiveDatabaseIndexed(server, database);
-      await expect(workbench.tree.item(/^shop/)).toBeVisible();
-    });
-
+  test("phase 1 — opens the graph, changes focus, and preserves direct interactions", async ({
+    workbench,
+    cockpit,
+  }) => {
     await test.step("drop shop.address into the editor area to open the Cockpit", async () => {
       await openCockpitFromTree(workbench, cockpit, /^address/, "address");
       await expect(cockpit.object(/^address, PostgreSQL table\./i)).toBeVisible({
@@ -44,19 +42,10 @@ test.describe("Workbench graph", () => {
         workbench.page.locator(".editor-group-container .tabs-container .tab"),
       ).toHaveCount(1);
     });
-  });
-
-  test("phase 1 — a later drop changes focus and preserves direct graph interactions", async ({
-    workbench,
-    cockpit,
-  }) => {
-    await test.step("open an independent address graph from the collapsed TreeView", async () => {
-      await openCockpitFromTree(workbench, cockpit, /^address/, "address");
-    });
 
     await test.step("drop product into the open Cockpit exactly like selecting it", async () => {
-      await workbench.tree.expandPath([server, database, /^Sources/, /^shop/]);
-      const product = workbench.tree.item(/^product(?:\s|$)/);
+      const schema = await workbench.tree.expandPath([server, database, /^Sources/, /^shop/]);
+      const product = await workbench.tree.findChild(schema, /^product(?:\s|$)/);
       await expect(product).toBeVisible({ timeout: 5_000 });
       await cockpit.dragTreeItem(product);
       await expect(cockpit.object(/^product, PostgreSQL table\./i)).toBeVisible({
@@ -70,8 +59,15 @@ test.describe("Workbench graph", () => {
     });
 
     await test.step("reject a column without changing the current focus", async () => {
-      await workbench.tree.expandPath([server, database, /^Sources/, /^shop/, /^address/]);
-      const column = workbench.tree.item(/^id/);
+      const address = await workbench.tree.expandPath([
+        server,
+        database,
+        /^Sources/,
+        /^shop/,
+        /^address/,
+      ]);
+      await expect(cockpit.node("product")).toHaveAttribute("data-graph-role", "focus");
+      const column = await workbench.tree.findChild(address, /^id/);
       await expect(column).toBeVisible({ timeout: 5_000 });
       await cockpit.previewRejectedTreeItem(column, /parent table/i);
       await expect(cockpit.node("product")).toHaveAttribute("data-graph-role", "focus");
@@ -136,7 +132,7 @@ test.describe("Workbench graph", () => {
     });
   });
 
-  test("phase 2 — controls the side Source panel explicitly", async ({
+  test("phase 2 — adapts Source from the side panel to the bottom panel", async ({
     workbench,
     cockpit,
   }, testInfo) => {
@@ -144,7 +140,7 @@ test.describe("Workbench graph", () => {
       await openCockpitFromTree(workbench, cockpit, /^product(?:\s|$)/, "product");
     });
 
-    await test.step("open Source from the address node and verify its side geometry", async () => {
+    await test.step("open Source from product and verify its side geometry", async () => {
       await cockpit.showSource("product");
       await expect(cockpit.sourceBody).toContainText(/CREATE\s+TABLE/i, { timeout: 5_000 });
       await expect
@@ -183,7 +179,7 @@ test.describe("Workbench graph", () => {
       await expect(cockpit.inspector).toContainText(/product_availability/i, { timeout: 5_000 });
     });
 
-    await test.step("close Source and recover the full graph width", async () => {
+    await test.step("close the side Source and recover the full graph width", async () => {
       const openCanvas = await cockpit.canvasGeometry();
       await cockpit.closeSourceWithButton();
       await expect(cockpit.sourceToggleState("product_availability")).toHaveAttribute(
@@ -195,23 +191,16 @@ test.describe("Workbench graph", () => {
       expect(closedCanvas.width).toBeGreaterThan(openCanvas.width + 300);
       await expect.poll(() => cockpit.graphCenteringError(), { timeout: 5_000 }).toBeLessThan(0.12);
     });
-  });
 
-  test("phase 2 — sizes and resizes the bottom Source panel", async ({
-    workbench,
-    cockpit,
-  }, testInfo) => {
-    await test.step("open an independent product availability graph", async () => {
-      await openCockpitFromTree(workbench, cockpit, /^product(?:\s|$)/, "product");
-      await cockpit.focusNode("product_availability");
+    await test.step("move the same Source workflow to the responsive bottom layout", async () => {
+      await workbench.resizeWindow(1_100, 850);
       await expect(cockpit.node("product_availability")).toHaveAttribute(
         "data-graph-role",
         "focus",
         { timeout: 5_000 },
       );
+      await cockpit.showSource("product_availability");
     });
-    await workbench.resizeWindow(1_100, 850);
-    await cockpit.showSource("product_availability");
 
     await test.step("use the full bottom width without collapsing SQL", async () => {
       await expect.poll(() => cockpit.inspectorPlacement(), { timeout: 5_000 }).toBe("bottom");

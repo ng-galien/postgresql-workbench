@@ -1,7 +1,8 @@
+import {
+  demoDatabaseTreeItem as database,
+  demoConnexionTreeItem as server,
+} from "../../fixtures/demoDatabase";
 import { expect, test } from "../../fixtures/test";
-
-const server = /postgres@localhost:5434/;
-const database = /^demo/;
 
 test.describe("pgTAP tests and coverage", () => {
   test("runs mapped pgTAP tests and publishes native PL/pgSQL coverage", async ({

@@ -1,14 +1,43 @@
-import { demoConnectionUrl } from "../../fixtures/demoDatabase";
+import {
+  demoDatabaseTreeItem as database,
+  demoAssociationText,
+  demoConnectionUrl,
+  demoConnexionTreeItem as server,
+} from "../../fixtures/demoDatabase";
 import { expect, test } from "../../fixtures/test";
 import { createScratchpad } from "../../journeys/scratchpad";
 import type { NotebookPage } from "../../pages/NotebookPage";
+import type { WorkbenchPage } from "../../pages/WorkbenchPage";
 
-const server = /postgres@localhost:5434/;
-const database = /^demo/;
 const probe = /^ddl_sync_probe(?:\s|$)/;
 const renamedProbe = /^ddl_sync_probe_renamed(?:\s|$)/;
 const probeRoutine = /^ddl_sync_probe_touch\(\)/;
 const probeTrigger = /^ddl_sync_probe_trigger(?:\s|$)/;
+
+async function expectChildAtPath(
+  workbench: WorkbenchPage,
+  parentPath: RegExp[],
+  child: RegExp,
+  present: boolean,
+): Promise<void> {
+  await expect
+    .poll(
+      async () => {
+        const parent = await workbench.tree.expandPath(parentPath);
+        return workbench.tree.hasChild(parent, child);
+      },
+      { timeout: 30_000 },
+    )
+    .toBe(present);
+}
+
+async function expectPublicChild(
+  workbench: WorkbenchPage,
+  child: RegExp,
+  present: boolean,
+): Promise<void> {
+  await expectChildAtPath(workbench, [server, database, /^Sources/, /^public$/], child, present);
+}
 
 async function executeDdl(
   notebook: NotebookPage,
@@ -54,27 +83,24 @@ test.describe("Workbench schema synchronization", () => {
         await demoDatabase.inspectTrigger("public", "ddl_sync_probe", "ddl_sync_probe_trigger"),
       ).toEqual({ exists: false });
       await workbench.ensureServer(demoConnectionUrl, server);
-      await workbench.tree.expandPath([server, database]);
-      await expect(workbench.tree.item(probe)).toHaveCount(0);
-      await expect(workbench.tree.item(renamedProbe)).toHaveCount(0);
     });
 
     await test.step("provision explicitly and resume the existing provisioning after opt-out", async () => {
-      await workbench.enableAndProvisionSchemaSync();
+      await workbench.enableAndProvisionSchemaSync(server, database);
       expect(await demoDatabase.inspectSchemaSync("workbench")).toEqual({
         ddlFunction: true,
         ddlTrigger: true,
         dropFunction: true,
         dropTrigger: true,
       });
-      await workbench.restartSchemaSync();
+      await workbench.restartSchemaSync(server, database);
     });
 
     await test.step("index public and execute DDL through a bound SQL scratchpad", async () => {
-      await workbench.ensureActiveDatabaseIndexed(server, database);
-      await workbench.tree.expandPath([server, database, /^Sources/, /^public/]);
-      await expect(workbench.tree.item(probe)).toHaveCount(0);
-      await createScratchpad(workbench, notebook, server, database);
+      await workbench.expectActiveDatabaseIndexed(server, database);
+      await expectPublicChild(workbench, probe, false);
+      await expectPublicChild(workbench, renamedProbe, false);
+      await createScratchpad(workbench, notebook, demoAssociationText);
       await executeDdl(
         notebook,
         "CREATE TABLE public.ddl_sync_probe (id bigint PRIMARY KEY)",
@@ -87,8 +113,7 @@ test.describe("Workbench schema synchronization", () => {
     });
 
     await test.step("show the created table without rebuilding the full index", async () => {
-      await workbench.tree.expandPath([server, database, /^Sources/, /^public/]);
-      await expect(workbench.tree.item(probe)).toBeVisible({ timeout: 30_000 });
+      await expectPublicChild(workbench, probe, true);
     });
 
     await test.step("show an added column after ALTER TABLE", async () => {
@@ -101,11 +126,24 @@ test.describe("Workbench schema synchronization", () => {
         columns: ["id", "note"],
         exists: true,
       });
-      await workbench.tree.expandPath([server, database, /^Sources/, /^public/, probe]);
-      await expect(workbench.tree.itemByAccessibleName(/^note · text$/)).toBeVisible({
-        timeout: 30_000,
-      });
-      await expect(workbench.tree.item(/^Sources/)).toContainText("available", {
+      await expectChildAtPath(
+        workbench,
+        [server, database, /^Sources/, /^public$/, probe],
+        /^note/,
+        true,
+      );
+      const table = await workbench.tree.expandPath([
+        server,
+        database,
+        /^Sources/,
+        /^public$/,
+        probe,
+      ]);
+      await expect(await workbench.tree.findChild(table, /^note/)).toHaveAccessibleName(
+        /^note · text$/,
+      );
+      const sources = await workbench.tree.expandPath([server, database, /^Sources/]);
+      await expect(sources).toContainText("available", {
         timeout: 5_000,
       });
     });
@@ -124,13 +162,24 @@ test.describe("Workbench schema synchronization", () => {
         columns: ["id", "note"],
         exists: true,
       });
-      await workbench.tree.expandPath([server, database, /^Sources/, /^public/]);
-      await expect(workbench.tree.item(probe)).toHaveCount(0, { timeout: 30_000 });
-      await expect(workbench.tree.item(renamedProbe)).toBeVisible({ timeout: 30_000 });
-      await workbench.tree.expandPath([server, database, /^Sources/, /^public/, renamedProbe]);
-      await expect(workbench.tree.itemByAccessibleName(/^note · text$/)).toBeVisible({
-        timeout: 30_000,
-      });
+      await expectPublicChild(workbench, probe, false);
+      await expectPublicChild(workbench, renamedProbe, true);
+      await expectChildAtPath(
+        workbench,
+        [server, database, /^Sources/, /^public$/, renamedProbe],
+        /^note/,
+        true,
+      );
+      const renamedTable = await workbench.tree.expandPath([
+        server,
+        database,
+        /^Sources/,
+        /^public$/,
+        renamedProbe,
+      ]);
+      await expect(await workbench.tree.findChild(renamedTable, /^note/)).toHaveAccessibleName(
+        /^note · text$/,
+      );
     });
 
     await test.step("show a trigger and its function after committed DDL", async () => {
@@ -158,9 +207,8 @@ test.describe("Workbench schema synchronization", () => {
           "ddl_sync_probe_trigger",
         ),
       ).toEqual({ exists: true });
-      await workbench.tree.expandPath([server, database, /^Sources/, /^public/]);
-      await expect(workbench.tree.item(probeRoutine)).toBeVisible({ timeout: 30_000 });
-      await expect(workbench.tree.item(probeTrigger)).toBeVisible({ timeout: 30_000 });
+      await expectPublicChild(workbench, probeRoutine, true);
+      await expectPublicChild(workbench, probeTrigger, true);
     });
 
     await test.step("remove the trigger and its function from PostgreSQL and the TreeView", async () => {
@@ -176,13 +224,13 @@ test.describe("Workbench schema synchronization", () => {
           "ddl_sync_probe_trigger",
         ),
       ).toEqual({ exists: false });
-      await expect(workbench.tree.item(probeTrigger)).toHaveCount(0, { timeout: 30_000 });
+      await expectPublicChild(workbench, probeTrigger, false);
 
       await executeDdl(notebook, "DROP FUNCTION public.ddl_sync_probe_touch()", "routine-dropped");
       expect(await demoDatabase.inspectRoutine("public", "ddl_sync_probe_touch")).toEqual({
         exists: false,
       });
-      await expect(workbench.tree.item(probeRoutine)).toHaveCount(0, { timeout: 30_000 });
+      await expectPublicChild(workbench, probeRoutine, false);
     });
 
     await test.step("remove the table from the visible TreeView after DROP TABLE", async () => {
@@ -191,11 +239,11 @@ test.describe("Workbench schema synchronization", () => {
         columns: [],
         exists: false,
       });
-      await expect(workbench.tree.item(renamedProbe)).toHaveCount(0, { timeout: 30_000 });
+      await expectPublicChild(workbench, renamedProbe, false);
     });
 
     await test.step("remove the test provisioning and leave synchronization disabled", async () => {
-      await workbench.removeAndDisableSchemaSync();
+      await workbench.removeAndDisableSchemaSync(server, database);
       expect(await demoDatabase.inspectSchemaSync("workbench")).toEqual({
         ddlFunction: false,
         ddlTrigger: false,

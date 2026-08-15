@@ -74,6 +74,9 @@ class FakeCatalogClient implements CatalogQueryClient {
               constraint_oid: 22,
               constraint_name: "account_owner_fkey",
               definition: "FOREIGN KEY (owner_id) REFERENCES app.owner(id)",
+              referenced_table_oid: "24",
+              source_columns: ["owner_id"],
+              referenced_columns: ["id"],
             },
           ],
           views: [
@@ -167,6 +170,15 @@ describe("readPostgresCatalog", () => {
     expect(view?.content).toContain('CREATE VIEW "app"."active_account" AS');
     expect(view?.content).toContain("FROM app.account");
     expect(first.viewDependencies).toEqual([{ sourceViewOid: 30, targetRelationOid: 20 }]);
+    expect(first.foreignKeys).toEqual([
+      {
+        sourceTableOid: 20,
+        targetTableOid: 24,
+        sourceColumns: ["owner_id"],
+        sourceColumnsNullable: [true],
+        targetColumns: ["id"],
+      },
+    ]);
 
     const routine = first.sourceSet.documents.find((document) => document.postgres?.oid === 40);
     expect(routine?.uri).toMatch(/\/routine\/find_account\(p_id%20bigint\)\.sql$/);

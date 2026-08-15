@@ -1,8 +1,9 @@
-import { demoConnectionUrl } from "../../fixtures/demoDatabase";
+import {
+  demoDatabaseTreeItem as database,
+  demoConnectionUrl,
+  demoConnexionTreeItem as server,
+} from "../../fixtures/demoDatabase";
 import { expect, test } from "../../fixtures/test";
-
-const server = /postgres@localhost:5434/;
-const database = /^demo/;
 
 test.describe("Workbench virtual source cleanup", () => {
   test("closes a stale virtual source after reload instead of showing a missing file", async ({

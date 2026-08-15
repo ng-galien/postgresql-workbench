@@ -2,18 +2,23 @@ import { test as base } from "@playwright/test";
 import { CockpitPage } from "../pages/CockpitPage";
 import { DebuggerPage } from "../pages/DebuggerPage";
 import { NotebookPage } from "../pages/NotebookPage";
+import { SqlEditorPage } from "../pages/SqlEditorPage";
 import { WorkbenchPage } from "../pages/WorkbenchPage";
-import { type DemoDatabase, demoConnectionUrl, startDemoDatabase } from "./demoDatabase";
+import {
+  type DemoDatabase,
+  demoConnectionUrl,
+  demoConnexionTreeItem as demoConnexion,
+  demoDatabaseTreeItem as demoDatabase,
+  startDemoDatabase,
+} from "./demoDatabase";
 import { launchVSCode, type VSCodeInstance } from "./vscode";
-
-const demoServer = /postgres@localhost:5434/;
-const demoDatabase = /^demo/;
 
 interface AcceptanceFixtures {
   workbench: WorkbenchPage;
   cockpit: CockpitPage;
   debuggerPage: DebuggerPage;
   notebook: NotebookPage;
+  sqlEditor: SqlEditorPage;
 }
 
 interface AcceptanceWorkerFixtures {
@@ -54,8 +59,8 @@ export const test = base.extend<AcceptanceFixtures, AcceptanceWorkerFixtures>({
         vscode.resetWorkbenchUI,
       );
       await workbench.reset();
-      await workbench.ensureServer(demoConnectionUrl, demoServer);
-      await workbench.ensureActiveDatabaseIndexed(demoServer, demoDatabase);
+      await workbench.ensureServer(demoConnectionUrl, demoConnexion);
+      await workbench.ensureActiveDatabaseIndexed(demoConnexion, demoDatabase);
       await use(undefined);
     },
     { scope: "worker", auto: true, timeout: 60_000 },
@@ -89,6 +94,9 @@ export const test = base.extend<AcceptanceFixtures, AcceptanceWorkerFixtures>({
   },
   notebook: async ({ vscode }, use) => {
     await use(new NotebookPage(vscode.page, vscode.inspectActiveNotebook));
+  },
+  sqlEditor: async ({ vscode }, use) => {
+    await use(new SqlEditorPage(vscode.page, vscode.inspectActiveTextEditor));
   },
 });
 

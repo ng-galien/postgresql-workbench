@@ -16,15 +16,24 @@ active DatabaseContext.
 
 ## Create and associate
 
-Create a Scratchpad from the global **Scratchpads** root. The initial Association
-depends on the saved Connexions:
+The PostgreSQL Workbench sidebar keeps the database tree above a separate,
+resizable **Scratchpads** view. Create a Scratchpad with the **New SQL
+Scratchpad** action in that view header. The initial Association depends on the
+saved Connexions:
 
 - with no saved Connexion, the Scratchpad is created without an Association;
 - with one saved Connexion, the Association is automatic;
 - with several saved Connexions, a selector includes **No connection**;
 - cancelling that selector still creates the Scratchpad without an Association.
 
+Use the **Filter SQL Scratchpads** action in the view header to narrow the tree
+by Scratchpad name or Association. Submit an empty filter to restore the full
+list; **Refresh SQL Scratchpads** preserves the active filter.
+
 The Scratchpad header, cells, inlays, and results use its persistent Association.
+Completion and query composition follow that same Association. Formatting uses
+PostgreSQL syntax without consulting a database context; see [SQL
+authoring](sql-authoring.md).
 **Use Association as Active** is an explicit promotion; ordinary execution never
 switches the active DatabaseContext. If the Connexion disappears, editing remains
 available while execution offers Reconnect or Change Association.

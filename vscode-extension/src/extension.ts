@@ -48,6 +48,7 @@ import { closePostgresqlDapTabs } from "./postgresqlDapSource.js";
 import { showRequirementsGuide } from "./requirementsGuide.js";
 import { createRoutineComparisonHandler } from "./routineComparisonCommand.js";
 import { type ServerConfig, ServerStore } from "./serverStore.js";
+import { registerSqlAuthoring } from "./sqlAuthoring/client.js";
 import {
   type CommandCallSite,
   type CommandFunctionDefinition,
@@ -253,6 +254,13 @@ async function launchDebug(
     `launchDebug: ${debugConfig.name} target=${debugConfig.routine ? "routine" : "sql"} ` +
       `${debugConfig.sql ? `sql=${debugConfig.sql.slice(0, 80)}` : ""}`,
   );
+
+  try {
+    await vscode.commands.executeCommand("testing.coverage.close");
+  } catch (error) {
+    out.appendLine(`launchDebug: failed to close native test coverage: ${error}`);
+  }
+
   let started: boolean;
   try {
     started = await vscode.debug.startDebugging(folder, debugConfig);
@@ -1400,7 +1408,7 @@ function registerDiagnosticsAndReconnect(
 
 let shutdownScratchpads: (() => Promise<void>) | undefined;
 
-export function activate(context: vscode.ExtensionContext): PlpgsqlExtensionApi {
+export async function activate(context: vscode.ExtensionContext): Promise<PlpgsqlExtensionApi> {
   out.appendLine("activate() called");
 
   let resetAcceptanceWorkbench = () => {};
@@ -1452,6 +1460,7 @@ export function activate(context: vscode.ExtensionContext): PlpgsqlExtensionApi 
     treeDragPayload: (consume) => workbenchTreeDragAndDrop.activePayload(consume),
   });
   context.subscriptions.push(workbenchTreeDragAndDrop, workbenchGraph);
+  context.subscriptions.push(await registerSqlAuthoring(context, cm, workbenchIndex));
   registerWorkbenchGraphDropBridge(context, workbenchGraph);
   const coverageTests = new PgTapTestController({
     connections: cm,
@@ -1646,6 +1655,35 @@ export function activate(context: vscode.ExtensionContext): PlpgsqlExtensionApi 
     showCollapseAll: true,
     dragAndDropController: workbenchTreeDragAndDrop,
   });
+  const scratchpadTreeProvider = new WorkbenchTreeProvider(
+    cm,
+    workbenchIndex,
+    sqlNotebooks,
+    scratchpads.transactions,
+    workbenchDdlSync,
+    () => debugSessions.statuses,
+    "scratchpads",
+  );
+  const scratchpadsTree = vscode.window.createTreeView("postgresql-workbench-scratchpads", {
+    treeDataProvider: scratchpadTreeProvider,
+    showCollapseAll: true,
+  });
+  let scratchpadFilter = "";
+  const filterScratchpads = vscode.commands.registerCommand(
+    "postgresql-workbench.filterSqlNotebooks",
+    async () => {
+      const requested = await vscode.window.showInputBox({
+        title: "Filter SQL Scratchpads",
+        prompt: "Filter by name or Association",
+        placeHolder: "Scratchpad name or Connexion",
+        value: scratchpadFilter,
+      });
+      if (requested === undefined) return;
+      scratchpadFilter = requested.trim();
+      scratchpadTreeProvider.setScratchpadFilter(scratchpadFilter);
+      scratchpadsTree.message = scratchpadFilter ? `Filtered by “${scratchpadFilter}”` : undefined;
+    },
+  );
   graphTreeSync = new WorkbenchGraphTreeSync(
     workbenchTree,
     treeProvider,
@@ -1687,9 +1725,18 @@ export function activate(context: vscode.ExtensionContext): PlpgsqlExtensionApi 
   context.subscriptions.push(
     treeProvider,
     workbenchTree,
+    scratchpadTreeProvider,
+    scratchpadsTree,
+    filterScratchpads,
     syncGraphFromTree,
     workbenchTree.onDidExpandElement(({ element }) => treeProvider.setExpanded(element, true)),
     workbenchTree.onDidCollapseElement(({ element }) => treeProvider.setExpanded(element, false)),
+    scratchpadsTree.onDidExpandElement(({ element }) =>
+      scratchpadTreeProvider.setExpanded(element, true),
+    ),
+    scratchpadsTree.onDidCollapseElement(({ element }) =>
+      scratchpadTreeProvider.setExpanded(element, false),
+    ),
     cm.onServerChanged(() => {
       graphTreeSync.invalidateDatabaseContext();
       workbenchGraph.invalidateDatabaseContext();

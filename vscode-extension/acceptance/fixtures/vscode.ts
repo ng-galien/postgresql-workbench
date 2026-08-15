@@ -235,10 +235,12 @@ export interface VSCodeInstance {
   ): Promise<void>;
   executeInfrastructureCommand(command: "workbench.action.reloadWindow"): Promise<void>;
   inspectActiveNotebook(): Promise<ActiveNotebookSnapshot | undefined>;
+  inspectActiveTextEditor(): Promise<ActiveTextEditorSnapshot | undefined>;
   inspectDebugState(): Promise<DebugStateSnapshot>;
   inspectTestingState(): Promise<TestingStateSnapshot>;
   removeServer(id: string): Promise<void>;
   openWorkspaceFile(fileName: string): Promise<void>;
+  openSqlDocument(content: string): Promise<void>;
   resetWorkbenchUI(): Promise<void>;
   resizeWindow(width: number, height: number): Promise<void>;
   dispose(): Promise<void>;
@@ -253,6 +255,12 @@ export interface ActiveNotebookSnapshot {
     text: string;
   }>;
   notebookType: string;
+  uri: string;
+}
+
+export interface ActiveTextEditorSnapshot {
+  languageId: string;
+  text: string;
   uri: string;
 }
 
@@ -443,6 +451,7 @@ export async function launchVSCode(options: LaunchVSCodeOptions = {}): Promise<V
       "security.workspace.trust.enabled": false,
       "telemetry.telemetryLevel": "off",
       "update.mode": "none",
+      "editor.wordBasedSuggestions": "off",
       "git.openRepositoryInParentFolders": "never",
       "postgresql-workbench.acceptanceControlFile": controlFile,
       "window.dialogStyle": "custom",
@@ -566,6 +575,12 @@ export async function launchVSCode(options: LaunchVSCodeOptions = {}): Promise<V
         );
         return state.result as ActiveNotebookSnapshot | undefined;
       },
+      async inspectActiveTextEditor() {
+        const state = await runAcceptanceCommand(
+          "postgresql-workbench.acceptance.inspectActiveTextEditor",
+        );
+        return state.result as ActiveTextEditorSnapshot | undefined;
+      },
       async inspectDebugState() {
         const state = await runAcceptanceCommand(
           "postgresql-workbench.acceptance.inspectDebugState",
@@ -584,6 +599,11 @@ export async function launchVSCode(options: LaunchVSCodeOptions = {}): Promise<V
       async openWorkspaceFile(fileName) {
         await runAcceptanceCommand("postgresql-workbench.acceptance.openWorkspaceFile", 5_000, [
           fileName,
+        ]);
+      },
+      async openSqlDocument(content) {
+        await runAcceptanceCommand("postgresql-workbench.acceptance.openSqlDocument", 5_000, [
+          content,
         ]);
       },
       async resetWorkbenchUI() {

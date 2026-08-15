@@ -30,20 +30,14 @@ export class DebuggerPage {
   }
 
   async setBreakpoint(sourceLine: string): Promise<void> {
-    const registeredBefore = (await this.inspectDebugState()).breakpoints?.length ?? 0;
-    const line = await this.revealLine(sourceLine);
-    const margin = this.page.locator(".monaco-editor:visible .margin-view-overlays").first();
-    const lineBox = await this.waitForBoundingBox(
-      line,
-      `The breakpoint line ${sourceLine} must have screen coordinates`,
-    );
-    const marginBox = await this.waitForBoundingBox(
-      margin,
-      "The active editor margin must have screen coordinates",
-    );
-    const markers = this.page.locator(".monaco-editor:visible .glyph-margin-widgets > div");
+    const registeredBefore = (await this.readDebugState()).breakpoints?.length ?? 0;
+    const editor = this.activeEditor();
+    await this.revealLine(sourceLine, editor, 10_000);
+    await expect(editor.locator(".codelens-decoration").first()).toBeVisible({ timeout: 10_000 });
+    const markers = editor.locator(".glyph-margin-widgets > div");
     const markerCount = await markers.count();
-    await this.page.mouse.click(marginBox.x + 12, lineBox.y + lineBox.height / 2);
+    const target = await this.stableBreakpointTarget(editor, sourceLine);
+    await this.page.mouse.click(target.x, target.y);
     await expect
       .poll(() => markers.count(), {
         timeout: 5_000,
@@ -51,11 +45,17 @@ export class DebuggerPage {
       })
       .toBe(markerCount + 1);
     await expect
-      .poll(async () => (await this.inspectDebugState()).breakpoints?.length ?? 0, {
-        timeout: 5_000,
-        message: `VS Code must register the breakpoint through its debug API on ${sourceLine}`,
-      })
-      .toBe(registeredBefore + 1);
+      .poll(
+        async () => {
+          const breakpoints = (await this.readDebugState()).breakpoints ?? [];
+          return breakpoints.length === registeredBefore + 1 ? breakpoints.at(-1)?.line : undefined;
+        },
+        {
+          timeout: 5_000,
+          message: `VS Code must register the breakpoint on visible line ${target.line}: ${sourceLine}`,
+        },
+      )
+      .toBe(target.line);
   }
 
   async assignConnection(sql: string, connection: RegExp): Promise<void> {
@@ -121,7 +121,7 @@ export class DebuggerPage {
     const deadline = Date.now() + 5_000;
     let state: DebugStateSnapshot = {};
     while (Date.now() < deadline) {
-      state = await this.inspectDebugState();
+      state = await this.readDebugState();
       if (!state.vscodeSessionId && !state.extensionSession) return;
       await this.page.waitForTimeout(50);
     }
@@ -172,6 +172,14 @@ export class DebuggerPage {
     });
   }
 
+  async expectNoCoverageDecorations(): Promise<void> {
+    await expect(
+      this.page.locator(
+        ".editor-group-container.active .monaco-editor:visible .coverage-deco-inline",
+      ),
+    ).toHaveCount(0, { timeout: 5_000 });
+  }
+
   async expectArgument(name: string, value: string): Promise<void> {
     await this.expectScopedVariable(/Arguments$/, name, value);
   }
@@ -181,7 +189,7 @@ export class DebuggerPage {
     argumentValue: string,
     resultValue: string,
   ): Promise<void> {
-    const previousStop = await this.inspectDebugState();
+    const previousStop = await this.readDebugState();
     const previousTimestamp = previousStop.extensionSession?.status?.timestamp;
     if (previousStop.extensionSession?.state !== "suspended" || !previousTimestamp) {
       throw new Error(
@@ -193,7 +201,7 @@ export class DebuggerPage {
     await expect
       .poll(
         async () => {
-          const current = await this.inspectDebugState();
+          const current = await this.readDebugState();
           return current.extensionSession?.state === "suspended"
             ? current.extensionSession.status?.timestamp
             : previousTimestamp;
@@ -243,12 +251,13 @@ export class DebuggerPage {
   }
 
   private async expectStoppedAt(sourceLine: string): Promise<void> {
-    const marker = this.page.locator(".monaco-editor:visible .codicon-debug-stackframe").first();
+    const editor = this.activeEditor();
+    const marker = editor.locator(".codicon-debug-stackframe").first();
     await expect(marker).toBeVisible({ timeout: 10_000 });
     await expect
       .poll(
         async () => {
-          const line = await this.revealLine(sourceLine);
+          const line = await this.revealLine(sourceLine, editor);
           const [lineBox, markerBox] = await Promise.all([
             line.boundingBox(),
             marker.boundingBox(),
@@ -264,10 +273,71 @@ export class DebuggerPage {
       .toBeLessThan(4);
   }
 
-  private async revealLine(sql: string): Promise<Locator> {
-    const line = this.page.locator(".view-line:visible").filter({ hasText: sql }).first();
-    await line.waitFor({ state: "visible", timeout: 5_000 });
+  private activeEditor(): Locator {
+    return this.page.locator(".editor-group-container.active .monaco-editor:visible").first();
+  }
+
+  private async revealLine(
+    sql: string,
+    editor = this.activeEditor(),
+    timeout = 5_000,
+  ): Promise<Locator> {
+    const line = editor.locator(".view-line").filter({ hasText: sql }).first();
+    await line.waitFor({ state: "visible", timeout });
     return line;
+  }
+
+  private async stableBreakpointTarget(
+    editor: Locator,
+    sourceLine: string,
+  ): Promise<{ line: number; x: number; y: number }> {
+    const deadline = Date.now() + 5_000;
+    let previous: { line: number; x: number; y: number } | undefined;
+    while (Date.now() < deadline) {
+      const current = await editor.evaluate((root, expectedText) => {
+        const normalize = (value: string | null) => (value ?? "").replace(/\s+/gu, " ").trim();
+        const line = [...root.querySelectorAll<HTMLElement>(".view-line")].find((candidate) =>
+          normalize(candidate.textContent).includes(expectedText),
+        );
+        const margin = root.querySelector<HTMLElement>(".margin-view-overlays");
+        if (!line || !margin) return undefined;
+        const lineBox = line.getBoundingClientRect();
+        const marginBox = margin.getBoundingClientRect();
+        const center = lineBox.top + lineBox.height / 2;
+        const visibleLineNumber = [...root.querySelectorAll<HTMLElement>(".line-numbers")]
+          .map((candidate) => {
+            const box = candidate.getBoundingClientRect();
+            return {
+              distance: Math.abs(box.top + box.height / 2 - center),
+              line: Number.parseInt(normalize(candidate.textContent), 10),
+            };
+          })
+          .filter((candidate) => Number.isFinite(candidate.line))
+          .sort((left, right) => left.distance - right.distance)[0];
+        if (!visibleLineNumber || visibleLineNumber.distance >= 4) return undefined;
+        return { line: visibleLineNumber.line, x: marginBox.left + 12, y: center };
+      }, sourceLine);
+      if (
+        current &&
+        previous?.line === current.line &&
+        Math.abs(previous.x - current.x) < 0.5 &&
+        Math.abs(previous.y - current.y) < 0.5
+      ) {
+        return current;
+      }
+      previous = current;
+      await this.page.waitForTimeout(50);
+    }
+    throw new Error(`The active editor geometry did not settle on ${sourceLine} within 5000 ms`);
+  }
+
+  private async readDebugState(): Promise<DebugStateSnapshot> {
+    try {
+      return await this.inspectDebugState();
+    } catch {
+      await this.page.waitForTimeout(50);
+      return this.inspectDebugState();
+    }
   }
 
   private async waitForBoundingBox(

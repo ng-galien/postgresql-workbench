@@ -2,7 +2,6 @@ import { expect, type Locator, type Page } from "@playwright/test";
 import type { ActiveNotebookSnapshot } from "../fixtures/vscode";
 
 const NOTEBOOK_EDITOR = ".notebookOverlay.notebook-editor";
-const NOTEBOOK_CELL = `${NOTEBOOK_EDITOR} .monaco-list-row`;
 
 export class NotebookPage {
   constructor(
@@ -15,7 +14,7 @@ export class NotebookPage {
   }
 
   get cells(): Locator {
-    return this.page.locator(NOTEBOOK_CELL);
+    return this.editor.getByRole("listitem");
   }
 
   cell(index: number): Locator {
@@ -88,6 +87,18 @@ export class NotebookPage {
       .getByRole("button", { name: /Execute Cell/ })
       .first()
       .click();
+  }
+
+  async requestCompletion(cell: Locator): Promise<void> {
+    await cell.scrollIntoViewIfNeeded();
+    await cell.evaluate((element) => element.scrollIntoView({ block: "center" }));
+    await cell.locator(".monaco-editor").click();
+    await this.page.keyboard.press("Control+Space");
+    await expect(this.page.locator(".suggest-widget:visible")).toBeVisible({ timeout: 5_000 });
+  }
+
+  suggestion(label: RegExp): Locator {
+    return this.page.locator(".suggest-widget:visible").getByText(label).first();
   }
 
   async resultFrame(): Promise<import("@playwright/test").Frame> {

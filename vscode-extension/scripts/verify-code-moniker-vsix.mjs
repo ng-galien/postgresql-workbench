@@ -32,6 +32,7 @@ const entries = new Set(Object.keys(zip.files).filter((entry) => !zip.files[entr
 const required = [
   "extension/dist/extension.js",
   "extension/dist/dap-server.js",
+  "extension/dist/sql-authoring-server.js",
   "extension/dist/sql-notebook-renderer.js",
   "extension/SECURITY.md",
   "extension/SUPPORT.md",

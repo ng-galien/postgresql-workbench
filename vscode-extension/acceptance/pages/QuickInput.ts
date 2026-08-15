@@ -8,11 +8,23 @@ export class QuickInput {
   }
 
   async chooseOption(label: RegExp): Promise<void> {
-    const option = this.page
-      .locator(".quick-input-list:visible .monaco-list-row")
-      .filter({ hasText: label });
-    await option.first().waitFor({ state: "visible", timeout: 5_000 });
-    await option.first().click();
+    const options = this.page.locator(".quick-input-list:visible .monaco-list-row");
+    await options.first().waitFor({ state: "visible", timeout: 5_000 });
+    const matches = await options.evaluateAll(
+      (elements, expected) => {
+        const expression = new RegExp(expected.source, expected.flags);
+        return (elements as HTMLElement[])
+          .map((element, index) => ({ index, text: element.innerText }))
+          .filter(({ text }) => expression.test(text));
+      },
+      { flags: label.flags, source: label.source },
+    );
+    if (matches.length !== 1) {
+      throw new Error(
+        `Expected one Quick Pick option matching ${label}, found ${matches.length}; visible options: ${JSON.stringify(await options.allInnerTexts())}`,
+      );
+    }
+    await options.nth(matches[0].index).click();
   }
 
   async submit(value: string, prompt?: RegExp): Promise<void> {

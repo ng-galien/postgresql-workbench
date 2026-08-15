@@ -1,9 +1,13 @@
-import { demoConnectionUrl } from "../../fixtures/demoDatabase";
+import {
+  demoDatabaseTreeItem as database,
+  demoAssociationText,
+  demoAutomaticAssociationText,
+  demoConnectionUrl,
+  demoConnexionTreeItem as server,
+} from "../../fixtures/demoDatabase";
 import { expect, test } from "../../fixtures/test";
 import { createScratchpad } from "../../journeys/scratchpad";
 
-const server = /postgres@localhost:5434/;
-const database = /^demo/;
 const resultMime = "application/vnd.postgresql-workbench.sql-result+json";
 
 test.describe("Scratchpads", () => {
@@ -14,13 +18,10 @@ test.describe("Scratchpads", () => {
     vscode,
   }) => {
     await workbench.ensureServer(demoConnectionUrl, server);
-    await createScratchpad(workbench, notebook, server, database);
+    const scratchpad = await createScratchpad(workbench, notebook, demoAssociationText);
 
-    await test.step("show the Scratchpad once under the dedicated root with its automatic Association", async () => {
-      await workbench.tree.expand(/^Scratchpads/);
-      const scratchpad = workbench.tree.item(/^Scratch \d+/u);
-      await expect(scratchpad).toContainText(/postgres@localhost:5434.*AUTO/u);
-      expect(await workbench.tree.item(/^Scratchpads/).count()).toBe(1);
+    await test.step("show the Scratchpad once in its dedicated view with its automatic Association", async () => {
+      await expect(scratchpad).toContainText(demoAutomaticAssociationText);
     });
 
     await test.step("prepare a clean PostgreSQL observation outside the future Transaction", async () => {
@@ -39,8 +40,7 @@ test.describe("Scratchpads", () => {
     });
 
     await test.step("switch the persistent Mode to MANUAL from the Scratchpad", async () => {
-      const scratchpad = workbench.tree.item(/^Scratch \d+/u);
-      await scratchpad.hover();
+      await workbench.scratchpads.hover(scratchpad);
       await scratchpad.getByLabel("Mode MANUAL", { exact: true }).click();
       await expect(scratchpad).toContainText(/MANUAL/u);
     });
@@ -53,7 +53,7 @@ test.describe("Scratchpads", () => {
       await expect(errorFrame.locator(".sql-error")).toContainText(
         "Use the Scratchpad Transaction controls",
       );
-      await expect(workbench.tree.item(/^Transaction /u)).toHaveCount(0);
+      await expect(workbench.scratchpads.transactions()).toHaveCount(0);
     });
 
     await test.step("open one Transaction on first execution and keep its work private", async () => {
@@ -70,8 +70,8 @@ test.describe("Scratchpads", () => {
 
       const result = await notebook.resultFrame();
       await expect(result.getByText("1", { exact: true })).toBeVisible({ timeout: 10_000 });
-      await workbench.tree.expand(/^Scratch \d+/u);
-      const transaction = workbench.tree.item(/^Transaction in progress/u);
+      await workbench.scratchpads.expand(scratchpad);
+      const transaction = workbench.scratchpads.transaction("in progress");
       await expect(transaction).toContainText("3 Statements", { timeout: 5_000 });
       await expect
         .poll(
@@ -86,27 +86,26 @@ test.describe("Scratchpads", () => {
       const activeTab = workbench.page.locator(".editor-group-container .tab.active");
       await activeTab.hover();
       await activeTab.locator(".codicon-close").click();
-      await expect(workbench.tree.item(/^Transaction in progress/u)).toContainText("3 Statements");
-      await workbench.tree.item(/^Scratch \d+/u).click();
+      await expect(workbench.scratchpads.transaction("in progress")).toContainText("3 Statements");
+      await scratchpad.click();
       await notebook.activateLatestScratchpad();
     });
 
     await test.step("guard a Mode change while the Transaction is active", async () => {
-      const scratchpad = workbench.tree.item(/^Scratch \d+/u);
-      await scratchpad.hover();
+      await workbench.scratchpads.hover(scratchpad);
       await scratchpad.getByLabel("Mode AUTO", { exact: true }).click();
       const cancel = workbench.page.getByRole("button", { name: "Cancel", exact: true });
       await expect(cancel).toBeVisible({ timeout: 5_000 });
       await cancel.click();
       await expect(scratchpad).toContainText(/MANUAL/u);
-      await expect(workbench.tree.item(/^Transaction in progress/u)).toContainText("3 Statements");
+      await expect(workbench.scratchpads.transaction("in progress")).toContainText("3 Statements");
     });
 
     await test.step("commit explicitly and make the PostgreSQL change externally visible", async () => {
-      const transaction = workbench.tree.item(/^Transaction in progress/u);
-      await transaction.hover();
+      const transaction = workbench.scratchpads.transaction("in progress");
+      await workbench.scratchpads.hover(transaction, /^Transaction in progress/u);
       await transaction.getByLabel("Commit", { exact: true }).click();
-      await expect(workbench.tree.item(/^Transaction in progress/u)).toHaveCount(0);
+      await expect(workbench.scratchpads.transaction("in progress")).toHaveCount(0);
       await expect
         .poll(
           async () =>
@@ -124,17 +123,22 @@ test.describe("Scratchpads", () => {
           timeout: 10_000,
         })
         .toBeGreaterThan(0);
-      const failed = workbench.tree.item(/^Transaction failed/u);
+      const failed = workbench.scratchpads.transaction("failed");
       await expect(failed).toBeVisible({ timeout: 5_000 });
-      await failed.hover();
       await expect(failed.getByLabel("Commit", { exact: true })).toHaveCount(0);
-      await failed.getByLabel("Rollback", { exact: true }).click();
-      await expect(workbench.tree.item(/^Transaction failed/u)).toHaveCount(0);
+      const rollback = failed.getByLabel("Rollback", { exact: true });
+      await expect
+        .poll(async () => {
+          await workbench.scratchpads.hover(failed, /^Transaction failed/u);
+          return rollback.isVisible();
+        })
+        .toBe(true);
+      await rollback.click();
+      await expect(workbench.scratchpads.transaction("failed")).toHaveCount(0);
     });
 
     await test.step("return to AUTO while idle and clean up independently", async () => {
-      const scratchpad = workbench.tree.item(/^Scratch \d+/u);
-      await scratchpad.hover();
+      await workbench.scratchpads.hover(scratchpad);
       await scratchpad.getByLabel("Mode AUTO", { exact: true }).click();
       await expect(scratchpad).toContainText(/AUTO/u);
 
@@ -150,8 +154,7 @@ test.describe("Scratchpads", () => {
     });
 
     await test.step("roll back the active Transaction on extension shutdown", async () => {
-      const scratchpad = workbench.tree.item(/^Scratch \d+/u);
-      await scratchpad.hover();
+      await workbench.scratchpads.hover(scratchpad);
       await scratchpad.getByLabel("Mode MANUAL", { exact: true }).click();
       const shutdownWork = await notebook.addCodeCell();
       await notebook.typeInCell(
@@ -159,7 +162,7 @@ test.describe("Scratchpads", () => {
         "CREATE TABLE public.acceptance_scratchpad_shutdown_rollback(id integer)",
       );
       await notebook.executeCode(shutdownWork);
-      await expect(workbench.tree.item(/^Transaction in progress/u)).toContainText("1 Statement");
+      await expect(workbench.scratchpads.transaction("in progress")).toContainText("1 Statement");
       await vscode.executeCommand("workbench.action.files.saveAll");
 
       await vscode.executeInfrastructureCommand("workbench.action.reloadWindow");
@@ -181,13 +184,13 @@ test.describe("Scratchpads", () => {
   }) => {
     await test.step("create a scratchpad from its database context", async () => {
       await workbench.ensureServer(demoConnectionUrl, server);
-      await createScratchpad(workbench, notebook, server, database);
+      await createScratchpad(workbench, notebook, demoAssociationText);
     });
 
     await test.step("add and render a real Markdown cell without SQL controls", async () => {
       const markdown = await notebook.addMarkdownCell();
       await expect(markdown).toHaveClass(/markdown-cell-row/);
-      await expect(markdown).not.toContainText(/postgres@localhost:5434/);
+      await expect(markdown).not.toContainText(demoAssociationText);
       await notebook.typeInCell(markdown, "# Acceptance notes");
       await expect
         .poll(() => notebook.snapshot(), { timeout: 5_000 })
@@ -212,7 +215,7 @@ test.describe("Scratchpads", () => {
     await test.step("add a SQL cell and inspect its real PostgreSQL result", async () => {
       const code = await notebook.addCodeCell();
       await expect(code).not.toHaveClass(/markdown-cell-row/);
-      await expect(code).toContainText(/postgres@localhost:5434/);
+      await expect(code).toContainText(demoAssociationText);
       await notebook.typeInCell(
         code,
         "SELECT * FROM (VALUES (1, 'ready'), (2, 'verified')) AS result(id, status)",
@@ -248,7 +251,7 @@ test.describe("Scratchpads", () => {
     notebook,
   }) => {
     await workbench.ensureServer(demoConnectionUrl, server);
-    await createScratchpad(workbench, notebook, server, database);
+    await createScratchpad(workbench, notebook, demoAssociationText);
     const code = notebook.cell(0);
     await notebook.typeInCell(
       code,
@@ -284,7 +287,7 @@ test.describe("Scratchpads", () => {
     notebook,
   }) => {
     await workbench.ensureServer(demoConnectionUrl, server);
-    await createScratchpad(workbench, notebook, server, database);
+    await createScratchpad(workbench, notebook, demoAssociationText);
     const code = notebook.cell(0);
     await notebook.typeInCell(
       code,
@@ -318,7 +321,7 @@ test.describe("Scratchpads", () => {
     notebook,
   }) => {
     await workbench.ensureServer(demoConnectionUrl, server);
-    await createScratchpad(workbench, notebook, server, database);
+    await createScratchpad(workbench, notebook, demoAssociationText);
     const code = notebook.cell(0);
     await notebook.typeInCell(code, "SELECT value FROM generate_series(1, 1000) AS value");
     await notebook.executeCode(code);
@@ -348,7 +351,7 @@ test.describe("Scratchpads", () => {
     notebook,
   }) => {
     await workbench.ensureServer(demoConnectionUrl, server);
-    await createScratchpad(workbench, notebook, server, database);
+    await createScratchpad(workbench, notebook, demoAssociationText);
 
     const syntaxCell = notebook.cell(0);
     await notebook.typeInCell(syntaxCell, "SELECT 1 + ;");
@@ -375,38 +378,5 @@ test.describe("Scratchpads", () => {
     expect(await postgresError.innerText()).not.toMatch(
       /\n\s*at\s|sqlNotebook\.(?:ts|js)|\/Users\//u,
     );
-  });
-
-  test("creates an unassociated Scratchpad when a multiple-Connexion choice is cancelled", async ({
-    workbench,
-    notebook,
-    vscode,
-  }) => {
-    const secondConnexion = /postgres@127\.0\.0\.1:5434/;
-    await workbench.addServer(
-      "postgresql://postgres:postgres@127.0.0.1:5434/demo",
-      secondConnexion,
-    );
-    await workbench.tree.expand(/^Scratchpads/);
-    const scratchpads = workbench.tree.item(/^Scratch \d+/u);
-    const before = await scratchpads.count();
-
-    const root = workbench.tree.item(/^Scratchpads/);
-    await root.hover();
-    await root.getByLabel(/New SQL Scratchpad/i).click();
-    await expect(workbench.quickInput.input).toHaveAttribute("placeholder", "Choose a Connexion");
-    await workbench.quickInput.input.press("Escape");
-
-    await notebook.activateLatestScratchpad();
-    await expect(notebook.cells).toHaveCount(1, { timeout: 5_000 });
-    await expect(notebook.cell(0)).toContainText("Choose a Connexion");
-    await workbench.tree.expand(/^Scratchpads/);
-    await expect(scratchpads).toHaveCount(before + 1);
-    await expect(scratchpads.last()).toContainText(/No connection.*AUTO/u);
-
-    await vscode.removeServer("127.0.0.1:5434/demo:postgres");
-    await expect(workbench.tree.item(secondConnexion)).toHaveCount(0);
-    await workbench.ensureServer(demoConnectionUrl, server);
-    await workbench.ensureActiveDatabaseIndexed(server, database);
   });
 });

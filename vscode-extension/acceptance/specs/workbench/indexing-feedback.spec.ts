@@ -1,8 +1,9 @@
-import { demoConnectionUrl } from "../../fixtures/demoDatabase";
+import {
+  demoDatabaseTreeItem as database,
+  demoConnectionUrl,
+  demoConnexionTreeItem as server,
+} from "../../fixtures/demoDatabase";
 import { expect, test } from "../../fixtures/test";
-
-const server = /postgres@localhost:5434/;
-const database = /^demo/;
 
 test.describe("Workbench indexing feedback", () => {
   test("keeps the previous snapshot visible through refresh, cancellation, and retry", async ({
@@ -10,11 +11,12 @@ test.describe("Workbench indexing feedback", () => {
   }) => {
     await workbench.ensureServer(demoConnectionUrl, server);
     await workbench.expectActiveDatabaseIndexed(server, database);
-    await workbench.tree.expandPath([server, database, /^Sources/, /^shop/]);
-
-    const sources = workbench.tree.item(/^Sources/);
-    const activeDatabase = workbench.tree.item(database);
-    const product = workbench.tree.item(/^product(?:\s|$)/);
+    const activeDatabase = await workbench.tree.expandPath([server, database]);
+    const sources = await workbench.tree.findChild(activeDatabase, /^Sources/);
+    await workbench.tree.expandItem(sources, /^Sources/);
+    const schema = await workbench.tree.findChild(sources, /^shop/);
+    await workbench.tree.expandItem(schema, /^shop/);
+    const product = await workbench.tree.findChild(schema, /^product(?:\s|$)/);
     await expect(product).toBeVisible({ timeout: 5_000 });
 
     await test.step("show the refresh phase while retaining the previous snapshot", async () => {
@@ -24,7 +26,17 @@ test.describe("Workbench indexing feedback", () => {
       await expect(sources).toHaveAccessibleName(
         /Sources, demo, refreshing, reading catalog, previous snapshot available/i,
       );
-      await product.hover();
+      const refreshingSchema = await workbench.tree.expandPath([
+        server,
+        database,
+        /^Sources/,
+        /^shop/,
+      ]);
+      const refreshingProduct = await workbench.tree.findChild(
+        refreshingSchema,
+        /^product(?:\s|$)/,
+      );
+      await workbench.tree.hoverItem(refreshingProduct, /^product(?:\s|$)/);
       const openDefinition = workbench.page.getByRole("button", {
         name: "Open PostgreSQL Definition",
       });
@@ -39,7 +51,7 @@ test.describe("Workbench indexing feedback", () => {
     });
 
     await test.step("cancel from the Sources node without losing the snapshot", async () => {
-      await sources.hover();
+      await workbench.tree.hoverItem(sources, /^Sources/);
       const cancel = sources.getByRole("button", {
         name: /Cancel Database Indexing/i,
       });
@@ -51,10 +63,11 @@ test.describe("Workbench indexing feedback", () => {
       await expect(sources).toHaveAccessibleName(
         /Sources, demo, indexing cancelled, previous snapshot available, select to retry/i,
       );
-      await workbench.tree.collapse(/^shop/);
+      await workbench.tree.collapseItem(schema, /^shop/);
       await expect(product).toBeHidden();
-      await workbench.tree.expand(/^shop/);
-      await expect(product).toBeVisible();
+      await workbench.tree.expandItem(schema, /^shop/);
+      const restoredProduct = await workbench.tree.findChild(schema, /^product(?:\s|$)/);
+      await expect(restoredProduct).toBeVisible();
     });
 
     await test.step("retry with real phase and count feedback", async () => {
@@ -65,7 +78,15 @@ test.describe("Workbench indexing feedback", () => {
       await expect(sources).toContainText(/available.*\d+ sources?.*\d+ symbols?/i, {
         timeout: 30_000,
       });
-      await expect(product).toBeVisible();
+      const availableSchema = await workbench.tree.expandPath([
+        server,
+        database,
+        /^Sources/,
+        /^shop/,
+      ]);
+      await expect(
+        await workbench.tree.findChild(availableSchema, /^product(?:\s|$)/),
+      ).toBeVisible();
       await expect(
         workbench.page.locator(".notification-toast:visible").filter({
           hasText: /Indexed .* PostgreSQL|PostgreSQL indexing failed/i,

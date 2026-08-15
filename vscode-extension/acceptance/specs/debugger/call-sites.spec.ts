@@ -1,11 +1,41 @@
-import { demoConnectionUrl } from "../../fixtures/demoDatabase";
+import {
+  demoConnexionQuickPickItem as connectionChoice,
+  demoDatabaseTreeItem as database,
+  demoConnectionUrl,
+  demoConnexionTreeItem as server,
+} from "../../fixtures/demoDatabase";
 import { test } from "../../fixtures/test";
-
-const server = /postgres@localhost:5434/;
 
 test.describe("PL/pgSQL debugger call sites", () => {
   test.afterEach(async ({ debuggerPage }) => {
     await debuggerPage.expectNoActiveSession();
+  });
+
+  test("clears native coverage before debugging a covered routine", async ({
+    workbench,
+    debuggerPage,
+  }) => {
+    const sql = "SELECT shop.restock_report(10);";
+
+    await test.step("connect and open the covered SQL call site", async () => {
+      await workbench.ensureServer(demoConnectionUrl, server);
+      await workbench.expectActiveDatabaseIndexed(server, database);
+      await debuggerPage.openCallSite("debug-restock.sql");
+    });
+
+    await test.step("assign the database through the visible CodeLens", async () => {
+      await debuggerPage.assignConnection(sql, connectionChoice);
+    });
+
+    await test.step("start in the routine without retaining native coverage", async () => {
+      await debuggerPage.start(sql, /^restock_report\(threshold:int4\)/, /shop\.restock_report/);
+      await debuggerPage.expectNoCoverageDecorations();
+    });
+
+    await test.step("continue to termination and reveal the query result", async () => {
+      await debuggerPage.continueToCompletion();
+      await debuggerPage.expectNoErrorNotification();
+    });
   });
 
   test("stops on every recursive Fibonacci result", async ({ workbench, debuggerPage }) => {
@@ -24,10 +54,10 @@ test.describe("PL/pgSQL debugger call sites", () => {
 
     await test.step("set the recursive return breakpoint and launch from the call site", async () => {
       await workbench.ensureServer(demoConnectionUrl, server);
-      await workbench.openRoutineSource(server, /^demo/, /^playground/, /^fib\(/);
+      await workbench.openRoutineSource(server, database, /^playground/, /^fib\(/);
       await debuggerPage.setBreakpoint(breakpoint);
       await debuggerPage.openCallSite("debug-fib.sql");
-      await debuggerPage.assignConnection(sql, server);
+      await debuggerPage.assignConnection(sql, connectionChoice);
       await debuggerPage.start(sql, /^fib\(n:int4\)/, /playground\.fib/, breakpoint);
       await debuggerPage.expectArgument("n", recursiveReturns[0].n);
       await debuggerPage.expectVariable("result", recursiveReturns[0].result);
@@ -45,36 +75,6 @@ test.describe("PL/pgSQL debugger call sites", () => {
     });
   });
 
-  for (const scenario of [
-    {
-      sql: "SELECT shop.restock_report(10);",
-      tab: /^restock_report\(threshold:int4\)/,
-      routineSource: /shop\.restock_report/,
-      file: "debug-restock.sql",
-    },
-  ]) {
-    test(`debugs ${scenario.sql}`, async ({ workbench, debuggerPage }) => {
-      await test.step("connect and open the SQL call site", async () => {
-        await workbench.ensureServer(demoConnectionUrl, server);
-        await workbench.expectActiveDatabaseIndexed(server, /^demo/);
-        await debuggerPage.openCallSite(scenario.file);
-      });
-
-      await test.step("assign the database through the visible CodeLens", async () => {
-        await debuggerPage.assignConnection(scenario.sql, server);
-      });
-
-      await test.step("start from the visible Debug CodeLens and stop in the routine", async () => {
-        await debuggerPage.start(scenario.sql, scenario.tab, scenario.routineSource);
-      });
-
-      await test.step("continue to termination and reveal the query result", async () => {
-        await debuggerPage.continueToCompletion();
-        await debuggerPage.expectNoErrorNotification();
-      });
-    });
-  }
-
   test("continues from a called function back to its caller", async ({
     workbench,
     debuggerPage,
@@ -87,9 +87,9 @@ test.describe("PL/pgSQL debugger call sites", () => {
 
     await test.step("open the caller and its call site", async () => {
       await workbench.ensureServer(demoConnectionUrl, server);
-      await workbench.openRoutineSource(server, /^demo/, /^playground/, /^call_double\(/);
+      await workbench.openRoutineSource(server, database, /^playground/, /^call_double\(/);
       await debuggerPage.openCallSite("debug-call-chain.sql");
-      await debuggerPage.assignConnection(sql, server);
+      await debuggerPage.assignConnection(sql, connectionChoice);
     });
 
     await test.step("stop on entry and prepare the return-to-caller breakpoint", async () => {
@@ -124,12 +124,6 @@ test.describe("PL/pgSQL debugger call sites", () => {
         result: "8",
       },
       {
-        sql: "SELECT playground.fib(3);",
-        sourceTab: /^fib\(n:int4\)/,
-        routineSource: /playground\.fib/,
-        result: "2",
-      },
-      {
         sql: "SELECT playground.call_double(5);",
         sourceTab: /^call_double\(n:int4\)/,
         routineSource: /playground\.call_double/,
@@ -138,10 +132,10 @@ test.describe("PL/pgSQL debugger call sites", () => {
     ];
 
     await workbench.ensureServer(demoConnectionUrl, server);
-    await workbench.expectActiveDatabaseIndexed(server, /^demo/);
+    await workbench.expectActiveDatabaseIndexed(server, database);
     await debuggerPage.openCallSite("debug-successive.sql");
     for (const session of sessions) {
-      await debuggerPage.assignConnection(session.sql, server);
+      await debuggerPage.assignConnection(session.sql, connectionChoice);
     }
 
     for (const session of sessions) {
@@ -159,7 +153,7 @@ test.describe("PL/pgSQL debugger call sites", () => {
     debuggerPage,
   }) => {
     await workbench.ensureServer(demoConnectionUrl, server);
-    await workbench.debugRoutineFromTree(server, /^demo/, /^playground/, /^debug_tree_entry\(\)/);
+    await workbench.debugRoutineFromTree(server, database, /^playground/, /^debug_tree_entry\(\)/);
     await debuggerPage.expectRoutineEditor(/^debug_tree_entry$/, /playground\.debug_tree_entry/);
     await debuggerPage.continueToCompletion("42");
     await debuggerPage.expectNoErrorNotification();

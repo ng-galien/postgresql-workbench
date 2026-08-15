@@ -351,7 +351,7 @@ function notebookServerId(target: unknown): string | undefined {
   if (typeof target === "string") return target;
   if (!target || typeof target !== "object") return undefined;
   const candidate = target as { kind?: unknown; server?: { id?: unknown } };
-  if (candidate.kind !== "databaseSource" && candidate.kind !== "scratchpads") return undefined;
+  if (candidate.kind !== "databaseSource") return undefined;
   return typeof candidate.server?.id === "string" ? candidate.server.id : undefined;
 }
 

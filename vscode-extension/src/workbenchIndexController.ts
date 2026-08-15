@@ -38,6 +38,7 @@ import {
   codeMonikerUri,
 } from "./codeMonikerUri.js";
 import type { ConnectionManager } from "./connectionManager.js";
+import type { SqlAuthoringSnapshot } from "./sqlAuthoring/protocol.js";
 import {
   buildWorkbenchRelationGroups,
   classifyWorkbenchRelationFailure,
@@ -47,6 +48,7 @@ import {
 } from "./workbenchRelations.js";
 import {
   buildWorkbenchObjects,
+  buildWorkbenchTableMembers,
   type WorkbenchObjectModel,
   workbenchObjectFromSymbol,
 } from "./workbenchTreeModel.js";
@@ -210,6 +212,49 @@ export class WorkbenchIndexController implements vscode.Disposable {
 
   get indexedSymbols(): readonly CodeMonikerSymbol[] {
     return this.currentState.result ? this.currentSymbols : [];
+  }
+
+  sqlAuthoringSnapshot(identity: {
+    serverId: string;
+    database: string;
+  }): SqlAuthoringSnapshot | undefined {
+    const registry = this.registries.get(databaseScope(identity.serverId, identity.database));
+    if (!registry) return undefined;
+    const objects = buildWorkbenchObjects(registry.symbols, identity)
+      .filter(
+        (object) =>
+          object.kind === "table" ||
+          object.kind === "view" ||
+          object.kind === "function" ||
+          object.kind === "procedure",
+      )
+      .map((object) => ({
+        serverId: object.serverId,
+        database: object.database,
+        schema: object.schema,
+        oid: object.oid,
+        name: object.name,
+        kind: object.kind as "table" | "view" | "function" | "procedure",
+        signature: object.signature,
+        parameters: object.params.map((parameter) => ({ ...parameter })),
+        columns:
+          object.kind === "table" || object.kind === "view"
+            ? buildWorkbenchTableMembers(registry.symbols, object)
+                .filter((member) => member.kind === "column")
+                .map((member) => ({ name: member.name, type: member.type }))
+            : [],
+      }));
+    return {
+      status: this.staleScopes.has(databaseScope(identity.serverId, identity.database))
+        ? "stale"
+        : "available",
+      serverId: identity.serverId,
+      database: identity.database,
+      revision: registry.result.revision,
+      generation: registry.result.generation,
+      objects,
+      foreignKeys: registry.foreignKeys.map((foreignKey) => ({ ...foreignKey })),
+    };
   }
 
   objectOrigin(sourceUri: string): PostgresCatalogObjectOrigin | undefined {

@@ -302,17 +302,6 @@ export class WorkbenchDdlSyncItem extends vscode.TreeItem {
   }
 }
 
-export class ScratchpadsItem extends vscode.TreeItem {
-  readonly kind = "scratchpads" as const;
-
-  constructor() {
-    super("Scratchpads", vscode.TreeItemCollapsibleState.Collapsed);
-    this.id = "postgres-scratchpads";
-    this.iconPath = new vscode.ThemeIcon("notebook-template");
-    this.contextValue = "postgresql-workbench-scratchpads";
-  }
-}
-
 export class SqlNotebookItem extends vscode.TreeItem {
   readonly kind = "sqlNotebook" as const;
 
@@ -617,7 +606,6 @@ export type PlpgsqlTreeItem =
   | DatabaseSourceItem
   | SourcesSnapshotItem
   | WorkbenchDdlSyncItem
-  | ScratchpadsItem
   | SqlNotebookItem
   | ScratchpadAssociationItem
   | ScratchpadTransactionItem
@@ -634,9 +622,12 @@ export type PlpgsqlTreeItem =
 
 export type PlpgsqlConnectionTreeItem = ServerItem | AddServerItem | DebugSessionsItem;
 
+export type WorkbenchTreeScope = "database" | "scratchpads";
+
 class WorkbenchTreeChildren {
   private schemaNames: string[] = [];
   private loadedSnapshot?: string;
+  private scratchpadFilter = "";
 
   constructor(
     private readonly connections: ConnectionManager,
@@ -645,11 +636,16 @@ class WorkbenchTreeChildren {
     private readonly transactions: ScratchpadTransactionManager,
     private readonly ddlSync: WorkbenchDdlSyncController,
     private readonly debugSessionStatuses: () => readonly DebugSessionStatus[],
+    private readonly scope: WorkbenchTreeScope,
   ) {}
 
   refresh(): void {
     this.schemaNames = [];
     this.loadedSnapshot = undefined;
+  }
+
+  setScratchpadFilter(filter: string): void {
+    this.scratchpadFilter = filter.trim().toLocaleLowerCase();
   }
 
   async getChildren(element?: PlpgsqlTreeItem): Promise<PlpgsqlTreeItem[]> {
@@ -665,7 +661,6 @@ class WorkbenchTreeChildren {
     }
     if (element.kind === "databaseSource") return this.databaseChildren(element);
     if (element.kind === "sourcesSnapshot") return this.sourceChildren(element);
-    if (element.kind === "scratchpads") return this.scratchpads();
     if (element.kind === "sqlNotebook") {
       return [
         new ScratchpadAssociationItem(element, element.association),
@@ -693,6 +688,7 @@ class WorkbenchTreeChildren {
   }
 
   private async rootChildren(): Promise<PlpgsqlTreeItem[]> {
+    if (this.scope === "scratchpads") return this.scratchpads();
     return [
       ...this.connections.servers.map((server) => {
         const connected = this.connections.isActiveServer(server.id);
@@ -703,7 +699,6 @@ class WorkbenchTreeChildren {
           connected && this.connections.pldbgapiAvailable,
         );
       }),
-      new ScratchpadsItem(),
       new AddServerItem(),
     ];
   }
@@ -733,7 +728,7 @@ class WorkbenchTreeChildren {
 
   private async scratchpads(): Promise<PlpgsqlTreeItem[]> {
     const entries = await this.notebooks.list();
-    return entries.map((entry) => {
+    const items = entries.map((entry) => {
       const association = resolveScratchpadAssociation(entry.metadata, this.connections.servers);
       return new SqlNotebookItem(
         entry,
@@ -742,6 +737,12 @@ class WorkbenchTreeChildren {
         this.transactions.transaction(entry.uri.toString()),
       );
     });
+    if (!this.scratchpadFilter) return items;
+    return items.filter((item) =>
+      `${String(item.label)} ${String(item.description ?? "")}`
+        .toLocaleLowerCase()
+        .includes(this.scratchpadFilter),
+    );
   }
 
   private schemaChildren(schema: string): PlpgsqlTreeItem[] {
@@ -859,6 +860,7 @@ export class WorkbenchTreeProvider
     transactions: ScratchpadTransactionManager,
     ddlSync: WorkbenchDdlSyncController,
     debugSessionStatuses: () => readonly DebugSessionStatus[] = () => [],
+    private readonly scope: WorkbenchTreeScope = "database",
   ) {
     this.activeDatabaseContextId = connections.activeServer?.id;
     this.children = new WorkbenchTreeChildren(
@@ -868,14 +870,20 @@ export class WorkbenchTreeProvider
       transactions,
       ddlSync,
       debugSessionStatuses,
+      scope,
     );
-    this.subscriptions = [
-      connections.onChanged(() => this.refreshConnections()),
-      index.onDidChangeState((state) => this.refreshIndex(state)),
-      notebooks.onDidChangeEntries(() => this.refresh()),
-      transactions.onDidChange(() => this.refresh()),
-      ddlSync.onDidChangeState((state) => this.refreshDdlSync(state)),
-    ];
+    this.subscriptions = [connections.onChanged(() => this.refreshConnections())];
+    if (scope === "database") {
+      this.subscriptions.push(
+        index.onDidChangeState((state) => this.refreshIndex(state)),
+        ddlSync.onDidChangeState((state) => this.refreshDdlSync(state)),
+      );
+    } else {
+      this.subscriptions.push(
+        notebooks.onDidChangeEntries(() => this.refresh()),
+        transactions.onDidChange(() => this.refresh()),
+      );
+    }
   }
 
   dispose(): void {
@@ -895,6 +903,12 @@ export class WorkbenchTreeProvider
       this.knownSchemas = [];
     }
     this.changeEmitter.fire(undefined);
+  }
+
+  setScratchpadFilter(filter: string): void {
+    if (this.scope !== "scratchpads") return;
+    this.children.setScratchpadFilter(filter);
+    this.refresh();
   }
 
   private refreshConnections(): void {
@@ -982,10 +996,7 @@ export class WorkbenchTreeProvider
           )
         : undefined;
     }
-    if (element.kind === "scratchpads") return undefined;
-    if (element.kind === "sqlNotebook") {
-      return this.canonicalItem(new ScratchpadsItem());
-    }
+    if (element.kind === "sqlNotebook") return undefined;
     if (element.kind === "scratchpadAssociation") {
       return element.scratchpad;
     }

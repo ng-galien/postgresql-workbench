@@ -68,6 +68,19 @@ const dapServerConfig = {
 };
 
 /** @type {import('esbuild').BuildOptions} */
+const sqlAuthoringServerConfig = {
+  entryPoints: ["src/sqlAuthoring/server.ts"],
+  bundle: true,
+  outfile: "dist/sql-authoring-server.js",
+  format: "cjs",
+  platform: "node",
+  target: "es2022",
+  sourcemap: !production,
+  minify: production,
+  metafile: true,
+};
+
+/** @type {import('esbuild').BuildOptions} */
 const graphWebviewConfig = {
   entryPoints: ["src/workbenchGraph/webview/index.tsx"],
   bundle: true,
@@ -192,11 +205,13 @@ async function main() {
     cleanDist();
     const extCtx = await esbuild.context(extensionConfig);
     const dapCtx = await esbuild.context(dapServerConfig);
+    const sqlAuthoringCtx = await esbuild.context(sqlAuthoringServerConfig);
     const graphCtx = await esbuild.context(graphWebviewConfig);
     const notebookRendererCtx = await esbuild.context(sqlNotebookRendererConfig);
     await Promise.all([
       extCtx.watch(),
       dapCtx.watch(),
+      sqlAuthoringCtx.watch(),
       graphCtx.watch(),
       notebookRendererCtx.watch(),
     ]);
@@ -206,6 +221,7 @@ async function main() {
     const results = await Promise.all([
       esbuild.build(extensionConfig),
       esbuild.build(dapServerConfig),
+      esbuild.build(sqlAuthoringServerConfig),
       esbuild.build(graphWebviewConfig),
       esbuild.build(sqlNotebookRendererConfig),
     ]);

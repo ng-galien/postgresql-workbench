@@ -90,6 +90,69 @@ const createdTable: WorkbenchObjectModel = {
 };
 
 describe("Workbench tree object navigation", () => {
+  it("separates database roots from filterable Scratchpad roots", async () => {
+    const server = {
+      id: "server",
+      name: "postgres@localhost:5432/testdb",
+      host: "localhost",
+      port: 5432,
+      database: "testdb",
+      user: "postgres",
+    };
+    const event = () => ({ dispose: () => undefined });
+    const connections = {
+      servers: [server],
+      activeServer: server,
+      isConnected: true,
+      pldbgapiAvailable: false,
+      onChanged: event,
+      isActiveServer: () => true,
+    };
+    const index = { state: { status: "not-indexed" }, onDidChangeState: event };
+    const notebooks = {
+      list: async () => [
+        { uri: { toString: () => "scratchpad:first" }, name: "First", metadata: {} },
+        { uri: { toString: () => "scratchpad:second" }, name: "Second", metadata: {} },
+      ],
+      onDidChangeEntries: event,
+    };
+    const transactions = { transaction: () => undefined, onDidChange: event };
+    const ddlSync = { state: () => undefined, onDidChangeState: event };
+    const databaseProvider = new WorkbenchTreeProvider(
+      connections as never,
+      index as never,
+      notebooks as never,
+      transactions as never,
+      ddlSync as never,
+    );
+    const scratchpadProvider = new WorkbenchTreeProvider(
+      connections as never,
+      index as never,
+      notebooks as never,
+      transactions as never,
+      ddlSync as never,
+      undefined,
+      "scratchpads",
+    );
+
+    await expect(databaseProvider.getChildren()).resolves.toMatchObject([
+      { kind: "server" },
+      { kind: "add" },
+    ]);
+    await expect(scratchpadProvider.getChildren()).resolves.toMatchObject([
+      { kind: "sqlNotebook", label: "First" },
+      { kind: "sqlNotebook", label: "Second" },
+    ]);
+
+    scratchpadProvider.setScratchpadFilter("second");
+    await expect(scratchpadProvider.getChildren()).resolves.toMatchObject([
+      { kind: "sqlNotebook", label: "Second" },
+    ]);
+
+    databaseProvider.dispose();
+    scratchpadProvider.dispose();
+  });
+
   it("presents distinct initial indexing and available states on the active database", () => {
     const server = {
       id: "server",

@@ -1,15 +1,18 @@
-import { demoConnectionUrl } from "../../fixtures/demoDatabase";
+import {
+  demoDatabaseTreeItem as database,
+  demoConnectionUrl,
+  demoProductSearchQuickPickItem,
+  demoConnexionTreeItem as server,
+} from "../../fixtures/demoDatabase";
 import { expect, test } from "../../fixtures/test";
-
-const server = /postgres@localhost:5434/;
 
 test.describe("Workbench search", () => {
   test("opens an indexed PostgreSQL definition from the TreeView header", async ({ workbench }) => {
     await workbench.ensureServer(demoConnectionUrl, server);
-    await workbench.expectActiveDatabaseIndexed(server, /^demo/);
+    await workbench.expectActiveDatabaseIndexed(server, database);
     await workbench.tree.clickHeaderAction(/Search Database Objects/i);
     await workbench.quickInput.input.fill("shop product table");
-    await workbench.quickInput.chooseOption(/shop\.product/i);
+    await workbench.quickInput.chooseOption(demoProductSearchQuickPickItem);
 
     const sourceTab = workbench.page.getByRole("tab", { name: /^product(?:, preview)?$/i });
     await expect(sourceTab).toBeVisible({ timeout: 5_000 });

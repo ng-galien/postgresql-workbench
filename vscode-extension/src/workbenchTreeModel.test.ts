@@ -57,7 +57,7 @@ function symbol(
 }
 
 describe("Workbench tree model", () => {
-  it("contributes one unified PostgreSQL Workbench tree", () => {
+  it("contributes separate database and Scratchpads trees", () => {
     const manifest = JSON.parse(readFileSync(join(__dirname, "../package.json"), "utf8")) as {
       contributes: {
         views: Record<string, Array<{ id: string; name: string }>>;
@@ -78,6 +78,10 @@ describe("Workbench tree model", () => {
         id: "postgresql-workbench-connections",
         name: "Workbench",
       }),
+      expect.objectContaining({
+        id: "postgresql-workbench-scratchpads",
+        name: "Scratchpads",
+      }),
     ]);
 
     expect(
@@ -91,7 +95,6 @@ describe("Workbench tree model", () => {
       "postgresql-workbench.openDatabaseGraph": "navigation@1",
       "postgresql-workbench.searchDatabaseObjects": "navigation@2",
       "postgresql-workbench.indexActiveDatabase": "navigation@3",
-      "postgresql-workbench.newSqlNotebook": "navigation@4",
     });
     expect(
       manifest.contributes.commands.find(
@@ -150,6 +153,17 @@ describe("Workbench tree model", () => {
         "postgresql-workbench.workbench.codeMoniker.commandTimeoutMs"
       ],
     ).toMatchObject({ default: 30_000, minimum: 1_000, maximum: 300_000 });
+    expect(
+      Object.fromEntries(
+        manifest.contributes.menus["view/title"]
+          .filter(({ when }) => when === "view == postgresql-workbench-scratchpads")
+          .map(({ command, group }) => [command, group]),
+      ),
+    ).toEqual({
+      "postgresql-workbench.newSqlNotebook": "navigation@1",
+      "postgresql-workbench.filterSqlNotebooks": "navigation@2",
+      "postgresql-workbench.refreshSqlNotebooks": "navigation@3",
+    });
 
     expect(
       Object.fromEntries(
@@ -187,6 +201,7 @@ describe("Workbench tree model", () => {
               "postgresql-workbench.renameSqlNotebook",
               "postgresql-workbench.deleteSqlNotebook",
               "postgresql-workbench.refreshSqlNotebooks",
+              "postgresql-workbench.filterSqlNotebooks",
             ].includes(command),
           )
           .map(({ command, icon }) => [command, icon]),
@@ -197,6 +212,7 @@ describe("Workbench tree model", () => {
       "postgresql-workbench.renameSqlNotebook": "$(edit)",
       "postgresql-workbench.deleteSqlNotebook": "$(trash)",
       "postgresql-workbench.refreshSqlNotebooks": "$(refresh)",
+      "postgresql-workbench.filterSqlNotebooks": "$(search)",
     });
   });
 
