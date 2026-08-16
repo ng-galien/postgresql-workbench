@@ -11,10 +11,16 @@ Code Language Server Protocol client and server. Formatting uses the shared
 PostgreSQL syntax service. Completion and query composition use the indexed
 schema snapshot and never run a second catalog introspection.
 
+Authoring does not decide whether SQL is run, debugged, or deployed. Those
+actions follow the canonical [Run, debug, and deploy SQL](execution-debugging-and-deployment.md)
+contract for each editor context and analyzed SQL shape.
+
 ## Context ownership
 
-Ordinary `.sql` and `.pgsql` documents use the active DatabaseContext. A
-Scratchpad cell uses its persistent Association, even when another
+Ordinary `.sql` and `.pgsql` documents use their persistent Document
+Association. Choosing it once governs completion, navigation, composition,
+Run, and Debug without changing the active DatabaseContext. A Scratchpad cell
+uses its persistent Association, even when another
 DatabaseContext becomes active. If that context is unavailable, not indexed, or
 stale, completion and query composition stop instead of switching to another
 Connexion silently. Formatting remains available because it depends on syntax,
@@ -42,36 +48,224 @@ routine snippets expose their indexed parameters.
 Completion is bounded to keep large schemas responsive. An unavailable or stale
 snapshot produces no speculative suggestions from another DatabaseContext.
 
-## Compose a query from Sources
+## Compose SQL by drag and drop
 
-Hold `Shift` while dragging one indexed table or view from **Sources** into an
-SQL document or Scratchpad cell to create an explicit projection and
-schema-qualified `FROM`. A drop without `Shift` keeps the existing behavior and
-opens the object in the Cockpit.
-Drag a column from a table already present in the query to extend its projection
-without duplicating it.
+The following behavior is the complete contract for dragging indexed objects
+from **Sources** into SQL. It applies to saved `.sql` and `.pgsql` files and to
+Scratchpad code cells.
 
-Extending an existing projection or adding a JOIN requires its indexed
-relations to be schema-qualified in one top-level `SELECT`. Unqualified
-relations, comma joins, CTEs, nested queries, set operations, `SELECT INTO`,
-`WINDOW`, `FETCH`, and locking clauses are left unchanged because PostgreSQL
-Workbench cannot resolve or rewrite those forms reliably without their complete
-query scope and session search path.
+1. Drag exactly one object and hold <kbd>Shift</kbd> while dropping it in the editor.
+2. In a Scratchpad, composition uses the Scratchpad Association shown below the
+   cell. It never uses the active DatabaseContext as a fallback and does not add
+   a second connection selector inside the cell.
+3. In a saved SQL file, composition uses its Document Association.
+4. Inspect and edit the generated SQL, then run it explicitly. A drop never
+   executes SQL.
 
-Dropping a directly related table adds a `JOIN` only when the Workbench Index
-contains one reliable foreign key: the constraint is validated and exposes
-non-empty source and target column lists of the same length. When several
-foreign keys are valid, choose one explicitly. When no direct foreign key
-connects the dropped table to the targeted `SELECT`, PostgreSQL Workbench
-appends an independent `SELECT` for that table after the targeted Statement.
-Unsupported, stale, and cross-DatabaseContext drops leave the document
-unchanged. Composition targets the SQL Statement under the drop cursor,
-preserves existing aliases, and is applied as one editor change.
+A drop without <kbd>Shift</kbd> follows the navigation gesture and opens the object in
+the Cockpit. Schemas, extension groups, relation groups, constraints, server
+rows, and Scratchpad rows do not produce SQL. A relation target that resolves to
+an indexed table, view, routine, or trigger behaves like that underlying object.
 
-Automatic composition uses `JOIN` when the existing relation owns a non-nullable
-foreign key to the added table. It uses `LEFT JOIN` for nullable foreign keys and
-when composing in the reverse, parent-to-children direction. Missing or
-misaligned nullability metadata is treated conservatively as nullable. A
-relation already null-extended by a `LEFT JOIN` or `FULL JOIN` also keeps any
-automatically chained join on its path as `LEFT JOIN`, so optional related rows
-do not silently remove the rows already selected.
+### Behavior by dragged object
+
+| Dragged object | Generated or updated SQL |
+| --- | --- |
+| [Table or view into an empty Statement](#tables-views-aliases-and-projections) | A schema-qualified `SELECT` with an explicit `AS` alias and every indexed column in the projection. |
+| [Table or view into a supported `SELECT`](#how-an-automatic-join-is-chosen) | A direct `JOIN` when one reliable foreign-key path exists; a picker when several paths exist; otherwise a second independent `SELECT`. |
+| [Column](#columns) | Adds that column to the projection when its parent relation occurs exactly once in the targeted `SELECT`. |
+| [Ordinary function](#functions-and-procedures) | Appends `SELECT * FROM schema.function(...)`; indexed parameters are named and initialized as typed `NULL` placeholders. |
+| [Procedure](#functions-and-procedures) | Appends a `DO $workbench$` block with `DECLARE`, typed variables, and a named `CALL`. |
+| [Trigger function](#trigger-harnesses-and-safety) | Generates an `INSERT`, `UPDATE`, `DELETE`, or `TRUNCATE` harness for its indexed trigger; a picker identifies the trigger when the function is attached to several triggers. |
+| [Trigger](#trigger-harnesses-and-safety) | Generates the same DML harness directly for that trigger. |
+| [Event-trigger function](#trigger-harnesses-and-safety) | Leaves the document unchanged because it must be invoked by its associated DDL event. |
+
+Routine and trigger invocations are appended as separate Statements. If the
+targeted Statement has no final semicolon, composition terminates it first.
+
+### Tables, views, aliases, and projections
+
+The first table or view produces SQL such as:
+
+```sql
+SELECT
+  address.id,
+  address.city
+FROM
+  shop.address AS address;
+```
+
+`postgresql-workbench.sqlAuthoring.aliasStyle` controls generated aliases:
+
+- **Full table name** (default) generates `address` and `shipment`;
+- **Initial** generates `a` and `s`;
+- a numeric suffix is added only when the chosen alias already exists, for
+  example `address_2` or `a2`.
+
+Existing aliases are preserved, including quoted and case-sensitive aliases.
+Generated schema, relation, alias, and column identifiers are quoted when
+PostgreSQL requires it.
+
+Adding a related table to a normal explicit projection appends every indexed
+column of the new table after the existing projection. It never removes or
+replaces columns the user kept or removed. `SELECT *` already covers the joined
+table, so no explicit columns are added. To avoid changing aggregate or
+set-sensitive semantics, the JOIN is added without expanding the projection for
+`DISTINCT`, `ALL`, aggregate/function projections, `GROUP BY`, or `HAVING`.
+
+### How an automatic JOIN is chosen
+
+Workbench does not infer a relationship from column names. It makes the decision
+from relation identities and foreign keys in the current indexed snapshot:
+
+1. It reads only the top-level `SELECT` under the drop cursor and resolves every
+   schema-qualified relation introduced by `FROM` or `JOIN`, including its
+   existing `AS` alias.
+2. It finds direct foreign keys between each resolved relation and the dropped
+   table. It does not search for a multi-hop path through another table.
+3. It keeps only reliable candidates: the constraint must be validated and its
+   source and target column lists must be non-empty and have the same length.
+   `NOT VALID`, incomplete, or structurally inconsistent constraints are never
+   used to invent an `ON` condition.
+4. With no candidate, it appends an independent `SELECT`. With one candidate,
+   it generates the JOIN directly. With several candidates, it asks the user to
+   choose before changing the document.
+
+When several eligible paths connect the dropped relation, the picker displays
+the exact source alias and both column lists. Cancelling it leaves the SQL
+unchanged. Self-join occurrences are listed separately so aliases such as
+`manager` and `report` remain distinguishable.
+
+For example, given a validated foreign key
+`order_line.product_id → product.id`, dropping `product` into this query:
+
+```sql
+SELECT
+  order_line.id
+FROM
+  shop.order_line AS order_line;
+```
+
+produces the direct condition and appends the new table's columns:
+
+```sql
+SELECT
+  order_line.id,
+  product.id,
+  product.name
+FROM
+  shop.order_line AS order_line
+  JOIN shop.product AS product
+    ON order_line.product_id = product.id;
+```
+
+The generated keyword preserves rows conservatively:
+
+- `JOIN` is used when the relation already in the query owns the foreign key and
+  every source column is known to be non-nullable;
+- `LEFT JOIN` is used for a nullable or unknown source, in the reverse
+  parent-to-children direction, or when the source relation is already
+  null-extended by `LEFT JOIN` or `FULL JOIN`.
+
+Consequently, if `order_line.product_id` is nullable, the example uses `LEFT
+JOIN`. Dropping `order_line` into a query that already starts from `product`
+also uses `LEFT JOIN`: a product without an order line must remain visible.
+Likewise, a JOIN chained from the nullable side of an existing `LEFT JOIN` or
+`FULL JOIN` remains a `LEFT JOIN` even when its own foreign-key columns are
+non-nullable.
+
+When no eligible direct foreign key connects the dropped relation, Workbench
+does not guess through a multi-hop path. It appends a separate, fully projected
+`SELECT` instead.
+
+### Columns
+
+A column drop edits only the projection of the top-level `SELECT` under the
+cursor. Its table or view must be schema-qualified in the query and must occur
+exactly once. Workbench uses the existing alias and does not add a duplicate if
+the same qualified column is already projected, even when that expression has a
+result alias.
+
+The drop is rejected when the parent relation is absent or occurs more than
+once, when there is no `SELECT ... FROM` projection, or for `SELECT DISTINCT
+ON`. The document remains unchanged in every rejected case.
+
+### Functions and procedures
+
+An ordinary function is a PostgreSQL expression and can return rows, so its
+harness uses `SELECT * FROM`:
+
+```sql
+SELECT *
+FROM shop.low_stock_rows(
+  threshold => NULL::int4
+);
+```
+
+A procedure is invoked with `CALL`. The generated anonymous block makes every
+input explicit and editable before execution:
+
+```sql
+DO $workbench$
+DECLARE
+  v_p_product_id int4 := NULL;
+BEGIN
+  CALL shop.move_inventory(
+    p_product_id => v_p_product_id
+  );
+END
+$workbench$;
+```
+
+Replace the generated `NULL` values with values appropriate for the development
+database before running either form. Parameters whose PostgreSQL name cannot be
+used safely with named notation remain positional.
+
+### Trigger harnesses and safety
+
+Workbench never calls a trigger function directly because PostgreSQL supplies
+`NEW`, `OLD`, `TG_OP`, and the other trigger context only through the trigger.
+Instead it reads the indexed trigger definition and generates the matching
+`INSERT`, `UPDATE`, `DELETE`, or `TRUNCATE` against its relation.
+
+- `INSERT`, `UPDATE`, and `DELETE` harnesses declare typed placeholders and set
+  `v_rollback boolean := TRUE`. The DML runs inside a nested exception block and
+  is rolled back by default. Fill the placeholders first; set `v_rollback` to
+  `FALSE` only when a persistent change is intentional.
+- `INSERT` starts with every indexed column. Remove generated, identity, or
+  defaulted columns that PostgreSQL should populate instead of assigning them.
+- `UPDATE OF` uses the trigger columns when they can be resolved. `UPDATE` and
+  `DELETE` use an indexed `id` column as the initial row predicate; otherwise
+  the generated predicate is `FALSE` and must be replaced.
+- `TRUNCATE` is generated behind `v_execute boolean := FALSE` and does nothing
+  until explicitly enabled.
+- Unsupported or ambiguous trigger shapes leave the document unchanged. When a
+  trigger function has several indexed trigger invocations, the picker names
+  each trigger, event, and relation before generating anything.
+
+These guards reduce accidental writes; they do not choose meaningful test data
+and do not replace review of the generated Statement.
+
+### Supported query shape and failure behavior
+
+Extending an existing projection or adding a JOIN requires schema-qualified
+indexed relations in one top-level `SELECT`. Workbench leaves the document
+unchanged for unqualified relations, comma joins, CTEs, nested queries, set
+operations, `SELECT INTO`, `WINDOW`, `FETCH`, locking clauses, or a syntax error.
+It also rejects composition when the configured syntax budget is reached; the
+warning directs the user to the SQL analysis settings.
+
+In a multi-Statement document, only the Statement under the drop cursor is
+validated and changed. Strings, quoted identifiers, dollar-quoted bodies, and
+comments do not create phantom relations or clause boundaries.
+
+The snapshot and document are checked again immediately before applying the
+edit, and again after an ambiguity picker. An unavailable Association or
+Connexion, a missing index, a stale snapshot, a cross-DatabaseContext object, a
+concurrent document edit, or a concurrent index generation leaves the document
+unchanged and shows a warning. Workbench never retries against another context
+silently.
+
+Generated indentation follows `editor.tabSize` for the target document. SQL and
+PL/pgSQL default to two spaces. Alias strategy and syntax budgets are listed in
+the [settings reference](reference.md).

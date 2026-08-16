@@ -91,6 +91,36 @@ describe("SQL authoring document context", () => {
       ),
     ).toMatchObject({ status: "unavailable" });
   });
+
+  it("uses one SQL Document Association instead of the active DatabaseContext", () => {
+    const associated = { ...server, id: "reporting-server", database: "reporting" };
+    const lookup = vi.fn(() => ({
+      ...snapshot,
+      serverId: associated.id,
+      database: associated.database,
+    }));
+    expect(
+      resolveDocumentContext(
+        "file:///workspace/report.sql",
+        { ...connections, servers: [server, associated] },
+        { sqlAuthoringSnapshot: lookup },
+        () => associated.id,
+      ),
+    ).toMatchObject({
+      status: "available",
+      snapshot: { serverId: associated.id, database: associated.database },
+    });
+    expect(lookup).toHaveBeenCalledWith({
+      serverId: associated.id,
+      database: associated.database,
+    });
+  });
+
+  it("does not fall back when a free SQL document has no Association", () => {
+    expect(
+      resolveDocumentContext("file:///workspace/report.sql", connections, index, () => undefined),
+    ).toMatchObject({ status: "unassociated" });
+  });
 });
 
 describe("SQL authoring navigation references", () => {
@@ -150,5 +180,56 @@ describe("SQL authoring navigation references", () => {
     expect(references.find(({ label }) => label === "shop.order_line.product_id")?.target.oid).toBe(
       2,
     );
+  });
+
+  it("resolves relations and routines inside an anonymous PL/pgSQL DO block", () => {
+    const source = [
+      "DO $workbench$",
+      "DECLARE",
+      "  v_product_id bigint := (SELECT id FROM shop.product);",
+      "BEGIN",
+      "  CALL shop.move_inventory(v_product_id);",
+      "END",
+      "$workbench$;",
+    ].join("\n");
+    const document = {
+      getText: () => source,
+      positionAt: (offset: number) => offset,
+    };
+    const navigationSnapshot: SqlAuthoringSnapshot = {
+      ...snapshot,
+      objects: [
+        {
+          serverId: server.id,
+          database: server.database,
+          schema: "shop",
+          oid: 1,
+          name: "product",
+          kind: "table",
+          signature: "shop.product",
+          parameters: [],
+          columns: [{ name: "id", type: "bigint" }],
+        },
+        {
+          serverId: server.id,
+          database: server.database,
+          schema: "shop",
+          oid: 2,
+          name: "move_inventory",
+          kind: "procedure",
+          signature: "move_inventory(bigint)",
+          parameters: [{ name: "product_id", type: "bigint" }],
+          columns: [],
+        },
+      ],
+    };
+
+    const references = sqlReferences(
+      document as unknown as import("vscode").TextDocument,
+      navigationSnapshot,
+    );
+    expect(references.find(({ label }) => label === "shop.product")?.target.oid).toBe(1);
+    expect(references.find(({ label }) => label === "shop.product.id")?.target.oid).toBe(1);
+    expect(references.find(({ label }) => label === "shop.move_inventory")?.target.oid).toBe(2);
   });
 });

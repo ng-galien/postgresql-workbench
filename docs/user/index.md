@@ -30,6 +30,8 @@ and password are all `postgres`.
   with results.
 - [SQL authoring](sql-authoring.md) — format, complete, and compose PostgreSQL
   SQL from one indexed context.
+- [Run, debug, and deploy SQL](execution-debugging-and-deployment.md) — understand
+  the action matrix for Scratchpads, free SQL files, and managed PostgreSQL sources.
 - [pgTAP and coverage](testing-coverage.md) — discover tests, calculate coverage,
   and understand the limits.
 - [PL/pgSQL debugger](debugger.md) — prepare PostgreSQL, launch sessions, step,

@@ -39,7 +39,7 @@ import {
   codeMonikerUri,
 } from "./codeMonikerUri.js";
 import type { ConnectionManager } from "./connectionManager.js";
-import type { SqlAuthoringSnapshot } from "./sqlAuthoring/protocol.js";
+import type { SqlAuthoringSnapshot, SqlAuthoringTrigger } from "./sqlAuthoring/protocol.js";
 import {
   buildWorkbenchRelationGroups,
   classifyWorkbenchRelationFailure,
@@ -237,6 +237,7 @@ export class WorkbenchIndexController implements vscode.Disposable {
   private readonly published = new Map<string, PublishedSourceSet>();
   private readonly registries = new Map<string, IndexedPostgresRegistry>();
   private readonly staleScopes = new Set<string>();
+  private readonly scopeRefreshEpochs = new Map<string, number>();
   private sourceMutation: Promise<void> = Promise.resolve();
   private sourceMutationsActive = 0;
   private indexRunSequence = 0;
@@ -337,7 +338,8 @@ export class WorkbenchIndexController implements vscode.Disposable {
   }): SqlAuthoringSnapshot | undefined {
     const registry = this.registries.get(databaseScope(identity.serverId, identity.database));
     if (!registry) return undefined;
-    const objects = buildWorkbenchObjects(registry.symbols, identity)
+    const workbenchObjects = buildWorkbenchObjects(registry.symbols, identity);
+    const objects = workbenchObjects
       .filter(
         (object) =>
           object.kind === "table" ||
@@ -353,6 +355,11 @@ export class WorkbenchIndexController implements vscode.Disposable {
         name: object.name,
         kind: object.kind as "table" | "view" | "function" | "procedure",
         signature: object.signature,
+        plpgsql: object.plpgsql,
+        returnType:
+          object.kind === "function"
+            ? routineReturnType(registry.documents.get(object.sourceUri)?.content)
+            : undefined,
         parameters: object.params.map((parameter) => ({ ...parameter })),
         columns:
           object.kind === "table" || object.kind === "view"
@@ -361,6 +368,14 @@ export class WorkbenchIndexController implements vscode.Disposable {
                 .map((member) => ({ name: member.name, type: member.type }))
             : [],
       }));
+    const triggers = workbenchObjects.flatMap((object) => {
+      if (object.kind !== "trigger") return [];
+      const definition = registry.documents.get(object.sourceUri)?.content;
+      const trigger = definition
+        ? sqlAuthoringTrigger(object.oid, object.schema, object.name, definition)
+        : undefined;
+      return trigger ? [trigger] : [];
+    });
     return {
       status: this.staleScopes.has(databaseScope(identity.serverId, identity.database))
         ? "stale"
@@ -371,6 +386,7 @@ export class WorkbenchIndexController implements vscode.Disposable {
       generation: registry.result.generation,
       objects,
       foreignKeys: registry.foreignKeys.map((foreignKey) => ({ ...foreignKey })),
+      triggers,
     };
   }
 
@@ -814,7 +830,7 @@ export class WorkbenchIndexController implements vscode.Disposable {
     }
     if (!this.currentRun) {
       const epoch = this.sessionEpoch;
-      this.currentRun = this.runIndex()
+      const queued = this.runIndex()
         .catch((error) => {
           if (error instanceof WorkbenchIndexCancelledError) throw error;
           if (this.sessionEpoch === epoch) throw error;
@@ -824,8 +840,9 @@ export class WorkbenchIndexController implements vscode.Disposable {
           return this.runIndex();
         })
         .finally(() => {
-          this.currentRun = undefined;
+          if (this.currentRun === queued) this.currentRun = undefined;
         });
+      this.currentRun = queued;
     }
     return this.currentRun;
   }
@@ -886,22 +903,53 @@ export class WorkbenchIndexController implements vscode.Disposable {
     return queued;
   }
 
-  async indexPostgresDatabase(
+  indexPostgresDatabase(
     client: CatalogQueryClient,
     identity: { serverId: string; database: string },
   ): Promise<WorkbenchIndexResult> {
     if (this.disposed) {
-      throw new Error("The PostgreSQL source registry is disposed");
+      return Promise.reject(new Error("The PostgreSQL source registry is disposed"));
     }
+    const scope = databaseScope(identity.serverId, identity.database);
+    const refreshEpoch = this.advanceScopeRefreshEpoch(scope);
+    if (this.activeScope() === scope) {
+      this.markDatabaseStale(
+        identity.serverId,
+        identity.database,
+        "Refreshing the PostgreSQL source snapshot",
+      );
+    }
+    const previous = this.currentRun;
+    const operation = previous
+      ? previous
+          .catch(() => undefined)
+          .then(() => this.runPostgresDatabaseIndex(client, identity, scope, refreshEpoch))
+      : this.runPostgresDatabaseIndex(client, identity, scope, refreshEpoch);
+    const queued = operation.finally(() => {
+      if (this.currentRun === queued) this.currentRun = undefined;
+    });
+    this.currentRun = queued;
+    return queued;
+  }
+
+  private async runPostgresDatabaseIndex(
+    client: CatalogQueryClient,
+    identity: { serverId: string; database: string },
+    scope: string,
+    refreshEpoch: number,
+  ): Promise<WorkbenchIndexResult> {
     const indexingStarted = performance.now();
     const catalog = await readPostgresCatalog(client, identity);
-    const { result, session } = await this.publishAndReadCatalog(
+    const { result, registry, session } = await this.publishAndReadCatalog(
       catalog,
       identity.serverId,
       identity.database,
       indexingStarted,
-      () => true,
+      () => this.scopeRefreshEpoch(scope) === refreshEpoch,
     );
+    if (this.activeScope() === scope && this.scopeRefreshEpoch(scope) === refreshEpoch) {
+      this.activateRegistry(scope, registry, { kind: "full", schemas: [], sourceUris: [] });
+    }
     this.logResult(result, session);
     return result;
   }
@@ -916,6 +964,7 @@ export class WorkbenchIndexController implements vscode.Disposable {
     this.currentDocuments.clear();
     this.currentOrigins.clear();
     this.registries.clear();
+    this.scopeRefreshEpochs.clear();
     this.connectionSubscription.dispose();
     this.stateEmitter.dispose();
     const pendingSession = this.sessionPromise;
@@ -949,6 +998,7 @@ export class WorkbenchIndexController implements vscode.Disposable {
     const serverId = server.id;
     const database = server.database;
     const scope = databaseScope(serverId, database);
+    const refreshEpoch = this.scopeRefreshEpoch(scope);
     const retainedResult = this.stateScope === scope ? this.currentState.result : undefined;
     const run: ActiveIndexRun = {
       cancelled: false,
@@ -988,21 +1038,12 @@ export class WorkbenchIndexController implements vscode.Disposable {
         serverId,
         database,
         indexingStarted,
-        () => this.activeScope() === scope,
+        () => this.activeScope() === scope && this.scopeRefreshEpoch(scope) === refreshEpoch,
         (progress) => this.reportProgress(run, progress),
         () => this.throwIfCancelled(run),
       );
       const { result, registry, session } = indexed;
-      this.currentSymbols = registry.symbols;
-      this.currentDocuments = registry.documents;
-      this.currentOrigins = registry.origins;
-      this.staleScopes.delete(scope);
-      this.setState({
-        status: "available",
-        serverId,
-        result,
-        change: { kind: "full", schemas: [], sourceUris: [] },
-      });
+      this.activateRegistry(scope, registry, { kind: "full", schemas: [], sourceUris: [] });
       settledStatus = "available";
       this.logResult(result, session);
       return result;
@@ -1052,6 +1093,7 @@ export class WorkbenchIndexController implements vscode.Disposable {
     fallbackReason?: string,
   ): Promise<WorkbenchIndexResult> {
     const scope = databaseScope(identity.serverId, identity.database);
+    const refreshEpoch = this.scopeRefreshEpoch(scope);
     const registry = this.registries.get(scope);
     this.markDatabaseStale(
       identity.serverId,
@@ -1082,27 +1124,18 @@ export class WorkbenchIndexController implements vscode.Disposable {
         identity.serverId,
         identity.database,
         performance.now(),
-        () => this.activeScope() === scope,
+        () => this.activeScope() === scope && this.scopeRefreshEpoch(scope) === refreshEpoch,
       );
-      this.currentSymbols = indexed.registry.symbols;
-      this.currentDocuments = indexed.registry.documents;
-      this.currentOrigins = indexed.registry.origins;
-      this.staleScopes.delete(scope);
-      this.setState({
-        status: "available",
-        serverId: identity.serverId,
-        result: indexed.result,
-        change: {
-          kind: "incremental",
-          schemas: [...new Set(objects.flatMap((object) => object.schemaName ?? []))].sort(),
-          sourceUris: [
-            ...new Set([
-              ...selection.documentUris,
-              ...patch.upsertDocuments.map((document) => document.uri),
-              ...patch.removeDocumentUris,
-            ]),
-          ].sort(),
-        },
+      this.activateRegistry(scope, indexed.registry, {
+        kind: "incremental",
+        schemas: [...new Set(objects.flatMap((object) => object.schemaName ?? []))].sort(),
+        sourceUris: [
+          ...new Set([
+            ...selection.documentUris,
+            ...patch.upsertDocuments.map((document) => document.uri),
+            ...patch.removeDocumentUris,
+          ]),
+        ].sort(),
       });
       this.output.appendLine(
         `workbench DDL direct refresh: objects=${objects.length} existing=${selection.documentUris.size} new=${selection.newResources.length} documents=${patch.upsertDocuments.length} removed=${patch.removeDocumentUris.length}`,
@@ -1469,6 +1502,34 @@ export class WorkbenchIndexController implements vscode.Disposable {
     }
   }
 
+  private activateRegistry(
+    scope: string,
+    registry: IndexedPostgresRegistry,
+    change: NonNullable<WorkbenchIndexState["change"]>,
+  ): void {
+    this.currentSymbols = registry.symbols;
+    this.currentDocuments = registry.documents;
+    this.currentOrigins = registry.origins;
+    this.stateScope = scope;
+    this.staleScopes.delete(scope);
+    this.setState({
+      status: "available",
+      serverId: registry.result.serverId,
+      result: registry.result,
+      change,
+    });
+  }
+
+  private advanceScopeRefreshEpoch(scope: string): number {
+    const epoch = this.scopeRefreshEpoch(scope) + 1;
+    this.scopeRefreshEpochs.set(scope, epoch);
+    return epoch;
+  }
+
+  private scopeRefreshEpoch(scope: string): number {
+    return this.scopeRefreshEpochs.get(scope) ?? 0;
+  }
+
   private activeScope(): string | undefined {
     if (this.disposed) {
       return undefined;
@@ -1698,6 +1759,48 @@ function duration(milliseconds: number): string {
 
 function databaseScope(serverId: string, database: string): string {
   return `${serverId}\0${database}`;
+}
+
+function routineReturnType(source: string | undefined): string | undefined {
+  if (!source) return undefined;
+  if (/\bRETURNS\s+(?:pg_catalog\.)?event_trigger\b/iu.test(source)) return "event_trigger";
+  if (/\bRETURNS\s+(?:pg_catalog\.)?trigger\b/iu.test(source)) return "trigger";
+  const match = /\bRETURNS\s+((?:SETOF\s+)?[^\s;(]+)/iu.exec(source);
+  return match?.[1];
+}
+
+function sqlAuthoringTrigger(
+  oid: number,
+  schema: string,
+  name: string,
+  definition: string,
+): SqlAuthoringTrigger | undefined {
+  const identifier = String.raw`(?:"(?:""|[^"])+"|[A-Za-z_][\w$]*)`;
+  const relation = new RegExp(
+    String.raw`\bON\s+(?:ONLY\s+)?(${identifier})\.(${identifier})`,
+    "iu",
+  ).exec(definition);
+  const routine = new RegExp(
+    String.raw`\bEXECUTE\s+(?:FUNCTION|PROCEDURE)\s+(${identifier})\.(${identifier})\s*\(`,
+    "iu",
+  ).exec(definition);
+  if (!relation || !routine) return undefined;
+  return {
+    oid,
+    schema,
+    name,
+    relationSchema: unquoteCatalogIdentifier(relation[1]),
+    relationName: unquoteCatalogIdentifier(relation[2]),
+    routineSchema: unquoteCatalogIdentifier(routine[1]),
+    routineName: unquoteCatalogIdentifier(routine[2]),
+    definition,
+  };
+}
+
+function unquoteCatalogIdentifier(identifier: string): string {
+  return identifier.startsWith('"')
+    ? identifier.slice(1, -1).replaceAll('""', '"')
+    : identifier.toLocaleLowerCase();
 }
 
 function databaseDocumentGlob(serverId: string, database: string): string {

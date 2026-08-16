@@ -35,6 +35,13 @@ export class SqlNotebookResultHost implements vscode.Disposable {
         );
         return;
       }
+      if (isIncreaseTimeoutRequest(message)) {
+        void vscode.commands.executeCommand(
+          "postgresql-workbench.setScratchpadStatementTimeout",
+          editor.notebook,
+        );
+        return;
+      }
       if (!isRendererRequest(message)) return;
       void this.handleRequest(editor, message);
     });
@@ -294,5 +301,14 @@ function isOpenSettingsRequest(value: unknown): boolean {
     typeof value === "object" &&
     !Array.isArray(value) &&
     (value as Partial<SqlNotebookRendererRequest>).type === "sql-error/open-analysis-settings"
+  );
+}
+
+function isIncreaseTimeoutRequest(value: unknown): boolean {
+  return (
+    Boolean(value) &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    (value as Partial<SqlNotebookRendererRequest>).type === "sql-error/increase-scratchpad-timeout"
   );
 }

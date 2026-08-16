@@ -30,4 +30,29 @@ describe("resolveTargetExecution", () => {
       resolveTargetExecution(backend, { sql: "SELECT shop.place_order(7)" }, undefined),
     ).rejects.toThrow(/syntax parser is required/);
   });
+
+  it("executes a trigger harness while stopping in its bound entry routine", async () => {
+    const sql = "UPDATE shop.product SET stock = stock WHERE id = 1";
+    const result = await resolveTargetExecution(
+      backend,
+      {
+        sql,
+        entryRoutine: {
+          oid: 84,
+          schema: "shop",
+          name: "audit_product_stock",
+          kind: "function",
+          argTypes: [],
+        },
+      },
+      undefined,
+    );
+
+    expect(result).toMatchObject({
+      entryOid: 84,
+      queryText: sql,
+      queryValues: [],
+      routine: { oid: 84, schema: "shop", name: "audit_product_stock", kind: "function" },
+    });
+  });
 });

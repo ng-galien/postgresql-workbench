@@ -127,6 +127,22 @@ describe("SQL notebook result host", () => {
     host.dispose();
   });
 
+  it("opens the Scratchpad timeout picker from a renderer timeout action", async () => {
+    const host = new SqlNotebookResultHost();
+    const notebook = { uri: { toString: () => "notebook://one" } } as vscode.NotebookDocument;
+    renderer.listener?.({
+      editor: { notebook } as vscode.NotebookEditor,
+      message: { type: "sql-error/increase-scratchpad-timeout" },
+    });
+    await flush();
+
+    expect(renderer.executeCommand).toHaveBeenCalledWith(
+      "postgresql-workbench.setScratchpadStatementTimeout",
+      notebook,
+    );
+    host.dispose();
+  });
+
   it("detaches a complete result instead of expiring static rows later", async () => {
     vi.useFakeTimers();
     const session = {

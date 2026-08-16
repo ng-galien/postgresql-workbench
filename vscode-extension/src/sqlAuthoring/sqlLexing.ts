@@ -4,16 +4,56 @@ export interface SqlWord {
 }
 
 export interface SqlLexicalScan {
+  dollarQuotedRanges: SqlDollarQuotedRange[];
   maskedSource: string;
   statementSeparators: number[];
   topLevelSource: string;
   words: SqlWord[];
 }
 
+export interface SqlDollarQuotedRange {
+  contentEnd: number;
+  contentStart: number;
+  end: number;
+  start: number;
+  tag: string;
+}
+
+export interface PostgresPlpgsqlRange {
+  end: number;
+  start: number;
+}
+
 export interface SqlStatementSlice {
   start: number;
   end: number;
   text: string;
+}
+
+export interface SqlStatementRunSlice extends SqlStatementSlice {
+  line: number;
+}
+
+export function sqlStatementSlices(source: string): SqlStatementRunSlice[] {
+  const scan = scanPostgresSql(source);
+  const boundaries = [...scan.statementSeparators.map((separator) => separator + 1), source.length];
+  const statements: SqlStatementRunSlice[] = [];
+  let start = 0;
+  for (const end of boundaries) {
+    const masked = scan.maskedSource.slice(start, end);
+    const firstCode = masked.search(/[^\s;]/u);
+    if (firstCode >= 0) {
+      const statementStart = start + firstCode;
+      statements.push({
+        start,
+        end,
+        text: source.slice(start, end).trim(),
+        line: source.slice(0, statementStart).split("\n").length,
+      });
+    }
+    start = end;
+  }
+  return statements;
 }
 
 export function sqlStatementAtOffset(source: string, requestedOffset: number): SqlStatementSlice {
@@ -31,11 +71,13 @@ export function scanPostgresSql(source: string): SqlLexicalScan {
   const topLevel = source.split("");
   const statementSeparators: number[] = [];
   const words: SqlWord[] = [];
+  const dollarQuotedRanges: SqlDollarQuotedRange[] = [];
   let depth = 0;
   let quote: "single" | "double" | "line-comment" | undefined;
   let escapedString = false;
   let blockCommentDepth = 0;
   let dollarTag: string | undefined;
+  let dollarStart: number | undefined;
   const mask = (start: number, length = 1) => {
     for (let index = start; index < start + length; index += 1) {
       if (masked[index] !== "\n" && masked[index] !== "\r") {
@@ -55,9 +97,19 @@ export function scanPostgresSql(source: string): SqlLexicalScan {
     if (depth > 0) maskTopLevel(index);
     if (dollarTag) {
       if (source.startsWith(dollarTag, index)) {
+        if (dollarStart !== undefined) {
+          dollarQuotedRanges.push({
+            contentEnd: index,
+            contentStart: dollarStart + dollarTag.length,
+            end: index + dollarTag.length,
+            start: dollarStart,
+            tag: dollarTag,
+          });
+        }
         mask(index, dollarTag.length);
         index += dollarTag.length - 1;
         dollarTag = undefined;
+        dollarStart = undefined;
       } else {
         mask(index);
       }
@@ -148,6 +200,7 @@ export function scanPostgresSql(source: string): SqlLexicalScan {
       if (match) {
         mask(index, match[0].length);
         dollarTag = match[0];
+        dollarStart = index;
         index += dollarTag.length - 1;
         continue;
       }
@@ -171,9 +224,19 @@ export function scanPostgresSql(source: string): SqlLexicalScan {
     index += word[0].length - 1;
   }
   return {
+    dollarQuotedRanges,
     maskedSource: masked.join(""),
     statementSeparators,
     topLevelSource: topLevel.join(""),
     words,
   };
+}
+
+export function postgresPlpgsqlRanges(source: string): PostgresPlpgsqlRange[] {
+  const scan = scanPostgresSql(source);
+  return scan.dollarQuotedRanges.flatMap((range) => {
+    const prefix = scan.maskedSource.slice(0, range.start);
+    if (!/\bDO(?:\s+LANGUAGE\s+plpgsql)?\s*$/iu.test(prefix)) return [];
+    return [{ start: range.contentStart, end: range.contentEnd }];
+  });
 }

@@ -100,6 +100,20 @@ describe("ScratchpadTransactionManager", () => {
     expect(transactions.soleTransaction()?.scratchpadUri).toBe("scratchpad:2");
   });
 
+  it("keeps a cancelled MANUAL Transaction visible as failed until rollback", async () => {
+    const { transactions } = fixture();
+    await transactions.execute("scratchpad:1", "Scratch 1", association, async () => undefined);
+
+    transactions.markFailed("scratchpad:1");
+
+    expect(transactions.transaction("scratchpad:1")?.status).toBe("failed");
+    await expect(
+      transactions.execute("scratchpad:1", "Scratch 1", association, async () => undefined),
+    ).rejects.toThrow("Roll it back");
+    await expect(transactions.rollback("scratchpad:1")).resolves.toBe(true);
+    expect(transactions.transaction("scratchpad:1")).toBeUndefined();
+  });
+
   it("waits for in-flight work, rolls back, and refuses new work on shutdown", async () => {
     const { client, queries, transactions } = fixture();
     const action = deferred();

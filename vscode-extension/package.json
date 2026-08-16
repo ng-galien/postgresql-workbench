@@ -139,11 +139,81 @@
           "light": "./icons/plpgsql-light.svg",
           "dark": "./icons/plpgsql-dark.svg"
         }
+      },
+      {
+        "id": "postgresql-table",
+        "aliases": ["PostgreSQL Table"],
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./icons/postgresql-table-light.svg",
+          "dark": "./icons/postgresql-table-dark.svg"
+        }
+      },
+      {
+        "id": "postgresql-view",
+        "aliases": ["PostgreSQL View"],
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./icons/postgresql-view-light.svg",
+          "dark": "./icons/postgresql-view-dark.svg"
+        }
+      },
+      {
+        "id": "postgresql-function",
+        "aliases": ["PostgreSQL Function"],
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./icons/postgresql-function-light.svg",
+          "dark": "./icons/postgresql-function-dark.svg"
+        }
+      },
+      {
+        "id": "postgresql-procedure",
+        "aliases": ["PostgreSQL Procedure"],
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./icons/postgresql-procedure-light.svg",
+          "dark": "./icons/postgresql-procedure-dark.svg"
+        }
+      },
+      {
+        "id": "postgresql-trigger",
+        "aliases": ["PostgreSQL Trigger"],
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./icons/postgresql-trigger-light.svg",
+          "dark": "./icons/postgresql-trigger-dark.svg"
+        }
       }
     ],
     "grammars": [
       {
         "language": "plpgsql",
+        "scopeName": "source.plpgsql",
+        "path": "./syntaxes/plpgsql.tmLanguage.json"
+      },
+      {
+        "language": "postgresql-table",
+        "scopeName": "source.plpgsql",
+        "path": "./syntaxes/plpgsql.tmLanguage.json"
+      },
+      {
+        "language": "postgresql-view",
+        "scopeName": "source.plpgsql",
+        "path": "./syntaxes/plpgsql.tmLanguage.json"
+      },
+      {
+        "language": "postgresql-function",
+        "scopeName": "source.plpgsql",
+        "path": "./syntaxes/plpgsql.tmLanguage.json"
+      },
+      {
+        "language": "postgresql-procedure",
+        "scopeName": "source.plpgsql",
+        "path": "./syntaxes/plpgsql.tmLanguage.json"
+      },
+      {
+        "language": "postgresql-trigger",
         "scopeName": "source.plpgsql",
         "path": "./syntaxes/plpgsql.tmLanguage.json"
       },
@@ -275,6 +345,36 @@
         "editor.dropIntoEditor.showDropSelector": "never",
         "editor.insertSpaces": true,
         "editor.tabSize": 2
+      },
+      "[postgresql-table]": {
+        "editor.detectIndentation": false,
+        "editor.dropIntoEditor.showDropSelector": "never",
+        "editor.insertSpaces": true,
+        "editor.tabSize": 2
+      },
+      "[postgresql-view]": {
+        "editor.detectIndentation": false,
+        "editor.dropIntoEditor.showDropSelector": "never",
+        "editor.insertSpaces": true,
+        "editor.tabSize": 2
+      },
+      "[postgresql-function]": {
+        "editor.detectIndentation": false,
+        "editor.dropIntoEditor.showDropSelector": "never",
+        "editor.insertSpaces": true,
+        "editor.tabSize": 2
+      },
+      "[postgresql-procedure]": {
+        "editor.detectIndentation": false,
+        "editor.dropIntoEditor.showDropSelector": "never",
+        "editor.insertSpaces": true,
+        "editor.tabSize": 2
+      },
+      "[postgresql-trigger]": {
+        "editor.detectIndentation": false,
+        "editor.dropIntoEditor.showDropSelector": "never",
+        "editor.insertSpaces": true,
+        "editor.tabSize": 2
       }
     },
     "viewsContainers": {
@@ -389,6 +489,18 @@
           "when": "false"
         },
         {
+          "command": "postgresql-workbench.assignDocumentConnection",
+          "when": "false"
+        },
+        {
+          "command": "postgresql-workbench.runSqlCall",
+          "when": "false"
+        },
+        {
+          "command": "postgresql-workbench.deployManagedRoutine",
+          "when": "false"
+        },
+        {
           "command": "postgresql-workbench.revealRoutineTests",
           "when": "false"
         },
@@ -422,6 +534,10 @@
         },
         {
           "command": "postgresql-workbench.setScratchpadManualMode",
+          "when": "false"
+        },
+        {
+          "command": "postgresql-workbench.setScratchpadCellExecutionIntent",
           "when": "false"
         },
         {
@@ -677,7 +793,7 @@
       "editor/context": [
         {
           "command": "postgresql-workbench.executeSqlSelection",
-          "when": "editorHasSelection && (editorLangId == sql || editorLangId == plpgsql)",
+          "when": "editorHasSelection && (editorLangId == sql || editorLangId == plpgsql || editorLangId == postgresql-table || editorLangId == postgresql-view || editorLangId == postgresql-function || editorLangId == postgresql-procedure || editorLangId == postgresql-trigger)",
           "group": "navigation@1"
         }
       ]
@@ -854,6 +970,11 @@
         "icon": "$(debug-pause)"
       },
       {
+        "command": "postgresql-workbench.setScratchpadStatementTimeout",
+        "title": "Scratchpad Statement Timeout...",
+        "icon": "$(clock)"
+      },
+      {
         "command": "postgresql-workbench.commitScratchpadTransaction",
         "title": "Commit",
         "icon": "$(check)"
@@ -862,6 +983,10 @@
         "command": "postgresql-workbench.rollbackScratchpadTransaction",
         "title": "Rollback",
         "icon": "$(discard)"
+      },
+      {
+        "command": "postgresql-workbench.setScratchpadCellExecutionIntent",
+        "title": "PostgreSQL Workbench: Change Scratchpad Cell Execution Intent"
       },
       {
         "command": "postgresql-workbench.compareRoutineWithDatabase",
@@ -910,6 +1035,18 @@
       {
         "command": "postgresql-workbench.debugCall",
         "title": "PL/pgSQL: Debug Call"
+      },
+      {
+        "command": "postgresql-workbench.assignDocumentConnection",
+        "title": "PostgreSQL Workbench: Change SQL Document Association"
+      },
+      {
+        "command": "postgresql-workbench.runSqlCall",
+        "title": "PostgreSQL Workbench: Run SQL Statement"
+      },
+      {
+        "command": "postgresql-workbench.deployManagedRoutine",
+        "title": "PostgreSQL Workbench: Deploy Managed PL/pgSQL Routine"
       },
       {
         "command": "postgresql-workbench.results.copy",
@@ -961,6 +1098,14 @@
           "minimum": 1,
           "scope": "window",
           "description": "Maximum PostgreSQL syntax-tree nodes used to classify SQL safely before execution and composition. Increase this client-selected budget for exceptionally large SQL documents."
+        },
+        "postgresql-workbench.sql.statementTimeoutMs": {
+          "type": "integer",
+          "default": 60000,
+          "minimum": 1000,
+          "maximum": 3600000,
+          "scope": "window",
+          "description": "Default PostgreSQL Statement timeout in milliseconds for SQL Scratchpads. Each Scratchpad can persist its own override."
         },
         "postgresql-workbench.workbench.schemaSync.enabled": {
           "type": "boolean",
@@ -1122,6 +1267,12 @@
     "breakpoints": [
       {
         "language": "plpgsql"
+      },
+      {
+        "language": "postgresql-function"
+      },
+      {
+        "language": "postgresql-procedure"
       },
       {
         "language": "sql"

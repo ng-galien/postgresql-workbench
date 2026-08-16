@@ -75,6 +75,118 @@ class FakeConnections {
 }
 
 describe("WorkbenchIndexController connection state", () => {
+  it("serializes an ad hoc database refresh and invalidates an older active snapshot", async () => {
+    const connections = new FakeConnections();
+    const controller = new WorkbenchIndexController(
+      {
+        extensionPath: "/extension",
+        globalStorageUri: { fsPath: "/storage" },
+      } as vscode.ExtensionContext,
+      connections as unknown as ConnectionManager,
+      { appendLine: vi.fn() } as unknown as vscode.OutputChannel,
+    );
+    const result: WorkbenchIndexResult = {
+      serverId: "server-a",
+      database: "database-a",
+      revision: "revision-b",
+      documents: 1,
+      symbols: 1,
+      generation: 2,
+      introspectionMs: 1,
+      materializationMs: 1,
+      publicationMs: 1,
+      symbolQueryMs: 1,
+      indexingMs: 1,
+      graphQueryMs: 1,
+    };
+    let releasePrevious = () => {};
+    const previous = new Promise<WorkbenchIndexResult>((resolve) => {
+      releasePrevious = () => resolve({ ...result, revision: "revision-a", generation: 1 });
+    });
+    const runPostgresDatabaseIndex = vi.fn().mockResolvedValue(result);
+    const internals = controller as unknown as {
+      currentRun?: Promise<WorkbenchIndexResult>;
+      runPostgresDatabaseIndex: typeof runPostgresDatabaseIndex;
+      scopeRefreshEpoch(scope: string): number;
+    };
+    internals.currentRun = previous;
+    internals.runPostgresDatabaseIndex = runPostgresDatabaseIndex;
+    const oldEpoch = internals.scopeRefreshEpoch("server-a\0database-a");
+
+    const refresh = controller.indexPostgresDatabase({ query: vi.fn() } as never, {
+      serverId: "server-a",
+      database: "database-a",
+    });
+
+    expect(internals.currentRun).toBe(refresh);
+    expect(internals.scopeRefreshEpoch("server-a\0database-a")).toBeGreaterThan(oldEpoch);
+    expect(runPostgresDatabaseIndex).not.toHaveBeenCalled();
+    releasePrevious();
+    await expect(refresh).resolves.toBe(result);
+    expect(runPostgresDatabaseIndex).toHaveBeenCalledTimes(1);
+    controller.dispose();
+  });
+
+  it("adopts a refreshed registry for the active DatabaseContext", () => {
+    const connections = new FakeConnections();
+    const controller = new WorkbenchIndexController(
+      {
+        extensionPath: "/extension",
+        globalStorageUri: { fsPath: "/storage" },
+      } as vscode.ExtensionContext,
+      connections as unknown as ConnectionManager,
+      { appendLine: vi.fn() } as unknown as vscode.OutputChannel,
+    );
+    const result: WorkbenchIndexResult = {
+      serverId: "server-a",
+      database: "database-a",
+      revision: "revision-b",
+      documents: 1,
+      symbols: 1,
+      generation: 2,
+      introspectionMs: 1,
+      materializationMs: 1,
+      publicationMs: 1,
+      symbolQueryMs: 1,
+      indexingMs: 1,
+      graphQueryMs: 1,
+    };
+    const symbol = {
+      uri: "sql:table:orders",
+      file: "orders.sql",
+      name: "orders",
+      kind: "table",
+      signature: "",
+    };
+    const refreshedRegistry = {
+      result,
+      symbols: [symbol],
+      sourceSet: { srcset: "postgres-test", revision: "revision-b", documents: [] },
+      documents: new Map(),
+      origins: new Map(),
+      foreignKeys: [],
+      viewDependencies: [],
+      resources: new Map(),
+    };
+    const internals = controller as unknown as {
+      activateRegistry(
+        scope: string,
+        registry: typeof refreshedRegistry,
+        change: { kind: "full"; schemas: []; sourceUris: [] },
+      ): void;
+    };
+
+    internals.activateRegistry("server-a\0database-a", refreshedRegistry, {
+      kind: "full",
+      schemas: [],
+      sourceUris: [],
+    });
+
+    expect(controller.state).toMatchObject({ status: "available", result });
+    expect(controller.indexedSymbols).toEqual([symbol]);
+    controller.dispose();
+  });
+
   it("holds an acceptance index phase until that exact run and phase are released", async () => {
     const previousControlFile = process.env.POSTGRESQL_WORKBENCH_ACCEPTANCE_CONTROL_FILE;
     process.env.POSTGRESQL_WORKBENCH_ACCEPTANCE_CONTROL_FILE = "/tmp/workbench-control.json";

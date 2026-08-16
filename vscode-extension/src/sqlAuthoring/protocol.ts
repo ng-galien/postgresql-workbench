@@ -41,8 +41,21 @@ export interface SqlAuthoringObject {
   name: string;
   kind: SqlAuthoringObjectKind;
   signature: string;
+  plpgsql?: boolean;
+  returnType?: string;
   parameters: Array<{ name: string; type: string }>;
   columns: SqlAuthoringColumn[];
+}
+
+export interface SqlAuthoringTrigger {
+  oid: number;
+  schema: string;
+  name: string;
+  relationSchema: string;
+  relationName: string;
+  routineSchema: string;
+  routineName: string;
+  definition: string;
 }
 
 export interface SqlAuthoringForeignKey {
@@ -60,6 +73,7 @@ export interface SqlAuthoringSnapshot extends SqlAuthoringDatabaseIdentity {
   generation: number | null;
   objects: SqlAuthoringObject[];
   foreignKeys: SqlAuthoringForeignKey[];
+  triggers?: SqlAuthoringTrigger[];
 }
 
 export interface SqlAuthoringSnapshotToken extends SqlAuthoringDatabaseIdentity {
@@ -78,7 +92,7 @@ export interface SqlAuthoringSyntaxResult {
 
 export type SqlAuthoringDragPayload =
   | ({
-      kind: "table" | "view";
+      kind: "table" | "view" | "function" | "procedure" | "trigger";
       oid: number;
       schema: string;
       name: string;
@@ -105,7 +119,13 @@ export function parseSqlAuthoringDrag(value: string): SqlAuthoringDragPayload | 
     ) {
       return undefined;
     }
-    if (payload.kind === "table" || payload.kind === "view") {
+    if (
+      payload.kind === "table" ||
+      payload.kind === "view" ||
+      payload.kind === "function" ||
+      payload.kind === "procedure" ||
+      payload.kind === "trigger"
+    ) {
       return typeof payload.oid === "number" && typeof payload.schema === "string"
         ? (payload as unknown as SqlAuthoringDragPayload)
         : undefined;
@@ -136,6 +156,8 @@ export type SqlAuthoringComposeResult =
   | {
       status: "ambiguous";
       choices: Array<{ index: number; label: string; description: string }>;
+      title?: string;
+      placeHolder?: string;
       snapshot?: SqlAuthoringSnapshotToken;
     }
   | { status: "rejected"; message: string };

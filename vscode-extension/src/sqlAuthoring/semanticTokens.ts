@@ -7,7 +7,7 @@ import {
   sqlAliasAfterRelation,
 } from "./identifiers.js";
 import type { SqlAuthoringObject, SqlAuthoringSnapshot } from "./protocol.js";
-import { scanPostgresSql } from "./sqlLexing.js";
+import { postgresPlpgsqlRanges, scanPostgresSql } from "./sqlLexing.js";
 
 export const SQL_SEMANTIC_TOKEN_TYPES = [
   "variable",
@@ -123,22 +123,12 @@ const UNQUALIFIED_COLUMN_EXCLUSIONS = new Set([
 
 export function postgresSemanticTokens(document: TextDocument, snapshot: SqlAuthoringSnapshot) {
   const source = document.getText();
-  const maskedSource = scanPostgresSql(source).maskedSource;
-  const tokens: Token[] = [];
-  const occupied = new Set<string>();
-  const ctes = cteDeclarations(source, maskedSource);
-  const windows = windowSymbols(source, maskedSource);
-  const references = relationReferences(source, maskedSource, snapshot.objects, ctes);
-
-  addCteTokens(tokens, occupied, ctes);
-  addWindowTokens(tokens, occupied, windows);
-  addRelationTokens(tokens, occupied, references);
-  addRoutineTokens(tokens, occupied, source, maskedSource, snapshot.objects);
-  addParameterTokens(tokens, occupied, maskedSource);
-  addTypeTokens(tokens, occupied, source, maskedSource);
-  addQualifiedTokens(tokens, occupied, source, maskedSource, snapshot.objects, references);
-  addUnqualifiedColumnTokens(tokens, occupied, source, maskedSource, references);
-
+  const tokens = collectSemanticTokens(source, snapshot, 0);
+  for (const range of postgresPlpgsqlRanges(source)) {
+    tokens.push(
+      ...collectSemanticTokens(source.slice(range.start, range.end), snapshot, range.start, true),
+    );
+  }
   tokens.sort((left, right) => left.offset - right.offset);
   const builder = new SemanticTokensBuilder();
   for (const token of tokens) {
@@ -152,6 +142,31 @@ export function postgresSemanticTokens(document: TextDocument, snapshot: SqlAuth
     );
   }
   return builder.build();
+}
+
+function collectSemanticTokens(
+  source: string,
+  snapshot: SqlAuthoringSnapshot,
+  baseOffset: number,
+  plpgsql = false,
+): Token[] {
+  const maskedSource = scanPostgresSql(source).maskedSource;
+  const tokens: Token[] = [];
+  const occupied = new Set<string>();
+  const ctes = cteDeclarations(source, maskedSource);
+  const windows = windowSymbols(source, maskedSource);
+  const references = relationReferences(source, maskedSource, snapshot.objects, ctes);
+
+  addCteTokens(tokens, occupied, ctes);
+  addWindowTokens(tokens, occupied, windows);
+  addRelationTokens(tokens, occupied, references);
+  addRoutineTokens(tokens, occupied, source, maskedSource, snapshot.objects);
+  addParameterTokens(tokens, occupied, maskedSource);
+  addTypeTokens(tokens, occupied, source, maskedSource);
+  if (plpgsql) addPlpgsqlDeclarationTokens(tokens, occupied, source, maskedSource);
+  addQualifiedTokens(tokens, occupied, source, maskedSource, snapshot.objects, references);
+  addUnqualifiedColumnTokens(tokens, occupied, source, maskedSource, references);
+  return tokens.map((token) => ({ ...token, offset: token.offset + baseOffset }));
 }
 
 function addCteTokens(tokens: Token[], occupied: Set<string>, ctes: readonly NamedSymbol[]): void {
@@ -269,6 +284,34 @@ function addTypeTokens(
   );
   for (const match of maskedSource.matchAll(castFunctionPattern)) {
     addQualifiedType(tokens, occupied, source, match, 1);
+  }
+}
+
+function addPlpgsqlDeclarationTokens(
+  tokens: Token[],
+  occupied: Set<string>,
+  source: string,
+  maskedSource: string,
+): void {
+  const declarations = new Map<string, string>();
+  const declarationPattern = new RegExp(
+    String.raw`(?:^|[;\r\n])\s*(${IDENTIFIER})\s+(${QUALIFIED_IDENTIFIER})(?=\s*(?::=|DEFAULT\b|NOT\s+NULL\b|;))`,
+    "giu",
+  );
+  for (const match of maskedSource.matchAll(declarationPattern)) {
+    const variableOffset = (match.index ?? 0) + match[0].indexOf(match[1]);
+    const variable = source.slice(variableOffset, variableOffset + match[1].length);
+    declarations.set(canonicalSqlIdentifier(variable), variable);
+    addToken(tokens, occupied, variableOffset, match[1].length, "variable");
+    addQualifiedType(tokens, occupied, source, match, 2);
+  }
+  if (declarations.size === 0) return;
+  const identifierPattern = new RegExp(IDENTIFIER, "gu");
+  for (const match of maskedSource.matchAll(identifierPattern)) {
+    const offset = match.index ?? 0;
+    const identifier = source.slice(offset, offset + match[0].length);
+    if (!declarations.has(canonicalSqlIdentifier(identifier))) continue;
+    addToken(tokens, occupied, offset, match[0].length, "variable");
   }
 }
 

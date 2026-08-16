@@ -14,6 +14,7 @@ export interface PostgresSourcePresentationInput {
 }
 
 export interface PostgresSourcePresentation {
+  displayPath: string;
   label: string;
   path: string;
   kind: string;
@@ -64,6 +65,7 @@ export function postgresSourcePresentation(
       : source.name;
   const segments = [source.database, source.schema, kind, object];
   return {
+    displayPath: [source.database, source.schema, kind, source.name].join("/"),
     label: segments.join(" / "),
     path: segments.join("/"),
     kind,

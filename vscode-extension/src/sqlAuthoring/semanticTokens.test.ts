@@ -106,6 +106,30 @@ describe("SQL authoring semantic tokens", () => {
     );
   });
 
+  it("keeps routines, relations, columns, variables, and types semantic inside a DO block", () => {
+    const source = [
+      "DO $workbench$",
+      "DECLARE",
+      "  v_address_id int4 := (SELECT id FROM shop.address);",
+      "BEGIN",
+      "  CALL shop.reprice_order(v_address_id);",
+      "END",
+      "$workbench$;",
+    ].join("\n");
+    const document = TextDocument.create("file:///routine.sql", "sql", 1, source);
+    const tokens = decode(document, postgresSemanticTokens(document, snapshot));
+
+    expect(tokens).toEqual(
+      expect.arrayContaining([
+        ["address", "sqlTable"],
+        ["id", "sqlColumn"],
+        ["reprice_order", "sqlProcedure"],
+        ["int4", "sqlType"],
+        ["v_address_id", "variable"],
+      ]),
+    );
+  });
+
   it.each([
     'SELECT "multi\nline" FROM shop.address;',
     'SELECT a.id FROM shop.address AS "multi\nline";',

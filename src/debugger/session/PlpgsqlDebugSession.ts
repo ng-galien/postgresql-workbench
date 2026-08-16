@@ -76,6 +76,7 @@ interface LaunchRequestArguments extends DebugProtocol.LaunchRequestArguments {
   user: string;
   password: string;
   sql?: string;
+  entryRoutine?: DebugLaunchRoutineTarget;
   routine?: DebugLaunchRoutineTarget;
   routineArgs?: DebugLaunchRoutineArgument[];
   ssl?: boolean | "require" | "prefer" | "disable";

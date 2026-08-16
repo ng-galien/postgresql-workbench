@@ -51,4 +51,27 @@ describe("SqlErrorView", () => {
     expect(html).toContain("Open SQL analysis settings");
     expect(html).toContain("result-button-primary");
   });
+
+  it("offers a Scratchpad timeout action for a PostgreSQL Statement timeout", () => {
+    const html = renderToStaticMarkup(
+      <SqlErrorView
+        messaging={{ postMessage() {}, subscribe: () => () => {} }}
+        payload={{
+          version: 1,
+          type: "error",
+          category: "postgresql",
+          title: "PostgreSQL error",
+          message: "canceling statement due to statement timeout",
+          code: "57014",
+          action: {
+            type: "increase-scratchpad-timeout",
+            label: "Increase Scratchpad timeout…",
+          },
+        }}
+      />,
+    );
+
+    expect(html).toContain("Increase Scratchpad timeout…");
+    expect(html).toContain("result-button-primary");
+  });
 });

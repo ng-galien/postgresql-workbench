@@ -187,7 +187,7 @@ $block$;`;
 });
 
 suite("Virtual source editing", () => {
-  test("writeFile deploys SQL and updates the provider cache", async () => {
+  test("writeFile stores a working copy without deploying SQL", async () => {
     const executed: string[] = [];
     const fakeClient = {
       query: async (sql: string) => {
@@ -261,7 +261,7 @@ suite("Virtual source editing", () => {
       await provider.writeFile(uri, content);
       const cached = await provider.readFile(uri);
 
-      assert.deepStrictEqual(executed, [new TextDecoder().decode(content)]);
+      assert.deepStrictEqual(executed, []);
       assert.strictEqual(new TextDecoder().decode(cached), new TextDecoder().decode(content));
       assert.ok(changed, "Expected provider change event");
     } finally {

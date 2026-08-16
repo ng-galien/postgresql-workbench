@@ -12,20 +12,27 @@ import type { ConnectionManager } from "./connectionManager.js";
 import { ScratchpadTransactionManager } from "./scratchpadTransactions.js";
 import type { ServerConfig } from "./serverStore.js";
 import {
+  configureNotebookStatementTimeout,
   createDedicatedNotebookClient,
   DedicatedNotebookConnectionError,
+  NotebookClientCancellation,
+  NotebookExecutionCancelledError,
   withDedicatedNotebookClient,
 } from "./sqlNotebookConnection.js";
 import { SQL_NOTEBOOK_SCHEME, SqlNotebookFileSystemProvider } from "./sqlNotebookFileSystem.js";
 import {
   associationFingerprint,
   associationSnapshot,
+  DEFAULT_SCRATCHPAD_STATEMENT_TIMEOUT_MS,
   emptySqlNotebook,
+  MAX_SCRATCHPAD_STATEMENT_TIMEOUT_MS,
+  MIN_SCRATCHPAD_STATEMENT_TIMEOUT_MS,
   normalizeSqlNotebookName,
   parseSqlNotebookFile,
   resolveScratchpadAssociation,
   type ScratchpadAssociation,
   type ScratchpadAssociationSnapshot,
+  type ScratchpadCellExecutionIntent,
   type ScratchpadExecutionMode,
   SQL_NOTEBOOK_RESULT_MIME,
   SQL_NOTEBOOK_TYPE,
@@ -33,10 +40,13 @@ import {
   type SqlNotebookFile,
   type SqlNotebookMetadata,
   type SqlNotebookResultPayload,
+  scratchpadCellExecutionIntent,
   scratchpadCreationAssociation,
   scratchpadExecutionMode,
+  scratchpadStatementTimeoutMs,
   serializeSqlNotebookFile,
   sqlNotebookResultPayload,
+  validStatementTimeoutMs,
 } from "./sqlNotebookModel.js";
 import { postgresCursorSafetyTimeoutMs, SqlNotebookResultHost } from "./sqlNotebookResultHost.js";
 import {
@@ -60,6 +70,10 @@ export const USE_SQL_NOTEBOOK_ASSOCIATION_AS_ACTIVE_COMMAND =
   "postgresql-workbench.useSqlNotebookBindingAsActive";
 export const SET_SCRATCHPAD_AUTO_MODE_COMMAND = "postgresql-workbench.setScratchpadAutoMode";
 export const SET_SCRATCHPAD_MANUAL_MODE_COMMAND = "postgresql-workbench.setScratchpadManualMode";
+export const SET_SCRATCHPAD_STATEMENT_TIMEOUT_COMMAND =
+  "postgresql-workbench.setScratchpadStatementTimeout";
+export const SET_SCRATCHPAD_CELL_EXECUTION_INTENT_COMMAND =
+  "postgresql-workbench.setScratchpadCellExecutionIntent";
 export const COMMIT_SCRATCHPAD_TRANSACTION_COMMAND =
   "postgresql-workbench.commitScratchpadTransaction";
 export const ROLLBACK_SCRATCHPAD_TRANSACTION_COMMAND =
@@ -67,14 +81,25 @@ export const ROLLBACK_SCRATCHPAD_TRANSACTION_COMMAND =
 
 type ResultPlanner = (sql: string) => Promise<SqlExecutionPlan>;
 
+export interface ScratchpadDebugRequest {
+  sql: string;
+  association: ScratchpadAssociationSnapshot;
+  source: { name: string; uri: string; line: number };
+}
+
+export type ScratchpadDebugger = (
+  request: ScratchpadDebugRequest,
+) => Promise<{ started: boolean; message?: string }>;
+
 export function registerSqlNotebook(
   context: vscode.ExtensionContext,
   connections: ConnectionManager,
   planResult: ResultPlanner,
+  debug: ScratchpadDebugger,
 ): ScratchpadFeature {
   const serializer = new SqlNotebookSerializer();
   const transactions = new ScratchpadTransactionManager(connections);
-  const controller = new SqlNotebookController(connections, planResult, transactions);
+  const controller = new SqlNotebookController(connections, planResult, transactions, debug);
   const statusProvider = new SqlNotebookStatusProvider(connections);
   const fileSystem = new SqlNotebookFileSystemProvider(context.globalStorageUri);
   const workspace = new SqlNotebookWorkspace(fileSystem);
@@ -95,6 +120,25 @@ export function registerSqlNotebook(
     controller,
     statusProvider,
     vscode.notebooks.registerNotebookCellStatusBarItemProvider(SQL_NOTEBOOK_TYPE, statusProvider),
+    vscode.commands.registerCommand(
+      SET_SCRATCHPAD_CELL_EXECUTION_INTENT_COMMAND,
+      async (cell: vscode.NotebookCell, requested?: ScratchpadCellExecutionIntent) => {
+        if (!cell || cell.notebook.notebookType !== SQL_NOTEBOOK_TYPE) return false;
+        const current = scratchpadCellExecutionIntent(cell.metadata);
+        const executionIntent = requested ?? (current === "run" ? "debug" : "run");
+        const edit = new vscode.WorkspaceEdit();
+        edit.set(cell.notebook.uri, [
+          vscode.NotebookEdit.updateCellMetadata(cell.index, {
+            ...(cell.metadata && typeof cell.metadata === "object" ? cell.metadata : {}),
+            executionIntent,
+          }),
+        ]);
+        if (!(await vscode.workspace.applyEdit(edit))) return false;
+        await cell.notebook.save();
+        statusProvider.refresh();
+        return true;
+      },
+    ),
     vscode.commands.registerCommand(NEW_SQL_NOTEBOOK_COMMAND, async (target?: unknown) => {
       const connection = await pickScratchpadAssociationForCreation(connections, target);
       const file = emptySqlNotebook(connection ? associationSnapshot(connection) : {});
@@ -202,6 +246,7 @@ export function registerSqlNotebook(
             await updateNotebookMetadata(notebook, {
               ...(selected.connection ? associationSnapshot(selected.connection) : {}),
               executionMode: scratchpadExecutionMode(notebookMetadata(notebook.metadata)),
+              ...scratchpadTimeoutOverride(notebookMetadata(notebook.metadata)),
             });
             statusProvider.refresh();
           },
@@ -214,6 +259,9 @@ export function registerSqlNotebook(
     ),
     vscode.commands.registerCommand(SET_SCRATCHPAD_MANUAL_MODE_COMMAND, (target?: unknown) =>
       setScratchpadExecutionMode(target, "manual", transactions, statusProvider),
+    ),
+    vscode.commands.registerCommand(SET_SCRATCHPAD_STATEMENT_TIMEOUT_COMMAND, (target?: unknown) =>
+      setScratchpadStatementTimeout(target, transactions, statusProvider),
     ),
     vscode.commands.registerCommand(
       COMMIT_SCRATCHPAD_TRANSACTION_COMMAND,
@@ -377,6 +425,119 @@ async function setScratchpadExecutionMode(
   return changed.accepted;
 }
 
+interface ScratchpadTimeoutPick extends vscode.QuickPickItem {
+  action: "global" | "timeout" | "custom" | "settings";
+  timeoutMs?: number;
+}
+
+async function setScratchpadStatementTimeout(
+  target: unknown,
+  transactions: ScratchpadTransactionManager,
+  statusProvider: SqlNotebookStatusProvider,
+): Promise<boolean> {
+  const notebook =
+    (await notebookFromTarget(target)) ?? vscode.window.activeNotebookEditor?.notebook;
+  if (!notebook || notebook.notebookType !== SQL_NOTEBOOK_TYPE) return false;
+  const metadata = notebookMetadata(notebook.metadata);
+  const globalTimeoutMs = configuredScratchpadStatementTimeoutMs();
+  const effectiveTimeoutMs = scratchpadStatementTimeoutMs(metadata, globalTimeoutMs);
+  const selected = await vscode.window.showQuickPick<ScratchpadTimeoutPick>(
+    [
+      {
+        label: "$(globe) Use global setting",
+        description: formatStatementTimeout(globalTimeoutMs),
+        action: "global",
+      },
+      ...[60_000, 120_000, 300_000, 900_000, 1_800_000].map((timeoutMs) => ({
+        label: formatStatementTimeout(timeoutMs),
+        description:
+          metadata.statementTimeoutMs === timeoutMs ? "Current Scratchpad override" : undefined,
+        action: "timeout" as const,
+        timeoutMs,
+      })),
+      {
+        label: "$(edit) Custom…",
+        description: `Current effective timeout: ${formatStatementTimeout(effectiveTimeoutMs)}`,
+        action: "custom",
+      },
+      {
+        label: "$(settings-gear) Open global timeout setting",
+        action: "settings",
+      },
+    ],
+    {
+      title: "Scratchpad Statement timeout",
+      placeHolder: "Choose the maximum duration of one PostgreSQL Statement",
+    },
+  );
+  if (!selected) return false;
+  if (selected.action === "settings") {
+    await vscode.commands.executeCommand(
+      "workbench.action.openSettings",
+      "postgresql-workbench.sql.statementTimeoutMs",
+    );
+    return true;
+  }
+  let timeoutMs = selected.timeoutMs;
+  if (selected.action === "custom") {
+    const value = await vscode.window.showInputBox({
+      title: "Scratchpad Statement timeout",
+      prompt: "Maximum duration in seconds (1 to 3600)",
+      value: String(Math.round(effectiveTimeoutMs / 1_000)),
+      validateInput(input) {
+        const seconds = Number(input);
+        return Number.isInteger(seconds) &&
+          seconds >= MIN_SCRATCHPAD_STATEMENT_TIMEOUT_MS / 1_000 &&
+          seconds <= MAX_SCRATCHPAD_STATEMENT_TIMEOUT_MS / 1_000
+          ? undefined
+          : "Enter a whole number from 1 to 3600.";
+      },
+    });
+    if (value === undefined) return false;
+    timeoutMs = Number(value) * 1_000;
+  }
+  const changed = await transactions.runScratchpadChange(
+    notebook.uri.toString(),
+    "changing its Statement timeout",
+    async () => {
+      const current = notebookMetadata(notebook.metadata);
+      const { statementTimeoutMs: _previous, ...withoutTimeout } = current;
+      await updateNotebookMetadata(notebook, {
+        ...withoutTimeout,
+        ...(selected.action === "global" ? {} : { statementTimeoutMs: timeoutMs }),
+      });
+      statusProvider.refresh();
+    },
+    () =>
+      selected.action === "global"
+        ? metadata.statementTimeoutMs === undefined
+        : metadata.statementTimeoutMs === timeoutMs,
+  );
+  return changed.accepted;
+}
+
+function scratchpadTimeoutOverride(
+  metadata: SqlNotebookMetadata,
+): Pick<SqlNotebookMetadata, "statementTimeoutMs"> {
+  return metadata.statementTimeoutMs === undefined
+    ? {}
+    : { statementTimeoutMs: metadata.statementTimeoutMs };
+}
+
+function configuredScratchpadStatementTimeoutMs(): number {
+  const value = vscode.workspace
+    .getConfiguration("postgresql-workbench.sql")
+    .get<number>("statementTimeoutMs", DEFAULT_SCRATCHPAD_STATEMENT_TIMEOUT_MS);
+  return validStatementTimeoutMs(value) ?? DEFAULT_SCRATCHPAD_STATEMENT_TIMEOUT_MS;
+}
+
+function formatStatementTimeout(timeoutMs: number): string {
+  const seconds = timeoutMs / 1_000;
+  if (seconds < 60) return `${seconds} s`;
+  const minutes = seconds / 60;
+  return `${minutes} min`;
+}
+
 function scratchpadUriFromTarget(target: unknown): string | undefined {
   if (typeof target === "string") return target;
   if (!target || typeof target !== "object") return undefined;
@@ -520,14 +681,15 @@ export class SqlNotebookSerializer implements vscode.NotebookSerializer {
   deserializeNotebook(content: Uint8Array): vscode.NotebookData {
     const file = parseSqlNotebookFile(new TextDecoder().decode(content));
     const data = new vscode.NotebookData(
-      file.cells.map(
-        (cell) =>
-          new vscode.NotebookCellData(
-            cell.kind === "markup" ? vscode.NotebookCellKind.Markup : vscode.NotebookCellKind.Code,
-            cell.source,
-            cell.language,
-          ),
-      ),
+      file.cells.map((cell) => {
+        const data = new vscode.NotebookCellData(
+          cell.kind === "markup" ? vscode.NotebookCellKind.Markup : vscode.NotebookCellKind.Code,
+          cell.source,
+          cell.language,
+        );
+        data.metadata = cell.metadata;
+        return data;
+      }),
     );
     data.metadata = file.metadata;
     return data;
@@ -540,7 +702,14 @@ export class SqlNotebookSerializer implements vscode.NotebookSerializer {
       cells: data.cells.map((cell) =>
         cell.kind === vscode.NotebookCellKind.Markup
           ? { kind: "markup", language: "markdown", source: cell.value }
-          : { kind: "code", language: "plpgsql", source: cell.value },
+          : {
+              kind: "code",
+              language: "plpgsql",
+              source: cell.value,
+              ...(scratchpadCellExecutionIntent(cell.metadata) === "debug"
+                ? { metadata: { executionIntent: "debug" as const } }
+                : {}),
+            },
       ),
     };
     return new TextEncoder().encode(serializeSqlNotebookFile(file));
@@ -558,6 +727,7 @@ class SqlNotebookController implements vscode.Disposable {
     private readonly connections: ConnectionManager,
     private readonly planResult: ResultPlanner,
     private readonly transactions: ScratchpadTransactionManager,
+    private readonly debug: ScratchpadDebugger,
   ) {
     this.controller = vscode.notebooks.createNotebookController(
       "postgresql-workbench.sql",
@@ -621,13 +791,18 @@ class SqlNotebookController implements vscode.Disposable {
       return;
     }
 
+    let batchCancelled = false;
     for (const cell of cells) {
       if (cell.kind !== vscode.NotebookCellKind.Code) continue;
       await this.executeCell(
         cell,
         association,
         scratchpadExecutionMode(notebookMetadata(notebook.metadata)),
+        () => {
+          batchCancelled = true;
+        },
       );
+      if (batchCancelled) break;
     }
   }
 
@@ -635,19 +810,97 @@ class SqlNotebookController implements vscode.Disposable {
     cell: vscode.NotebookCell,
     association: Extract<ScratchpadAssociation, { status: "associated" }>,
     mode: ScratchpadExecutionMode,
+    onCancelled: () => void,
   ): Promise<void> {
     await this.resultHost.closeCell(cell.document.uri.toString());
     const execution = this.controller.createNotebookCellExecution(cell);
     execution.executionOrder = ++this.executionOrder;
     execution.start(Date.now());
+    const cancellation = new NotebookClientCancellation();
+    const cancellationSubscription = execution.token.onCancellationRequested(() => {
+      onCancelled();
+      cancellation.request();
+    });
+    if (execution.token.isCancellationRequested) {
+      onCancelled();
+      cancellation.request();
+    }
+    try {
+      await this.runCellExecution(cell, association, mode, execution, cancellation);
+    } catch (error) {
+      if (
+        cancellation.isCancellationRequested ||
+        error instanceof NotebookExecutionCancelledError
+      ) {
+        await execution.replaceOutput(errorOutput(executionCancelledPayload()));
+        execution.end(false, Date.now());
+        return;
+      }
+      throw error;
+    } finally {
+      cancellationSubscription.dispose();
+      await cancellation.settle();
+    }
+  }
+
+  private async runCellExecution(
+    cell: vscode.NotebookCell,
+    association: Extract<ScratchpadAssociation, { status: "associated" }>,
+    mode: ScratchpadExecutionMode,
+    execution: vscode.NotebookCellExecution,
+    cancellation: NotebookClientCancellation,
+  ): Promise<void> {
     const sql = cell.document.getText();
+    cancellation.throwIfCancellationRequested();
     if (!sql.trim()) {
       await execution.clearOutput();
       execution.end(true, Date.now());
       return;
     }
 
+    if (scratchpadCellExecutionIntent(cell.metadata) === "debug") {
+      if (mode === "manual") {
+        await execution.replaceOutput(
+          errorOutput(
+            notebookErrorPayload(
+              "execution",
+              "Debug unavailable in Mode MANUAL",
+              "The debugger owns separate PostgreSQL sessions and cannot join the Scratchpad Transaction. Change to Mode AUTO, Commit, or Rollback first.",
+            ),
+          ),
+        );
+        execution.end(false, Date.now());
+        return;
+      }
+      const debug = await this.debug({
+        sql,
+        association: association.snapshot,
+        source: {
+          name: displaySqlNotebookName(cell.notebook.uri.path.split("/").at(-1) ?? "Scratchpad"),
+          uri: cell.notebook.uri.toString(),
+          line: 1,
+        },
+      });
+      if (!debug.started) {
+        await execution.replaceOutput(
+          errorOutput(
+            notebookErrorPayload(
+              "execution",
+              "PL/pgSQL Debug unavailable",
+              debug.message ?? "This cell does not contain a reproducible PL/pgSQL entry point.",
+            ),
+          ),
+        );
+        execution.end(false, Date.now());
+        return;
+      }
+      await execution.clearOutput();
+      execution.end(true, Date.now());
+      return;
+    }
+
     const plan = await this.planResult(sql);
+    cancellation.throwIfCancellationRequested();
     if (plan.status === "empty") {
       await execution.clearOutput();
       execution.end(true, Date.now());
@@ -673,6 +926,10 @@ class SqlNotebookController implements vscode.Disposable {
     }
 
     const settings = sqlResultSettings();
+    const statementTimeoutMs = scratchpadStatementTimeoutMs(
+      notebookMetadata(cell.notebook.metadata),
+      configuredScratchpadStatementTimeoutMs(),
+    );
     const [singleStatement] = plan.statements;
     if (
       mode === "auto" &&
@@ -685,11 +942,23 @@ class SqlNotebookController implements vscode.Disposable {
           singleStatement.sql,
           settings,
           association.snapshot,
+          statementTimeoutMs,
+          cancellation,
         );
+        cancellation.throwIfCancellationRequested();
         await execution.replaceOutput(resultOutput(payload));
         execution.end(true, Date.now());
       } catch (error) {
-        await execution.replaceOutput(errorOutput(executionErrorPayload(error)));
+        if (cancellation.isCancellationRequested) {
+          await this.resultHost.closeCell(cell.document.uri.toString());
+        }
+        await execution.replaceOutput(
+          errorOutput(
+            cancellation.isCancellationRequested
+              ? executionCancelledPayload()
+              : executionErrorPayload(error, undefined, statementTimeoutMs),
+          ),
+        );
         execution.end(false, Date.now());
         if (error instanceof DedicatedNotebookConnectionError) {
           await this.offerConnectionRecovery(cell.notebook, error);
@@ -705,11 +974,23 @@ class SqlNotebookController implements vscode.Disposable {
         settings,
         association,
         mode,
+        statementTimeoutMs,
+        cancellation,
       );
+      cancellation.throwIfCancellationRequested();
       await execution.replaceOutput(outcome.outputs);
       execution.end(outcome.success, Date.now());
     } catch (error) {
-      await execution.replaceOutput(errorOutput(executionErrorPayload(error)));
+      if (mode === "manual" && cancellation.isCancellationRequested) {
+        this.transactions.markFailed(cell.notebook.uri.toString());
+      }
+      await execution.replaceOutput(
+        errorOutput(
+          cancellation.isCancellationRequested
+            ? executionCancelledPayload()
+            : executionErrorPayload(error, undefined, statementTimeoutMs),
+        ),
+      );
       execution.end(false, Date.now());
       if (error instanceof DedicatedNotebookConnectionError) {
         await this.offerConnectionRecovery(cell.notebook, error);
@@ -723,10 +1004,17 @@ class SqlNotebookController implements vscode.Disposable {
     settings: SqlResultSettings,
     association: Extract<ScratchpadAssociation, { status: "associated" }>,
     mode: ScratchpadExecutionMode,
+    statementTimeoutMs: number,
+    cancellation: NotebookClientCancellation,
   ): Promise<{ outputs: vscode.NotebookCellOutput[]; success: boolean }> {
     const execute = async (client: import("pg").Client) => {
+      cancellation.bind(this.connections, association.connection.id, client);
+      cancellation.throwIfCancellationRequested();
+      await configureNotebookStatementTimeout(client, statementTimeoutMs);
+      cancellation.throwIfCancellationRequested();
       const outputs: vscode.NotebookCellOutput[] = [];
       for (const [index, statement] of statements.entries()) {
+        cancellation.throwIfCancellationRequested();
         try {
           const result = await executeSqlSelection(
             client,
@@ -748,6 +1036,7 @@ class SqlNotebookController implements vscode.Disposable {
               classifyStatementCount: async () => "single-statement",
             },
           );
+          cancellation.throwIfCancellationRequested();
 
           if ("status" in result) {
             if (mode === "manual") {
@@ -755,7 +1044,11 @@ class SqlNotebookController implements vscode.Disposable {
             }
             const error =
               result.status === "error"
-                ? debugResultErrorPayload(result, statements.length > 1 ? index + 1 : undefined)
+                ? debugResultErrorPayload(
+                    result,
+                    statements.length > 1 ? index + 1 : undefined,
+                    statementTimeoutMs,
+                  )
                 : executionErrorPayload(
                     new Error("The SQL execution plan became invalid before execution."),
                     statements.length > 1 ? index + 1 : undefined,
@@ -795,10 +1088,16 @@ class SqlNotebookController implements vscode.Disposable {
     sql: string,
     settings: SqlResultSettings,
     association: ScratchpadAssociationSnapshot,
+    statementTimeoutMs: number,
+    cancellation: NotebookClientCancellation,
   ): Promise<SqlNotebookResultPayload> {
     const client = await createDedicatedNotebookClient(this.connections, association.serverId);
+    cancellation.bind(this.connections, association.serverId, client);
     let reader: PostgresCursorReader | undefined;
     try {
+      cancellation.throwIfCancellationRequested();
+      await configureNotebookStatementTimeout(client, statementTimeoutMs);
+      cancellation.throwIfCancellationRequested();
       const resultIdleTimeoutMs = settings.cursorIdleTimeoutSeconds * 1_000;
       await client.query("SELECT set_config('idle_in_transaction_session_timeout', $1, false)", [
         `${postgresCursorSafetyTimeoutMs(resultIdleTimeoutMs)}ms`,
@@ -809,6 +1108,7 @@ class SqlNotebookController implements vscode.Disposable {
         maxCachedRows: settings.maxCachedRows,
         binding: association,
       });
+      cancellation.throwIfCancellationRequested();
       return this.resultHost.register(session, cell, resultIdleTimeoutMs, association, () =>
         this.isAssociationCurrent(cell.notebook, association),
       );
@@ -897,16 +1197,38 @@ class SqlNotebookStatusProvider
 {
   private readonly changed = new vscode.EventEmitter<void>();
   readonly onDidChangeCellStatusBarItems = this.changed.event;
-  private readonly subscription: vscode.Disposable;
+  private readonly subscriptions: vscode.Disposable[];
 
   constructor(private readonly connections: ConnectionManager) {
-    this.subscription = connections.onChanged(() => this.changed.fire());
+    this.subscriptions = [
+      connections.onChanged(() => this.changed.fire()),
+      vscode.workspace.onDidChangeConfiguration((event) => {
+        if (event.affectsConfiguration("postgresql-workbench.sql.statementTimeoutMs")) {
+          this.changed.fire();
+        }
+      }),
+    ];
   }
 
   provideCellStatusBarItems(
     cell: vscode.NotebookCell,
-  ): vscode.NotebookCellStatusBarItem | undefined {
+  ): vscode.NotebookCellStatusBarItem[] | undefined {
     if (cell.kind === vscode.NotebookCellKind.Markup) return undefined;
+    const executionIntent = scratchpadCellExecutionIntent(cell.metadata);
+    const intentItem = new vscode.NotebookCellStatusBarItem(
+      executionIntent === "debug" ? "$(debug-alt) Debug" : "$(play) Run",
+      vscode.NotebookCellStatusBarAlignment.Right,
+    );
+    intentItem.command = {
+      title: executionIntent === "debug" ? "Use Run intent" : "Use Debug intent",
+      command: SET_SCRATCHPAD_CELL_EXECUTION_INTENT_COMMAND,
+      arguments: [cell, executionIntent === "debug" ? "run" : "debug"],
+    };
+    intentItem.tooltip =
+      executionIntent === "debug"
+        ? "Cell execution intent: Debug — click to use Run"
+        : "Cell execution intent: Run — click to use Debug";
+    intentItem.priority = 101;
     const association = resolveScratchpadAssociation(
       notebookMetadata(cell.notebook.metadata),
       this.connections.servers,
@@ -915,21 +1237,38 @@ class SqlNotebookStatusProvider
       association.status === "unassociated"
         ? "Choose a Connexion"
         : `${association.snapshot.serverName} · ${association.snapshot.database}`;
-    const item = new vscode.NotebookCellStatusBarItem(
+    const associationItem = new vscode.NotebookCellStatusBarItem(
       `${association.status === "associated" ? "$(database)" : "$(warning)"} ${label}`,
       vscode.NotebookCellStatusBarAlignment.Right,
     );
-    item.command = {
+    associationItem.command = {
       title: "Change Scratchpad Connexion",
       command: CHANGE_SQL_NOTEBOOK_CONNECTION_COMMAND,
       arguments: [cell.notebook],
     };
-    item.tooltip =
+    associationItem.tooltip =
       association.status === "associated"
         ? "Scratchpad Association — click to change its Connexion"
         : "Scratchpad Association unavailable — click to change its Connexion";
-    item.priority = 100;
-    return item;
+    associationItem.priority = 100;
+    const metadata = notebookMetadata(cell.notebook.metadata);
+    const globalTimeoutMs = configuredScratchpadStatementTimeoutMs();
+    const timeoutMs = scratchpadStatementTimeoutMs(metadata, globalTimeoutMs);
+    const timeoutItem = new vscode.NotebookCellStatusBarItem(
+      `$(clock) Timeout: ${formatStatementTimeout(timeoutMs)}`,
+      vscode.NotebookCellStatusBarAlignment.Right,
+    );
+    timeoutItem.command = {
+      title: "Change Scratchpad Statement timeout",
+      command: SET_SCRATCHPAD_STATEMENT_TIMEOUT_COMMAND,
+      arguments: [cell.notebook],
+    };
+    timeoutItem.tooltip =
+      metadata.statementTimeoutMs === undefined
+        ? "Scratchpad Statement timeout from the global setting — click to change"
+        : "Scratchpad Statement timeout override — click to change or use the global setting";
+    timeoutItem.priority = 99;
+    return [intentItem, associationItem, timeoutItem];
   }
 
   refresh(): void {
@@ -937,7 +1276,7 @@ class SqlNotebookStatusProvider
   }
 
   dispose(): void {
-    this.subscription.dispose();
+    for (const subscription of this.subscriptions) subscription.dispose();
     this.changed.dispose();
   }
 }
@@ -950,6 +1289,8 @@ function notebookMetadata(value: unknown): SqlNotebookMetadata {
     if (typeof source[key] === "string" && source[key]) metadata[key] = source[key];
   }
   if (source.executionMode === "manual") metadata.executionMode = "manual";
+  const statementTimeoutMs = validStatementTimeoutMs(source.statementTimeoutMs);
+  if (statementTimeoutMs !== undefined) metadata.statementTimeoutMs = statementTimeoutMs;
   return metadata;
 }
 
@@ -1074,6 +1415,7 @@ function planErrorPayload(
 function debugResultErrorPayload(
   error: DebugResultError,
   statement?: number,
+  statementTimeoutMs?: number,
 ): SqlNotebookErrorPayload {
   const isPostgres = Boolean(error.code && /^[0-9A-Z]{5}$/u.test(error.code));
   return {
@@ -1087,10 +1429,15 @@ function debugResultErrorPayload(
     ...(error.detail ? { detail: error.detail } : {}),
     ...(error.hint ? { hint: error.hint } : {}),
     ...(error.position ? { position: error.position } : {}),
+    ...statementTimeoutRecovery(error.code, error.message, statementTimeoutMs),
   };
 }
 
-function executionErrorPayload(error: unknown, statement?: number): SqlNotebookErrorPayload {
+function executionErrorPayload(
+  error: unknown,
+  statement?: number,
+  statementTimeoutMs?: number,
+): SqlNotebookErrorPayload {
   if (error instanceof DedicatedNotebookConnectionError) {
     return {
       ...notebookErrorPayload("connection", "PostgreSQL Connexion error", error.message),
@@ -1111,6 +1458,25 @@ function executionErrorPayload(error: unknown, statement?: number): SqlNotebookE
     ...optionalErrorField(source, "detail"),
     ...optionalErrorField(source, "hint"),
     ...optionalErrorField(source, "position"),
+    ...statementTimeoutRecovery(code, errorMessage(error), statementTimeoutMs),
+  };
+}
+
+function statementTimeoutRecovery(
+  code: string | undefined,
+  message: string,
+  statementTimeoutMs: number | undefined,
+): Pick<SqlNotebookErrorPayload, "action" | "hint"> {
+  if (code !== "57014" || !/statement timeout/iu.test(message)) return {};
+  return {
+    hint:
+      statementTimeoutMs === undefined
+        ? "Increase this Scratchpad's Statement timeout and run the cell again."
+        : `This Scratchpad allows ${formatStatementTimeout(statementTimeoutMs)} per Statement. Increase its timeout and run the cell again.`,
+    action: {
+      type: "increase-scratchpad-timeout",
+      label: "Increase Scratchpad timeout…",
+    },
   };
 }
 
@@ -1120,6 +1486,14 @@ function notebookErrorPayload(
   message: string,
 ): SqlNotebookErrorPayload {
   return { version: 1, type: "error", category, title, message };
+}
+
+function executionCancelledPayload(): SqlNotebookErrorPayload {
+  return notebookErrorPayload(
+    "execution",
+    "Execution cancelled",
+    "The SQL execution was cancelled by the user.",
+  );
 }
 
 function optionalErrorField<K extends "detail" | "hint" | "position">(

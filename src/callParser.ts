@@ -1,6 +1,7 @@
 import {
   preferredSqlCallApplication,
   sqlFunctionNameParts,
+  sqlRoutineBody,
   sqlRoutineBodyLiteral,
   sqlRoutineLanguage,
   sqlRoutineNameParts,
@@ -11,6 +12,7 @@ import {
   decodeSqlLiteral,
   directSyntaxChild,
   findSyntaxNode,
+  findSyntaxNodes,
   syntaxNodeText,
   syntaxTreeHasKind,
 } from "./analysis/syntaxNodes.js";
@@ -57,6 +59,13 @@ export async function parseCall(sql: string, parser: SyntaxParser): Promise<Pars
   }
   const statement = statements[0];
   if (!statement) return emptyCall();
+  const doStatement = findSyntaxNode(statement, "DoStmt");
+  if (doStatement) {
+    const call = await callInsideDo(sql, doStatement, parser);
+    return call
+      ? { ...extractCall(call.source, call.application), kind: "procedure" }
+      : emptyCall();
+  }
   const kind = findSyntaxNode(statement, "CallStmt")
     ? "procedure"
     : findSyntaxNode(statement, "SelectStmt")
@@ -72,14 +81,21 @@ export async function parseSqlFile(
   parser: SyntaxParser,
 ): Promise<{ definitions: FunctionDefinition[]; calls: ParsedCallSite[] }> {
   try {
-    const syntax = await parseUsableSql(sql, parser);
-    return {
-      definitions: extractDefinitions(sql, syntax),
-      calls: extractCalls(sql, syntax),
-    };
+    return await parseSqlFileStrict(sql, parser);
   } catch {
     return { definitions: [], calls: [] };
   }
+}
+
+export async function parseSqlFileStrict(
+  sql: string,
+  parser: SyntaxParser,
+): Promise<{ definitions: FunctionDefinition[]; calls: ParsedCallSite[] }> {
+  const syntax = await parseUsableSql(sql, parser);
+  return {
+    definitions: extractDefinitions(sql, syntax),
+    calls: await extractCalls(sql, syntax, parser),
+  };
 }
 
 export async function parseSqlDefinitions(
@@ -132,9 +148,30 @@ function extractParameters(source: string, create: SyntaxNode): FunctionParam[] 
   );
 }
 
-function extractCalls(source: string, syntax: SyntaxTree): ParsedCallSite[] {
+async function extractCalls(
+  source: string,
+  syntax: SyntaxTree,
+  parser: SyntaxParser,
+): Promise<ParsedCallSite[]> {
   const calls: ParsedCallSite[] = [];
   for (const statement of topLevelStatements(syntax)) {
+    const doStatement = findSyntaxNode(statement, "DoStmt");
+    if (doStatement) {
+      const call = await callInsideDo(source, doStatement, parser);
+      if (!call) continue;
+      const parsed = extractCall(call.source, call.application);
+      if (!parsed.routine) continue;
+      calls.push({
+        schema: parsed.schema,
+        routine: parsed.routine,
+        args: parsed.args,
+        sql: syntaxNodeText(source, statement).trim(),
+        isLaunchable: true,
+        line: statement.start.line,
+        kind: "call",
+      });
+      continue;
+    }
     const callStatement = findSyntaxNode(statement, "CallStmt");
     const selectStatement = findSyntaxNode(statement, "SelectStmt");
     if (!callStatement && !selectStatement) continue;
@@ -153,6 +190,26 @@ function extractCalls(source: string, syntax: SyntaxTree): ParsedCallSite[] {
     });
   }
   return calls;
+}
+
+async function callInsideDo(
+  source: string,
+  statement: SyntaxNode,
+  parser: SyntaxParser,
+): Promise<{ source: string; application: SyntaxNode } | undefined> {
+  const body = sqlRoutineBody(source, statement);
+  if (!body) return undefined;
+  const syntax = await parser.parse({ language: "plpgsql", source: body, uri: "do-block.sql" });
+  assertUsableSyntaxTree(syntax, "PL/pgSQL");
+  const calls = findSyntaxNodes(syntax.root, "stmt_call");
+  if (calls.length !== 1) return undefined;
+  const expression = directSyntaxChild(calls[0], "sql_expression");
+  if (!expression) return undefined;
+  const callSource = `CALL ${syntaxNodeText(body, expression).trim()}`;
+  const callSyntax = await parseUsableSql(callSource, parser);
+  const callStatement = topLevelStatements(callSyntax)[0];
+  const application = callStatement ? preferredSqlCallApplication(callStatement) : undefined;
+  return application ? { source: callSource, application } : undefined;
 }
 
 function extractCall(source: string, application: SyntaxNode): ParsedCall {

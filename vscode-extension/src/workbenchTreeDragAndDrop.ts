@@ -100,7 +100,16 @@ export function sqlAuthoringDragPayload(
     };
   }
   const object = graphObject(item);
-  if (!object || (object.kind !== "table" && object.kind !== "view")) return undefined;
+  if (
+    !object ||
+    (object.kind !== "table" &&
+      object.kind !== "view" &&
+      object.kind !== "function" &&
+      object.kind !== "procedure" &&
+      object.kind !== "trigger")
+  ) {
+    return undefined;
+  }
   return {
     kind: object.kind,
     serverId: object.serverId,

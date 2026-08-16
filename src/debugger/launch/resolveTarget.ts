@@ -10,6 +10,7 @@ import {
 
 export interface LaunchTargetArguments {
   sql?: string;
+  entryRoutine?: DebugLaunchRoutineTarget;
   routine?: DebugLaunchRoutineTarget;
   routineArgs?: DebugLaunchRoutineArgument[];
 }
@@ -172,6 +173,20 @@ export async function resolveTargetExecution(
   args: LaunchTargetArguments,
   parser?: SyntaxParser,
 ): Promise<TargetExecution> {
+  if (args.entryRoutine && args.sql) {
+    const resolved = await resolveRoutineTarget(debuggerBackend, args.entryRoutine, 0);
+    return {
+      entryOid: resolved.oid,
+      queryText: args.sql,
+      queryValues: [],
+      routine: {
+        oid: resolved.oid,
+        schema: resolved.schema,
+        name: resolved.name,
+        kind: resolved.kind,
+      },
+    };
+  }
   if (args.routine) {
     return resolveStructuredTargetExecution(debuggerBackend, args.routine, args.routineArgs ?? []);
   }

@@ -97,6 +97,47 @@ describe("Workbench TreeView graph dragging", () => {
       tableName: "orders",
       name: "customer_id",
     });
+    expect(
+      sqlAuthoringDragPayload([
+        {
+          kind: "object",
+          object: {
+            ...object,
+            oid: 43,
+            name: "reprice_order",
+            kind: "procedure",
+            params: [{ name: "order_id", type: "bigint" }],
+          },
+        } as unknown as PlpgsqlTreeItem,
+      ]),
+    ).toEqual({
+      kind: "procedure",
+      serverId: "server",
+      database: "demo",
+      oid: 43,
+      schema: "shop",
+      name: "reprice_order",
+    });
+    expect(
+      sqlAuthoringDragPayload([
+        {
+          kind: "object",
+          object: {
+            ...object,
+            oid: 44,
+            name: "product_stock_audit",
+            kind: "trigger",
+          },
+        } as unknown as PlpgsqlTreeItem,
+      ]),
+    ).toEqual({
+      kind: "trigger",
+      serverId: "server",
+      database: "demo",
+      oid: 44,
+      schema: "shop",
+      name: "product_stock_audit",
+    });
   });
 
   it("does not advertise graph dragging for connections or scratchpads", () => {

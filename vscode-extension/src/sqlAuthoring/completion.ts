@@ -9,7 +9,7 @@ import {
 } from "./identifiers.js";
 import type { SqlAuthoringObject, SqlAuthoringSnapshot } from "./protocol.js";
 import { analyzeSqlQueryShape } from "./queryShape.js";
-import { scanPostgresSql, sqlStatementAtOffset } from "./sqlLexing.js";
+import { postgresPlpgsqlRanges, scanPostgresSql, sqlStatementAtOffset } from "./sqlLexing.js";
 
 const MAX_COMPLETIONS = 200;
 const SIMPLE_IDENTIFIER = /^[a-z_][a-z0-9_$]*$/u;
@@ -18,9 +18,17 @@ export function postgresCompletions(
   offset: number,
   snapshot: SqlAuthoringSnapshot,
 ): CompletionItem[] {
-  const statement = sqlStatementAtOffset(source, offset);
-  if (analyzeSqlQueryShape(statement.text).hasNestedQuery) return [];
-  const localOffset = Math.max(0, Math.min(statement.text.length, offset - statement.start));
+  const plpgsqlRange = postgresPlpgsqlRanges(source).find(
+    (range) => offset >= range.start && offset <= range.end,
+  );
+  const scopeStart = plpgsqlRange?.start ?? 0;
+  const scopeSource = plpgsqlRange ? source.slice(plpgsqlRange.start, plpgsqlRange.end) : source;
+  const statement = sqlStatementAtOffset(scopeSource, offset - scopeStart);
+  if (!plpgsqlRange && analyzeSqlQueryShape(statement.text).hasNestedQuery) return [];
+  const localOffset = Math.max(
+    0,
+    Math.min(statement.text.length, offset - scopeStart - statement.start),
+  );
   const before = statement.text.slice(0, localOffset);
   const lexicalScan = scanPostgresSql(statement.text);
   const maskedStatement = lexicalScan.maskedSource;

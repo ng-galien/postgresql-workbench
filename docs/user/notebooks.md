@@ -12,6 +12,10 @@ A Scratchpad is a persistent SQL workspace. Its Association points to a saved
 Connexion, never to a live PostgreSQL session, and never silently follows the
 active DatabaseContext.
 
+Run and Debug are separate execution intents but use that same Association. See
+the canonical [Run, debug, and deploy SQL](execution-debugging-and-deployment.md)
+contract for the SQL shapes that can start the PL/pgSQL debugger.
+
 {{media}}
 
 ## Create and associate
@@ -34,6 +38,10 @@ The Scratchpad header, cells, inlays, and results use its persistent Association
 Completion and query composition follow that same Association. Formatting uses
 PostgreSQL syntax without consulting a database context; see [SQL
 authoring](sql-authoring.md).
+Drag-and-drop composition also follows that Association exclusively. The cell
+does not show the standalone-editor connection CodeLens because the Association
+in the cell footer is the single connection control. See the exhaustive
+[drag-and-drop behavior](sql-authoring.md#compose-sql-by-drag-and-drop).
 **Use Association as Active** is an explicit promotion; ordinary execution never
 switches the active DatabaseContext. If the Connexion disappears, editing remains
 available while execution offers Reconnect or Change Association.
@@ -57,6 +65,26 @@ best-effort rollback of every active Transaction and closes its dedicated sessio
 Shutdown never commits implicitly. In Mode MANUAL, transaction-control Statements
 such as `BEGIN`, `COMMIT`, `ROLLBACK`, `SAVEPOINT`, and `SET TRANSACTION` are rejected
 because Transaction control belongs to the Scratchpad.
+
+## Statement timeout
+
+Every code cell displays its effective PostgreSQL Statement timeout next to the
+Scratchpad Association. The global
+`postgresql-workbench.sql.statementTimeoutMs` setting defaults to 60 seconds.
+Click the timeout indicator to persist one override for the whole Scratchpad or
+to return to the global setting; all cells in that Scratchpad use the same value.
+
+When PostgreSQL cancels a Statement with error `57014` because that duration was
+reached, the error output offers **Increase Scratchpad timeout…**. This opens the
+same selector without creating a hidden per-cell or per-Connexion setting. Mode
+AUTO closes its short-lived session after the cancellation. In Mode MANUAL, the
+PostgreSQL Transaction has failed and must be rolled back.
+
+While a cell is running, use VS Code's native **Stop** action to cancel it immediately.
+PostgreSQL Workbench sends `pg_cancel_backend` to the bound PostgreSQL session and
+reports **Execution cancelled**. Cancelling **Run All** also prevents the remaining
+cells from starting. Mode AUTO then closes its dedicated session. In Mode MANUAL,
+the Transaction remains visible as failed and requires **Rollback**.
 
 ## Result navigation
 

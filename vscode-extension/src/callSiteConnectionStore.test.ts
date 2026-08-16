@@ -28,16 +28,17 @@ function call(line: number, routine = "restock_report"): CallSiteConnectionRefer
 }
 
 describe("CallSiteConnectionStore", () => {
-  it("assigns connections independently per callsite", async () => {
+  it("uses one Document Association for every callsite in a SQL file", async () => {
     const store = new CallSiteConnectionStore(new MemoryState());
     await store.assign(call(24), "demo");
     await store.assign(call(27, "try_order"), "staging");
 
-    expect(store.get(call(24))).toBe("demo");
+    expect(store.get(call(24))).toBe("staging");
     expect(store.get(call(27, "try_order"))).toBe("staging");
+    expect(store.getDocument("file:///workspace/demo.sql")).toBe("staging");
   });
 
-  it("clears one callsite without affecting the others", async () => {
+  it("clears the Document Association for every callsite in that file", async () => {
     const store = new CallSiteConnectionStore(new MemoryState());
     await store.assign(call(24), "demo");
     await store.assign(call(25), "other");
@@ -45,6 +46,6 @@ describe("CallSiteConnectionStore", () => {
     await store.clear(call(24));
 
     expect(store.get(call(24))).toBeUndefined();
-    expect(store.get(call(25))).toBe("other");
+    expect(store.get(call(25))).toBeUndefined();
   });
 });

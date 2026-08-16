@@ -37,7 +37,7 @@ import {
   type SqlAuthoringSyntaxResult,
   sqlAuthoringContextMatchesToken,
 } from "./protocol.js";
-import { scanPostgresSql } from "./sqlLexing.js";
+import { postgresPlpgsqlRanges, scanPostgresSql } from "./sqlLexing.js";
 
 const SQL_DOCUMENT_SELECTOR = [
   { language: "sql", scheme: "file" },
@@ -45,6 +45,8 @@ const SQL_DOCUMENT_SELECTOR = [
   { language: "plpgsql", scheme: "vscode-notebook-cell" },
 ] as const;
 const REVEAL_SQL_REFERENCE_COMMAND = "postgresql-workbench.revealSqlReference";
+export const REFRESH_SQL_AUTHORING_CONTEXT_COMMAND =
+  "postgresql-workbench.refreshSqlAuthoringContext";
 
 export interface SqlAuthoringNavigationTarget {
   column?: string;
@@ -58,6 +60,7 @@ export async function registerSqlAuthoring(
   connections: ConnectionManager,
   index: WorkbenchIndexController,
   navigate?: (target: SqlAuthoringNavigationTarget) => Promise<boolean>,
+  documentAssociation?: (uri: string) => string | undefined,
 ): Promise<vscode.Disposable> {
   const module = context.asAbsolutePath(join("dist", "sql-authoring-server.js"));
   const serverOptions: ServerOptions = {
@@ -87,7 +90,13 @@ export async function registerSqlAuthoring(
 
   client.onRequest<SqlAuthoringDocumentContext, never>(
     SQL_AUTHORING_CONTEXT_REQUEST,
-    (parameters) => resolveDocumentContext((parameters as { uri: string }).uri, connections, index),
+    (parameters) =>
+      resolveDocumentContext(
+        (parameters as { uri: string }).uri,
+        connections,
+        index,
+        documentAssociation,
+      ),
   );
   client.onRequest(
     SQL_AUTHORING_SYNTAX_REQUEST,
@@ -130,7 +139,12 @@ export async function registerSqlAuthoring(
         );
         if (token.isCancellationRequested) return undefined;
         if (result.status === "ambiguous") {
-          const current = resolveDocumentContext(document.uri.toString(), connections, index);
+          const current = resolveDocumentContext(
+            document.uri.toString(),
+            connections,
+            index,
+            documentAssociation,
+          );
           if (!sqlAuthoringContextMatchesToken(current, result.snapshot)) {
             void vscode.window.showWarningMessage(
               "The Workbench Index changed while composing SQL. Retry the drop on the fresh snapshot.",
@@ -140,8 +154,8 @@ export async function registerSqlAuthoring(
           const selected = await vscode.window.showQuickPick(
             result.choices.map((choice) => ({ ...choice, detail: choice.description })),
             {
-              title: "Choose the foreign key for this JOIN",
-              placeHolder: "No JOIN is added until you choose",
+              title: result.title ?? "Choose the foreign key for this JOIN",
+              placeHolder: result.placeHolder ?? "No JOIN is added until you choose",
             },
           );
           if (!selected) return unchangedDropEdit("Leave SQL unchanged");
@@ -157,7 +171,12 @@ export async function registerSqlAuthoring(
           return unchangedDropEdit("Leave unsupported SQL unchanged");
         }
         if (result.status !== "edit") return unchangedDropEdit("Leave SQL unchanged");
-        const current = resolveDocumentContext(document.uri.toString(), connections, index);
+        const current = resolveDocumentContext(
+          document.uri.toString(),
+          connections,
+          index,
+          documentAssociation,
+        );
         if (!sqlAuthoringEditStillApplies(result, current, request.text, document.getText())) {
           void vscode.window.showWarningMessage(
             "The Workbench Index or SQL document changed while composing. Retry the drop.",
@@ -181,7 +200,12 @@ export async function registerSqlAuthoring(
     [...SQL_DOCUMENT_SELECTOR] satisfies vscode.DocumentSelector,
     {
       provideHover(document, position) {
-        const context = resolveDocumentContext(document.uri.toString(), connections, index);
+        const context = resolveDocumentContext(
+          document.uri.toString(),
+          connections,
+          index,
+          documentAssociation,
+        );
         if (context.status !== "available" || context.snapshot.status !== "available") return;
         const reference = sqlReferences(document, context.snapshot).find(({ range }) =>
           range.contains(position),
@@ -211,6 +235,10 @@ export async function registerSqlAuthoring(
   const refreshSemanticTokens = () => {
     void client.sendNotification(SQL_AUTHORING_SEMANTIC_TOKENS_CHANGED).catch(() => undefined);
   };
+  const refreshContext = vscode.commands.registerCommand(
+    REFRESH_SQL_AUTHORING_CONTEXT_COMMAND,
+    refreshSemanticTokens,
+  );
   const semanticTokenRefreshSubscriptions = vscode.Disposable.from(
     index.onDidChangeState(refreshSemanticTokens),
     connections.onServerChanged(refreshSemanticTokens),
@@ -225,6 +253,7 @@ export async function registerSqlAuthoring(
     dropProvider,
     hovers,
     revealReference,
+    refreshContext,
     semanticTokenRefreshSubscriptions,
     {
       dispose: () => void client.stop(),
@@ -251,6 +280,16 @@ export function sqlReferences(
     references.push(...sqlStatementReferences(document, source.slice(start, end), start, snapshot));
     start = end;
   }
+  for (const range of postgresPlpgsqlRanges(source)) {
+    references.push(
+      ...sqlStatementReferences(
+        document,
+        source.slice(range.start, range.end),
+        range.start,
+        snapshot,
+      ),
+    );
+  }
   return references;
 }
 
@@ -260,15 +299,15 @@ function sqlStatementReferences(
   documentOffset: number,
   snapshot: Extract<SqlAuthoringDocumentContext, { status: "available" }>["snapshot"],
 ): SqlReference[] {
-  const topLevelSource = scanPostgresSql(source).topLevelSource;
+  const maskedSource = scanPostgresSql(source).maskedSource;
   const identifier = POSTGRES_IDENTIFIER_PATTERN;
   const relationPattern = new RegExp(
-    String.raw`\b(?:FROM|(?:NATURAL\s+)?(?:(?:LEFT|RIGHT|FULL)(?:\s+OUTER)?\s+|(?:INNER|CROSS)\s+)?JOIN)\s+(${identifier}\.${identifier})`,
+    String.raw`\b(?:FROM|INTO|UPDATE|USING|(?:NATURAL\s+)?(?:(?:LEFT|RIGHT|FULL)(?:\s+OUTER)?\s+|(?:INNER|CROSS)\s+)?JOIN)\s+(${identifier}\.${identifier})`,
     "giu",
   );
   const aliases = new Map<string, (typeof snapshot.objects)[number]>();
   const references: SqlReference[] = [];
-  for (const match of topLevelSource.matchAll(relationPattern)) {
+  for (const match of maskedSource.matchAll(relationPattern)) {
     const relationOffset = (match.index ?? 0) + match[0].indexOf(match[1]);
     const relation = source.slice(relationOffset, relationOffset + match[1].length);
     const parts = splitSqlQualifiedIdentifier(relation);
@@ -282,12 +321,32 @@ function sqlStatementReferences(
     if (!object) continue;
     const nameOffset = relationOffset + relation.lastIndexOf(parts[1]);
     references.push(sqlReference(document, documentOffset + nameOffset, parts[1].length, object));
-    const alias = sqlAliasAfterRelation(source, topLevelSource, relationOffset + match[1].length);
+    const alias = sqlAliasAfterRelation(source, maskedSource, relationOffset + match[1].length);
     aliases.set(canonicalSqlIdentifier(alias ?? parts[1]), object);
   }
 
+  const routinePattern = new RegExp(
+    String.raw`\b(?:CALL\s+)?(${identifier}\.${identifier})\s*(?=\()`,
+    "giu",
+  );
+  for (const match of maskedSource.matchAll(routinePattern)) {
+    const routineOffset = (match.index ?? 0) + match[0].indexOf(match[1]);
+    const routineReference = source.slice(routineOffset, routineOffset + match[1].length);
+    const parts = splitSqlQualifiedIdentifier(routineReference);
+    if (parts.length !== 2) continue;
+    const object = snapshot.objects.find(
+      (candidate) =>
+        (candidate.kind === "function" || candidate.kind === "procedure") &&
+        candidate.schema === canonicalSqlIdentifier(parts[0]) &&
+        candidate.name === canonicalSqlIdentifier(parts[1]),
+    );
+    if (!object) continue;
+    const nameOffset = routineOffset + routineReference.lastIndexOf(parts[1]);
+    references.push(sqlReference(document, documentOffset + nameOffset, parts[1].length, object));
+  }
+
   const qualified = new RegExp(String.raw`(${identifier})\s*\.\s*(${identifier})`, "gu");
-  for (const match of topLevelSource.matchAll(qualified)) {
+  for (const match of maskedSource.matchAll(qualified)) {
     const matchOffset = match.index ?? 0;
     const ownerOffset = matchOffset + match[0].indexOf(match[1]);
     const columnOffset = matchOffset + match[0].lastIndexOf(match[2]);
@@ -300,7 +359,30 @@ function sqlStatementReferences(
       sqlReference(document, documentOffset + columnOffset, match[2].length, object, columnName),
     );
   }
+  const unqualified = new RegExp(identifier, "gu");
+  for (const match of maskedSource.matchAll(unqualified)) {
+    const offset = match.index ?? 0;
+    if (hasAdjacentDot(source, offset, match[0].length)) continue;
+    const name = canonicalSqlIdentifier(source.slice(offset, offset + match[0].length));
+    const owners = new Map(
+      [...aliases.values()]
+        .filter((object) => object.columns.some((column) => column.name === name))
+        .map((object) => [object.oid, object]),
+    );
+    if (owners.size !== 1) continue;
+    const object = [...owners.values()][0];
+    references.push(sqlReference(document, documentOffset + offset, match[0].length, object, name));
+  }
   return references;
+}
+
+function hasAdjacentDot(source: string, offset: number, length: number): boolean {
+  let before = offset - 1;
+  while (before >= 0 && /\s/u.test(source[before])) before -= 1;
+  if (source[before] === ".") return true;
+  let after = offset + length;
+  while (after < source.length && /\s/u.test(source[after])) after += 1;
+  return source[after] === ".";
 }
 
 function sqlReference(
@@ -380,6 +462,7 @@ export function resolveDocumentContext(
   uri: string,
   connections: Pick<ConnectionManager, "activeServer" | "isConnected" | "servers">,
   index: Pick<WorkbenchIndexController, "sqlAuthoringSnapshot">,
+  documentAssociation?: (uri: string) => string | undefined,
 ): SqlAuthoringDocumentContext {
   const notebook = vscode.workspace.notebookDocuments.find((candidate) =>
     candidate.getCells().some((cell) => cell.document.uri.toString() === uri),
@@ -419,6 +502,17 @@ export function resolveDocumentContext(
     );
   }
 
+  if (documentAssociation) {
+    const serverId = documentAssociation(uri);
+    if (!serverId) {
+      return { status: "unassociated", message: "This SQL document has no Association." };
+    }
+    const server = connections.servers.find((candidate) => candidate.id === serverId);
+    if (!server) {
+      return { status: "unavailable", message: "This SQL Document Association is unavailable." };
+    }
+    return indexedContext(index, server.id, server.database, "SQL Document Association");
+  }
   const active = connections.activeServer;
   if (!active || !connections.isConnected) {
     return { status: "unavailable", message: "No active DatabaseContext is connected." };

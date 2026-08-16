@@ -3,10 +3,32 @@ import * as vscode from "vscode";
 import { CODE_MONIKER_URI_SCHEME, codeMonikerUriString } from "./codeMonikerUri.js";
 import type { ConnectionManager } from "./connectionManager.js";
 import { openCoverageClient } from "./coverageConnection.js";
+import { validateManagedRoutineDeployment } from "./managedRoutineDeployment.js";
 import type {
   WorkbenchIndexController,
   WorkbenchSourceDescriptor,
 } from "./workbenchIndexController.js";
+
+interface ManagedWorkingCopyState {
+  get<T>(key: string, defaultValue: T): T;
+  update(key: string, value: unknown): PromiseLike<void>;
+}
+
+interface ManagedWorkingCopy {
+  baseContent?: string;
+  content: Uint8Array;
+}
+
+interface PersistedManagedWorkingCopy {
+  baseContent?: string;
+  source: string;
+}
+
+export type ManagedRoutineDeploymentResult =
+  | { status: "deployed" }
+  | { status: "deployed-with-warning"; message: string };
+
+const MANAGED_WORKING_COPIES_STATE = "postgresql-workbench.managedRoutineWorkingCopies";
 
 export class CodeMonikerContentProvider implements vscode.FileSystemProvider, vscode.Disposable {
   static readonly SCHEME = CODE_MONIKER_URI_SCHEME;
@@ -14,6 +36,7 @@ export class CodeMonikerContentProvider implements vscode.FileSystemProvider, vs
   private readonly changeEmitter = new vscode.EventEmitter<vscode.FileChangeEvent[]>();
   readonly onDidChangeFile = this.changeEmitter.event;
   private readonly cache = new Map<string, Uint8Array>();
+  private readonly workingCopies = new Map<string, ManagedWorkingCopy>();
   private readonly subscriptions: vscode.Disposable[];
   private closingUnavailableTabs: Promise<void> | undefined;
   private unavailableTabsReconciliationRequested = false;
@@ -21,7 +44,24 @@ export class CodeMonikerContentProvider implements vscode.FileSystemProvider, vs
   constructor(
     private readonly connections: ConnectionManager,
     private readonly index: WorkbenchIndexController,
+    private readonly output?: vscode.OutputChannel,
+    private readonly state?: ManagedWorkingCopyState,
   ) {
+    for (const [symbolUri, persisted] of Object.entries(
+      state?.get<Record<string, string | PersistedManagedWorkingCopy>>(
+        MANAGED_WORKING_COPIES_STATE,
+        {},
+      ) ?? {},
+    )) {
+      this.workingCopies.set(symbolUri, {
+        content: new TextEncoder().encode(
+          typeof persisted === "string" ? persisted : persisted.source,
+        ),
+        ...(typeof persisted === "string" || persisted.baseContent === undefined
+          ? {}
+          : { baseContent: persisted.baseContent }),
+      });
+    }
     this.subscriptions = [
       connections.onServerChanged(() => {
         this.invalidateAll();
@@ -40,6 +80,7 @@ export class CodeMonikerContentProvider implements vscode.FileSystemProvider, vs
     for (const subscription of this.subscriptions) subscription.dispose();
     this.changeEmitter.dispose();
     this.cache.clear();
+    this.workingCopies.clear();
   }
 
   invalidateAll(): void {
@@ -59,7 +100,10 @@ export class CodeMonikerContentProvider implements vscode.FileSystemProvider, vs
     while (this.unavailableTabsReconciliationRequested) {
       this.unavailableTabsReconciliationRequested = false;
       await closeUnavailableCodeMonikerTabs((uri) =>
-        Boolean(this.index.sourceDescriptorForDocumentUri(uri)),
+        Boolean(
+          this.index.sourceDescriptorForDocumentUri(uri) ||
+            this.workingCopies.has(codeMonikerUriString(uri)),
+        ),
       );
     }
   }
@@ -69,6 +113,15 @@ export class CodeMonikerContentProvider implements vscode.FileSystemProvider, vs
   }
 
   async stat(uri: vscode.Uri): Promise<vscode.FileStat> {
+    const persisted = this.workingCopies.get(codeMonikerUriString(uri));
+    if (persisted) {
+      return {
+        type: vscode.FileType.File,
+        ctime: 0,
+        mtime: 0,
+        size: persisted.content.length,
+      };
+    }
     const descriptor = this.index.sourceDescriptorForDocumentUri(uri);
     if (!descriptor) {
       if (this.directoryEntries(uri).length > 0) {
@@ -86,7 +139,10 @@ export class CodeMonikerContentProvider implements vscode.FileSystemProvider, vs
       type: vscode.FileType.File,
       ctime: 0,
       mtime: 0,
-      size: this.cache.get(key)?.length ?? new TextEncoder().encode(descriptor.content).length,
+      size:
+        this.workingCopies.get(key)?.content.length ??
+        this.cache.get(key)?.length ??
+        new TextEncoder().encode(descriptor.content).length,
     };
   }
 
@@ -107,19 +163,113 @@ export class CodeMonikerContentProvider implements vscode.FileSystemProvider, vs
   }
 
   async writeFile(uri: vscode.Uri, content: Uint8Array): Promise<void> {
-    const descriptor = this.requireDescriptor(uri);
-    if (!descriptor.plpgsql) {
-      throw vscode.FileSystemError.NoPermissions("Only PL/pgSQL routines can be deployed");
+    const descriptor = this.index.sourceDescriptorForDocumentUri(uri);
+    if (descriptor && !descriptor.plpgsql) {
+      throw vscode.FileSystemError.NoPermissions("This managed PostgreSQL source is read-only");
     }
-    const connection = await connectionForDescriptor(this.connections, descriptor);
-    await deployRoutine(connection, content);
-    const key = descriptor.symbolUri;
-    this.cache.set(key, content);
+    const key = descriptor?.symbolUri ?? codeMonikerUriString(uri);
+    const existing = this.workingCopies.get(key);
+    this.workingCopies.set(key, {
+      content,
+      ...(existing
+        ? existing.baseContent === undefined
+          ? {}
+          : { baseContent: existing.baseContent }
+        : descriptor
+          ? { baseContent: descriptor.content }
+          : {}),
+    });
+    await this.persistWorkingCopies();
     this.changeEmitter.fire([{ type: vscode.FileChangeType.Changed, uri }]);
   }
 
-  async readFile(uri: vscode.Uri): Promise<Uint8Array> {
+  async deploy(uri: vscode.Uri): Promise<ManagedRoutineDeploymentResult> {
     const descriptor = this.requireDescriptor(uri);
+    const workingCopy = this.workingCopies.get(descriptor.symbolUri);
+    if (!workingCopy) {
+      throw vscode.FileSystemError.FileNotFound("No managed routine working copy is open");
+    }
+    if (workingCopy.baseContent === undefined || workingCopy.baseContent !== descriptor.content) {
+      throw vscode.FileSystemError.NoPermissions(
+        "The deployed routine changed after this working copy was created. Compare or reopen it before deploying.",
+      );
+    }
+    const sql = new TextDecoder().decode(workingCopy.content);
+    const validation = await validateManagedRoutineDeployment(
+      sql,
+      descriptor,
+      this.index.sqlAuthoringSnapshot({
+        serverId: descriptor.serverId,
+        database: descriptor.database,
+      }),
+      await this.index.syntaxParser(),
+    );
+    if (validation.status === "rejected") {
+      throw vscode.FileSystemError.NoPermissions(validation.message);
+    }
+    const connection = await connectionForDescriptor(this.connections, descriptor);
+    try {
+      try {
+        await connection.client.query(sql);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.output?.appendLine(
+          `Deploy rejected by PostgreSQL: ${descriptor.schema}.${descriptor.name}: ${message}`,
+        );
+        throw vscode.FileSystemError.NoPermissions(
+          `PostgreSQL rejected the replacement: ${message}`,
+        );
+      }
+      try {
+        await this.index.indexPostgresDatabase(connection.client, {
+          serverId: descriptor.serverId,
+          database: descriptor.database,
+        });
+      } catch (error) {
+        this.index.markDatabaseStale(
+          descriptor.serverId,
+          descriptor.database,
+          "Managed routine deployed; index refresh failed",
+        );
+        this.output?.appendLine(
+          `Deploy refresh warning: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        this.output?.appendLine(
+          `Deploy applied: ${descriptor.schema}.${descriptor.name} on ${descriptor.serverId}/${descriptor.database}`,
+        );
+        return {
+          status: "deployed-with-warning",
+          message: "the Workbench index refresh failed and must be retried",
+        };
+      }
+      this.workingCopies.delete(descriptor.symbolUri);
+      this.changeEmitter.fire([{ type: vscode.FileChangeType.Changed, uri }]);
+      try {
+        await this.persistWorkingCopies();
+      } catch (error) {
+        this.output?.appendLine(
+          `Deploy persistence warning: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        return {
+          status: "deployed-with-warning",
+          message: "the saved working-copy state could not be cleared",
+        };
+      }
+      this.output?.appendLine(
+        `Deploy applied: ${descriptor.schema}.${descriptor.name} on ${descriptor.serverId}/${descriptor.database}`,
+      );
+      return { status: "deployed" };
+    } finally {
+      await connection.client.end().catch(() => {});
+    }
+  }
+
+  async readFile(uri: vscode.Uri): Promise<Uint8Array> {
+    const persisted = this.workingCopies.get(codeMonikerUriString(uri));
+    if (persisted) return persisted.content;
+    const descriptor = this.requireDescriptor(uri);
+    const workingCopy = this.workingCopies.get(descriptor.symbolUri);
+    if (workingCopy) return workingCopy.content;
     const cached = this.cache.get(descriptor.symbolUri);
     if (cached) return cached;
     const bytes = new TextEncoder().encode(descriptor.content);
@@ -136,6 +286,24 @@ export class CodeMonikerContentProvider implements vscode.FileSystemProvider, vs
       );
     }
     return descriptor;
+  }
+
+  private async persistWorkingCopies(): Promise<void> {
+    if (!this.state) return;
+    await this.state.update(
+      MANAGED_WORKING_COPIES_STATE,
+      Object.fromEntries(
+        [...this.workingCopies.entries()].map(([symbolUri, workingCopy]) => [
+          symbolUri,
+          {
+            source: new TextDecoder().decode(workingCopy.content),
+            ...(workingCopy.baseContent === undefined
+              ? {}
+              : { baseContent: workingCopy.baseContent }),
+          } satisfies PersistedManagedWorkingCopy,
+        ]),
+      ),
+    );
   }
 
   private directoryEntries(uri: vscode.Uri): [string, vscode.FileType][] {
@@ -171,32 +339,13 @@ export async function closeUnavailableCodeMonikerTabs(
 
 interface UriConnection {
   client: Client;
-  owned: boolean;
-}
-
-async function deployRoutine(connection: UriConnection, content: Uint8Array): Promise<void> {
-  const sql = new TextDecoder().decode(content);
-  try {
-    await connection.client.query(sql);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    void vscode.window.showErrorMessage(`Deploy failed: ${message}`);
-    throw vscode.FileSystemError.NoPermissions(message);
-  } finally {
-    if (connection.owned) await connection.client.end().catch(() => {});
-  }
 }
 
 async function connectionForDescriptor(
   connections: ConnectionManager,
   descriptor: WorkbenchSourceDescriptor,
 ): Promise<UriConnection> {
-  if (descriptor.serverId === connections.activeServer?.id) {
-    const client = connections.getClient();
-    if (client) return { client, owned: false };
-  }
   return {
     client: await openCoverageClient(connections, descriptor.serverId),
-    owned: true,
   };
 }

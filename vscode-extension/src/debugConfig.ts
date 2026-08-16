@@ -13,6 +13,7 @@ export interface DebugConfigurationLike {
   request?: string;
   name?: string;
   sql?: string;
+  entryRoutine?: DebugLaunchRoutineTarget;
   routine?: DebugLaunchRoutineTarget;
   routineArgs?: DebugLaunchRoutineArgument[];
   sourceUris?: Record<string, string>;
@@ -26,6 +27,7 @@ export interface DebugConfigurationLike {
   user?: string;
   password?: string;
   ssl?: boolean | "require" | "prefer" | "disable";
+  preserveDatabaseContext?: boolean;
   [key: string]: unknown;
 }
 
@@ -112,12 +114,14 @@ export async function resolveDebugConfiguration(
   if (!config.name) {
     config.name = config.routine
       ? configNameFromRoutine(config.routine)
-      : config.sql
-        ? await configNameFromSql(config.sql, parseTarget)
-        : "Debug PL/pgSQL";
+      : config.entryRoutine
+        ? configNameFromRoutine(config.entryRoutine)
+        : config.sql
+          ? await configNameFromSql(config.sql, parseTarget)
+          : "Debug PL/pgSQL";
   }
 
-  if (!config.sql && !config.routine) {
+  if (!config.sql && !config.routine && !config.entryRoutine) {
     const sql = await ui.showInputBox?.({
       prompt: "SQL statement to debug",
       placeHolder: "SELECT my_function(...)  or  CALL my_procedure(...)",
@@ -152,7 +156,7 @@ export async function resolveDebugConfiguration(
     if (!server) return undefined;
   }
 
-  if (!cm.isActiveServer(server.id)) {
+  if (!cm.isActiveServer(server.id) && !config.preserveDatabaseContext) {
     const ok = await cm.connectServer(server.id);
     if (!ok) return undefined;
   }

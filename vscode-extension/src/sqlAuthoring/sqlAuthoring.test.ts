@@ -9,7 +9,7 @@ import {
   type SqlAuthoringSnapshot,
   serializeSqlAuthoringDrag,
 } from "./protocol.js";
-import { scanPostgresSql, sqlStatementAtOffset } from "./sqlLexing.js";
+import { scanPostgresSql, sqlStatementAtOffset, sqlStatementSlices } from "./sqlLexing.js";
 
 const snapshot: SqlAuthoringSnapshot = {
   status: "available",
@@ -98,6 +98,242 @@ describe("SQL authoring language contracts", () => {
     expect(parseSqlAuthoringDrag(serializeSqlAuthoringDrag(payload))).toEqual(payload);
     expect(parseSqlAuthoringDrag('{"kind":"table"}')).toBeUndefined();
     expect(parseSqlAuthoringDrag("not-json")).toBeUndefined();
+    const routine = {
+      kind: "function" as const,
+      serverId: "demo-server",
+      database: "demo",
+      oid: 3,
+      schema: "shop",
+      name: "find_product",
+    };
+    expect(parseSqlAuthoringDrag(serializeSqlAuthoringDrag(routine))).toEqual(routine);
+  });
+
+  it("generates executable function and procedure invocations from routine drops", () => {
+    const functionResult = composePostgresSql(
+      {
+        uri: "file:///query.sql",
+        text: "",
+        offset: 0,
+        payload: {
+          kind: "function",
+          serverId: "demo-server",
+          database: "demo",
+          oid: 3,
+          schema: "shop",
+          name: "find_product",
+        },
+      },
+      snapshot,
+    );
+    expect(functionResult.status === "edit" ? functionResult.text : functionResult).toBe(
+      "SELECT *\nFROM shop.find_product(\n  p_id => NULL::integer\n);\n",
+    );
+
+    const procedure = {
+      ...snapshot.objects[2],
+      oid: 4,
+      name: "reprice_order",
+      kind: "procedure" as const,
+      parameters: [
+        { name: "order_id", type: "bigint" },
+        { name: "factor", type: "numeric" },
+      ],
+      columns: [],
+    };
+    const procedureResult = composePostgresSql(
+      {
+        uri: "file:///query.sql",
+        text: "SELECT 1;",
+        offset: 8,
+        payload: {
+          kind: "procedure",
+          serverId: "demo-server",
+          database: "demo",
+          oid: 4,
+          schema: "shop",
+          name: "reprice_order",
+        },
+      },
+      { ...snapshot, objects: [...snapshot.objects, procedure] },
+    );
+    expect(procedureResult.status === "edit" ? procedureResult.text : procedureResult).toContain(
+      [
+        "DO $workbench$",
+        "DECLARE",
+        "  v_order_id bigint := NULL;",
+        "  v_factor numeric := NULL;",
+        "BEGIN",
+        "  CALL shop.reprice_order(",
+        "    order_id => v_order_id,",
+        "    factor => v_factor",
+        "  );",
+        "END",
+        "$workbench$;",
+      ].join("\n"),
+    );
+  });
+
+  it("generates a safe DML harness for an indexed trigger function", () => {
+    const product = {
+      ...snapshot.objects[0],
+      columns: [...snapshot.objects[0].columns, { name: "stock", type: "integer" }],
+    };
+    const triggerFunction = {
+      ...snapshot.objects[1],
+      oid: 5,
+      name: "audit_product_stock",
+      kind: "function" as const,
+      returnType: "trigger",
+      parameters: [],
+      columns: [],
+    };
+    const result = composePostgresSql(
+      {
+        uri: "file:///query.sql",
+        text: "",
+        offset: 0,
+        payload: {
+          kind: "function",
+          serverId: "demo-server",
+          database: "demo",
+          oid: 5,
+          schema: "shop",
+          name: "audit_product_stock",
+        },
+      },
+      {
+        ...snapshot,
+        objects: [product, ...snapshot.objects.slice(1), triggerFunction],
+        triggers: [
+          {
+            oid: 50,
+            schema: "shop",
+            name: "product_stock_audit",
+            relationSchema: "shop",
+            relationName: "product",
+            routineSchema: "shop",
+            routineName: "audit_product_stock",
+            definition:
+              "CREATE TRIGGER product_stock_audit AFTER UPDATE OF stock ON shop.product FOR EACH ROW EXECUTE FUNCTION shop.audit_product_stock();",
+          },
+        ],
+      },
+    );
+    expect(result.status === "edit" ? result.text : result).toBe(
+      [
+        "-- Invokes trigger shop.product_stock_audit and function shop.audit_product_stock",
+        "-- Set the values below. Keep v_rollback = TRUE for a non-persistent test run.",
+        "DO $workbench$",
+        "DECLARE",
+        "  v_id integer := NULL;",
+        "  v_stock integer := NULL;",
+        "  v_rollback boolean := TRUE;",
+        "BEGIN",
+        "  BEGIN",
+        "    UPDATE shop.product",
+        "    SET",
+        "      stock = v_stock",
+        "    WHERE id = v_id;",
+        "    IF v_rollback THEN",
+        "      RAISE EXCEPTION USING",
+        "        ERRCODE = 'PW001',",
+        "        MESSAGE = 'Workbench trigger test rollback';",
+        "    END IF;",
+        "  EXCEPTION",
+        "    WHEN SQLSTATE 'PW001' THEN",
+        "      RAISE NOTICE 'Workbench trigger test rolled back';",
+        "  END;",
+        "END",
+        "$workbench$;",
+        "",
+      ].join("\n"),
+    );
+
+    const directTrigger = composePostgresSql(
+      {
+        uri: "file:///query.sql",
+        text: "",
+        offset: 0,
+        payload: {
+          kind: "trigger",
+          serverId: "demo-server",
+          database: "demo",
+          oid: 50,
+          schema: "shop",
+          name: "product_stock_audit",
+        },
+      },
+      {
+        ...snapshot,
+        objects: [product, ...snapshot.objects.slice(1), triggerFunction],
+        triggers: [
+          {
+            oid: 50,
+            schema: "shop",
+            name: "product_stock_audit",
+            relationSchema: "shop",
+            relationName: "product",
+            routineSchema: "shop",
+            routineName: "audit_product_stock",
+            definition:
+              "CREATE TRIGGER product_stock_audit AFTER UPDATE OF stock ON shop.product FOR EACH ROW EXECUTE FUNCTION shop.audit_product_stock();",
+          },
+        ],
+      },
+    );
+    expect(directTrigger.status === "edit" ? directTrigger.text : directTrigger).toBe(
+      result.status === "edit" ? result.text : result,
+    );
+  });
+
+  it("rolls back an INSERT trigger harness by default", () => {
+    const triggerFunction = {
+      ...snapshot.objects[1],
+      oid: 5,
+      name: "audit_product_insert",
+      kind: "function" as const,
+      returnType: "trigger",
+      parameters: [],
+      columns: [],
+    };
+    const result = composePostgresSql(
+      {
+        uri: "file:///query.sql",
+        text: "",
+        offset: 0,
+        payload: {
+          kind: "function",
+          serverId: "demo-server",
+          database: "demo",
+          oid: triggerFunction.oid,
+          schema: "shop",
+          name: triggerFunction.name,
+        },
+      },
+      {
+        ...snapshot,
+        objects: [...snapshot.objects, triggerFunction],
+        triggers: [
+          {
+            oid: 51,
+            schema: "shop",
+            name: "product_insert_audit",
+            relationSchema: "shop",
+            relationName: "product",
+            routineSchema: "shop",
+            routineName: triggerFunction.name,
+            definition:
+              "CREATE TRIGGER product_insert_audit AFTER INSERT ON shop.product FOR EACH ROW EXECUTE FUNCTION shop.audit_product_insert();",
+          },
+        ],
+      },
+    );
+    expect(result.status).toBe("edit");
+    if (result.status !== "edit") return;
+    expect(result.text).toContain("v_rollback boolean := TRUE;");
+    expect(result.text).toContain("INSERT INTO shop.product");
+    expect(result.text).toContain("WHEN SQLSTATE 'PW001' THEN");
   });
 
   it("formats PostgreSQL SQL idempotently", () => {
@@ -146,6 +382,34 @@ describe("SQL authoring language contracts", () => {
     expect(postgresCompletions(nested, nested.length, snapshot)).toHaveLength(0);
     const schemaNamedCte = "WITH shop AS (SELECT 1) SELECT shop.";
     expect(postgresCompletions(schemaNamedCte, schemaNamedCte.length, snapshot)).toHaveLength(0);
+  });
+
+  it("completes indexed objects inside an anonymous PL/pgSQL DO block", () => {
+    const relationSource = [
+      "DO $workbench$",
+      "DECLARE",
+      "  v_id integer := (SELECT id FROM shop.pro);",
+      "BEGIN",
+      "  NULL;",
+      "END",
+      "$workbench$;",
+    ].join("\n");
+    const relationCursor = relationSource.indexOf("shop.pro") + "shop.pro".length;
+    expect(postgresCompletions(relationSource, relationCursor, snapshot)).toContainEqual(
+      expect.objectContaining({ label: "product", insertText: "product" }),
+    );
+
+    const routineSource = [
+      "DO $workbench$",
+      "BEGIN",
+      "  PERFORM shop.find;",
+      "END",
+      "$workbench$;",
+    ].join("\n");
+    const routineCursor = routineSource.indexOf("shop.find") + "shop.find".length;
+    expect(postgresCompletions(routineSource, routineCursor, snapshot)).toContainEqual(
+      expect.objectContaining({ label: "find_product" }),
+    );
   });
 
   it("filters a large schema before applying the completion bound", () => {
@@ -221,6 +485,28 @@ describe("SQL authoring language contracts", () => {
     expect(sqlStatementAtOffset(source, source.indexOf("broken")).text.trim()).toBe(
       "SELECT broken FROM;",
     );
+  });
+
+  it("exposes every non-empty PostgreSQL Statement to Run without requiring valid syntax", () => {
+    const source = `-- first statement
+SELECT 'semicolon; inside a string';
+
+INSERT INTO shop.audit(message) VALUES ('run me');
+SELECT broken FROM;`;
+
+    expect(sqlStatementSlices(source)).toEqual([
+      {
+        start: 0,
+        end: source.indexOf(";\n\n") + 1,
+        line: 2,
+        text: "-- first statement\nSELECT 'semicolon; inside a string';",
+      },
+      expect.objectContaining({
+        line: 4,
+        text: "INSERT INTO shop.audit(message) VALUES ('run me');",
+      }),
+      expect.objectContaining({ line: 5, text: "SELECT broken FROM;" }),
+    ]);
   });
 
   it("rejects composition when the indexed snapshot changes during syntax validation", async () => {

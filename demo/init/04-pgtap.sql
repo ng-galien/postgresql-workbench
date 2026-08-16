@@ -14,7 +14,8 @@ RETURNS SETOF text
 LANGUAGE plpgsql
 AS $function$
 BEGIN
-  RETURN NEXT plan(4);
+  RETURN NEXT plan(5);
+  RETURN NEXT is(playground.fib(NULL::int), NULL::bigint, 'fib(NULL) does not enter recursion');
   RETURN NEXT is(playground.fib(0), 0::bigint, 'fib(0) is the first base case');
   RETURN NEXT is(playground.fib(1), 1::bigint, 'fib(1) is the second base case');
   RETURN NEXT is(playground.fib(2), 1::bigint, 'fib(2) enters the recursive branch');

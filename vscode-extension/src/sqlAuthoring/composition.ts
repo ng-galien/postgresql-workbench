@@ -12,6 +12,7 @@ import type {
   SqlAuthoringForeignKey,
   SqlAuthoringObject,
   SqlAuthoringSnapshot,
+  SqlAuthoringTrigger,
 } from "./protocol.js";
 import { DEFAULT_SQL_AUTHORING_SETTINGS, type SqlAuthoringSettings } from "./protocol.js";
 import { analyzeSqlQueryShape } from "./queryShape.js";
@@ -63,6 +64,48 @@ function composePostgresStatement(
       message: "The Workbench Index is stale. Reindex before composing SQL.",
     };
   }
+  if (payload.kind === "trigger") {
+    const trigger = (snapshot.triggers ?? []).find((candidate) => candidate.oid === payload.oid);
+    if (!trigger) {
+      return {
+        status: "rejected",
+        message: "The dragged PostgreSQL trigger is no longer indexed.",
+      };
+    }
+    const routine = snapshot.objects.find(
+      (object) =>
+        object.kind === "function" &&
+        object.schema === trigger.routineSchema &&
+        object.name === trigger.routineName,
+    );
+    if (!routine) {
+      return { status: "rejected", message: "The trigger function is no longer indexed." };
+    }
+    const harness = triggerFunctionBlock(routine, trigger, snapshot, settings.tabSize);
+    if (!harness) {
+      return {
+        status: "rejected",
+        message: `The ${trigger.schema}.${trigger.name} trigger shape cannot yet be generated safely.`,
+      };
+    }
+    return {
+      status: "edit",
+      text: appendGeneratedStatement(request.text, harness),
+      title: `Test ${trigger.schema}.${trigger.name}`,
+    };
+  }
+  if (payload.kind === "function" || payload.kind === "procedure") {
+    const routine = snapshot.objects.find(
+      (object) => object.oid === payload.oid && object.kind === payload.kind,
+    );
+    if (!routine) {
+      return {
+        status: "rejected",
+        message: "The dragged PostgreSQL routine is no longer indexed.",
+      };
+    }
+    return composeRoutine(request, snapshot, routine, settings);
+  }
   const queryShape = analyzeSqlQueryShape(request.text);
   if (queryShape.hasNestedQuery) {
     return {
@@ -92,6 +135,286 @@ function composePostgresStatement(
     };
   }
   return composeJoin(request, snapshot, target, settings);
+}
+
+function composeRoutine(
+  request: SqlAuthoringComposeRequest,
+  snapshot: SqlAuthoringSnapshot,
+  routine: SqlAuthoringObject,
+  settings: SqlAuthoringSettings,
+): SqlAuthoringComposeResult {
+  let generated: string;
+  if (routine.kind === "procedure") {
+    generated = procedureBlock(routine, settings.tabSize);
+  } else if (routine.returnType?.toLocaleLowerCase() === "trigger") {
+    const triggers = (snapshot.triggers ?? []).filter(
+      (trigger) => trigger.routineSchema === routine.schema && trigger.routineName === routine.name,
+    );
+    if (triggers.length === 0) {
+      return {
+        status: "rejected",
+        message:
+          "This trigger function has no indexed trigger invocation. Reindex before generating its DML harness.",
+      };
+    }
+    if (triggers.length > 1 && request.relationChoice === undefined) {
+      return {
+        status: "ambiguous",
+        title: `Choose how to invoke ${routine.schema}.${routine.name}`,
+        placeHolder: "Choose the trigger whose DML harness will be generated",
+        choices: triggers.map((trigger, index) => ({
+          index,
+          label: `${trigger.schema}.${trigger.name}`,
+          description: triggerSummary(trigger),
+        })),
+      };
+    }
+    const trigger = triggers[request.relationChoice ?? 0];
+    if (!trigger) {
+      return { status: "rejected", message: "The selected trigger is no longer indexed." };
+    }
+    const harness = triggerFunctionBlock(routine, trigger, snapshot, settings.tabSize);
+    if (!harness) {
+      return {
+        status: "rejected",
+        message: `The ${trigger.schema}.${trigger.name} trigger shape cannot yet be generated safely.`,
+      };
+    }
+    generated = harness;
+  } else if (routine.returnType?.toLocaleLowerCase() === "event_trigger") {
+    return {
+      status: "rejected",
+      message: "Event trigger functions must be invoked by their associated DDL event.",
+    };
+  } else {
+    generated = functionSelect(routine, settings.tabSize);
+  }
+  return {
+    status: "edit",
+    text: appendGeneratedStatement(request.text, generated),
+    title: `Invoke ${routine.schema}.${routine.name}`,
+  };
+}
+
+function functionSelect(routine: SqlAuthoringObject, tabSize: number): string {
+  const indent = " ".repeat(tabSize);
+  const qualified = `${quoteIdentifier(routine.schema)}.${quoteIdentifier(routine.name)}`;
+  if (routine.parameters.length === 0) return `SELECT *\nFROM ${qualified}();\n`;
+  const argumentsSql = routine.parameters
+    .map((parameter, index) => {
+      const value = `NULL::${parameter.type || "text"}`;
+      return `${indent}${routineArgument(parameter.name, value, index)}`;
+    })
+    .join(",\n");
+  return `SELECT *\nFROM ${qualified}(\n${argumentsSql}\n);\n`;
+}
+
+function procedureBlock(routine: SqlAuthoringObject, tabSize: number): string {
+  const indent = " ".repeat(tabSize);
+  const qualified = `${quoteIdentifier(routine.schema)}.${quoteIdentifier(routine.name)}`;
+  const variables = routineVariableNames(routine.parameters);
+  const declarations = routine.parameters
+    .map((parameter, index) => `${indent}${variables[index]} ${parameter.type || "text"} := NULL;`)
+    .join("\n");
+  const argumentsSql = routine.parameters
+    .map(
+      (parameter, index) =>
+        `${indent}${indent}${routineArgument(parameter.name, variables[index], index)}`,
+    )
+    .join(",\n");
+  const call =
+    routine.parameters.length === 0
+      ? `${indent}CALL ${qualified}();`
+      : `${indent}CALL ${qualified}(\n${argumentsSql}\n${indent});`;
+  return [
+    "DO $workbench$",
+    ...(declarations ? ["DECLARE", declarations] : []),
+    "BEGIN",
+    call,
+    "END",
+    "$workbench$;",
+    "",
+  ].join("\n");
+}
+
+function triggerFunctionBlock(
+  routine: SqlAuthoringObject,
+  trigger: SqlAuthoringTrigger,
+  snapshot: SqlAuthoringSnapshot,
+  tabSize: number,
+): string | undefined {
+  const event = triggerEvent(trigger.definition);
+  const relation = snapshot.objects.find(
+    (object) =>
+      object.schema === trigger.relationSchema &&
+      object.name === trigger.relationName &&
+      (object.kind === "table" || object.kind === "view"),
+  );
+  if (!event || !relation) return undefined;
+  const indent = " ".repeat(tabSize);
+  const relationSql = `${quoteIdentifier(relation.schema)}.${quoteIdentifier(relation.name)}`;
+  const idColumn = relation.columns.find((column) => canonicalSqlIdentifier(column.name) === "id");
+  const requestedColumns = event.columns
+    .map((name) =>
+      relation.columns.find(
+        (column) => canonicalSqlIdentifier(column.name) === canonicalSqlIdentifier(name),
+      ),
+    )
+    .filter((column): column is SqlAuthoringObject["columns"][number] => column !== undefined);
+  const eventColumns =
+    requestedColumns.length > 0 ? requestedColumns : relation.columns.slice(0, 1);
+  const declaredColumns = [idColumn, ...eventColumns].filter(
+    (column, index, columns): column is SqlAuthoringObject["columns"][number] =>
+      column !== undefined &&
+      columns.findIndex((candidate) => candidate?.name === column.name) === index,
+  );
+  const variableNames = new Map(
+    declaredColumns.map((column, index) => [column.name, safeVariableName(column.name, index)]),
+  );
+  let declarations = declaredColumns
+    .map((column) => `${indent}${variableNames.get(column.name)} ${column.type || "text"} := NULL;`)
+    .join("\n");
+  let statement: string;
+  switch (event.kind) {
+    case "UPDATE": {
+      const assignments = eventColumns
+        .map(
+          (column) =>
+            `${indent}${indent}${quoteIdentifier(column.name)} = ${variableNames.get(column.name)}`,
+        )
+        .join(",\n");
+      const predicate = idColumn
+        ? `${quoteIdentifier(idColumn.name)} = ${variableNames.get(idColumn.name)}`
+        : "FALSE /* replace with the target row predicate */";
+      statement = `${indent}UPDATE ${relationSql}\n${indent}SET\n${assignments}\n${indent}WHERE ${predicate};`;
+      break;
+    }
+    case "INSERT": {
+      const columns = relation.columns;
+      if (columns.length === 0) return undefined;
+      const insertVariables = routineVariableNames(
+        columns.map((column) => ({ name: column.name, type: column.type })),
+      );
+      const insertDeclarations = columns
+        .map((column, index) => `${indent}${insertVariables[index]} ${column.type} := NULL;`)
+        .join("\n");
+      const names = columns
+        .map((column) => `${indent}${indent}${quoteIdentifier(column.name)}`)
+        .join(",\n");
+      const values = insertVariables.map((variable) => `${indent}${indent}${variable}`).join(",\n");
+      declarations = insertDeclarations;
+      statement = [
+        `${indent}INSERT INTO ${relationSql} (`,
+        names,
+        `${indent})`,
+        `${indent}VALUES (`,
+        values,
+        `${indent});`,
+      ].join("\n");
+      break;
+    }
+    case "DELETE": {
+      const predicate = idColumn
+        ? `${quoteIdentifier(idColumn.name)} = ${variableNames.get(idColumn.name)}`
+        : "FALSE /* replace with the target row predicate */";
+      statement = `${indent}DELETE FROM ${relationSql}\n${indent}WHERE ${predicate};`;
+      break;
+    }
+    case "TRUNCATE":
+      return [
+        `-- Invokes trigger ${trigger.schema}.${trigger.name} and function ${routine.schema}.${routine.name}`,
+        "DO $workbench$",
+        "DECLARE",
+        `${indent}v_execute boolean := FALSE;`,
+        "BEGIN",
+        `${indent}IF v_execute THEN`,
+        `${indent}${indent}TRUNCATE ${relationSql};`,
+        `${indent}END IF;`,
+        "END",
+        "$workbench$;",
+        "",
+      ].join("\n");
+  }
+  const nestedStatement = statement
+    .split("\n")
+    .map((line) => `${indent}${line}`)
+    .join("\n");
+  return [
+    `-- Invokes trigger ${trigger.schema}.${trigger.name} and function ${routine.schema}.${routine.name}`,
+    "-- Set the values below. Keep v_rollback = TRUE for a non-persistent test run.",
+    "DO $workbench$",
+    "DECLARE",
+    ...(declarations ? [declarations] : []),
+    `${indent}v_rollback boolean := TRUE;`,
+    "BEGIN",
+    `${indent}BEGIN`,
+    nestedStatement,
+    `${indent}${indent}IF v_rollback THEN`,
+    `${indent}${indent}${indent}RAISE EXCEPTION USING`,
+    `${indent}${indent}${indent}${indent}ERRCODE = 'PW001',`,
+    `${indent}${indent}${indent}${indent}MESSAGE = 'Workbench trigger test rollback';`,
+    `${indent}${indent}END IF;`,
+    `${indent}EXCEPTION`,
+    `${indent}${indent}WHEN SQLSTATE 'PW001' THEN`,
+    `${indent}${indent}${indent}RAISE NOTICE 'Workbench trigger test rolled back';`,
+    `${indent}END;`,
+    "END",
+    "$workbench$;",
+    "",
+  ].join("\n");
+}
+
+function triggerEvent(
+  definition: string,
+): { kind: "INSERT" | "UPDATE" | "DELETE" | "TRUNCATE"; columns: string[] } | undefined {
+  const match =
+    /\b(?:BEFORE|AFTER|INSTEAD\s+OF)\s+(INSERT|UPDATE|DELETE|TRUNCATE)(?:\s+OF\s+(.+?))?\s+ON\b/iu.exec(
+      definition,
+    );
+  if (!match) return undefined;
+  const columns = match[2]
+    ? [...match[2].matchAll(new RegExp(POSTGRES_IDENTIFIER_PATTERN, "gu"))].map(
+        (column) => column[0],
+      )
+    : [];
+  return { kind: match[1].toUpperCase() as "INSERT" | "UPDATE" | "DELETE" | "TRUNCATE", columns };
+}
+
+function triggerSummary(trigger: SqlAuthoringTrigger): string {
+  const event = triggerEvent(trigger.definition);
+  return `${event?.kind ?? "DML"} · ${trigger.relationSchema}.${trigger.relationName}`;
+}
+
+function routineArgument(name: string, value: string, index: number): string {
+  return /^[A-Za-z_][\w$]*$/u.test(name) && !name.startsWith("$")
+    ? `${quoteIdentifier(name)} => ${value}`
+    : value || `$${index + 1}`;
+}
+
+function routineVariableNames(parameters: readonly { name: string }[]): string[] {
+  const occupied = new Set<string>();
+  return parameters.map((parameter, index) => {
+    let candidate = safeVariableName(parameter.name, index);
+    let collision = 1;
+    while (occupied.has(candidate)) {
+      collision += 1;
+      candidate = `${safeVariableName(parameter.name, index)}_${collision}`;
+    }
+    occupied.add(candidate);
+    return candidate;
+  });
+}
+
+function safeVariableName(name: string, index: number): string {
+  const stem = name.replace(/^\$/u, "arg_").replace(/[^\p{L}\p{N}_$]/gu, "_");
+  return quoteIdentifier(`v_${stem || `arg_${index + 1}`}`);
+}
+
+function appendGeneratedStatement(source: string, generated: string): string {
+  const current = source.trimEnd();
+  if (!current) return generated;
+  const terminator = /;\s*$/u.test(current) ? "" : ";";
+  return `${current}${terminator}\n\n${generated}`;
 }
 
 function composeColumn(
