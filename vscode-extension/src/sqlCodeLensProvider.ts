@@ -123,17 +123,14 @@ export class SqlCodeLensProvider implements vscode.CodeLensProvider {
         );
       }
       const firstStatement = statements[0];
-      if (firstStatement) {
-        const range = new vscode.Range(firstStatement.line - 1, 0, firstStatement.line - 1, 0);
-        lenses.push(
-          connectionLens(
-            range,
-            documentConnection,
-            "postgresql-workbench.assignDocumentConnection",
-            { documentUri },
-          ),
-        );
-      }
+      const range = firstStatement
+        ? new vscode.Range(firstStatement.line - 1, 0, firstStatement.line - 1, 0)
+        : new vscode.Range(0, 0, 0, 0);
+      lenses.push(
+        connectionLens(range, documentConnection, "postgresql-workbench.assignDocumentConnection", {
+          documentUri,
+        }),
+      );
     }
 
     if (isVirtualPlpgsql && this.connections.canDeployManagedRoutine(documentUri)) {

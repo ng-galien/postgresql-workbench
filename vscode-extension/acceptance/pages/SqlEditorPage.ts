@@ -22,6 +22,17 @@ export class SqlEditorPage {
     await this.executeCommand("editor.action.formatDocument");
   }
 
+  async associateDocumentAutomatically(connection: RegExp): Promise<void> {
+    const assigned = this.editor.getByRole("button", { name: connection }).first();
+    if (await assigned.isVisible()) return;
+    const choose = this.editor
+      .getByRole("button", { name: /Choose PostgreSQL connection/ })
+      .first();
+    await expect(choose).toBeVisible({ timeout: 5_000 });
+    await choose.click();
+    await expect(assigned).toBeVisible({ timeout: 5_000 });
+  }
+
   async requestCompletion(): Promise<void> {
     await this.editor.click();
     await this.page.keyboard.press("Control+Space");

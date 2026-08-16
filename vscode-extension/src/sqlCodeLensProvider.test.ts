@@ -49,6 +49,21 @@ describe("SQL CodeLens provider", () => {
     ]);
   });
 
+  it("offers Document Association before an empty SQL document has a Statement", () => {
+    const provider = new SqlCodeLensProvider(
+      async () => {
+        throw new Error("runtime unavailable");
+      },
+      { ...connections(false), forDocument: () => undefined },
+    );
+
+    const lenses = provider.provideCodeLenses(document("file", "file:///query.sql", ""));
+
+    expect(lenses.map((lens) => lens.command?.title)).toEqual([
+      "$(database) Choose PostgreSQL connection",
+    ]);
+  });
+
   it("keeps Deploy visible for a bound managed routine with invalid working-copy SQL", () => {
     const provider = new SqlCodeLensProvider(async () => {
       throw new Error("invalid working copy");
