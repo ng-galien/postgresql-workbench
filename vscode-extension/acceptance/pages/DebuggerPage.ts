@@ -229,13 +229,29 @@ export class DebuggerPage {
     name: string,
     value: string,
   ): Promise<void> {
-    const scope = await this.variablesTree.findItem(scopeName);
-    await this.variablesTree.expandItem(scope, scopeName);
-    const escaped = `${name}, value ${value}`.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-    const variable = await this.variablesTree.findChild(scope, new RegExp(`^${escaped}$`, "u"));
-    await expect(variable).toHaveAccessibleName(`${name}, value ${value}`, {
-      timeout: 5_000,
-    });
+    const escapedName = name.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+    const escapedValue = value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+    const expected = new RegExp(
+      `^(?:${escapedName}\\s*=\\s*${escapedValue}|${escapedName},\\s*value\\s+${escapedValue})$`,
+      "u",
+    );
+    await expect
+      .poll(
+        async () => {
+          const scope = await this.variablesTree.findItem(scopeName).catch(() => undefined);
+          if (!scope) return undefined;
+          await this.variablesTree.expandItem(scope, scopeName);
+          const variable = await this.variablesTree
+            .findChild(scope, expected)
+            .catch(() => undefined);
+          return variable ? (await variable.innerText()).replace(/\s+/gu, " ").trim() : undefined;
+        },
+        {
+          timeout: 5_000,
+          message: `${name} must be reprojected with value ${value} in ${scopeName}`,
+        },
+      )
+      .toBe(`${name} = ${value}`);
   }
 
   private debugToolbar(): Locator {

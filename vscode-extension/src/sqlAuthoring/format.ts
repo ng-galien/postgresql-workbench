@@ -1,13 +1,13 @@
 import { format } from "sql-formatter";
 
-export function formatPostgresSql(source: string): string {
+export function formatPostgresSql(source: string, tabWidth = 2): string {
   const formatted = format(source, {
     language: "postgresql",
     keywordCase: "upper",
     dataTypeCase: "upper",
     functionCase: "preserve",
     identifierCase: "preserve",
-    tabWidth: 2,
+    tabWidth,
     useTabs: false,
     logicalOperatorNewline: "before",
     linesBetweenQueries: 1,

@@ -96,6 +96,8 @@ const IMPLICIT_ALIAS_BOUNDARY_KEYWORDS = new Set([
   "tablesample",
 ]);
 
+export const POSTGRES_IDENTIFIER_PATTERN = String.raw`(?:"(?:""|[^"\r\n])+"|[A-Za-z_][\w$]*)`;
+
 export function requiresQuotedPostgresIdentifier(identifier: string): boolean {
   return POSTGRES_RESERVED_KEYWORDS.has(identifier.toLocaleLowerCase());
 }
@@ -112,10 +114,13 @@ export function sqlAliasAfterRelation(
   relationEnd: number,
 ): string | undefined {
   const suffix = maskedSource.slice(relationEnd);
-  const match = /^\s+(?:AS\s+)?((?:"(?:""|[^"])+"|[\w$]+))/iu.exec(suffix);
+  const match = new RegExp(String.raw`^\s+(?:AS\s+)?(${POSTGRES_IDENTIFIER_PATTERN})`, "iu").exec(
+    suffix,
+  );
   if (!match || !isUsableSqlAlias(match[1])) return undefined;
   const aliasOffset = relationEnd + match[0].lastIndexOf(match[1]);
-  return source.slice(aliasOffset, aliasOffset + match[1].length);
+  const alias = source.slice(aliasOffset, aliasOffset + match[1].length);
+  return /[\r\n]/u.test(alias) ? undefined : alias;
 }
 
 export function canonicalSqlIdentifier(identifier: string): string {

@@ -2,6 +2,7 @@ import { quoteIdentifier } from "./completion.js";
 import { formatPostgresSql } from "./format.js";
 import {
   canonicalSqlIdentifier,
+  POSTGRES_IDENTIFIER_PATTERN,
   splitSqlQualifiedIdentifier,
   sqlAliasAfterRelation,
 } from "./identifiers.js";
@@ -12,12 +13,14 @@ import type {
   SqlAuthoringObject,
   SqlAuthoringSnapshot,
 } from "./protocol.js";
+import { DEFAULT_SQL_AUTHORING_SETTINGS, type SqlAuthoringSettings } from "./protocol.js";
 import { analyzeSqlQueryShape } from "./queryShape.js";
 import { scanPostgresSql, sqlStatementAtOffset } from "./sqlLexing.js";
 
 export function composePostgresSql(
   request: SqlAuthoringComposeRequest,
   snapshot: SqlAuthoringSnapshot,
+  settings: SqlAuthoringSettings = DEFAULT_SQL_AUTHORING_SETTINGS,
 ): SqlAuthoringComposeResult {
   const statement = sqlStatementAtOffset(request.text, request.offset);
   const result = composePostgresStatement(
@@ -27,6 +30,7 @@ export function composePostgresSql(
       offset: Math.max(0, request.offset - statement.start),
     },
     snapshot,
+    settings,
   );
   if (
     result.status !== "edit" ||
@@ -44,6 +48,7 @@ export function composePostgresSql(
 function composePostgresStatement(
   request: SqlAuthoringComposeRequest,
   snapshot: SqlAuthoringSnapshot,
+  settings: SqlAuthoringSettings,
 ): SqlAuthoringComposeResult {
   const payload = request.payload;
   if (payload.serverId !== snapshot.serverId || payload.database !== snapshot.database) {
@@ -72,7 +77,7 @@ function composePostgresStatement(
         "Composition supports one top-level SELECT without comma joins, set operations, WINDOW, FETCH, INTO, or locking clauses.",
     };
   }
-  if (payload.kind === "column") return composeColumn(request, snapshot);
+  if (payload.kind === "column") return composeColumn(request, snapshot, settings);
   const target = snapshot.objects.find(
     (object) => object.oid === payload.oid && object.kind === payload.kind,
   );
@@ -82,16 +87,17 @@ function composePostgresStatement(
   if (request.text.trim().length === 0) {
     return {
       status: "edit",
-      text: tableProjection(target),
+      text: tableProjection(target, settings),
       title: `Compose ${target.schema}.${target.name}`,
     };
   }
-  return composeJoin(request, snapshot, target);
+  return composeJoin(request, snapshot, target, settings);
 }
 
 function composeColumn(
   request: SqlAuthoringComposeRequest,
   snapshot: SqlAuthoringSnapshot,
+  settings: SqlAuthoringSettings,
 ): SqlAuthoringComposeResult {
   const payload = request.payload;
   if (payload.kind !== "column") throw new Error("Expected a column payload");
@@ -141,7 +147,7 @@ function composeColumn(
   const updated = `${request.text.slice(0, select.index + "SELECT".length)}${separator}${expression} ${request.text.slice(fromOffset)}`;
   return {
     status: "edit",
-    text: formatPostgresSql(updated),
+    text: formatPostgresSql(updated, settings.tabSize),
     title: `Add ${payload.name} to SELECT`,
   };
 }
@@ -183,6 +189,7 @@ function composeJoin(
   request: SqlAuthoringComposeRequest,
   snapshot: SqlAuthoringSnapshot,
   target: SqlAuthoringObject,
+  settings: SqlAuthoringSettings,
 ): SqlAuthoringComposeResult {
   const references = tableReferences(request.text, snapshot.objects);
   if (references.length === 0) {
@@ -205,7 +212,7 @@ function composeJoin(
   if (candidates.length === 0) {
     return {
       status: "edit",
-      text: appendIndependentProjection(request.text, target),
+      text: appendIndependentProjection(request.text, target, settings),
       title: `Compose ${target.schema}.${target.name} as another SELECT`,
     };
   }
@@ -215,14 +222,14 @@ function composeJoin(
       choices: candidates.map((candidate, index) => ({
         index,
         label: joinLabel(candidate.foreignKey, candidate.reference, target, snapshot.objects),
-        description: `${candidate.reference.reference} (${candidate.reference.object.schema}.${candidate.reference.object.name}) ↔ ${target.schema}.${target.name}`,
+        description: `${automaticJoinKeyword(candidate.foreignKey, candidate.reference)} · ${candidate.reference.object.schema}.${candidate.reference.object.name} ↔ ${target.schema}.${target.name}`,
       })),
     };
   }
   const candidate = candidates[request.relationChoice ?? 0];
   if (!candidate)
     return { status: "rejected", message: "The selected foreign key is no longer available." };
-  const targetReference = joinTargetReference(target, references);
+  const targetReference = joinTargetReference(target, references, settings.aliasStyle);
   const conditions = joinConditions(
     candidate.foreignKey,
     candidate.reference,
@@ -230,28 +237,60 @@ function composeJoin(
   );
   const joinKeyword = automaticJoinKeyword(candidate.foreignKey, candidate.reference);
   const join = ` ${joinKeyword} ${targetReference.relation} ON ${conditions.join(" AND ")}`;
-  const insertion = joinInsertionOffset(request.text);
-  const updated = `${request.text.slice(0, insertion).trimEnd()}${join}${request.text.slice(insertion)}`;
+  const projected = appendJoinedTableProjection(request.text, target, targetReference.correlation);
+  const insertion = joinInsertionOffset(projected);
+  const updated = `${projected.slice(0, insertion).trimEnd()}${join}${projected.slice(insertion)}`;
   return {
     status: "edit",
-    text: formatPostgresSql(updated),
+    text: formatPostgresSql(updated, settings.tabSize),
     title: `Join ${target.schema}.${target.name}`,
   };
 }
 
-function tableProjection(object: SqlAuthoringObject): string {
-  const columns = object.columns.map((column) => quoteIdentifier(column.name));
+function appendJoinedTableProjection(
+  source: string,
+  target: SqlAuthoringObject,
+  targetReference: string,
+): string {
+  if (target.columns.length === 0) return source;
+  const topLevelSource = scanPostgresSql(source).topLevelSource;
+  const select = /\bSELECT\b([\s\S]*?)\bFROM\b/iu.exec(topLevelSource);
+  if (!select || select.index === undefined || /^\s*\*\s*$/u.test(select[1])) return source;
+  if (
+    /^\s*(?:DISTINCT\b|ALL\b)/iu.test(select[1]) ||
+    /\b(?:GROUP\s+BY|HAVING)\b/iu.test(topLevelSource) ||
+    new RegExp(String.raw`${POSTGRES_IDENTIFIER_PATTERN}\s*\(`, "u").test(select[1])
+  ) {
+    return source;
+  }
+  const projectionStart = select.index + "SELECT".length;
+  const fromOffset = projectionStart + select[1].length;
+  const additions = target.columns
+    .map((column) => `${targetReference}.${quoteIdentifier(column.name)}`)
+    .join(", ");
+  const existing = source.slice(0, fromOffset).replace(/\s+$/u, "");
+  return `${existing}, ${additions} ${source.slice(fromOffset)}`;
+}
+
+function tableProjection(object: SqlAuthoringObject, settings: SqlAuthoringSettings): string {
+  const alias = generatedRelationAlias(object.name, settings.aliasStyle);
+  const columns = object.columns.map((column) => `${alias}.${quoteIdentifier(column.name)}`);
   const projection = columns.length > 0 ? columns.join(", ") : "*";
   return formatPostgresSql(
-    `SELECT ${projection} FROM ${quoteIdentifier(object.schema)}.${quoteIdentifier(object.name)};`,
+    `SELECT ${projection} FROM ${quoteIdentifier(object.schema)}.${quoteIdentifier(object.name)} AS ${alias};`,
+    settings.tabSize,
   );
 }
 
-function appendIndependentProjection(source: string, object: SqlAuthoringObject): string {
+function appendIndependentProjection(
+  source: string,
+  object: SqlAuthoringObject,
+  settings: SqlAuthoringSettings,
+): string {
   const statement = source.trimEnd();
   const terminated = scanPostgresSql(statement).statementSeparators.length > 0;
   const separator = terminated ? "" : "\n;";
-  return `${statement}${separator}\n\n${tableProjection(object)}`;
+  return `${statement}${separator}\n\n${tableProjection(object, settings)}`;
 }
 
 interface TableReference {
@@ -294,7 +333,7 @@ function tableReferences(source: string, objects: readonly SqlAuthoringObject[])
       correlationName: canonicalSqlIdentifier(usableAlias ?? parts[1]),
       nullExtended: joinDirection === "LEFT" || joinDirection === "FULL",
       object,
-      reference: usableAlias ?? relation,
+      reference: usableAlias ?? parts[1],
     });
   }
   return references;
@@ -303,20 +342,33 @@ function tableReferences(source: string, objects: readonly SqlAuthoringObject[])
 function joinTargetReference(
   target: SqlAuthoringObject,
   references: readonly TableReference[],
+  aliasStyle: SqlAuthoringSettings["aliasStyle"],
 ): { correlation: string; relation: string } {
   const relation = `${quoteIdentifier(target.schema)}.${quoteIdentifier(target.name)}`;
-  const implicitCorrelationName = canonicalSqlIdentifier(quoteIdentifier(target.name));
   const occupied = new Set(references.map(({ correlationName }) => correlationName));
-  if (!occupied.has(implicitCorrelationName)) return { correlation: relation, relation };
-
-  const stem = target.name.replace(/[^\p{L}\p{N}_$]/gu, "_") || "relation";
-  let suffix = 2;
-  let alias = quoteIdentifier(`${stem}_${suffix}`);
+  let collisionIndex: number | undefined;
+  let alias = generatedRelationAlias(target.name, aliasStyle);
   while (occupied.has(canonicalSqlIdentifier(alias))) {
-    suffix += 1;
-    alias = quoteIdentifier(`${stem}_${suffix}`);
+    collisionIndex = (collisionIndex ?? 1) + 1;
+    alias = generatedRelationAlias(target.name, aliasStyle, collisionIndex);
   }
   return { correlation: alias, relation: `${relation} AS ${alias}` };
+}
+
+function generatedRelationAlias(
+  name: string,
+  aliasStyle: SqlAuthoringSettings["aliasStyle"],
+  collisionIndex?: number,
+): string {
+  const stem = name.replace(/[^\p{L}\p{N}_$]/gu, "_") || "relation";
+  const base = aliasStyle === "initial" ? ([...stem][0] ?? "r") : stem;
+  const suffix =
+    collisionIndex === undefined
+      ? ""
+      : aliasStyle === "initial"
+        ? collisionIndex
+        : `_${collisionIndex}`;
+  return quoteIdentifier(`${base}${suffix}`);
 }
 
 function connects(foreignKey: SqlAuthoringForeignKey, leftOid: number, rightOid: number): boolean {
@@ -374,11 +426,13 @@ function joinLabel(
   foreignKey: SqlAuthoringForeignKey,
   current: TableReference,
   target: SqlAuthoringObject,
-  objects: readonly SqlAuthoringObject[],
+  _objects: readonly SqlAuthoringObject[],
 ): string {
-  const source = objects.find((object) => object.oid === foreignKey.sourceTableOid);
-  const destination = objects.find((object) => object.oid === foreignKey.targetTableOid);
-  return `${automaticJoinKeyword(foreignKey, current)} from ${current.reference} via ${source?.name ?? current.object.name}(${foreignKey.sourceColumns.join(", ")}) → ${destination?.name ?? target.name}(${foreignKey.targetColumns.join(", ")})`;
+  const currentIsSource = foreignKey.sourceTableOid === current.object.oid;
+  const currentColumns = currentIsSource ? foreignKey.sourceColumns : foreignKey.targetColumns;
+  const targetColumns = currentIsSource ? foreignKey.targetColumns : foreignKey.sourceColumns;
+  const arrow = currentIsSource ? "→" : "←";
+  return `${current.reference}.${currentColumns.join(", ")} ${arrow} ${target.name}.${targetColumns.join(", ")}`;
 }
 
 function joinInsertionOffset(source: string): number {

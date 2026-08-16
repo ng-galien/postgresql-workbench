@@ -32,6 +32,7 @@ export class QuickInput {
     const options = visibleList.locator(".monaco-list-row");
     await options.first().waitFor({ state: "visible", timeout: 5_000 });
     let previousSignature: string | undefined;
+    let matchingText: string | undefined;
     try {
       await expect
         .poll(
@@ -44,6 +45,7 @@ export class QuickInput {
             });
             const signature = JSON.stringify(texts);
             const stable = matches.length === 1 && signature === previousSignature;
+            matchingText = stable ? matches[0] : undefined;
             previousSignature = signature;
             return stable;
           },
@@ -59,10 +61,27 @@ export class QuickInput {
         { cause: error },
       );
     }
-    const matchingLabel = new RegExp(label.source, label.flags.replace("g", ""));
-    const match = options.filter({ hasText: matchingLabel });
-    await expect(match).toHaveCount(1, { timeout: 5_000 });
-    await match.first().click();
+    await expect
+      .poll(
+        async () => {
+          const texts = await options.allInnerTexts();
+          const index = texts.indexOf(matchingText ?? "");
+          if (index < 0) {
+            return false;
+          }
+          try {
+            await options.nth(index).click();
+            return true;
+          } catch {
+            return false;
+          }
+        },
+        {
+          timeout: 5_000,
+          message: `Quick Pick option ${JSON.stringify(matchingText)} must remain actionable`,
+        },
+      )
+      .toBe(true);
     await expect(visibleList).toHaveCount(0, {
       timeout: 5_000,
     });

@@ -155,6 +155,63 @@
         "path": "./syntaxes/plpgsql.tmLanguage.json"
       }
     ],
+    "semanticTokenTypes": [
+      {
+        "id": "sqlSchema",
+        "superType": "namespace",
+        "description": "PostgreSQL schema reference"
+      },
+      {
+        "id": "sqlTable",
+        "superType": "class",
+        "description": "PostgreSQL table reference"
+      },
+      {
+        "id": "sqlView",
+        "superType": "interface",
+        "description": "PostgreSQL view reference"
+      },
+      {
+        "id": "sqlCte",
+        "superType": "struct",
+        "description": "SQL common table expression"
+      },
+      {
+        "id": "sqlAlias",
+        "superType": "variable",
+        "description": "SQL relation alias"
+      },
+      {
+        "id": "sqlColumn",
+        "superType": "property",
+        "description": "PostgreSQL column reference"
+      },
+      {
+        "id": "sqlFunction",
+        "superType": "function",
+        "description": "PostgreSQL function call"
+      },
+      {
+        "id": "sqlProcedure",
+        "superType": "method",
+        "description": "PostgreSQL procedure call"
+      },
+      {
+        "id": "sqlParameter",
+        "superType": "parameter",
+        "description": "SQL positional or named parameter"
+      },
+      {
+        "id": "sqlType",
+        "superType": "type",
+        "description": "PostgreSQL type reference"
+      },
+      {
+        "id": "sqlWindow",
+        "superType": "label",
+        "description": "SQL named window"
+      }
+    ],
     "semanticTokenScopes": [
       {
         "scopes": {
@@ -169,10 +226,57 @@
           ],
           "function": [
             "entity.name.function.plpgsql"
+          ],
+          "sqlSchema": [
+            "entity.name.namespace.sql"
+          ],
+          "sqlTable": [
+            "entity.name.type.table.sql"
+          ],
+          "sqlView": [
+            "entity.name.type.interface.sql"
+          ],
+          "sqlCte": [
+            "entity.name.type.struct.sql"
+          ],
+          "sqlAlias": [
+            "entity.name.variable.sql"
+          ],
+          "sqlColumn": [
+            "support.variable.sql"
+          ],
+          "sqlFunction": [
+            "entity.name.function.sql"
+          ],
+          "sqlProcedure": [
+            "entity.name.function.method.sql"
+          ],
+          "sqlParameter": [
+            "variable.parameter.sql"
+          ],
+          "sqlType": [
+            "support.type.sql"
+          ],
+          "sqlWindow": [
+            "entity.name.label.sql"
           ]
         }
       }
     ],
+    "configurationDefaults": {
+      "[plpgsql]": {
+        "editor.detectIndentation": false,
+        "editor.dropIntoEditor.showDropSelector": "never",
+        "editor.insertSpaces": true,
+        "editor.tabSize": 2
+      },
+      "[sql]": {
+        "editor.detectIndentation": false,
+        "editor.dropIntoEditor.showDropSelector": "never",
+        "editor.insertSpaces": true,
+        "editor.tabSize": 2
+      }
+    },
     "viewsContainers": {
       "activitybar": [
         {
@@ -826,6 +930,38 @@
     "configuration": {
       "title": "PostgreSQL Workbench",
       "properties": {
+        "postgresql-workbench.sqlAuthoring.aliasStyle": {
+          "type": "string",
+          "default": "fullName",
+          "enum": [
+            "fullName",
+            "initial"
+          ],
+          "enumItemLabels": [
+            "Full table name",
+            "Initial"
+          ],
+          "enumDescriptions": [
+            "Generate aliases such as address and shipment. Add a numeric suffix only to resolve a collision.",
+            "Generate compact aliases such as a and s. Add a numeric suffix only to resolve a collision."
+          ],
+          "scope": "window",
+          "description": "Alias strategy used when PostgreSQL Workbench composes a query from dragged relations. Changes apply to the next composition."
+        },
+        "postgresql-workbench.sqlAuthoring.syntaxMaxDepth": {
+          "type": "integer",
+          "default": 1024,
+          "minimum": 1,
+          "scope": "window",
+          "description": "Maximum PostgreSQL syntax-tree depth used to classify SQL safely before execution and composition. Code Moniker 0.7.0 applies this client-selected budget without an additional server cap."
+        },
+        "postgresql-workbench.sqlAuthoring.syntaxMaxNodes": {
+          "type": "integer",
+          "default": 100000,
+          "minimum": 1,
+          "scope": "window",
+          "description": "Maximum PostgreSQL syntax-tree nodes used to classify SQL safely before execution and composition. Increase this client-selected budget for exceptionally large SQL documents."
+        },
         "postgresql-workbench.workbench.schemaSync.enabled": {
           "type": "boolean",
           "default": false,
@@ -1192,7 +1328,7 @@
     "vscode:prepublish": "npm run build:production"
   },
   "dependencies": {
-    "@code-moniker/client": "^0.6.1",
+    "@code-moniker/client": "0.7.0",
     "@shikijs/core": "^4.4.1",
     "@shikijs/engine-javascript": "^4.4.1",
     "@shikijs/langs": "^4.4.1",

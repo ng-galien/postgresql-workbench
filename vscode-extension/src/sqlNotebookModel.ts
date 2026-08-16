@@ -77,6 +77,10 @@ export interface SqlNotebookErrorPayload {
   line?: number;
   column?: number;
   position?: string;
+  action?: {
+    type: "open-sql-analysis-settings";
+    label: string;
+  };
 }
 
 export type SqlNotebookOutputPayload = SqlNotebookResultPayload | SqlNotebookErrorPayload;
@@ -97,11 +101,17 @@ export interface SqlNotebookResultNavigation {
 
 export type SqlNotebookResultAction = "attach" | "previous" | "next" | "load-all" | "cancel";
 
-export interface SqlNotebookRendererRequest {
+export interface SqlNotebookResultRequest {
   type: "sql-result/request";
   sessionId: string;
   action: SqlNotebookResultAction;
 }
+
+export interface SqlNotebookSettingsRequest {
+  type: "sql-error/open-analysis-settings";
+}
+
+export type SqlNotebookRendererRequest = SqlNotebookResultRequest | SqlNotebookSettingsRequest;
 
 export type SqlNotebookRendererResponse =
   | {

@@ -48,7 +48,11 @@ import { closePostgresqlDapTabs } from "./postgresqlDapSource.js";
 import { showRequirementsGuide } from "./requirementsGuide.js";
 import { createRoutineComparisonHandler } from "./routineComparisonCommand.js";
 import { type ServerConfig, ServerStore } from "./serverStore.js";
-import { registerSqlAuthoring } from "./sqlAuthoring/client.js";
+import {
+  registerSqlAuthoring,
+  resolveSqlAuthoringSettings,
+  type SqlAuthoringNavigationTarget,
+} from "./sqlAuthoring/client.js";
 import {
   type CommandCallSite,
   type CommandFunctionDefinition,
@@ -71,7 +75,11 @@ import {
   type WorkbenchObjectActionSurface,
 } from "./workbenchObjectActions.js";
 import { WorkbenchTreeDragAndDropController } from "./workbenchTreeDragAndDrop.js";
-import type { WorkbenchObjectModel } from "./workbenchTreeModel.js";
+import {
+  buildWorkbenchObjects,
+  buildWorkbenchTableMembers,
+  type WorkbenchObjectModel,
+} from "./workbenchTreeModel.js";
 import {
   FunctionItem,
   type PlpgsqlTreeItem,
@@ -546,7 +554,7 @@ function registerSqlWorkbenchCommands(options: SqlWorkbenchCommandOptions): void
             .get<number>("maxRows", DEBUG_RESULT_LIMITS.DEFAULT_ROWS),
         ),
         classifyStatementCount: async (sql) =>
-          classifySqlStatementCount(sql, await index.syntaxParser()),
+          classifySqlStatementCount(sql, await index.syntaxParser(), sqlSyntaxAnalysisBudget()),
         onStarted: () => resultsView.reveal(true),
       });
       if ("status" in result && result.status === "multiple-statements") {
@@ -1381,10 +1389,8 @@ function registerDebugInfrastructure(options: DebugInfrastructureOptions): Debug
     ),
     vscode.languages.registerDocumentSemanticTokensProvider(
       [
-        { language: "sql" },
-        { language: "plpgsql" },
-        { pattern: "**/*.sql" },
-        { pattern: "**/*.pgsql" },
+        { scheme: CodeMonikerContentProvider.SCHEME, language: "plpgsql" },
+        { scheme: "debug", language: "plpgsql" },
       ],
       new PlpgsqlSemanticTokensProvider(() => index.syntaxParser()),
       LEGEND,
@@ -1454,7 +1460,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
     index: workbenchIndex.acceptanceSnapshot(),
   });
   const scratchpads = registerSqlNotebook(context, cm, async (sql) =>
-    planSqlResultExecution(sql, await workbenchIndex.syntaxParser()),
+    planSqlResultExecution(sql, await workbenchIndex.syntaxParser(), sqlSyntaxAnalysisBudget()),
   );
   const sqlNotebooks = scratchpads.workspace;
   shutdownScratchpads = scratchpads.shutdown;
@@ -1478,7 +1484,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
     treeDragPayload: (consume) => workbenchTreeDragAndDrop.activePayload(consume),
   });
   context.subscriptions.push(workbenchTreeDragAndDrop, workbenchGraph);
-  context.subscriptions.push(await registerSqlAuthoring(context, cm, workbenchIndex));
   registerWorkbenchGraphDropBridge(context, workbenchGraph);
   const coverageTests = new PgTapTestController({
     connections: cm,
@@ -1709,6 +1714,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
     workbenchIndex,
     workbenchGraph,
   );
+  context.subscriptions.push(
+    await registerSqlAuthoring(context, cm, workbenchIndex, (target) =>
+      revealSqlAuthoringReference(
+        target,
+        workbenchIndex,
+        treeProvider,
+        workbenchTree,
+        graphTreeSync,
+      ),
+    ),
+  );
   resetAcceptanceWorkbench = async () => {
     await vscode.commands.executeCommand("workbench.action.closeQuickOpen");
     await workbenchIndex.settleAcceptanceOperations();
@@ -1914,6 +1930,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
   };
 }
 
+function sqlSyntaxAnalysisBudget() {
+  const settings = resolveSqlAuthoringSettings();
+  return { maxDepth: settings.syntaxMaxDepth, maxNodes: settings.syntaxMaxNodes };
+}
+
 export async function deactivate(): Promise<void> {
   await shutdownScratchpads?.();
   shutdownScratchpads = undefined;
@@ -1925,6 +1946,47 @@ async function revealActiveSources(
 ): Promise<void> {
   const sources = provider.activeSourcesItem();
   if (sources) await tree.reveal(sources, { expand: true, focus: false });
+}
+
+async function revealSqlAuthoringReference(
+  target: SqlAuthoringNavigationTarget,
+  index: WorkbenchIndexController,
+  provider: WorkbenchTreeProvider,
+  tree: vscode.TreeView<PlpgsqlTreeItem>,
+  graphSync: WorkbenchGraphTreeSync,
+): Promise<boolean> {
+  const result = index.state.result;
+  if (
+    index.state.status !== "available" ||
+    !result ||
+    result.serverId !== target.serverId ||
+    result.database !== target.database
+  ) {
+    return false;
+  }
+  const object = buildWorkbenchObjects(index.indexedSymbols, target).find(
+    (candidate) => candidate.oid === target.oid,
+  );
+  if (!object) return false;
+  if (!target.column) return graphSync.navigateToObject(object);
+
+  const parent = provider.itemForObject(object);
+  if (!parent) return false;
+  await tree.reveal(parent, { select: false, focus: false, expand: true });
+  const members = buildWorkbenchTableMembers(index.indexedSymbols, object);
+  const member = members.find(
+    (candidate) => candidate.kind === "column" && candidate.name === target.column,
+  );
+  if (!member) return false;
+  const child = (await provider.getChildren(parent)).find(
+    (candidate) =>
+      candidate.kind === "tableMember" &&
+      candidate.member.kind === "column" &&
+      candidate.member.name === member.name,
+  );
+  if (!child) return false;
+  await tree.reveal(child, { select: true, focus: true, expand: false });
+  return true;
 }
 
 function isDebugResult(value: unknown): value is DebugResult {

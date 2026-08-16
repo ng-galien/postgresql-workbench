@@ -57,7 +57,7 @@ export function activate(context: RendererContext = {}): RendererApi {
       const payload = outputItem.json() as SqlNotebookOutputPayload;
       root.render(
         "type" in payload && payload.type === "error" ? (
-          <SqlErrorView payload={payload} />
+          <SqlErrorView payload={payload} messaging={messaging} />
         ) : (
           <SqlResultView payload={payload as SqlNotebookResultPayload} messaging={messaging} />
         ),

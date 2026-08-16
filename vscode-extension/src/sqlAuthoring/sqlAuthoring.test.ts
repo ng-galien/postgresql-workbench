@@ -104,6 +104,9 @@ describe("SQL authoring language contracts", () => {
     const formatted = formatPostgresSql("select id,name from shop.product where id>0;");
     expect(formatted).toBe("SELECT\n  id,\n  name\nFROM\n  shop.product\nWHERE\n  id > 0;\n");
     expect(formatPostgresSql(formatted)).toBe(formatted);
+    expect(formatPostgresSql("SELECT id, name FROM shop.product;", 4)).toBe(
+      "SELECT\n    id,\n    name\nFROM\n    shop.product;\n",
+    );
   });
 
   it("preserves PostgreSQL comments, quoted identifiers, parameters, and dollar bodies", () => {
@@ -239,7 +242,7 @@ describe("SQL authoring language contracts", () => {
       async () => current,
       async () => {
         current = { status: "available", snapshot: { ...snapshot, status: "stale" } };
-        return { hasError: false };
+        return { hasError: false, truncated: false };
       },
     );
     expect(result).toMatchObject({
@@ -266,7 +269,7 @@ describe("SQL authoring language contracts", () => {
         },
       },
       async () => context,
-      async () => ({ hasError: false }),
+      async () => ({ hasError: false, truncated: false }),
     );
     expect(sqlAuthoringEditStillApplies(result, context, source, source)).toBe(true);
     expect(
@@ -280,6 +283,31 @@ describe("SQL authoring language contracts", () => {
     expect(sqlAuthoringEditStillApplies(result, context, source, `${source}\n-- edited`)).toBe(
       false,
     );
+  });
+
+  it("rejects composition when syntax analysis reaches its configured budget", async () => {
+    const context: SqlAuthoringDocumentContext = { status: "available", snapshot };
+    const result = await composeSqlAuthoringRequest(
+      {
+        uri: "file:///query.sql",
+        text: "SELECT p.id FROM shop.product AS p;",
+        offset: 10,
+        payload: {
+          kind: "table",
+          serverId: "demo-server",
+          database: "demo",
+          oid: 2,
+          schema: "shop",
+          name: "order_line",
+        },
+      },
+      async () => context,
+      async () => ({ hasError: false, truncated: true }),
+    );
+    expect(result).toMatchObject({
+      status: "rejected",
+      message: expect.stringContaining("analysis budget"),
+    });
   });
 
   it.each([
@@ -336,7 +364,7 @@ describe("SQL authoring language contracts", () => {
       },
     );
     expect(result.status === "edit" ? result.text : result).toContain(
-      "JOIN shop.customer ON shop.order_line.id = shop.customer.id",
+      "JOIN shop.customer AS customer ON order_line.id = customer.id",
     );
   });
 
@@ -555,6 +583,34 @@ describe("SQL authoring language contracts", () => {
     expect(result).toMatchObject({ status: "rejected" });
   });
 
+  it.each([
+    "SELECT count(*) FROM shop.order_line AS ol;",
+    'SELECT "count"(*) FROM shop.order_line AS ol;',
+    "SELECT ol.product_id, count(*) FROM shop.order_line AS ol GROUP BY ol.product_id;",
+    "SELECT DISTINCT ol.product_id FROM shop.order_line AS ol;",
+  ])("joins without expanding an aggregate or set-sensitive projection: %s", (text) => {
+    const result = composePostgresSql(
+      {
+        uri: "file:///query.sql",
+        text,
+        offset: text.indexOf("order_line"),
+        payload: {
+          kind: "table",
+          serverId: "demo-server",
+          database: "demo",
+          oid: 1,
+          schema: "shop",
+          name: "product",
+        },
+      },
+      snapshot,
+    );
+    expect(result.status).toBe("edit");
+    if (result.status !== "edit") return;
+    expect(result.text).toContain("JOIN shop.product AS product");
+    expect(result.text).not.toContain("product.name");
+  });
+
   it("creates an explicit projection, extends it once, and joins only through one foreign key", () => {
     const table = composePostgresSql(
       {
@@ -573,7 +629,9 @@ describe("SQL authoring language contracts", () => {
       snapshot,
     );
     expect(table).toMatchObject({ status: "edit" });
-    expect(table.status === "edit" ? table.text : "").toContain("FROM\n  shop.product");
+    expect(table.status === "edit" ? table.text : "").toBe(
+      "SELECT\n  product.id,\n  product.name\nFROM\n  shop.product AS product;\n",
+    );
 
     const joined = composePostgresSql(
       {
@@ -591,9 +649,7 @@ describe("SQL authoring language contracts", () => {
       },
       snapshot,
     );
-    expect(joined.status === "edit" ? joined.text : joined).toContain(
-      "ol.product_id = shop.product.id",
-    );
+    expect(joined.status === "edit" ? joined.text : joined).toContain("ol.product_id = product.id");
 
     const column = composePostgresSql(
       {
@@ -613,6 +669,134 @@ describe("SQL authoring language contracts", () => {
       snapshot,
     );
     expect(column.status === "edit" ? column.text : column).toContain("p.name");
+
+    const unaliasedColumn = composePostgresSql(
+      {
+        uri: "file:///query.sql",
+        text: "SELECT product.id FROM shop.product;",
+        offset: 0,
+        payload: {
+          kind: "column",
+          serverId: "demo-server",
+          database: "demo",
+          tableOid: 1,
+          tableSchema: "shop",
+          tableName: "product",
+          name: "name",
+        },
+      },
+      snapshot,
+    );
+    expect(unaliasedColumn.status === "edit" ? unaliasedColumn.text : unaliasedColumn).toContain(
+      "product.name",
+    );
+    expect(
+      unaliasedColumn.status === "edit" ? unaliasedColumn.text : unaliasedColumn,
+    ).not.toContain("shop.product.name");
+  });
+
+  it("keeps a generated projection unambiguous when a joined table shares column names", () => {
+    const address = {
+      ...snapshot.objects[0],
+      oid: 50,
+      name: "address",
+      columns: [
+        { name: "id", type: "integer" },
+        { name: "label", type: "text" },
+        { name: "city", type: "text" },
+      ],
+    };
+    const customerAddress = {
+      ...snapshot.objects[0],
+      oid: 51,
+      name: "customer_address",
+      columns: [
+        { name: "id", type: "integer" },
+        { name: "address_id", type: "integer" },
+      ],
+    };
+    const addressSnapshot: SqlAuthoringSnapshot = {
+      ...snapshot,
+      objects: [address, customerAddress],
+      foreignKeys: [
+        {
+          sourceTableOid: customerAddress.oid,
+          targetTableOid: address.oid,
+          sourceColumns: ["address_id"],
+          sourceColumnsNullable: [false],
+          targetColumns: ["id"],
+          validated: true,
+        },
+      ],
+    };
+    const projection = composePostgresSql(
+      {
+        uri: "file:///query.sql",
+        text: "",
+        offset: 0,
+        payload: {
+          kind: "table",
+          serverId: "demo-server",
+          database: "demo",
+          oid: address.oid,
+          schema: "shop",
+          name: address.name,
+        },
+      },
+      addressSnapshot,
+    );
+    expect(projection.status).toBe("edit");
+    if (projection.status !== "edit") return;
+    expect(projection.text).toContain("address.id");
+    expect(projection.text).toContain("FROM\n  shop.address AS address");
+    const curatedProjection = projection.text.replace("  address.label,\n", "");
+
+    const joined = composePostgresSql(
+      {
+        uri: "file:///query.sql",
+        text: curatedProjection,
+        offset: curatedProjection.indexOf("shop.address"),
+        payload: {
+          kind: "table",
+          serverId: "demo-server",
+          database: "demo",
+          oid: customerAddress.oid,
+          schema: "shop",
+          name: customerAddress.name,
+        },
+      },
+      addressSnapshot,
+    );
+    expect(joined.status).toBe("edit");
+    if (joined.status !== "edit") return;
+    expect(joined.text).toBe(
+      "SELECT\n  address.id,\n  address.city,\n  customer_address.id,\n  customer_address.address_id\nFROM\n  shop.address AS address\n  LEFT JOIN shop.customer_address AS customer_address ON address.id = customer_address.address_id;\n",
+    );
+    expect(joined.text).not.toContain("address.label");
+    expect(joined.text).not.toMatch(/(?:^|\s)id,/u);
+  });
+
+  it("generates compact initial aliases when configured", () => {
+    const result = composePostgresSql(
+      {
+        uri: "file:///query.sql",
+        text: "",
+        offset: 0,
+        payload: {
+          kind: "table",
+          serverId: "demo-server",
+          database: "demo",
+          oid: 1,
+          schema: "shop",
+          name: "product",
+        },
+      },
+      snapshot,
+      { aliasStyle: "initial", syntaxMaxDepth: 1_024, syntaxMaxNodes: 100_000, tabSize: 2 },
+    );
+    expect(result.status === "edit" ? result.text : result).toBe(
+      "SELECT\n  p.id,\n  p.name\nFROM\n  shop.product AS p;\n",
+    );
   });
 
   it("appends an independent SELECT when no direct foreign key can form a JOIN", () => {
@@ -634,7 +818,7 @@ describe("SQL authoring language contracts", () => {
     );
     expect(result.status).toBe("edit");
     expect(result.status === "edit" ? result.text : result).toBe(
-      "SELECT p.id FROM shop.product AS p;\n\nSELECT\n  id,\n  name,\n  loyalty_points\nFROM\n  shop.customer;\n",
+      "SELECT p.id FROM shop.product AS p;\n\nSELECT\n  customer.id,\n  customer.name,\n  customer.loyalty_points\nFROM\n  shop.customer AS customer;\n",
     );
   });
 
@@ -663,7 +847,7 @@ describe("SQL authoring language contracts", () => {
     );
     expect(result.status === "edit" ? result.text : result).not.toContain("JOIN");
     expect(result.status === "edit" ? result.text : result).toContain(
-      "SELECT\n  id,\n  product_id\nFROM\n  shop.order_line;",
+      "SELECT\n  order_line.id,\n  order_line.product_id\nFROM\n  shop.order_line AS order_line;",
     );
   });
 
@@ -707,7 +891,7 @@ describe("SQL authoring language contracts", () => {
       expect(text).not.toMatch(/\bJOIN\b/u);
       expect(text).not.toContain(" ON ");
       expect(text).not.toContain("undefined");
-      expect(text).toContain("FROM\n  shop.product;");
+      expect(text).toContain("FROM\n  shop.product AS product;");
     },
   );
 
@@ -793,6 +977,11 @@ describe("SQL authoring language contracts", () => {
       },
     );
     expect(result).toMatchObject({ status: "ambiguous", choices: [{ index: 0 }, { index: 1 }] });
+    if (result.status !== "ambiguous") return;
+    expect(result.choices.map(({ label }) => label)).toEqual([
+      "ol.product_id → product.id",
+      "ol.id → product.id",
+    ]);
   });
 
   it("distinguishes self-join references in the foreign-key picker", () => {
@@ -935,7 +1124,7 @@ describe("SQL authoring language contracts", () => {
       snapshot,
     );
     expect(usingColumn.status === "edit" ? usingColumn.text : usingColumn).toContain(
-      "shop.order_line.product_id",
+      "order_line.product_id",
     );
 
     const sampledJoin = composePostgresSql(
@@ -955,7 +1144,7 @@ describe("SQL authoring language contracts", () => {
       snapshot,
     );
     expect(sampledJoin.status === "edit" ? sampledJoin.text : sampledJoin).toContain(
-      "shop.product.id = shop.order_line.product_id",
+      "product.id = order_line.product_id",
     );
   });
 
@@ -1000,7 +1189,7 @@ describe("SQL authoring language contracts", () => {
       },
     );
     expect(result.status === "edit" ? result.text : result).toContain(
-      "shop.order_line.id = shop.shipment.order_line_id",
+      "order_line.id = shipment.order_line_id",
     );
     expect(result.status === "edit" ? result.text : result).not.toContain("ON.id");
   });
@@ -1143,7 +1332,7 @@ describe("SQL authoring language contracts", () => {
     expect(result).toMatchObject({ status: "edit" });
     expect(result.status === "edit" ? result.text : result).toContain("SELECT 0 AS untouched;");
     expect(result.status === "edit" ? result.text : result).toContain(
-      "shop.product.id = shop.order_line.product_id",
+      "product.id = order_line.product_id",
     );
   });
 
@@ -1172,7 +1361,7 @@ describe("SQL authoring language contracts", () => {
     );
     expect(result).toMatchObject({ status: "edit" });
     expect(result.status === "edit" ? result.text : result).toContain(
-      "p.id = shop.order_line.product_id",
+      "p.id = order_line.product_id",
     );
   });
 
@@ -1196,9 +1385,7 @@ describe("SQL authoring language contracts", () => {
       snapshot,
     );
     expect(result).toMatchObject({ status: "edit" });
-    expect(result.status === "edit" ? result.text : result).toContain(
-      "ol.product_id = shop.product.id",
-    );
+    expect(result.status === "edit" ? result.text : result).toContain("ol.product_id = product.id");
   });
 
   it("uses only top-level SQL clauses when composing", () => {
@@ -1221,7 +1408,7 @@ describe("SQL authoring language contracts", () => {
     );
     const joinedText = joined.status === "edit" ? joined.text : "";
     expect(joinedText).toMatch(/FILTER\s*\([\s\S]*\bWHERE\b[\s\S]*\bactive\b[\s\S]*\)/u);
-    expect(joinedText).toContain("p.id = shop.order_line.product_id");
+    expect(joinedText).toContain("p.id = order_line.product_id");
     expect(joinedText.indexOf("LEFT JOIN shop.order_line")).toBeGreaterThan(
       joinedText.indexOf("shop.product AS p"),
     );
@@ -1342,7 +1529,7 @@ describe("SQL authoring language contracts", () => {
         },
       );
       expect(result.status === "edit" ? result.text : result).toContain(
-        "LEFT JOIN shop.customer ON ol.id = shop.customer.id",
+        "LEFT JOIN shop.customer AS customer ON ol.id = customer.id",
       );
     },
   );
@@ -1368,7 +1555,7 @@ describe("SQL authoring language contracts", () => {
     expect(result.status).toBe("edit");
     if (result.status !== "edit") return;
     expect(result.text).toMatch(/^SELECT 1;/u);
-    expect(result.text).toContain("JOIN shop.product ON ol.product_id = shop.product.id");
+    expect(result.text).toContain("JOIN shop.product AS product ON ol.product_id = product.id");
     expect(result.text).toMatch(/SELECT 3;$/u);
   });
 });

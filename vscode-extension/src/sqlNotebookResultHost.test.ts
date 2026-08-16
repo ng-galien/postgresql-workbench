@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type * as vscode from "vscode";
-import type { SqlNotebookRendererRequest, SqlNotebookResultPayload } from "./sqlNotebookModel.js";
+import type { SqlNotebookResultAction, SqlNotebookResultPayload } from "./sqlNotebookModel.js";
 import type { SqlResultSession } from "./sqlResultSession.js";
 
 const renderer = vi.hoisted(() => ({
@@ -8,9 +8,13 @@ const renderer = vi.hoisted(() => ({
     | ((event: { editor: vscode.NotebookEditor; message: unknown }) => void)
     | undefined,
   postMessage: vi.fn(),
+  executeCommand: vi.fn(),
 }));
 
 vi.mock("vscode", () => ({
+  commands: {
+    executeCommand: renderer.executeCommand,
+  },
   notebooks: {
     createRendererMessaging: () => ({
       onDidReceiveMessage(listener: typeof renderer.listener) {
@@ -79,7 +83,7 @@ function fakeCell(): vscode.NotebookCell {
   } as unknown as vscode.NotebookCell;
 }
 
-function send(action: SqlNotebookRendererRequest["action"]): void {
+function send(action: SqlNotebookResultAction): void {
   renderer.listener?.({
     editor: {} as vscode.NotebookEditor,
     message: { type: "sql-result/request", sessionId: "session-1", action },
@@ -94,6 +98,8 @@ beforeEach(() => {
   renderer.listener = undefined;
   renderer.postMessage.mockReset();
   renderer.postMessage.mockResolvedValue(true);
+  renderer.executeCommand.mockReset();
+  renderer.executeCommand.mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -104,6 +110,21 @@ describe("SQL notebook result host", () => {
   it("keeps PostgreSQL's recovery timeout behind the result-session deadline", () => {
     expect(postgresCursorSafetyTimeoutMs(300_000)).toBe(600_000);
     expect(postgresCursorSafetyTimeoutMs(10_000)).toBe(60_000);
+  });
+
+  it("opens the SQL analysis settings from a renderer budget action", async () => {
+    const host = new SqlNotebookResultHost();
+    renderer.listener?.({
+      editor: {} as vscode.NotebookEditor,
+      message: { type: "sql-error/open-analysis-settings" },
+    });
+    await flush();
+
+    expect(renderer.executeCommand).toHaveBeenCalledWith(
+      "workbench.action.openSettings",
+      "@ext:ng-galien.postgresql-workbench postgresql-workbench.sqlAuthoring.syntaxMax",
+    );
+    host.dispose();
   });
 
   it("detaches a complete result instead of expiring static rows later", async () => {

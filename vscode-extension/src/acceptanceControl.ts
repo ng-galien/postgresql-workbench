@@ -15,6 +15,7 @@ const OPEN_COVERAGE_COMMAND = "testing.openCoverage";
 const TOGGLE_INLINE_COVERAGE_COMMAND = "testing.toggleInlineCoverage";
 const DEBUG_CONTINUE_COMMAND = "workbench.action.debug.continue";
 const DEBUG_START_COMMAND = "workbench.action.debug.start";
+const START_DEBUG_CONFIGURATION_COMMAND = "postgresql-workbench.acceptance.startDebugConfiguration";
 const DEBUG_STEP_INTO_COMMAND = "workbench.action.debug.stepInto";
 const DEBUG_STEP_OVER_COMMAND = "workbench.action.debug.stepOver";
 const FOCUS_WORKBENCH_COMMAND = "postgresql-workbench-connections.focus";
@@ -44,6 +45,7 @@ const ACCEPTANCE_COMMANDS = new Set([
   TOGGLE_INLINE_COVERAGE_COMMAND,
   DEBUG_CONTINUE_COMMAND,
   DEBUG_START_COMMAND,
+  START_DEBUG_CONFIGURATION_COMMAND,
   DEBUG_STEP_INTO_COMMAND,
   DEBUG_STEP_OVER_COMMAND,
   FOCUS_WORKBENCH_COMMAND,
@@ -158,6 +160,21 @@ export function registerAcceptanceControl(
               .getConfiguration("launch", folder?.uri)
               .get<vscode.DebugConfiguration[]>("configurations", []),
           );
+          return;
+        }
+        if (instruction.command === START_DEBUG_CONFIGURATION_COMMAND) {
+          const configuration = Array.isArray(instruction.arguments)
+            ? instruction.arguments[0]
+            : undefined;
+          if (!isDebugConfiguration(configuration)) {
+            throw new Error("Start debug configuration requires a valid debug configuration");
+          }
+          const started = await vscode.debug.startDebugging(
+            vscode.workspace.workspaceFolders?.[0],
+            configuration,
+          );
+          if (!started) throw new Error(`Debug configuration ${configuration.name} did not start`);
+          markReady(instruction.nonce);
           return;
         }
         if (instruction.command === INSPECT_WORKBENCH_STATE_COMMAND) {
@@ -281,6 +298,16 @@ function isWorkbenchIndexPhase(value: unknown): value is WorkbenchIndexPhase {
     value === "reading-symbols" ||
     value === "checking-relations" ||
     value === "cancelling"
+  );
+}
+
+function isDebugConfiguration(value: unknown): value is vscode.DebugConfiguration {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate.name === "string" &&
+    typeof candidate.type === "string" &&
+    typeof candidate.request === "string"
   );
 }
 

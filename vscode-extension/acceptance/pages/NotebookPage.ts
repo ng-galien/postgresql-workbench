@@ -176,8 +176,6 @@ export class NotebookPage {
   }
 
   private completionWidget(): Locator {
-    return this.page.locator(
-      ".monaco-editor:has(textarea.inputarea:focus) .suggest-widget:visible",
-    );
+    return this.editor.locator(".suggest-widget:visible");
   }
 }

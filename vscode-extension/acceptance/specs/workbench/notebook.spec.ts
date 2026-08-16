@@ -303,6 +303,31 @@ test.describe("Scratchpads", () => {
     }
   });
 
+  test("executes a wide SQL projection beyond the former parser budget", async ({
+    workbench,
+    notebook,
+  }) => {
+    await workbench.ensureServer(demoConnectionUrl, server);
+    await createScratchpad(workbench, notebook, demoAssociationText);
+    const code = notebook.cell(0);
+    const projection = Array.from(
+      { length: 64 },
+      (_, index) => `  ${index + 1} AS projected_column_${index + 1}`,
+    ).join(",\n");
+    await notebook.typeInCell(code, `SELECT\n${projection};`);
+    await notebook.executeCode(code);
+
+    await expect
+      .poll(async () => (await notebook.snapshot())?.cells[0]?.outputGroups, {
+        timeout: 10_000,
+        message: "The wide cell must execute instead of reporting a truncated syntax tree",
+      })
+      .toEqual([expect.arrayContaining([resultMime])]);
+    const result = await notebook.frameContainingText("projected_column_64");
+    await expect(result.getByRole("region", { name: "PostgreSQL query result" })).toBeVisible();
+    await expect(result.getByText("projected_column_64", { exact: true })).toHaveCount(1);
+  });
+
   test("pages and loads a large PostgreSQL result through the result controls", async ({
     workbench,
     notebook,

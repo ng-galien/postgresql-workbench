@@ -1,7 +1,25 @@
 export const SQL_AUTHORING_CONTEXT_REQUEST = "postgresql-workbench/documentContext";
 export const SQL_AUTHORING_SYNTAX_REQUEST = "postgresql-workbench/syntax";
 export const SQL_AUTHORING_COMPOSE_REQUEST = "postgresql-workbench/compose";
+export const SQL_AUTHORING_SETTINGS_REQUEST = "postgresql-workbench/sqlAuthoringSettings";
+export const SQL_AUTHORING_SEMANTIC_TOKENS_CHANGED = "postgresql-workbench/semanticTokensChanged";
 export const SQL_AUTHORING_OBJECT_MIME = "application/vnd.postgresql-workbench.sql-object";
+
+export type SqlAuthoringAliasStyle = "fullName" | "initial";
+
+export interface SqlAuthoringSettings {
+  aliasStyle: SqlAuthoringAliasStyle;
+  syntaxMaxDepth: number;
+  syntaxMaxNodes: number;
+  tabSize: number;
+}
+
+export const DEFAULT_SQL_AUTHORING_SETTINGS: SqlAuthoringSettings = {
+  aliasStyle: "fullName",
+  syntaxMaxDepth: 1_024,
+  syntaxMaxNodes: 100_000,
+  tabSize: 2,
+};
 
 export interface SqlAuthoringDatabaseIdentity {
   serverId: string;
@@ -55,6 +73,7 @@ export type SqlAuthoringDocumentContext =
 
 export interface SqlAuthoringSyntaxResult {
   hasError: boolean;
+  truncated: boolean;
 }
 
 export type SqlAuthoringDragPayload =

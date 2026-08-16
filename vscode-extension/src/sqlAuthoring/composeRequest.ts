@@ -1,8 +1,10 @@
 import { composePostgresSql } from "./composition.js";
 import {
+  DEFAULT_SQL_AUTHORING_SETTINGS,
   type SqlAuthoringComposeRequest,
   type SqlAuthoringComposeResult,
   type SqlAuthoringDocumentContext,
+  type SqlAuthoringSettings,
   type SqlAuthoringSyntaxResult,
   sqlAuthoringContextMatchesToken,
   sqlAuthoringSnapshotToken,
@@ -13,6 +15,7 @@ export async function composeSqlAuthoringRequest(
   request: SqlAuthoringComposeRequest,
   documentContext: () => Promise<SqlAuthoringDocumentContext>,
   validateSyntax: (source: string) => Promise<SqlAuthoringSyntaxResult>,
+  settings: SqlAuthoringSettings = DEFAULT_SQL_AUTHORING_SETTINGS,
 ): Promise<SqlAuthoringComposeResult> {
   const initial = await documentContext();
   if (initial.status !== "available") {
@@ -28,6 +31,13 @@ export async function composeSqlAuthoringRequest(
   const statement = sqlStatementAtOffset(request.text, request.offset);
   if (statement.text.trim().length > 0) {
     const syntax = await validateSyntax(statement.text);
+    if (syntax.truncated) {
+      return {
+        status: "rejected",
+        message:
+          "The SQL syntax tree reached the configured analysis budget. Increase the SQL analysis settings before composing the query.",
+      };
+    }
     if (syntax.hasError) {
       return {
         status: "rejected",
@@ -43,7 +53,7 @@ export async function composeSqlAuthoringRequest(
         "The Workbench Index changed while composing SQL. Retry the drop on the fresh snapshot.",
     };
   }
-  const result = composePostgresSql(request, current.snapshot);
+  const result = composePostgresSql(request, current.snapshot, settings);
   return result.status === "rejected" ? result : { ...result, snapshot: initialToken };
 }
 

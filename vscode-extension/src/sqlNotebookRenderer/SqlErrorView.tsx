@@ -1,10 +1,12 @@
 import type { SqlNotebookErrorPayload } from "../sqlNotebookModel.js";
+import type { SqlResultMessaging } from "./SqlResultView.js";
 
 export interface SqlErrorViewProps {
+  messaging?: SqlResultMessaging;
   payload: SqlNotebookErrorPayload;
 }
 
-export function SqlErrorView({ payload }: SqlErrorViewProps) {
+export function SqlErrorView({ payload, messaging }: SqlErrorViewProps) {
   return (
     <section className="sql-result sql-error" aria-label="PostgreSQL query error" role="alert">
       <header className="result-toolbar">
@@ -35,6 +37,17 @@ export function SqlErrorView({ payload }: SqlErrorViewProps) {
           <p>
             <strong>Hint:</strong> {payload.hint}
           </p>
+        ) : null}
+        {payload.action?.type === "open-sql-analysis-settings" && messaging ? (
+          <div className="result-actions">
+            <button
+              className="result-button result-button-primary"
+              type="button"
+              onClick={() => messaging.postMessage({ type: "sql-error/open-analysis-settings" })}
+            >
+              {payload.action.label}
+            </button>
+          </div>
         ) : null}
       </div>
     </section>

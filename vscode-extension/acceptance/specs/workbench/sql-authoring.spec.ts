@@ -11,7 +11,7 @@ import { expect, test } from "../../fixtures/test";
 import { createScratchpad } from "../../journeys/scratchpad";
 
 const productProjection =
-  /^SELECT\s+id,\s+name,\s+price,\s+stock,\s+sku,\s+brand_id,\s+description,\s+active\s+FROM\s+shop\.product;\s*$/u;
+  /^SELECT\s+product\.id,\s+product\.name,\s+product\.price,\s+product\.stock,\s+product\.sku,\s+product\.brand_id,\s+product\.description,\s+product\.active\s+FROM\s+shop\.product AS product;\s*$/u;
 
 test.describe("SQL authoring", () => {
   test("formats and completes an ordinary SQL document from the active DatabaseContext", async ({
@@ -64,7 +64,7 @@ test.describe("SQL authoring", () => {
       const schema = await workbench.tree.expandPath([server, database, /^Sources/, /^shop$/]);
       const product = await workbench.tree.findChild(schema, /^product$/);
       await workbench.tree.expandItem(product, /^product$/);
-      const name = await workbench.tree.findChild(product, /^name\b/u);
+      const name = await workbench.tree.findChild(product, /^name\s*text$/u);
       await workbench.dragTreeItemToTextEditor(name, sqlEditor.editor, true);
       await expect
         .poll(() => sqlEditor.snapshot())
@@ -84,7 +84,7 @@ test.describe("SQL authoring", () => {
         .poll(() => sqlEditor.snapshot())
         .toMatchObject({
           text: expect.stringMatching(
-            /FROM\s+shop\.order_line\s+JOIN shop\.product ON shop\.order_line\.product_id = shop\.product\.id;/u,
+            /FROM\s+shop\.order_line\s+JOIN shop\.product AS product ON order_line\.product_id = product\.id;/u,
           ),
         });
 
@@ -96,7 +96,7 @@ test.describe("SQL authoring", () => {
         .poll(() => sqlEditor.snapshot())
         .toMatchObject({
           text: expect.stringMatching(
-            /FROM\s+shop\.product\s+LEFT JOIN shop\.brand ON shop\.product\.brand_id = shop\.brand\.id;/u,
+            /FROM\s+shop\.product\s+LEFT JOIN shop\.brand AS brand ON product\.brand_id = brand\.id;/u,
           ),
         });
     });
@@ -110,7 +110,7 @@ test.describe("SQL authoring", () => {
         .poll(() => sqlEditor.snapshot())
         .toMatchObject({
           text: expect.stringMatching(
-            /FROM\s+shop\.product;\s*SELECT\s+id,\s+name,\s+loyalty_points\s+FROM\s+shop\.customer;/u,
+            /FROM\s+shop\.product;\s*SELECT\s+customer\.id,\s+customer\.name,\s+customer\.loyalty_points,\s+customer\.email,\s+customer\.created_at\s+FROM\s+shop\.customer AS customer;/u,
           ),
         });
     });
@@ -128,14 +128,12 @@ test.describe("SQL authoring", () => {
         "placeholder",
         "No JOIN is added until you choose",
       );
-      await workbench.quickInput.chooseAndClose(
-        /JOIN via sales_order\(billing_address_id\).*address\(id\)/u,
-      );
+      await workbench.quickInput.chooseAndClose(/sales_order\.billing_address_id → address\.id/u);
       await expect
         .poll(() => sqlEditor.snapshot())
         .toMatchObject({
           text: expect.stringMatching(
-            /JOIN\s+shop\.address ON shop\.sales_order\.billing_address_id = shop\.address\.id/u,
+            /JOIN\s+shop\.address AS address ON sales_order\.billing_address_id = address\.id/u,
           ),
         });
     });
@@ -149,7 +147,7 @@ test.describe("SQL authoring", () => {
         .poll(() => sqlEditor.snapshot())
         .toMatchObject({
           text: expect.stringMatching(
-            /FROM\s+shop\.product\s+LEFT JOIN shop\.brand ON shop\.product\.brand_id = shop\.brand\.id;\s*SELECT broken FROM;/u,
+            /FROM\s+shop\.product\s+LEFT JOIN shop\.brand AS brand ON product\.brand_id = brand\.id;\s*SELECT broken FROM;/u,
           ),
         });
     });
@@ -205,6 +203,7 @@ test.describe("SQL authoring", () => {
         await expect(notebook.suggestion(/^product$/)).toBeVisible({ timeout: 5_000 });
         await notebook.dismissCompletion();
       } finally {
+        await workbench.ensureActiveDatabaseIndexed(server, database);
         await vscode.removeServer(alternateConnectionId);
         await workbench.tree.expectItemAbsent(alternateServer);
       }

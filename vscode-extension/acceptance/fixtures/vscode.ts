@@ -252,6 +252,7 @@ export interface VSCodeInstance {
       | "workbench.action.files.saveAll"
       | "workbench.action.debug.continue"
       | "workbench.action.debug.start"
+      | "postgresql-workbench.acceptance.startDebugConfiguration"
       | "workbench.action.debug.stepInto"
       | "workbench.action.debug.stepOver"
       | "workbench.action.quickOpen"

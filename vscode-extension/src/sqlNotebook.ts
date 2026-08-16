@@ -1041,6 +1041,29 @@ function planErrorPayload(
       ...(plan.column !== undefined ? { column: plan.column } : {}),
     };
   }
+  if (plan.reason === "budget-exhausted") {
+    const budget = plan.budget;
+    const usage = [
+      budget ? `configured depth ${budget.maxDepth}` : undefined,
+      budget ? `${budget.maxNodes.toLocaleString("en-US")} nodes` : undefined,
+      plan.totalNodes !== undefined
+        ? `${plan.totalNodes.toLocaleString("en-US")} nodes observed`
+        : undefined,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    return {
+      version: 1,
+      type: "error",
+      category: "execution",
+      title: "SQL analysis budget reached",
+      message: `The cell was not executed because PostgreSQL Workbench could not classify the complete SQL syntax tree${usage ? ` (${usage})` : ""}. Increase the SQL analysis budget and run the cell again.`,
+      action: {
+        type: "open-sql-analysis-settings",
+        label: "Open SQL analysis settings",
+      },
+    };
+  }
   return notebookErrorPayload(
     "execution",
     "SQL analysis failed",

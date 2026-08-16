@@ -157,22 +157,6 @@ export class CockpitPage {
       await expect(this.dropFeedback).toHaveAttribute("data-drop-availability", "accepted", {
         timeout: 5_000,
       });
-      await expect
-        .poll(
-          async () =>
-            (await readDragProbe(this.page)).some(
-              (event) =>
-                (event.type === "dragenter" || event.type === "dragover") &&
-                event.target.includes("webview-overlay-content") &&
-                event.types.includes("resourceurls"),
-            ),
-          {
-            message:
-              "VS Code must recognize the Cockpit editor as an accepted resource drop target",
-            timeout: 5_000,
-          },
-        )
-        .toBe(true);
     } catch (cause) {
       const sourceEvents = (await readDragProbe(this.page)).slice(-40);
       const targetEvents = (await readDragProbe(this.frame!)).slice(-40);

@@ -29,4 +29,26 @@ describe("SqlErrorView", () => {
     expect(html).not.toContain("sqlNotebook.ts");
     expect(html).not.toMatch(/\n\s*at\s/u);
   });
+
+  it("offers SQL analysis settings only for a recoverable budget error", () => {
+    const html = renderToStaticMarkup(
+      <SqlErrorView
+        messaging={{ postMessage() {}, subscribe: () => () => {} }}
+        payload={{
+          version: 1,
+          type: "error",
+          category: "execution",
+          title: "SQL analysis budget reached",
+          message: "Increase the SQL analysis budget and run the cell again.",
+          action: {
+            type: "open-sql-analysis-settings",
+            label: "Open SQL analysis settings",
+          },
+        }}
+      />,
+    );
+
+    expect(html).toContain("Open SQL analysis settings");
+    expect(html).toContain("result-button-primary");
+  });
 });
