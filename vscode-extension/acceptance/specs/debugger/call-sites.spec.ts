@@ -31,7 +31,7 @@ test.describe("PL/pgSQL debugger call sites", () => {
       await debuggerPage.setBreakpoint(breakpoint);
       await debuggerPage.openCallSite("debug-fib.sql");
       await debuggerPage.assignConnection(sql, connectionChoice);
-      await debuggerPage.start(sql, /^fib\(n:int4\)/, /playground\.fib/, breakpoint);
+      await debuggerPage.start(sql, /^fib$/, /playground\.fib/, breakpoint);
       await debuggerPage.expectArgument("n", recursiveReturns[0].n);
       await debuggerPage.expectVariable("result", recursiveReturns[0].result);
     });
@@ -72,11 +72,11 @@ test.describe("PL/pgSQL debugger call sites", () => {
     });
 
     await test.step("step into the called function", async () => {
-      await debuggerPage.stepInto(/double_value/, /playground\.double_value/, calleeStop);
+      await debuggerPage.stepInto(/^double_value$/, /playground\.double_value/, calleeStop);
     });
 
     await test.step("continue back to the user breakpoint in the caller", async () => {
-      await debuggerPage.continueToStop(/call_double/, /playground\.call_double/, callerResume);
+      await debuggerPage.continueToStop(/^call_double$/, /playground\.call_double/, callerResume);
     });
 
     await test.step("continue to the SQL result", async () => {
@@ -92,13 +92,13 @@ test.describe("PL/pgSQL debugger call sites", () => {
     const sessions = [
       {
         sql: "SELECT playground.double_value(4);",
-        sourceTab: /^double_value\(n:int4\)/,
+        sourceTab: /^double_value$/,
         routineSource: /playground\.double_value/,
         result: "8",
       },
       {
         sql: "SELECT playground.call_double(5);",
-        sourceTab: /^call_double\(n:int4\)/,
+        sourceTab: /^call_double$/,
         routineSource: /playground\.call_double/,
         result: "11",
       },

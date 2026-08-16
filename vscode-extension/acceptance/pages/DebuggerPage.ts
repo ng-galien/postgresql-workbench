@@ -68,8 +68,41 @@ export class DebuggerPage {
 
   async assignConnection(sql: string, connection: RegExp): Promise<void> {
     const line = await this.revealLine(sql);
+    const associationState = async (): Promise<"assigned" | "unassigned" | "pending"> => {
+      if ((await this.visibleNearestCodeLensIndex(line, /Debug PL\/pgSQL/)) >= 0) {
+        return "assigned";
+      }
+      return (await this.visibleNearestCodeLensIndex(line, /Choose PostgreSQL connection/)) >= 0
+        ? "unassigned"
+        : "pending";
+    };
+    await expect
+      .poll(associationState, {
+        timeout: 5_000,
+        message: "The SQL call must expose its current document-association state",
+      })
+      .not.toBe("pending");
+    if ((await associationState()) === "assigned") return;
+
     await this.clickNearestCodeLens(line, /Choose PostgreSQL connection/);
-    await this.quickInput.chooseAndClose(connection);
+    const associationOutcome = async (): Promise<"assigned" | "picker" | "pending"> => {
+      if ((await this.page.locator(".quick-input-list:visible .monaco-list-row").count()) > 0) {
+        return "picker";
+      }
+      return (await this.visibleNearestCodeLensIndex(line, /Debug PL\/pgSQL/)) >= 0
+        ? "assigned"
+        : "pending";
+    };
+    await expect
+      .poll(associationOutcome, {
+        timeout: 5_000,
+        message:
+          "Document association must either complete automatically or offer a Connexion picker",
+      })
+      .not.toBe("pending");
+    if ((await associationOutcome()) === "picker") {
+      await this.quickInput.chooseAndClose(connection);
+    }
     await expect(await this.nearestCodeLens(line, /Debug PL\/pgSQL/)).toBeVisible({
       timeout: 5_000,
     });
@@ -370,19 +403,7 @@ export class DebuggerPage {
     await expect
       .poll(
         async () => {
-          const lineBox = await line.boundingBox();
-          if (!lineBox) return false;
-          let nearest: { distance: number; index: number } | undefined;
-          for (let index = 0; index < (await lenses.count()); index++) {
-            const box = await lenses.nth(index).boundingBox();
-            if (!box) continue;
-            const lineCenter = lineBox.y + lineBox.height / 2;
-            const lensCenter = box.y + box.height / 2;
-            if (lensCenter > lineCenter) continue;
-            const distance = lineCenter - lensCenter;
-            if (!nearest || distance < nearest.distance) nearest = { distance, index };
-          }
-          nearestIndex = nearest?.index ?? -1;
+          nearestIndex = await this.visibleNearestCodeLensIndex(line, label);
           return nearestIndex >= 0;
         },
         {
@@ -392,6 +413,23 @@ export class DebuggerPage {
       )
       .toBe(true);
     return lenses.nth(nearestIndex);
+  }
+
+  private async visibleNearestCodeLensIndex(line: Locator, label: RegExp): Promise<number> {
+    const lineBox = await line.boundingBox();
+    if (!lineBox) return -1;
+    const lenses = this.activeEditor().getByRole("button", { name: label });
+    const lineCenter = lineBox.y + lineBox.height / 2;
+    let nearest: { distance: number; index: number } | undefined;
+    for (let index = 0; index < (await lenses.count()); index += 1) {
+      const box = await lenses.nth(index).boundingBox();
+      if (!box) continue;
+      const lensCenter = box.y + box.height / 2;
+      if (lensCenter > lineCenter) continue;
+      const distance = lineCenter - lensCenter;
+      if (!nearest || distance < nearest.distance) nearest = { distance, index };
+    }
+    return nearest?.index ?? -1;
   }
 
   private async clickNearestCodeLens(line: Locator, label: RegExp): Promise<void> {

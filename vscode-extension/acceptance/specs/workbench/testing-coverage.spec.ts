@@ -179,7 +179,7 @@ test.describe("pgTAP tests and coverage", () => {
       const sql = "SELECT shop.restock_report(10);";
       await debuggerPage.openCallSite("debug-restock.sql");
       await debuggerPage.assignConnection(sql, connectionChoice);
-      await debuggerPage.start(sql, /^restock_report\(threshold:int4\)/, /shop\.restock_report/);
+      await debuggerPage.start(sql, /^restock_report$/, /shop\.restock_report/);
       await debuggerPage.expectNoCoverageDecorations();
       await debuggerPage.continueToCompletion();
       await debuggerPage.expectNoErrorNotification();
@@ -227,10 +227,7 @@ test.describe("pgTAP tests and coverage", () => {
         20_000,
         [persistedDebugConfiguration],
       );
-      await debuggerPage.expectRoutineEditor(
-        /^restock_report\(threshold:int4\)/,
-        /shop\.restock_report/,
-      );
+      await debuggerPage.expectRoutineEditor(/^restock_report$/, /shop\.restock_report/);
       await debuggerPage.expectNoCoverageDecorations();
       await debuggerPage.continueToCompletion();
       await debuggerPage.expectNoErrorNotification();

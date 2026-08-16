@@ -49,6 +49,56 @@ describe("PlpgsqlDebugSession stack frames", () => {
     });
   });
 
+  it("serializes stack projection with other PostgreSQL inspections", async () => {
+    const session = new PlpgsqlDebugSession(async () => {
+      throw new Error("The syntax parser must not be used for an empty stack");
+    });
+    const order: string[] = [];
+    let releaseStack = () => {};
+    const stackBlocked = new Promise<void>((resolve) => {
+      releaseStack = resolve;
+    });
+    const internal = session as unknown as {
+      listenerExecutor: {
+        getStack(): Promise<Array<{ level: number; oid: number; line: number }>>;
+      };
+      runInspection<T>(operation: () => Promise<T>): Promise<T>;
+      sendResponse(response: DebugProtocol.StackTraceResponse): void;
+      stackTraceRequest(
+        response: DebugProtocol.StackTraceResponse,
+        args: DebugProtocol.StackTraceArguments,
+      ): Promise<void>;
+    };
+    internal.listenerExecutor = {
+      async getStack() {
+        order.push("stack:start");
+        await stackBlocked;
+        order.push("stack:end");
+        return [];
+      },
+    };
+    internal.sendResponse = vi.fn();
+    const response = {
+      command: "stackTrace",
+      request_seq: 1,
+      seq: 1,
+      success: true,
+      type: "response",
+    } as DebugProtocol.StackTraceResponse;
+
+    const stack = internal.stackTraceRequest(response, { threadId: 1 });
+    await Promise.resolve();
+    const variables = internal.runInspection(async () => {
+      order.push("variables");
+    });
+    await Promise.resolve();
+    expect(order).toEqual(["stack:start"]);
+
+    releaseStack();
+    await Promise.all([stack, variables]);
+    expect(order).toEqual(["stack:start", "stack:end", "variables"]);
+  });
+
   it("releases the technical entry breakpoint before restoring an explicit function breakpoint", async () => {
     const session = new PlpgsqlDebugSession(async () => {
       throw new Error("The syntax parser must not be used to release an entry breakpoint");
