@@ -42,6 +42,9 @@ export class DebuggerPage {
     const editor = this.activeEditor();
     await this.revealLine(sourceLine, editor, 10_000);
     await expect(editor.locator(".codelens-decoration").first()).toBeVisible({ timeout: 10_000 });
+    // Move the pointer into the editor so no TreeView hover overlaps the glyph margin.
+    await editor.locator(".view-lines").hover({ position: { x: 200, y: 20 }, timeout: 2_000 });
+    await expect(this.page.locator(".workbench-hover")).toHaveCount(0, { timeout: 2_000 });
     const markers = editor.locator(".glyph-margin-widgets > div");
     const markerCount = await markers.count();
     const target = await this.stableBreakpointTarget(editor, sourceLine);
