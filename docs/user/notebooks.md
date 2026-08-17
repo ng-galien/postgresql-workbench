@@ -12,9 +12,15 @@ A Scratchpad is a persistent SQL workspace. Its Association points to a saved
 Connexion, never to a live PostgreSQL session, and never silently follows the
 active DatabaseContext.
 
-Run and Debug are separate execution intents but use that same Association. See
-the canonical [Run, debug, and deploy SQL](execution-debugging-and-deployment.md)
-contract for the SQL shapes that can start the PL/pgSQL debugger.
+Run and Debug are separate execution intents but use that same Association.
+Each code cell shows its intent (**Run** or **Debug**) in its status bar; click
+it to choose the other one, and the native cell action executes that intent. A
+Debug cell shows the SQL result of the debugged Statement in the cell exactly
+like Run, and the native Stop action ends the debug session. In Mode MANUAL the
+intent control is hidden because the debugger cannot join the Scratchpad
+Transaction. See the canonical
+[Run, debug, and deploy SQL](execution-debugging-and-deployment.md) contract for
+the SQL shapes that can start the PL/pgSQL debugger.
 
 {{media}}
 
@@ -68,8 +74,9 @@ because Transaction control belongs to the Scratchpad.
 
 ## Statement timeout
 
-Every code cell displays its effective PostgreSQL Statement timeout next to the
-Scratchpad Association. The global
+Every Run cell displays its effective PostgreSQL Statement timeout next to the
+Scratchpad Association (a Debug cell hides it: the debugger does not apply a
+Statement timeout). The global
 `postgresql-workbench.sql.statementTimeoutMs` setting defaults to 60 seconds.
 Click the timeout indicator to persist one override for the whole Scratchpad or
 to return to the global setting; all cells in that Scratchpad use the same value.
