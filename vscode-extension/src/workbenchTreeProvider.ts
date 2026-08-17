@@ -493,7 +493,7 @@ export class FunctionItem extends vscode.TreeItem {
     this.sourceUri = object.sourceUri;
     this.iconPath = objectThemeIcon(this.isProc ? "procedure" : "function");
     this.contextValue = "postgresql-workbench-function-debuggable";
-    this.tooltip = withDragHint(`${object.schema}.${object.name}(${signature})`);
+    applyDragHint(this, `${object.schema}.${object.name}(${signature})`);
   }
 }
 
@@ -508,7 +508,7 @@ export class WorkbenchObjectItem extends vscode.TreeItem {
     this.id = `postgres-object:${object.symbolUri}`;
     this.iconPath = objectThemeIcon(object.kind);
     this.contextValue = `postgresql-workbench-${object.kind}`;
-    this.tooltip = withDragHint(`${object.schema}.${objectLabel(object)}`);
+    applyDragHint(this, `${object.schema}.${objectLabel(object)}`);
   }
 }
 
@@ -525,7 +525,8 @@ export class WorkbenchTableMemberItem extends vscode.TreeItem {
     const tooltip = member.type
       ? `${member.name} · ${member.type}`
       : `${member.kind} ${member.name}`;
-    this.tooltip = member.kind === "column" ? withDragHint(tooltip) : tooltip;
+    if (member.kind === "column") applyDragHint(this, tooltip);
+    else this.tooltip = tooltip;
     this.contextValue = `postgresql-workbench-${member.kind}`;
   }
 }
@@ -571,9 +572,8 @@ export class WorkbenchRelationTargetItem extends vscode.TreeItem {
         : target.count > 1
           ? `${target.count} references`
           : (object?.kind ?? target.symbol.kind);
-    this.tooltip = object
-      ? withDragHint(`${object.schema}.${objectLabel(object)}`)
-      : `${target.symbol.kind} ${target.symbol.name}`;
+    if (object) applyDragHint(this, `${object.schema}.${objectLabel(object)}`);
+    else this.tooltip = `${target.symbol.kind} ${target.symbol.name}`;
     this.contextValue = object
       ? "postgresql-workbench-relation-target"
       : "postgresql-workbench-relation-target-unresolved";
@@ -1203,8 +1203,10 @@ function synchronizeTreeItem(current: PlpgsqlTreeItem, replacement: PlpgsqlTreeI
 export const SOURCES_DRAG_HINT =
   "Drag into a SQL editor: Shift+drop composes SQL, drop opens it in the Cockpit.";
 
-function withDragHint(tooltip: string): string {
-  return `${tooltip}\n${SOURCES_DRAG_HINT}`;
+/** Appends the drag hint to the hover tooltip while keeping the accessible name unchanged. */
+function applyDragHint(item: vscode.TreeItem, tooltip: string): void {
+  item.tooltip = `${tooltip}\n${SOURCES_DRAG_HINT}`;
+  item.accessibilityInformation = { label: tooltip };
 }
 
 function objectLabel(object: WorkbenchObjectModel): string {

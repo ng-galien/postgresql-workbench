@@ -280,7 +280,10 @@ describe("Workbench tree object navigation", () => {
     expect(routine.tooltip).toBe(`shop.total_orders(customer_id: integer)\n${SOURCES_DRAG_HINT}`);
     expect(object.tooltip).toBe(`shop.orders\n${SOURCES_DRAG_HINT}`);
     expect(column.tooltip).toBe(`id · integer\n${SOURCES_DRAG_HINT}`);
+    expect(column.accessibilityInformation).toEqual({ label: "id · integer" });
+    expect(object.accessibilityInformation).toEqual({ label: "shop.orders" });
     expect(constraint.tooltip).toBe("constraint orders_pkey");
+    expect(constraint.accessibilityInformation).toBeUndefined();
     expect(new SchemaItem("shop").tooltip).toBeUndefined();
   });
 });
