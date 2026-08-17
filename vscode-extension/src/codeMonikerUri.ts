@@ -24,7 +24,7 @@ export function codeMonikerDocumentUri(
     scheme: CODE_MONIKER_URI_SCHEME,
     authority: "postgresql",
     path: `/${presentation.path}`,
-    query: JSON.stringify({ identity: symbolUri, label: presentation.path }),
+    query: JSON.stringify({ identity: symbolUri, label: presentation.displayPath }),
   });
 }
 

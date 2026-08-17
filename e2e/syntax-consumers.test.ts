@@ -6,6 +6,7 @@ import { classifySqlStatementCount } from "../src/analysis/sqlStatements.js";
 import { parseCall, parseSqlCalls, parseSqlDefinitions } from "../src/callParser.js";
 import { createCoverageSyntaxService } from "../src/coverage/index.js";
 import { extractFuncDeps } from "../src/deps.js";
+import { validateManagedRoutineDeployment } from "../vscode-extension/src/managedRoutineDeployment.js";
 import { type CodeMonikerTestRuntime, startCodeMonikerTestRuntime } from "./codeMonikerRuntime.js";
 
 describe("Code Moniker SQL consumers", () => {
@@ -50,6 +51,26 @@ describe("Code Moniker SQL consumers", () => {
     await expect(
       parseCall("SELECT public.first(); SELECT public.second()", codeMoniker.parser),
     ).rejects.toThrow("exactly one SQL statement");
+    const procedureHarness = `DO $workbench$
+DECLARE
+  v_product_id int4 := 1;
+BEGIN
+  CALL shop.move_inventory(p_product_id => v_product_id);
+END
+$workbench$;`;
+    await expect(parseCall(procedureHarness, codeMoniker.parser)).resolves.toMatchObject({
+      schema: "shop",
+      routine: "move_inventory",
+      kind: "procedure",
+    });
+    await expect(parseSqlCalls(procedureHarness, codeMoniker.parser)).resolves.toMatchObject([
+      {
+        schema: "shop",
+        routine: "move_inventory",
+        kind: "call",
+        isLaunchable: true,
+      },
+    ]);
   });
 
   it("extracts definitions and launchable call sites from real SQL files", async () => {
@@ -125,12 +146,103 @@ describe("Code Moniker SQL consumers", () => {
     expect(singleQuoted?.body).toBe("BEGIN RETURN value; END;");
     expect(quotedType?.params).toEqual([{ name: "value", type: '"App"."ItemCode"[]', mode: "in" }]);
     expect(calls).toHaveLength(11);
+    await expect(
+      parseSqlCalls(
+        `INSERT INTO audit.log SELECT audit.record(1);
+CREATE VIEW audit.v AS SELECT audit.record(2);
+EXPLAIN SELECT audit.record(3);
+CREATE TABLE audit.t AS SELECT audit.record(4);
+WITH x AS (SELECT audit.record(5)) SELECT audit.record(6);
+CALL audit.run(7);`,
+        codeMoniker.parser,
+      ),
+    ).resolves.toMatchObject([
+      { routine: "record", args: ["6"], line: 5, kind: "select" },
+      { routine: "run", args: ["7"], line: 6, kind: "call" },
+    ]);
     expect(calls.find((call) => call.schema === "public")).toMatchObject({
       routine: "test_inner",
       args: ["42"],
       sql: "SELECT public.test_inner(42)",
       isLaunchable: true,
     });
+  });
+
+  it("accepts only an exact managed CREATE OR REPLACE routine identity", async () => {
+    const binding = {
+      serverId: "demo",
+      database: "demo",
+      schema: "shop",
+      oid: 42,
+      name: "reprice",
+      documentKind: "routine",
+      symbolKind: "function",
+      plpgsql: true,
+      content: `CREATE OR REPLACE FUNCTION shop.reprice(value int4)
+RETURNS int4 LANGUAGE plpgsql AS $$ BEGIN RETURN value; END $$;`,
+    };
+    const snapshot = {
+      status: "available" as const,
+      serverId: "demo",
+      database: "demo",
+      revision: "one",
+      generation: 1,
+      foreignKeys: [],
+      objects: [
+        {
+          ...binding,
+          kind: "function" as const,
+          signature: "reprice(int4)",
+          parameters: [{ name: "value", type: "int4" }],
+          columns: [],
+        },
+      ],
+    };
+    const valid = `CREATE OR REPLACE FUNCTION shop.reprice(value int4)
+RETURNS int4 LANGUAGE plpgsql AS $$ BEGIN RETURN value + 1; END $$;`;
+    await expect(
+      validateManagedRoutineDeployment(valid, binding, snapshot, codeMoniker.parser),
+    ).resolves.toEqual({ status: "valid" });
+    await expect(
+      validateManagedRoutineDeployment(
+        valid.replace("shop.reprice", "shop.reprice_copy"),
+        binding,
+        snapshot,
+        codeMoniker.parser,
+      ),
+    ).resolves.toMatchObject({ status: "rejected", message: expect.stringMatching(/identity/) });
+    await expect(
+      validateManagedRoutineDeployment(
+        valid.replace("value int4", "value int8"),
+        binding,
+        snapshot,
+        codeMoniker.parser,
+      ),
+    ).resolves.toMatchObject({ status: "rejected", message: expect.stringMatching(/signature/) });
+    await expect(
+      validateManagedRoutineDeployment(
+        valid.replace("value int4", "INOUT value int4"),
+        binding,
+        snapshot,
+        codeMoniker.parser,
+      ),
+    ).resolves.toMatchObject({ status: "rejected", message: expect.stringMatching(/signature/) });
+    await expect(
+      validateManagedRoutineDeployment(
+        `${valid}\nSELECT 1;`,
+        binding,
+        snapshot,
+        codeMoniker.parser,
+      ),
+    ).resolves.toMatchObject({ status: "rejected", message: expect.stringMatching(/exactly one/) });
+    await expect(
+      validateManagedRoutineDeployment(
+        valid,
+        { ...binding, documentKind: "trigger" },
+        snapshot,
+        codeMoniker.parser,
+      ),
+    ).resolves.toMatchObject({ status: "rejected", message: expect.stringMatching(/routines/) });
   });
 
   it("classifies top-level statements while accepting routine bodies", async () => {

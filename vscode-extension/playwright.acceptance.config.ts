@@ -1,23 +1,10 @@
-import { defineConfig } from "@playwright/test";
+import { defineVSCodePlaywrightConfig } from "./playwright.vscode.config";
 
-export default defineConfig({
+export default defineVSCodePlaywrightConfig({
+  lane: "core",
   testDir: "./acceptance/specs",
   testMatch: ["**/acceptance.spec.ts"],
-  globalSetup: "./acceptance/globalSetup.ts",
-  fullyParallel: false,
-  workers: 1,
-  maxFailures: 1,
   timeout: 60_000,
-  expect: { timeout: 5_000 },
-  forbidOnly: Boolean(process.env.CI),
-  retries: 0,
-  reporter: process.env.CI
-    ? [["list"], ["junit", { outputFile: "test-results/junit.xml" }]]
-    : "list",
-  use: {
-    trace: "retain-on-failure",
-    screenshot: "only-on-failure",
-    video: "retain-on-failure",
-  },
-  outputDir: "test-results/acceptance",
+  junitFile: "test-results/core-junit.xml",
+  outputDir: "test-results/core",
 });

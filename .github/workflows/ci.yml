@@ -142,15 +142,18 @@ jobs:
       - run: npm --prefix vscode-extension run stage:code-moniker
       - run: npm run test:e2e:legacy
 
-  workbench-acceptance:
-    name: Playwright
+  workbench-bootstrap:
+    name: Playwright Bootstrap
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 10
+    env:
+      PGWB_ACCEPTANCE_VSCODE_VERSION: "1.109.0"
+      PGWB_PLAYWRIGHT_MINIMAL_DIAGNOSTICS: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
-          node-version: 22
+          node-version: "22.23.2"
           cache: npm
           cache-dependency-path: |
             package-lock.json
@@ -159,15 +162,82 @@ jobs:
       - run: sudo apt-get install -y scrot xvfb
       - run: npm ci
       - run: npm --prefix vscode-extension ci
-      - name: Run Playwright
+      - name: Probe VS Code and extension bootstrap
         run: >-
           xvfb-run -a -s "-screen 0 1600x1000x24"
-          bash vscode-extension/scripts/run-playwright-ci.sh test:acceptance
+          bash vscode-extension/scripts/run-playwright-ci.sh test:bootstrap
+      - name: Upload Playwright bootstrap evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: playwright-bootstrap-results
+          path: vscode-extension/test-results/**
+          if-no-files-found: ignore
+
+  workbench-acceptance:
+    name: Playwright
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      PGWB_ACCEPTANCE_VSCODE_VERSION: "1.109.0"
+      PGWB_PLAYWRIGHT_MINIMAL_DIAGNOSTICS: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: "22.23.2"
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            vscode-extension/package-lock.json
+      - run: sudo apt-get update
+      - run: sudo apt-get install -y scrot xvfb
+      - run: npm ci
+      - run: npm --prefix vscode-extension ci
+      - name: Run Playwright Core lane
+        run: >-
+          xvfb-run -a -s "-screen 0 1600x1000x24"
+          bash vscode-extension/scripts/run-playwright-ci.sh test:acceptance:core
       - name: Upload Playwright evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: playwright-results
+          name: playwright-core-results
+          path: vscode-extension/test-results/**
+          if-no-files-found: ignore
+      - name: Stop acceptance database fixture
+        if: always()
+        run: docker compose -f demo/docker-compose.yml down -v
+
+  workbench-schema-sync:
+    name: Playwright Schema Sync
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      PGWB_ACCEPTANCE_VSCODE_VERSION: "1.109.0"
+      PGWB_PLAYWRIGHT_MINIMAL_DIAGNOSTICS: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: "22.23.2"
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            vscode-extension/package-lock.json
+      - run: sudo apt-get update
+      - run: sudo apt-get install -y scrot xvfb
+      - run: npm ci
+      - run: npm --prefix vscode-extension ci
+      - name: Run Playwright Schema Sync lane
+        run: >-
+          xvfb-run -a -s "-screen 0 1600x1000x24"
+          bash vscode-extension/scripts/run-playwright-ci.sh test:acceptance:schema-sync
+      - name: Upload Playwright evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: playwright-schema-sync-results
           path: vscode-extension/test-results/**
           if-no-files-found: ignore
       - name: Stop acceptance database fixture

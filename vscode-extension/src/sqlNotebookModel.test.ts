@@ -7,8 +7,10 @@ import {
   parseSqlNotebookFile,
   resolveNotebookBinding,
   resolveScratchpadAssociation,
+  scratchpadCellExecutionIntent,
   scratchpadCreationAssociation,
   scratchpadExecutionMode,
+  scratchpadStatementTimeoutMs,
   serializeSqlNotebookFile,
   sqlNotebookResultPayload,
 } from "./sqlNotebookModel.js";
@@ -51,6 +53,43 @@ describe("SQL notebook model", () => {
         }),
       ).metadata,
     ).toEqual({ executionMode: "manual" });
+  });
+
+  it("persists a per-cell Debug intent while Run remains the default", () => {
+    expect(scratchpadCellExecutionIntent(undefined)).toBe("run");
+    const file = parseSqlNotebookFile(
+      serializeSqlNotebookFile({
+        version: 1,
+        metadata: {},
+        cells: [
+          {
+            kind: "code",
+            language: "plpgsql",
+            source: "SELECT * FROM shop.restock_report(5);",
+            metadata: { executionIntent: "debug" },
+          },
+        ],
+      }),
+    );
+    expect(file.cells[0]?.metadata).toEqual({ executionIntent: "debug" });
+    expect(scratchpadCellExecutionIntent(file.cells[0]?.metadata)).toBe("debug");
+  });
+
+  it("persists one Scratchpad timeout override and otherwise uses the global timeout", () => {
+    expect(scratchpadStatementTimeoutMs({}, 60_000)).toBe(60_000);
+    expect(scratchpadStatementTimeoutMs({ statementTimeoutMs: 300_000 }, 60_000)).toBe(300_000);
+    expect(
+      parseSqlNotebookFile(
+        serializeSqlNotebookFile({
+          version: 1,
+          metadata: { statementTimeoutMs: 300_000 },
+          cells: [],
+        }),
+      ).metadata,
+    ).toEqual({ statementTimeoutMs: 300_000 });
+    expect(
+      parseSqlNotebookFile('{"version":1,"metadata":{"statementTimeoutMs":0},"cells":[]}').metadata,
+    ).toEqual({});
   });
 
   it("uses the domain Association states without inferring the active database context", () => {

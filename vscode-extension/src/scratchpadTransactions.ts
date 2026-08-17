@@ -127,6 +127,13 @@ export class ScratchpadTransactionManager implements vscode.Disposable {
     this.changed.fire(scratchpadUri);
   }
 
+  markFailed(scratchpadUri: string): void {
+    const transaction = this.transactions.get(scratchpadUri);
+    if (!transaction || transaction.status === "failed") return;
+    transaction.status = "failed";
+    this.changed.fire(scratchpadUri);
+  }
+
   async commit(scratchpadUri: string): Promise<boolean> {
     if (!this.acceptingOperations) return false;
     return this.runExclusive(scratchpadUri, undefined, async () => {

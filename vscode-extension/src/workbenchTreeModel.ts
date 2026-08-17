@@ -119,7 +119,7 @@ export function buildWorkbenchTableMembers(
   symbols: readonly WorkbenchTreeSymbol[],
   table: WorkbenchObjectModel,
 ): WorkbenchTableMemberModel[] {
-  if (table.kind !== "table") return [];
+  if (table.kind !== "table" && table.kind !== "view") return [];
   return symbols
     .filter(
       (symbol) =>

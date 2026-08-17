@@ -1,5 +1,10 @@
 import * as vscode from "vscode";
 import {
+  SQL_AUTHORING_OBJECT_MIME,
+  type SqlAuthoringDragPayload,
+  serializeSqlAuthoringDrag,
+} from "./sqlAuthoring/protocol.js";
+import {
   serializeWorkbenchGraphDrag,
   WORKBENCH_GRAPH_OBJECT_MIME,
   WORKBENCH_GRAPH_UNSUPPORTED_MIME,
@@ -18,6 +23,7 @@ export class WorkbenchTreeDragAndDropController
   readonly dragMimeTypes = [
     WORKBENCH_GRAPH_OBJECT_MIME,
     WORKBENCH_GRAPH_UNSUPPORTED_MIME,
+    SQL_AUTHORING_OBJECT_MIME,
     "text/plain",
     "text/uri-list",
   ];
@@ -28,9 +34,16 @@ export class WorkbenchTreeDragAndDropController
 
   handleDrag(source: readonly PlpgsqlTreeItem[], dataTransfer: vscode.DataTransfer): void {
     const payload = dragPayload(source);
+    const authoringPayload = sqlAuthoringDragPayload(source);
     if (this.expiry) clearTimeout(this.expiry);
     this.active = payload ? { payload, expiresAt: Date.now() + 30_000 } : undefined;
     this.announce(payload ?? null);
+    if (authoringPayload) {
+      dataTransfer.set(
+        SQL_AUTHORING_OBJECT_MIME,
+        new vscode.DataTransferItem(serializeSqlAuthoringDrag(authoringPayload)),
+      );
+    }
     if (!payload) return;
     this.expiry = setTimeout(() => {
       this.active = undefined;
@@ -68,6 +81,43 @@ export class WorkbenchTreeDragAndDropController
     this.active = undefined;
     this.announce(null);
   }
+}
+
+export function sqlAuthoringDragPayload(
+  source: readonly PlpgsqlTreeItem[],
+): SqlAuthoringDragPayload | undefined {
+  if (source.length !== 1) return undefined;
+  const item = source[0];
+  if (item.kind === "tableMember" && item.member.kind === "column") {
+    return {
+      kind: "column",
+      serverId: item.object.serverId,
+      database: item.object.database,
+      tableOid: item.object.oid,
+      tableSchema: item.object.schema,
+      tableName: item.object.name,
+      name: item.member.name,
+    };
+  }
+  const object = graphObject(item);
+  if (
+    !object ||
+    (object.kind !== "table" &&
+      object.kind !== "view" &&
+      object.kind !== "function" &&
+      object.kind !== "procedure" &&
+      object.kind !== "trigger")
+  ) {
+    return undefined;
+  }
+  return {
+    kind: object.kind,
+    serverId: object.serverId,
+    database: object.database,
+    oid: object.oid,
+    schema: object.schema,
+    name: object.name,
+  };
 }
 
 export function dragPayload(

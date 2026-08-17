@@ -10,6 +10,7 @@ import {
   type DebugResultSource,
   type DebugResultStatus,
 } from "../../src/debugger/launch/index.js";
+import { isPostgresSqlLanguage } from "./postgresDocumentLanguage.js";
 
 export interface SqlEditorSelection {
   languageId: string;
@@ -43,7 +44,7 @@ export interface SqlExecutionRejected {
 }
 
 export function prepareSqlSelection(input: SqlEditorSelection): PreparedSqlSelection {
-  if (input.languageId !== "sql" && input.languageId !== "plpgsql") {
+  if (!isPostgresSqlLanguage(input.languageId)) {
     return { status: "unsupported-language" };
   }
   const start = Math.max(0, Math.min(input.documentText.length, input.selectionStart));

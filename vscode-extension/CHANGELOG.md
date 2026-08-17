@@ -2,6 +2,71 @@
 
 ## Unreleased
 
+## [1.2.0] - 2026-08-17
+
+PostgreSQL Workbench 1.2.0 adds indexed SQL authoring and unifies Run, Debug,
+and Deploy workflows across free SQL documents, Scratchpads, and managed
+PostgreSQL sources.
+
+### Indexed SQL authoring
+
+- Added one VS Code Language Server Protocol service for PostgreSQL formatting,
+  indexed completion, semantic highlighting, hover, navigation, and safe query
+  composition
+- Added persistent Document Associations for free `.sql` and `.pgsql` files;
+  completion, composition, Run, and Debug now use one explicit saved Connexion
+  without silently following the active DatabaseContext
+- Added language-status feedback for missing Associations, missing or stale
+  indexes, syntax errors, and configurable syntax-analysis budgets
+- Added Shift-drag SQL composition for tables, views, columns, functions,
+  procedures, trigger functions, and triggers, with editable generated harnesses
+- Added configurable relation aliases, explicit projections, PostgreSQL-aware
+  quoting and folding, and duplicate-safe column insertion
+- Added foreign-key-backed `JOIN` and `LEFT JOIN` generation that preserves
+  nullable rows, distinguishes self-joins, asks the user to choose between
+  ambiguous relationships, and falls back to an independent `SELECT` instead
+  of guessing
+- Kept composition Statement-scoped and conservative for CTEs, nested queries,
+  aggregate and set-sensitive projections, incomplete constraints, and stale
+  snapshots
+
+### Run, Debug, and Deploy
+
+- Added Statement-level **Run SQL** and eligible **Debug PL/pgSQL** CodeLens
+  actions to free SQL documents, both governed by the Document Association
+- Added Scratchpad Run/Debug intent for replayable function, procedure, and
+  trigger entry points; Debug results remain in the cell and native Stop ends
+  the debug session
+- Added generated `SELECT`, `CALL`/`DO`, and DML trigger harnesses with typed,
+  editable routine arguments
+- Added safe managed-routine working copies and explicit Deploy for exact
+  PL/pgSQL function or procedure replacements, including signature validation,
+  conflict detection, post-deployment index refresh, and concise user feedback
+- Kept managed tables, views, schemas, triggers, arbitrary DDL, and DML outside
+  implicit synchronization; they remain explicit SQL operations
+- Closed native coverage before every admitted debug launch and stabilized
+  recursive stack inspection, frame selection, source reveal, and breakpoint
+  placement
+
+### Scratchpads and Workbench reliability
+
+- Split Scratchpads into a dedicated, resizable and filterable TreeView below
+  Sources, with deterministic automatic Association for a single Connexion and
+  an explicit selector when several Connexions exist
+- Added persisted Scratchpad Statement-timeout overrides, actionable timeout
+  recovery, native cancellation through `pg_cancel_backend`, and safe shutdown
+  rollback for active manual Transactions
+- Serialized schema-synchronization listener lifecycle and DDL refreshes,
+  preserved full-refresh debt across disconnects and races, and prevented stale
+  catalog snapshots from being reported as fresh
+- Added deterministic Linux Playwright lanes for bootstrap, core journeys, and
+  terminal Schema Sync; hardened VS Code window, TreeView, Notebook, Quick Pick,
+  drag-and-drop, coverage, and debugger helpers
+- Pinned reproducible Linux acceptance images and expanded packaging checks for
+  the SQL authoring server and bundled Code Moniker runtime
+- Fixed the demo Fibonacci routine so `NULL` remains valid without bypassing the
+  executable body used by PL/pgSQL debugging
+
 ## [1.1.0] - 2026-08-13
 
 PostgreSQL Workbench 1.1.0 expands Cockpit and SQL scratchpad workflows and

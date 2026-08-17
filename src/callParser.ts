@@ -1,6 +1,7 @@
 import {
   preferredSqlCallApplication,
   sqlFunctionNameParts,
+  sqlRoutineBody,
   sqlRoutineBodyLiteral,
   sqlRoutineLanguage,
   sqlRoutineNameParts,
@@ -11,6 +12,7 @@ import {
   decodeSqlLiteral,
   directSyntaxChild,
   findSyntaxNode,
+  findSyntaxNodes,
   syntaxNodeText,
   syntaxTreeHasKind,
 } from "./analysis/syntaxNodes.js";
@@ -39,6 +41,9 @@ export interface ParsedCall {
   kind?: "function" | "procedure" | null;
 }
 
+/** Top-level statement kinds that may own a replayable debugger entry point. */
+const DEBUG_ENTRY_STATEMENT_KINDS = new Set(["SelectStmt", "CallStmt", "DoStmt"]);
+
 export interface ParsedCallSite {
   schema: string | null;
   routine: string;
@@ -57,6 +62,13 @@ export async function parseCall(sql: string, parser: SyntaxParser): Promise<Pars
   }
   const statement = statements[0];
   if (!statement) return emptyCall();
+  const doStatement = findSyntaxNode(statement, "DoStmt");
+  if (doStatement) {
+    const call = await callInsideDo(sql, doStatement, parser);
+    return call
+      ? { ...extractCall(call.source, call.application), kind: "procedure" }
+      : emptyCall();
+  }
   const kind = findSyntaxNode(statement, "CallStmt")
     ? "procedure"
     : findSyntaxNode(statement, "SelectStmt")
@@ -72,14 +84,21 @@ export async function parseSqlFile(
   parser: SyntaxParser,
 ): Promise<{ definitions: FunctionDefinition[]; calls: ParsedCallSite[] }> {
   try {
-    const syntax = await parseUsableSql(sql, parser);
-    return {
-      definitions: extractDefinitions(sql, syntax),
-      calls: extractCalls(sql, syntax),
-    };
+    return await parseSqlFileStrict(sql, parser);
   } catch {
     return { definitions: [], calls: [] };
   }
+}
+
+export async function parseSqlFileStrict(
+  sql: string,
+  parser: SyntaxParser,
+): Promise<{ definitions: FunctionDefinition[]; calls: ParsedCallSite[] }> {
+  const syntax = await parseUsableSql(sql, parser);
+  return {
+    definitions: extractDefinitions(sql, syntax),
+    calls: await extractCalls(sql, syntax, parser),
+  };
 }
 
 export async function parseSqlDefinitions(
@@ -101,6 +120,16 @@ async function parseUsableSql(source: string, parser: SyntaxParser): Promise<Syn
 
 function topLevelStatements(syntax: SyntaxTree): SyntaxNode[] {
   return syntax.root.children.filter((child) => child.kind === "toplevel_stmt");
+}
+
+/** Statement node owning a top-level statement (`SelectStmt`, `InsertStmt`, ...). */
+function statementKindNode(statement: SyntaxNode): SyntaxNode | undefined {
+  if (/Stmt$/u.test(statement.kind)) return statement;
+  for (const child of statement.children) {
+    const found = statementKindNode(child);
+    if (found) return found;
+  }
+  return undefined;
 }
 
 function extractDefinitions(source: string, syntax: SyntaxTree): FunctionDefinition[] {
@@ -132,13 +161,34 @@ function extractParameters(source: string, create: SyntaxNode): FunctionParam[] 
   );
 }
 
-function extractCalls(source: string, syntax: SyntaxTree): ParsedCallSite[] {
+async function extractCalls(
+  source: string,
+  syntax: SyntaxTree,
+  parser: SyntaxParser,
+): Promise<ParsedCallSite[]> {
   const calls: ParsedCallSite[] = [];
   for (const statement of topLevelStatements(syntax)) {
-    const callStatement = findSyntaxNode(statement, "CallStmt");
-    const selectStatement = findSyntaxNode(statement, "SelectStmt");
-    if (!callStatement && !selectStatement) continue;
-    const application = preferredSqlCallApplication(callStatement ?? selectStatement!);
+    const entry = statementKindNode(statement);
+    if (!entry || !DEBUG_ENTRY_STATEMENT_KINDS.has(entry.kind)) continue;
+    const doStatement = entry.kind === "DoStmt" ? entry : undefined;
+    if (doStatement) {
+      const call = await callInsideDo(source, doStatement, parser);
+      if (!call) continue;
+      const parsed = extractCall(call.source, call.application);
+      if (!parsed.routine) continue;
+      calls.push({
+        schema: parsed.schema,
+        routine: parsed.routine,
+        args: parsed.args,
+        sql: syntaxNodeText(source, statement).trim(),
+        isLaunchable: true,
+        line: statement.start.line,
+        kind: "call",
+      });
+      continue;
+    }
+    const callStatement = entry.kind === "CallStmt" ? entry : undefined;
+    const application = preferredSqlCallApplication(entry);
     if (!application) continue;
     const parsed = extractCall(source, application);
     if (!parsed.routine) continue;
@@ -153,6 +203,26 @@ function extractCalls(source: string, syntax: SyntaxTree): ParsedCallSite[] {
     });
   }
   return calls;
+}
+
+async function callInsideDo(
+  source: string,
+  statement: SyntaxNode,
+  parser: SyntaxParser,
+): Promise<{ source: string; application: SyntaxNode } | undefined> {
+  const body = sqlRoutineBody(source, statement);
+  if (!body) return undefined;
+  const syntax = await parser.parse({ language: "plpgsql", source: body, uri: "do-block.sql" });
+  assertUsableSyntaxTree(syntax, "PL/pgSQL");
+  const calls = findSyntaxNodes(syntax.root, "stmt_call");
+  if (calls.length !== 1) return undefined;
+  const expression = directSyntaxChild(calls[0], "sql_expression");
+  if (!expression) return undefined;
+  const callSource = `CALL ${syntaxNodeText(body, expression).trim()}`;
+  const callSyntax = await parseUsableSql(callSource, parser);
+  const callStatement = topLevelStatements(callSyntax)[0];
+  const application = callStatement ? preferredSqlCallApplication(callStatement) : undefined;
+  return application ? { source: callSource, application } : undefined;
 }
 
 function extractCall(source: string, application: SyntaxNode): ParsedCall {

@@ -40,6 +40,12 @@ operations block until the target stops.
 The debugger stops on entry by default. Use breakpoints, F10/F11, Continue,
 Variables, Watch, inline values, and the Debug Console.
 
+Debug availability is governed by the analyzed SQL entry point, not merely by
+the editor surface or the first SQL keyword. In particular, a direct `SELECT`
+of an indexed PL/pgSQL function is debuggable. See the canonical [Run, debug,
+and deploy SQL](execution-debugging-and-deployment.md) matrix and its exact
+parser preconditions.
+
 ## Value inspection beyond the basic debugger
 
 PostgreSQL scalar values are only the starting point. The adapter uses two-pass

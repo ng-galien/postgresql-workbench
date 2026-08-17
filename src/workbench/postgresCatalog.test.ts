@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   type CatalogQueryClient,
+  mergePostgresCatalogRelations,
   PostgresCatalogFullRefreshRequired,
   readPostgresCatalog,
   readPostgresCatalogDocuments,
@@ -68,12 +69,18 @@ class FakeCatalogClient implements CatalogQueryClient {
               constraint_oid: 21,
               constraint_name: "account_pkey",
               definition: "PRIMARY KEY (id)",
+              validated: true,
             },
             {
               table_oid: 20,
               constraint_oid: 22,
               constraint_name: "account_owner_fkey",
               definition: "FOREIGN KEY (owner_id) REFERENCES app.owner(id)",
+              referenced_table_oid: "24",
+              source_columns: ["owner_id"],
+              source_columns_nullable: [true],
+              referenced_columns: ["id"],
+              validated: true,
             },
           ],
           views: [
@@ -144,6 +151,7 @@ describe("readPostgresCatalog", () => {
     expect(client.calls).toHaveLength(1);
     expect(client.calls[0]).toContain("workbench:catalog");
     expect(client.calls[0]).toContain("workbench:tables");
+    expect(client.calls[0]).toContain("constraint_row.convalidated AS validated");
     expect(first.sourceSet.srcset).toMatch(/^postgres-[a-f0-9]{20}$/);
     expect(first.sourceSet.revision).toMatch(/^[a-f0-9]{64}$/);
     expect(first.sourceSet.revision).toBe(second.sourceSet.revision);
@@ -167,6 +175,16 @@ describe("readPostgresCatalog", () => {
     expect(view?.content).toContain('CREATE VIEW "app"."active_account" AS');
     expect(view?.content).toContain("FROM app.account");
     expect(first.viewDependencies).toEqual([{ sourceViewOid: 30, targetRelationOid: 20 }]);
+    expect(first.foreignKeys).toEqual([
+      {
+        sourceTableOid: 20,
+        targetTableOid: 24,
+        sourceColumns: ["owner_id"],
+        sourceColumnsNullable: [true],
+        targetColumns: ["id"],
+        validated: true,
+      },
+    ]);
 
     const routine = first.sourceSet.documents.find((document) => document.postgres?.oid === 40);
     expect(routine?.uri).toMatch(/\/routine\/find_account\(p_id%20bigint\)\.sql$/);
@@ -300,7 +318,41 @@ describe("readPostgresCatalog", () => {
                     generated_kind: "",
                   },
                 ],
-                constraints: [],
+                constraints: [
+                  {
+                    table_oid: 20,
+                    constraint_oid: 70,
+                    constraint_name: "account_owner_fkey",
+                    definition: "FOREIGN KEY (id) REFERENCES app.owner(id)",
+                    referenced_table_oid: "24",
+                    source_columns: ["id"],
+                    source_columns_nullable: [false],
+                    referenced_columns: ["id"],
+                    validated: true,
+                  },
+                  {
+                    table_oid: 20,
+                    constraint_oid: 71,
+                    constraint_name: "account_region_fkey",
+                    definition: "FOREIGN KEY (email) REFERENCES app.region(code)",
+                    referenced_table_oid: "25",
+                    source_columns: ["email"],
+                    source_columns_nullable: [true],
+                    referenced_columns: ["code"],
+                    validated: true,
+                  },
+                  {
+                    table_oid: 60,
+                    constraint_oid: 72,
+                    constraint_name: "audit_account_fkey",
+                    definition: "FOREIGN KEY (account_id) REFERENCES app.account(id)",
+                    referenced_table_oid: "20",
+                    source_columns: ["account_id"],
+                    source_columns_nullable: [false],
+                    referenced_columns: ["id"],
+                    validated: true,
+                  },
+                ],
                 views: [
                   {
                     oid: 30,
@@ -334,6 +386,8 @@ describe("readPostgresCatalog", () => {
 
     expect(calls).toHaveLength(1);
     expect(calls.every((sql) => sql.includes("catalog-incremental"))).toBe(true);
+    expect(calls[0]).toContain("constraint_row.confrelid");
+    expect(calls[0]).toContain("target_relation.oid IN");
     expect(patch.upsertDocuments).toHaveLength(2);
     expect(
       patch.upsertDocuments.find((document) => document.postgres?.oid === 20)?.content,
@@ -342,6 +396,44 @@ describe("readPostgresCatalog", () => {
     expect(patch.upsertDocuments.map((document) => document.postgres?.oid).sort()).toEqual([
       20, 30,
     ]);
+    expect(patch.foreignKeys).toEqual([
+      {
+        sourceTableOid: 20,
+        targetTableOid: 24,
+        sourceColumns: ["id"],
+        sourceColumnsNullable: [false],
+        targetColumns: ["id"],
+        validated: true,
+      },
+      {
+        sourceTableOid: 20,
+        targetTableOid: 25,
+        sourceColumns: ["email"],
+        sourceColumnsNullable: [true],
+        targetColumns: ["code"],
+        validated: true,
+      },
+      {
+        sourceTableOid: 60,
+        targetTableOid: 20,
+        sourceColumns: ["account_id"],
+        sourceColumnsNullable: [false],
+        targetColumns: ["id"],
+        validated: true,
+      },
+    ]);
+
+    const existingForeignKeys = [patch.foreignKeys[0]!, patch.foreignKeys[2]!];
+    const merged = mergePostgresCatalogRelations(
+      existingForeignKeys,
+      [{ sourceViewOid: 30, targetRelationOid: 24 }],
+      patch,
+    );
+    expect(merged.foreignKeys).toEqual(patch.foreignKeys);
+    expect(merged.viewDependencies).toEqual([{ sourceViewOid: 30, targetRelationOid: 20 }]);
+    expect(
+      mergePostgresCatalogRelations(merged.foreignKeys, merged.viewDependencies, patch),
+    ).toEqual(merged);
   });
 
   it("requests a full replacement when a selected document has no local mapping", async () => {

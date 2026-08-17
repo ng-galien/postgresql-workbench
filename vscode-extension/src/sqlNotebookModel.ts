@@ -6,15 +6,24 @@ export const SQL_NOTEBOOK_EXTENSION = ".pgsql-notebook";
 export const SQL_NOTEBOOK_RESULT_MIME = "application/vnd.postgresql-workbench.sql-result+json";
 export const SQL_NOTEBOOK_RENDERER_ID = "postgresql-workbench.sql-result-renderer";
 export const SQL_NOTEBOOK_VERSION = 1;
+export const DEFAULT_SCRATCHPAD_STATEMENT_TIMEOUT_MS = 60_000;
+export const MIN_SCRATCHPAD_STATEMENT_TIMEOUT_MS = 1_000;
+export const MAX_SCRATCHPAD_STATEMENT_TIMEOUT_MS = 3_600_000;
 
 /** Product-level execution mode persisted by each Scratchpad. */
 export type ScratchpadExecutionMode = "auto" | "manual";
+export type ScratchpadCellExecutionIntent = "run" | "debug";
+
+export interface SqlNotebookCellMetadata {
+  executionIntent?: ScratchpadCellExecutionIntent;
+}
 
 export interface SqlNotebookMetadata {
   serverId?: string;
   serverName?: string;
   database?: string;
   executionMode?: ScratchpadExecutionMode;
+  statementTimeoutMs?: number;
 }
 
 /** Persistent Association between a Scratchpad and a saved Connexion. */
@@ -41,6 +50,7 @@ export interface SqlNotebookCellFile {
   kind: "code" | "markup";
   language: "plpgsql" | "markdown";
   source: string;
+  metadata?: SqlNotebookCellMetadata;
 }
 
 export interface SqlNotebookFile {
@@ -77,6 +87,10 @@ export interface SqlNotebookErrorPayload {
   line?: number;
   column?: number;
   position?: string;
+  action?: {
+    type: "open-sql-analysis-settings" | "increase-scratchpad-timeout";
+    label: string;
+  };
 }
 
 export type SqlNotebookOutputPayload = SqlNotebookResultPayload | SqlNotebookErrorPayload;
@@ -97,11 +111,17 @@ export interface SqlNotebookResultNavigation {
 
 export type SqlNotebookResultAction = "attach" | "previous" | "next" | "load-all" | "cancel";
 
-export interface SqlNotebookRendererRequest {
+export interface SqlNotebookResultRequest {
   type: "sql-result/request";
   sessionId: string;
   action: SqlNotebookResultAction;
 }
+
+export type SqlNotebookSettingsRequest =
+  | { type: "sql-error/open-analysis-settings" }
+  | { type: "sql-error/increase-scratchpad-timeout" };
+
+export type SqlNotebookRendererRequest = SqlNotebookResultRequest | SqlNotebookSettingsRequest;
 
 export type SqlNotebookRendererResponse =
   | {
@@ -159,6 +179,31 @@ export function associationSnapshot(server: ServerConfig): ScratchpadAssociation
 
 export function scratchpadExecutionMode(metadata: SqlNotebookMetadata): ScratchpadExecutionMode {
   return metadata.executionMode === "manual" ? "manual" : "auto";
+}
+
+export function scratchpadCellExecutionIntent(metadata: unknown): ScratchpadCellExecutionIntent {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return "run";
+  return (metadata as Record<string, unknown>).executionIntent === "debug" ? "debug" : "run";
+}
+
+export function scratchpadStatementTimeoutMs(
+  metadata: SqlNotebookMetadata,
+  globalTimeoutMs = DEFAULT_SCRATCHPAD_STATEMENT_TIMEOUT_MS,
+): number {
+  return (
+    validStatementTimeoutMs(metadata.statementTimeoutMs) ??
+    validStatementTimeoutMs(globalTimeoutMs) ??
+    DEFAULT_SCRATCHPAD_STATEMENT_TIMEOUT_MS
+  );
+}
+
+export function validStatementTimeoutMs(value: unknown): number | undefined {
+  return typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= MIN_SCRATCHPAD_STATEMENT_TIMEOUT_MS &&
+    value <= MAX_SCRATCHPAD_STATEMENT_TIMEOUT_MS
+    ? value
+    : undefined;
 }
 
 export function scratchpadCreationAssociation(
@@ -283,6 +328,9 @@ function normalizeMetadata(value: unknown): SqlNotebookMetadata {
     ...stringProperty(source, "serverName"),
     ...stringProperty(source, "database"),
     ...(source.executionMode === "manual" ? { executionMode: "manual" as const } : {}),
+    ...(validStatementTimeoutMs(source.statementTimeoutMs) !== undefined
+      ? { statementTimeoutMs: validStatementTimeoutMs(source.statementTimeoutMs) }
+      : {}),
   };
 }
 
@@ -293,7 +341,15 @@ function normalizeCell(value: unknown): SqlNotebookCellFile[] {
   if (source.kind === "markup") {
     return [{ kind: "markup", language: "markdown", source: source.source }];
   }
-  return [{ kind: "code", language: "plpgsql", source: source.source }];
+  const executionIntent = scratchpadCellExecutionIntent(source.metadata);
+  return [
+    {
+      kind: "code",
+      language: "plpgsql",
+      source: source.source,
+      ...(executionIntent === "debug" ? { metadata: { executionIntent } } : {}),
+    },
+  ];
 }
 
 function stringProperty(

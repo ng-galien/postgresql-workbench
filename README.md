@@ -94,7 +94,7 @@ Build the installable extension with:
 ```bash
 npm run package:ext
 code --install-extension \
-  vscode-extension/postgresql-workbench-1.1.0-darwin-arm64.vsix \
+  vscode-extension/postgresql-workbench-1.2.0-darwin-arm64.vsix \
   --force
 ```
 

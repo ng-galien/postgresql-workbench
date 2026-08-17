@@ -10,11 +10,16 @@ vi.mock("./workbenchGraphDropBridge.js", () => ({
   workbenchGraphDropUri: () => "postgresql-workbench-graph-drop:/source/test/payload",
 }));
 
+import { parseSqlAuthoringDrag, SQL_AUTHORING_OBJECT_MIME } from "./sqlAuthoring/protocol.js";
 import {
   WORKBENCH_GRAPH_OBJECT_MIME,
   WORKBENCH_GRAPH_UNSUPPORTED_MIME,
 } from "./workbenchGraph/dragAndDrop.js";
-import { dragPayload, WorkbenchTreeDragAndDropController } from "./workbenchTreeDragAndDrop.js";
+import {
+  dragPayload,
+  sqlAuthoringDragPayload,
+  WorkbenchTreeDragAndDropController,
+} from "./workbenchTreeDragAndDrop.js";
 import type { PlpgsqlTreeItem } from "./workbenchTreeProvider.js";
 
 const object = {
@@ -64,6 +69,77 @@ describe("Workbench TreeView graph dragging", () => {
     });
   });
 
+  it("keeps SQL authoring table and column payloads separate from graph semantics", () => {
+    expect(
+      sqlAuthoringDragPayload([{ kind: "object", object } as unknown as PlpgsqlTreeItem]),
+    ).toEqual({
+      kind: "table",
+      serverId: "server",
+      database: "demo",
+      oid: 42,
+      schema: "shop",
+      name: "orders",
+    });
+    expect(
+      sqlAuthoringDragPayload([
+        {
+          kind: "tableMember",
+          member: { kind: "column", name: "customer_id" },
+          object,
+        } as unknown as PlpgsqlTreeItem,
+      ]),
+    ).toEqual({
+      kind: "column",
+      serverId: "server",
+      database: "demo",
+      tableOid: 42,
+      tableSchema: "shop",
+      tableName: "orders",
+      name: "customer_id",
+    });
+    expect(
+      sqlAuthoringDragPayload([
+        {
+          kind: "object",
+          object: {
+            ...object,
+            oid: 43,
+            name: "reprice_order",
+            kind: "procedure",
+            params: [{ name: "order_id", type: "bigint" }],
+          },
+        } as unknown as PlpgsqlTreeItem,
+      ]),
+    ).toEqual({
+      kind: "procedure",
+      serverId: "server",
+      database: "demo",
+      oid: 43,
+      schema: "shop",
+      name: "reprice_order",
+    });
+    expect(
+      sqlAuthoringDragPayload([
+        {
+          kind: "object",
+          object: {
+            ...object,
+            oid: 44,
+            name: "product_stock_audit",
+            kind: "trigger",
+          },
+        } as unknown as PlpgsqlTreeItem,
+      ]),
+    ).toEqual({
+      kind: "trigger",
+      serverId: "server",
+      database: "demo",
+      oid: 44,
+      schema: "shop",
+      name: "product_stock_audit",
+    });
+  });
+
   it("does not advertise graph dragging for connections or scratchpads", () => {
     expect(dragPayload([{ kind: "server" } as PlpgsqlTreeItem])).toBeUndefined();
     expect(dragPayload([{ kind: "sqlNotebook" } as PlpgsqlTreeItem])).toBeUndefined();
@@ -75,6 +151,14 @@ describe("Workbench TreeView graph dragging", () => {
     const accepted = transfer();
     controller.handleDrag([{ kind: "object", object } as unknown as PlpgsqlTreeItem], accepted.api);
     expect(accepted.values.has(WORKBENCH_GRAPH_OBJECT_MIME)).toBe(true);
+    expect(parseSqlAuthoringDrag(String(accepted.values.get(SQL_AUTHORING_OBJECT_MIME)))).toEqual({
+      kind: "table",
+      serverId: "server",
+      database: "demo",
+      oid: 42,
+      schema: "shop",
+      name: "orders",
+    });
     expect(accepted.values.has("text/plain")).toBe(true);
     expect(accepted.values.get("text/uri-list")).toBe(
       "postgresql-workbench-graph-drop:/source/test/payload",
@@ -89,6 +173,7 @@ describe("Workbench TreeView graph dragging", () => {
 
     const rejected = transfer();
     controller.handleDrag([{ kind: "schema", schema: "shop" } as PlpgsqlTreeItem], rejected.api);
+    expect(rejected.values.has(SQL_AUTHORING_OBJECT_MIME)).toBe(false);
     expect(rejected.values.has(WORKBENCH_GRAPH_UNSUPPORTED_MIME)).toBe(true);
     expect(rejected.values.has("text/plain")).toBe(true);
     expect(rejected.values.get("text/uri-list")).toBe(

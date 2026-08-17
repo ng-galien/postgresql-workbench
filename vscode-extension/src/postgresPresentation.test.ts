@@ -19,6 +19,7 @@ describe("PostgreSQL presentation", () => {
         symbolKind: "function",
       }),
     ).toEqual({
+      displayPath: "shop/public/function/find_order",
       label: "shop / public / function / find_order(order_id:int8)",
       path: "shop/public/function/find_order(order_id:int8)",
       kind: "function",

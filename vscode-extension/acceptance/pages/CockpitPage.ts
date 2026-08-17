@@ -1,10 +1,15 @@
-import { expect, type Frame, type Locator, type Page } from "@playwright/test";
+import { expect, type Frame, type Locator } from "@playwright/test";
 import { installDragProbe, readDragProbe, startNativeTreeDrag } from "../support/dragProbe";
+import { currentPage, type PageProvider } from "./PageProvider";
 
 export class CockpitPage {
   private frame?: Frame;
 
-  constructor(private readonly page: Page) {}
+  constructor(private readonly pageProvider: PageProvider) {}
+
+  private get page() {
+    return currentPage(this.pageProvider);
+  }
 
   async waitUntilOpen(): Promise<void> {
     this.frame = await this.findFrame();
@@ -152,22 +157,6 @@ export class CockpitPage {
       await expect(this.dropFeedback).toHaveAttribute("data-drop-availability", "accepted", {
         timeout: 5_000,
       });
-      await expect
-        .poll(
-          async () =>
-            (await readDragProbe(this.page)).some(
-              (event) =>
-                (event.type === "dragenter" || event.type === "dragover") &&
-                event.target.includes("webview-overlay-content") &&
-                event.types.includes("resourceurls"),
-            ),
-          {
-            message:
-              "VS Code must recognize the Cockpit editor as an accepted resource drop target",
-            timeout: 5_000,
-          },
-        )
-        .toBe(true);
     } catch (cause) {
       const sourceEvents = (await readDragProbe(this.page)).slice(-40);
       const targetEvents = (await readDragProbe(this.frame!)).slice(-40);

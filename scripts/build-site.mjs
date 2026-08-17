@@ -15,6 +15,7 @@ const guides = [
   ["index.md", "Overview"],
   ["cockpit.md", "Workbench Cockpit"],
   ["notebooks.md", "SQL scratchpads"],
+  ["sql-authoring.md", "SQL authoring"],
   ["testing-coverage.md", "pgTAP and coverage"],
   ["debugger.md", "PL/pgSQL debugger"],
   ["dap.md", "Standalone DAP server"],

@@ -1,12 +1,15 @@
-import { expect, type Frame, type Locator, type Page } from "@playwright/test";
+import { expect, type Frame, type Locator } from "@playwright/test";
 import type { DebugStateSnapshot } from "../fixtures/vscode";
+import { currentPage, type PageProvider } from "./PageProvider";
 import { QuickInput } from "./QuickInput";
+import { WorkbenchTree } from "./WorkbenchTree";
 
 export class DebuggerPage {
   private readonly quickInput: QuickInput;
+  private readonly variablesTree: WorkbenchTree;
 
   constructor(
-    private readonly page: Page,
+    private readonly pageProvider: PageProvider,
     private readonly openWorkspaceFile: (fileName: string) => Promise<void>,
     private readonly inspectDebugState: () => Promise<DebugStateSnapshot>,
     private readonly executeCommand: (
@@ -17,7 +20,12 @@ export class DebuggerPage {
       timeout?: number,
     ) => Promise<void>,
   ) {
-    this.quickInput = new QuickInput(page);
+    this.quickInput = new QuickInput(pageProvider);
+    this.variablesTree = new WorkbenchTree(pageProvider, "Variables");
+  }
+
+  private get page() {
+    return currentPage(this.pageProvider);
   }
 
   async openCallSite(fileName: string): Promise<void> {
@@ -30,20 +38,17 @@ export class DebuggerPage {
   }
 
   async setBreakpoint(sourceLine: string): Promise<void> {
-    const registeredBefore = (await this.inspectDebugState()).breakpoints?.length ?? 0;
-    const line = await this.revealLine(sourceLine);
-    const margin = this.page.locator(".monaco-editor:visible .margin-view-overlays").first();
-    const lineBox = await this.waitForBoundingBox(
-      line,
-      `The breakpoint line ${sourceLine} must have screen coordinates`,
-    );
-    const marginBox = await this.waitForBoundingBox(
-      margin,
-      "The active editor margin must have screen coordinates",
-    );
-    const markers = this.page.locator(".monaco-editor:visible .glyph-margin-widgets > div");
+    const registeredBefore = (await this.readDebugState()).breakpoints?.length ?? 0;
+    const editor = this.activeEditor();
+    await this.revealLine(sourceLine, editor, 10_000);
+    await expect(editor.locator(".codelens-decoration").first()).toBeVisible({ timeout: 10_000 });
+    // Move the pointer into the editor so no TreeView hover overlaps the glyph margin.
+    await editor.locator(".view-lines").hover({ position: { x: 200, y: 20 }, timeout: 2_000 });
+    await expect(this.page.locator(".workbench-hover")).toHaveCount(0, { timeout: 2_000 });
+    const markers = editor.locator(".glyph-margin-widgets > div");
     const markerCount = await markers.count();
-    await this.page.mouse.click(marginBox.x + 12, lineBox.y + lineBox.height / 2);
+    const target = await this.stableBreakpointTarget(editor, sourceLine);
+    await this.page.mouse.click(target.x, target.y);
     await expect
       .poll(() => markers.count(), {
         timeout: 5_000,
@@ -51,18 +56,56 @@ export class DebuggerPage {
       })
       .toBe(markerCount + 1);
     await expect
-      .poll(async () => (await this.inspectDebugState()).breakpoints?.length ?? 0, {
-        timeout: 5_000,
-        message: `VS Code must register the breakpoint through its debug API on ${sourceLine}`,
-      })
-      .toBe(registeredBefore + 1);
+      .poll(
+        async () => {
+          const breakpoints = (await this.readDebugState()).breakpoints ?? [];
+          return breakpoints.length === registeredBefore + 1 ? breakpoints.at(-1)?.line : undefined;
+        },
+        {
+          timeout: 5_000,
+          message: `VS Code must register the breakpoint on visible line ${target.line}: ${sourceLine}`,
+        },
+      )
+      .toBe(target.line);
   }
 
   async assignConnection(sql: string, connection: RegExp): Promise<void> {
     const line = await this.revealLine(sql);
-    await this.clickNearestCodeLens(line, /Choose PostgreSQL connection/);
-    await this.quickInput.chooseOption(connection);
-    await this.quickInput.input.waitFor({ state: "hidden", timeout: 5_000 });
+    const associationState = async (): Promise<"assigned" | "unassigned" | "pending"> => {
+      if ((await this.visibleNearestCodeLensIndex(line, /Debug PL\/pgSQL/)) >= 0) {
+        return "assigned";
+      }
+      return (await this.visibleNearestCodeLensIndex(line, /Choose Document Association/)) >= 0
+        ? "unassigned"
+        : "pending";
+    };
+    await expect
+      .poll(associationState, {
+        timeout: 5_000,
+        message: "The SQL call must expose its current document-association state",
+      })
+      .not.toBe("pending");
+    if ((await associationState()) === "assigned") return;
+
+    await this.clickNearestCodeLens(line, /Choose Document Association/);
+    const associationOutcome = async (): Promise<"assigned" | "picker" | "pending"> => {
+      if ((await this.page.locator(".quick-input-list:visible .monaco-list-row").count()) > 0) {
+        return "picker";
+      }
+      return (await this.visibleNearestCodeLensIndex(line, /Debug PL\/pgSQL/)) >= 0
+        ? "assigned"
+        : "pending";
+    };
+    await expect
+      .poll(associationOutcome, {
+        timeout: 5_000,
+        message:
+          "Document association must either complete automatically or offer a Connexion picker",
+      })
+      .not.toBe("pending");
+    if ((await associationOutcome()) === "picker") {
+      await this.quickInput.chooseAndClose(connection);
+    }
     await expect(await this.nearestCodeLens(line, /Debug PL\/pgSQL/)).toBeVisible({
       timeout: 5_000,
     });
@@ -89,7 +132,7 @@ export class DebuggerPage {
     await expect(tab).toBeVisible({ timeout: 10_000 });
     await expect(tab).toHaveAttribute("aria-selected", "true", { timeout: 10_000 });
     await expect(
-      this.page.locator(".view-line:visible").filter({ hasText: routineSource }).first(),
+      this.activeEditor().locator(".view-line").filter({ hasText: routineSource }).first(),
     ).toBeVisible({
       timeout: 10_000,
     });
@@ -121,7 +164,7 @@ export class DebuggerPage {
     const deadline = Date.now() + 5_000;
     let state: DebugStateSnapshot = {};
     while (Date.now() < deadline) {
-      state = await this.inspectDebugState();
+      state = await this.readDebugState();
       if (!state.vscodeSessionId && !state.extensionSession) return;
       await this.page.waitForTimeout(50);
     }
@@ -137,7 +180,7 @@ export class DebuggerPage {
     await this.executeCommand("workbench.action.debug.continue");
     await expect(this.page.getByRole("tab", { name: sourceTab })).toBeVisible({ timeout: 10_000 });
     await expect(
-      this.page.locator(".view-line:visible").filter({ hasText: routineSource }).first(),
+      this.activeEditor().locator(".view-line").filter({ hasText: routineSource }).first(),
     ).toBeVisible({ timeout: 10_000 });
     await this.expectStoppedAt(expectedStopLine);
   }
@@ -151,7 +194,7 @@ export class DebuggerPage {
     await this.executeCommand("workbench.action.debug.stepInto");
     await expect(this.page.getByRole("tab", { name: sourceTab })).toBeVisible({ timeout: 10_000 });
     await expect(
-      this.page.locator(".view-line:visible").filter({ hasText: routineSource }).first(),
+      this.activeEditor().locator(".view-line").filter({ hasText: routineSource }).first(),
     ).toBeVisible({ timeout: 10_000 });
     await this.expectStoppedAt(expectedStopLine);
   }
@@ -172,6 +215,14 @@ export class DebuggerPage {
     });
   }
 
+  async expectNoCoverageDecorations(): Promise<void> {
+    await expect(
+      this.page.locator(
+        ".editor-group-container.active .monaco-editor:visible .coverage-deco-inline",
+      ),
+    ).toHaveCount(0, { timeout: 5_000 });
+  }
+
   async expectArgument(name: string, value: string): Promise<void> {
     await this.expectScopedVariable(/Arguments$/, name, value);
   }
@@ -181,7 +232,7 @@ export class DebuggerPage {
     argumentValue: string,
     resultValue: string,
   ): Promise<void> {
-    const previousStop = await this.inspectDebugState();
+    const previousStop = await this.readDebugState();
     const previousTimestamp = previousStop.extensionSession?.status?.timestamp;
     if (previousStop.extensionSession?.state !== "suspended" || !previousTimestamp) {
       throw new Error(
@@ -193,7 +244,7 @@ export class DebuggerPage {
     await expect
       .poll(
         async () => {
-          const current = await this.inspectDebugState();
+          const current = await this.readDebugState();
           return current.extensionSession?.state === "suspended"
             ? current.extensionSession.status?.timestamp
             : previousTimestamp;
@@ -214,12 +265,29 @@ export class DebuggerPage {
     name: string,
     value: string,
   ): Promise<void> {
-    const scope = this.page.getByRole("treeitem", { name: scopeName }).first();
-    await expect(scope).toBeVisible({ timeout: 5_000 });
-    if ((await scope.getAttribute("aria-expanded")) !== "true") await scope.click();
-    await expect(
-      this.page.getByRole("treeitem", { name: `${name}, value ${value}`, exact: true }),
-    ).toBeVisible({ timeout: 5_000 });
+    const escapedName = name.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+    const escapedValue = value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+    const expected = new RegExp(
+      `^(?:${escapedName}\\s*=\\s*${escapedValue}|${escapedName},\\s*value\\s+${escapedValue})$`,
+      "u",
+    );
+    await expect
+      .poll(
+        async () => {
+          const scope = await this.variablesTree.findItem(scopeName).catch(() => undefined);
+          if (!scope) return undefined;
+          await this.variablesTree.expandItem(scope, scopeName);
+          const variable = await this.variablesTree
+            .findChild(scope, expected)
+            .catch(() => undefined);
+          return variable ? (await variable.innerText()).replace(/\s+/gu, " ").trim() : undefined;
+        },
+        {
+          timeout: 5_000,
+          message: `${name} must be reprojected with value ${value} in ${scopeName}`,
+        },
+      )
+      .toBe(`${name} = ${value}`);
   }
 
   private debugToolbar(): Locator {
@@ -243,12 +311,13 @@ export class DebuggerPage {
   }
 
   private async expectStoppedAt(sourceLine: string): Promise<void> {
-    const marker = this.page.locator(".monaco-editor:visible .codicon-debug-stackframe").first();
+    const editor = this.activeEditor();
+    const marker = editor.locator(".codicon-debug-stackframe").first();
     await expect(marker).toBeVisible({ timeout: 10_000 });
     await expect
       .poll(
         async () => {
-          const line = await this.revealLine(sourceLine);
+          const line = await this.revealLine(sourceLine, editor);
           const [lineBox, markerBox] = await Promise.all([
             line.boundingBox(),
             marker.boundingBox(),
@@ -264,44 +333,80 @@ export class DebuggerPage {
       .toBeLessThan(4);
   }
 
-  private async revealLine(sql: string): Promise<Locator> {
-    const line = this.page.locator(".view-line:visible").filter({ hasText: sql }).first();
-    await line.waitFor({ state: "visible", timeout: 5_000 });
+  private activeEditor(): Locator {
+    return this.page.locator(".editor-group-container.active .monaco-editor:visible").first();
+  }
+
+  private async revealLine(
+    sql: string,
+    editor = this.activeEditor(),
+    timeout = 5_000,
+  ): Promise<Locator> {
+    const line = editor.locator(".view-line").filter({ hasText: sql }).first();
+    await line.waitFor({ state: "visible", timeout });
     return line;
   }
 
-  private async waitForBoundingBox(
-    locator: Locator,
-    message: string,
-  ): Promise<NonNullable<Awaited<ReturnType<Locator["boundingBox"]>>>> {
+  private async stableBreakpointTarget(
+    editor: Locator,
+    sourceLine: string,
+  ): Promise<{ line: number; x: number; y: number }> {
     const deadline = Date.now() + 5_000;
+    let previous: { line: number; x: number; y: number } | undefined;
     while (Date.now() < deadline) {
-      const box = await locator.boundingBox();
-      if (box) return box;
+      const current = await editor.evaluate((root, expectedText) => {
+        const normalize = (value: string | null) => (value ?? "").replace(/\s+/gu, " ").trim();
+        const line = [...root.querySelectorAll<HTMLElement>(".view-line")].find((candidate) =>
+          normalize(candidate.textContent).includes(expectedText),
+        );
+        const margin = root.querySelector<HTMLElement>(".margin-view-overlays");
+        if (!line || !margin) return undefined;
+        const lineBox = line.getBoundingClientRect();
+        const marginBox = margin.getBoundingClientRect();
+        const center = lineBox.top + lineBox.height / 2;
+        const visibleLineNumber = [...root.querySelectorAll<HTMLElement>(".line-numbers")]
+          .map((candidate) => {
+            const box = candidate.getBoundingClientRect();
+            return {
+              distance: Math.abs(box.top + box.height / 2 - center),
+              line: Number.parseInt(normalize(candidate.textContent), 10),
+            };
+          })
+          .filter((candidate) => Number.isFinite(candidate.line))
+          .sort((left, right) => left.distance - right.distance)[0];
+        if (!visibleLineNumber || visibleLineNumber.distance >= 4) return undefined;
+        return { line: visibleLineNumber.line, x: marginBox.left + 12, y: center };
+      }, sourceLine);
+      if (
+        current &&
+        previous?.line === current.line &&
+        Math.abs(previous.x - current.x) < 0.5 &&
+        Math.abs(previous.y - current.y) < 0.5
+      ) {
+        return current;
+      }
+      previous = current;
       await this.page.waitForTimeout(50);
     }
-    throw new Error(`${message} within 5000 ms`);
+    throw new Error(`The active editor geometry did not settle on ${sourceLine} within 5000 ms`);
+  }
+
+  private async readDebugState(): Promise<DebugStateSnapshot> {
+    try {
+      return await this.inspectDebugState();
+    } catch {
+      await this.page.waitForTimeout(50);
+      return this.inspectDebugState();
+    }
   }
 
   private async nearestCodeLens(line: Locator, label: RegExp): Promise<Locator> {
-    const lenses = this.page.getByRole("button", { name: label });
+    const lenses = this.activeEditor().getByRole("button", { name: label });
     let nearestIndex = -1;
     await expect
       .poll(
         async () => {
-          const lineBox = await line.boundingBox();
-          if (!lineBox) return false;
-          let nearest: { distance: number; index: number } | undefined;
-          for (let index = 0; index < (await lenses.count()); index++) {
-            const box = await lenses.nth(index).boundingBox();
-            if (!box) continue;
-            const lineCenter = lineBox.y + lineBox.height / 2;
-            const lensCenter = box.y + box.height / 2;
-            if (lensCenter > lineCenter) continue;
-            const distance = lineCenter - lensCenter;
-            if (!nearest || distance < nearest.distance) nearest = { distance, index };
-          }
-          nearestIndex = nearest?.index ?? -1;
+          nearestIndex = await this.visibleNearestCodeLensIndex(line, label);
           return nearestIndex >= 0;
         },
         {
@@ -313,17 +418,76 @@ export class DebuggerPage {
     return lenses.nth(nearestIndex);
   }
 
+  private async visibleNearestCodeLensIndex(line: Locator, label: RegExp): Promise<number> {
+    const lineBox = await line.boundingBox();
+    if (!lineBox) return -1;
+    const lenses = this.activeEditor().getByRole("button", { name: label });
+    const lineCenter = lineBox.y + lineBox.height / 2;
+    let nearest: { distance: number; index: number } | undefined;
+    for (let index = 0; index < (await lenses.count()); index += 1) {
+      const box = await lenses.nth(index).boundingBox();
+      if (!box) continue;
+      const lensCenter = box.y + box.height / 2;
+      if (lensCenter > lineCenter) continue;
+      const distance = lineCenter - lensCenter;
+      if (!nearest || distance < nearest.distance) nearest = { distance, index };
+    }
+    return nearest?.index ?? -1;
+  }
+
   private async clickNearestCodeLens(line: Locator, label: RegExp): Promise<void> {
-    const lens = await this.nearestCodeLens(line, label);
-    const box = await this.waitForBoundingBox(
-      lens,
-      `The visible CodeLens ${label} must have screen coordinates`,
-    );
+    const target = await this.stableNearestCodeLensTarget(line, label);
     // VS Code recreates CodeLens anchors when another lens on the same document
-    // changes. A locator click can therefore retain an nth() target that is
-    // detached during actionability checks. Clicking the freshly measured
-    // screen position preserves the real UI interaction without retaining the
-    // transient DOM node.
-    await this.page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    // changes. Wait for two identical editor-local geometry samples, then click
+    // their screen position without retaining the transient DOM node.
+    await this.page.mouse.click(target.x, target.y);
+  }
+
+  private async stableNearestCodeLensTarget(
+    line: Locator,
+    label: RegExp,
+  ): Promise<{ index: number; x: number; y: number }> {
+    const deadline = Date.now() + 5_000;
+    let previous: { index: number; lineY: number; x: number; y: number } | undefined;
+    while (Date.now() < deadline) {
+      const lenses = this.activeEditor().getByRole("button", { name: label });
+      const lineBox = await line.boundingBox();
+      let nearest: { distance: number; index: number; x: number; y: number } | undefined;
+      if (lineBox) {
+        const lineY = lineBox.y + lineBox.height / 2;
+        for (let index = 0; index < (await lenses.count()); index += 1) {
+          const box = await lenses.nth(index).boundingBox();
+          if (!box) continue;
+          const lensY = box.y + box.height / 2;
+          if (lensY > lineY) continue;
+          const distance = lineY - lensY;
+          if (!nearest || distance < nearest.distance) {
+            nearest = {
+              distance,
+              index,
+              x: box.x + box.width / 2,
+              y: lensY,
+            };
+          }
+        }
+        const current = nearest && { ...nearest, lineY };
+        if (
+          current &&
+          previous?.index === current.index &&
+          Math.abs(previous.lineY - current.lineY) < 0.5 &&
+          Math.abs(previous.x - current.x) < 0.5 &&
+          Math.abs(previous.y - current.y) < 0.5
+        ) {
+          return { index: current.index, x: current.x, y: current.y };
+        }
+        previous = current;
+      } else {
+        previous = undefined;
+      }
+      await this.page.waitForTimeout(50);
+    }
+    throw new Error(
+      `The active-editor CodeLens ${label} did not settle above the target line within 5000 ms`,
+    );
   }
 }

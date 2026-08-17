@@ -6,8 +6,27 @@ const repositoryRoot = resolve(__dirname, "../../..");
 const demoCompose = resolve(repositoryRoot, "demo", "docker-compose.yml");
 
 export const demoConnectionUrl = "postgresql://postgres:postgres@localhost:5434/demo";
+export const demoConnectionId = "localhost:5434/demo:postgres";
+export const demoAssociationText = /postgres@localhost:5434\/demo/u;
+export const demoAutomaticAssociationText = /postgres@localhost:5434\/demo.*AUTO/u;
+export const demoConnexionQuickPickItem = /^postgres@localhost:5434\/demo(?:\s*Connected)?$/u;
+export const demoProductSearchQuickPickItem =
+  /^shop\.producttable\ndemo · postgresql:\/\/localhost%3A5434%2Fdemo%3Apostgres\/demo\/shop\/table\/product\.sql$/u;
+export const demoConnexionTreeItem =
+  /^postgres@localhost:5434\s*demo(?:\s*·\s*connected(?:\s*\(no pldbgapi\))?)?$/u;
+export const demoDatabaseTreeItem =
+  /^demo\s*(?:active|inactive)(?:\s*·\s*(?:indexing|refreshing))?$/u;
+export const alternateConnectionUrl = "postgresql://postgres:postgres@localhost:5434/postgres";
+export const alternateConnexionTreeItem =
+  /^postgres@localhost:5434\s*postgres(?:\s*·\s*connected(?:\s*\(no pldbgapi\))?)?$/u;
+export const alternateConnectionId = "localhost:5434/postgres:postgres";
+export const loopbackConnectionUrl = "postgresql://postgres:postgres@127.0.0.1:5434/demo";
+export const loopbackConnexionTreeItem =
+  /^postgres@127\.0\.0\.1:5434\s*demo(?:\s*·\s*connected(?:\s*\(no pldbgapi\))?)?$/u;
+export const loopbackConnectionId = "127.0.0.1:5434/demo:postgres";
 
 export interface DemoDatabase {
+  resetSchemaSyncFixture(): Promise<void>;
   inspectSchemaSync(supportSchema: string): Promise<{
     ddlFunction: boolean;
     ddlTrigger: boolean;
@@ -27,9 +46,10 @@ export interface DemoDatabase {
 }
 
 export function startDemoDatabase(): DemoDatabase {
-  const running = compose(["ps", "--status", "running", "--services"], true)
-    .split(/\r?\n/)
-    .includes("postgres");
+  const external = process.env.PGWB_ACCEPTANCE_EXTERNAL_DEMO === "1";
+  const running =
+    external ||
+    compose(["ps", "--status", "running", "--services"], true).split(/\r?\n/).includes("postgres");
   if (!running) {
     try {
       compose(["up", "-d", "--build", "--wait"]);
@@ -39,6 +59,19 @@ export function startDemoDatabase(): DemoDatabase {
     }
   }
   return {
+    async resetSchemaSyncFixture() {
+      await withDemoClient(async (client) => {
+        await client.query(`
+          DROP EVENT TRIGGER IF EXISTS plpgsql_workbench_ddl_command_end;
+          DROP EVENT TRIGGER IF EXISTS plpgsql_workbench_sql_drop;
+          DROP TABLE IF EXISTS public.ddl_sync_probe CASCADE;
+          DROP TABLE IF EXISTS public.ddl_sync_probe_renamed CASCADE;
+          DROP FUNCTION IF EXISTS public.ddl_sync_probe_touch() CASCADE;
+          DROP FUNCTION IF EXISTS workbench.notify_ddl_command_end() CASCADE;
+          DROP FUNCTION IF EXISTS workbench.notify_sql_drop() CASCADE;
+        `);
+      });
+    },
     async inspectSchemaSync(supportSchema) {
       return withDemoClient(async (client) => {
         const result = await client.query({

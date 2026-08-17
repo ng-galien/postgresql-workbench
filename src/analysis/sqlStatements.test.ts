@@ -98,6 +98,29 @@ describe("SQL result execution classification", () => {
     ).resolves.toBe("unclassifiable");
   });
 
+  it("reports an exhausted client budget separately from invalid SQL", async () => {
+    await expect(
+      planSqlResultExecution(
+        "SELECT 1",
+        parserWith([node("SelectStmt")], {
+          truncated: true,
+          emittedNodes: 100_000,
+          totalNodes: 120_000,
+          maxDepth: 1_024,
+        }),
+        { maxDepth: 1_024, maxNodes: 100_000 },
+      ),
+    ).resolves.toEqual({
+      status: "analysis-error",
+      reason: "budget-exhausted",
+      message: "The SQL syntax tree exceeded the configured analysis budget.",
+      budget: { maxDepth: 1_024, maxNodes: 100_000 },
+      emittedNodes: 100_000,
+      totalNodes: 120_000,
+      observedDepth: 1_024,
+    });
+  });
+
   it("builds an ordered execution plan from exact top-level statement ranges", async () => {
     const source = "SELECT 1;\nCREATE TEMP TABLE silent(id int);\nSELECT 2;";
     const secondStart = source.indexOf("CREATE");
@@ -152,5 +175,21 @@ describe("SQL result execution classification", () => {
         },
       }),
     ).resolves.toEqual({ status: "analysis-error", message: "syntax runtime unavailable" });
+  });
+
+  it("forwards a client-selected syntax budget to Code Moniker", async () => {
+    let received: Parameters<SyntaxParser["parse"]>[0] | undefined;
+    const delegate = parserWith([node("SelectStmt")]);
+    const parser: SyntaxParser = {
+      async parse(request) {
+        received = request;
+        return delegate.parse(request);
+      },
+    };
+
+    await expect(
+      planSqlResultExecution("SELECT 1", parser, { maxDepth: 1_024, maxNodes: 100_000 }),
+    ).resolves.toMatchObject({ status: "ready" });
+    expect(received).toMatchObject({ maxDepth: 1_024, maxNodes: 100_000 });
   });
 });

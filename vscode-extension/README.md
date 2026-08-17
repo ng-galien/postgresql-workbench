@@ -16,6 +16,8 @@ Built for your **development database**: local PostgreSQL, Docker, or self-hoste
 Open the [documentation site](https://ng-galien.github.io/postgresql-workbench/)
 for focused guides to the Cockpit, SQL scratchpads, pgTAP coverage, the debugger,
 the standalone DAP server, and the complete command and settings reference.
+The complete Sources-to-editor drag-and-drop contract is maintained in the
+[SQL authoring guide](https://ng-galien.github.io/postgresql-workbench/docs/sql-authoring.html#compose-sql-by-drag-and-drop).
 
 ## See the Workbench in action
 
@@ -111,7 +113,10 @@ running `CREATE EXTENSION pldbgapi` for you when possible.
 - **Inline values** — variable values displayed in the editor while stepping
 - **Debug Console** — `RAISE NOTICE/WARNING` output, plus SQL evaluation in the REPL
 - **SQL results panel** — bounded result grid with JSON/composite inspection, history, copy, and CSV/JSON preview export
-- **CodeLens** — assign a PostgreSQL connection to each standalone `CALL` / `SELECT`, then debug it in one click; routine definitions remain directly debuggable
+- **CodeLens** — associate a free SQL document with one PostgreSQL connection,
+  run every Statement directly, and debug only the `CALL` / `SELECT` routine
+  entries that Workbench can resolve safely; routine definitions offer
+  **Debug deployed routine**
 - **Routine comparison** — compare a local PL/pgSQL definition with the exact overloaded routine in the active indexed PostgreSQL snapshot
 - **Function explorer** — browse servers → schemas → functions in the sidebar, debug from a right-click
 - **Zero launch.json needed** — registered servers appear in "Run and Debug"; launched sessions are saved to `launch.json` for one-key replay with F5
@@ -122,16 +127,16 @@ running `CREATE EXTENSION pldbgapi` for you when possible.
 
 ## Quick Start
 
-1. Open a `.sql` file containing a PL/pgSQL routine definition, or a standalone `CALL` / `SELECT` statement
-2. If needed, run **PL/pgSQL: Start Local Debug Database (Docker)** to create and connect a ready-to-debug server
-3. For a callsite, click **Choose PostgreSQL connection** and assign the server that should execute this statement
-4. Click **Debug PL/pgSQL**; the selected connection remains visible beside that callsite and can be changed independently
-5. The debugger stops on entry — step with F10/F11, inspect variables, or set breakpoints in the source
-6. When the call completes, its result appears in the **PL/pgSQL Results** panel
+1. Open any `.sql` or `.pgsql` file. Each non-empty PostgreSQL Statement gets a **Run SQL** CodeLens.
+2. Click **Choose Document Association** once. A single saved connection is associated automatically on the first Run.
+3. Click **Run SQL**. PostgreSQL executes that Statement and reports its result or error without requiring it to be debuggable.
+4. For a resolved PL/pgSQL `CALL` or function `SELECT`, click the additional **Debug PL/pgSQL** CodeLens; a `CREATE OR REPLACE` definition offers **Debug deployed routine**, which debugs the routine deployed in PostgreSQL, not the edited text.
+5. The debugger stops on entry — step with F10/F11, inspect variables, or set breakpoints in the source.
+6. Run and Debug results appear in the **PL/pgSQL Results** panel.
 
 Notes:
 - `Debug call` is intentionally shown only for standalone SQL calls that can be replayed safely.
-- Callsite connections are assigned per statement, not globally; assigning one callsite does not change another.
+- One Document Association is shared by every Run and Debug action in the same free SQL file. Changing it never changes the active Workbench DatabaseContext.
 - Virtual source documents use the exact canonical Code Moniker symbol URI
   (`code+moniker://...`) and expose routine-definition debugging, not call-site replay.
 

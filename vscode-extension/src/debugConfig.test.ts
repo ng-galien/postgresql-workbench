@@ -235,6 +235,24 @@ describe("debugConfig", () => {
     expect(resolved?.host).toBe(server.host);
   });
 
+  it("never falls back to another connection when the associated server is gone", async () => {
+    const other = makeServer();
+    const ui: DebugConfigUi = { showErrorMessage: vi.fn() };
+    const cm = makeManager(other, {
+      commands: { pickConnection: vi.fn(async () => true) },
+    });
+    const config: DebugConfigurationLike = {
+      server: "missing-server-id",
+      sql: "SELECT public.test_simple(1)",
+    };
+
+    const resolved = await resolveDebugConfiguration(config, cm, ui, noSqlTarget);
+
+    expect(resolved).toBeUndefined();
+    expect(cm.commands.pickConnection).not.toHaveBeenCalled();
+    expect(ui.showErrorMessage).toHaveBeenCalledWith(expect.stringContaining("no longer exists"));
+  });
+
   it("aborts when connection fails", async () => {
     const server = makeServer();
     const ui: DebugConfigUi = { showErrorMessage: vi.fn() };
@@ -260,5 +278,34 @@ describe("debugConfig", () => {
 
     expect(resolved).toBeUndefined();
     expect(cm.connectServer).toHaveBeenCalledWith(server.id);
+  });
+
+  it("uses an associated server without changing the active DatabaseContext", async () => {
+    const server = makeServer();
+    const ui: DebugConfigUi = { showErrorMessage: vi.fn() };
+    const cm = makeManager(server, {
+      isActiveServer: vi.fn(() => false),
+      connectServer: vi.fn(async () => {
+        throw new Error("must not switch context");
+      }),
+    });
+
+    const resolved = await resolveDebugConfiguration(
+      {
+        sql: "SELECT public.test_simple(1, 'x')",
+        server: server.id,
+        preserveDatabaseContext: true,
+      },
+      cm,
+      ui,
+      noSqlTarget,
+    );
+
+    expect(cm.connectServer).not.toHaveBeenCalled();
+    expect(resolved).toMatchObject({
+      host: server.host,
+      database: server.database,
+      preserveDatabaseContext: true,
+    });
   });
 });

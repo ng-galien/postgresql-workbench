@@ -6,9 +6,15 @@ import type { ConnectionManager } from "./connectionManager.js";
 import { mapPlpgsqlBodyLineToSource } from "./coverageMapping.js";
 import type { WorkbenchIndexController } from "./workbenchIndexController.js";
 
+export interface ManagedRoutineDivergence {
+  workingCopyDiffersFromDeployed(uri: vscode.Uri): boolean;
+}
+
 /**
  * Runs plpgsql_check on canonical Code Moniker routine documents.
  * Graceful degradation: silently no-ops if plpgsql_check is not installed.
+ * Skips documents whose working copy diverges from the deployed routine, since
+ * plpgsql_check inspects the deployed OID and its lines would not match the buffer.
  */
 export class PlpgsqlDiagnosticsProvider implements vscode.Disposable {
   private readonly diagnostics: vscode.DiagnosticCollection;
@@ -19,6 +25,7 @@ export class PlpgsqlDiagnosticsProvider implements vscode.Disposable {
     private readonly cm: ConnectionManager,
     private readonly syntaxParser: () => Promise<SyntaxParser>,
     private readonly index: WorkbenchIndexController,
+    private readonly divergence?: ManagedRoutineDivergence,
   ) {
     this.diagnostics = vscode.languages.createDiagnosticCollection("postgresql-workbench-check");
 
@@ -42,6 +49,10 @@ export class PlpgsqlDiagnosticsProvider implements vscode.Disposable {
   private async check(document: vscode.TextDocument): Promise<void> {
     const source = this.index.sourceDescriptorForDocumentUri(document.uri);
     if (!source?.plpgsql || source.serverId !== this.cm.activeServer?.id) return;
+    if (this.divergence?.workingCopyDiffersFromDeployed(document.uri)) {
+      this.diagnostics.delete(document.uri);
+      return;
+    }
     const client = this.cm.getClient();
     if (!client) return;
 

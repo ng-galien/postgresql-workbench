@@ -302,17 +302,6 @@ export class WorkbenchDdlSyncItem extends vscode.TreeItem {
   }
 }
 
-export class ScratchpadsItem extends vscode.TreeItem {
-  readonly kind = "scratchpads" as const;
-
-  constructor() {
-    super("Scratchpads", vscode.TreeItemCollapsibleState.Collapsed);
-    this.id = "postgres-scratchpads";
-    this.iconPath = new vscode.ThemeIcon("notebook-template");
-    this.contextValue = "postgresql-workbench-scratchpads";
-  }
-}
-
 export class SqlNotebookItem extends vscode.TreeItem {
   readonly kind = "sqlNotebook" as const;
 
@@ -504,7 +493,7 @@ export class FunctionItem extends vscode.TreeItem {
     this.sourceUri = object.sourceUri;
     this.iconPath = objectThemeIcon(this.isProc ? "procedure" : "function");
     this.contextValue = "postgresql-workbench-function-debuggable";
-    this.tooltip = `${object.schema}.${object.name}(${signature})`;
+    applyDragHint(this, `${object.schema}.${object.name}(${signature})`);
   }
 }
 
@@ -519,7 +508,7 @@ export class WorkbenchObjectItem extends vscode.TreeItem {
     this.id = `postgres-object:${object.symbolUri}`;
     this.iconPath = objectThemeIcon(object.kind);
     this.contextValue = `postgresql-workbench-${object.kind}`;
-    this.tooltip = `${object.schema}.${objectLabel(object)}`;
+    applyDragHint(this, `${object.schema}.${objectLabel(object)}`);
   }
 }
 
@@ -533,9 +522,11 @@ export class WorkbenchTableMemberItem extends vscode.TreeItem {
     super(member.name, vscode.TreeItemCollapsibleState.None);
     this.iconPath = postgresThemeIcon(member.kind);
     this.description = member.type || "constraint";
-    this.tooltip = member.type
+    const tooltip = member.type
       ? `${member.name} · ${member.type}`
       : `${member.kind} ${member.name}`;
+    if (member.kind === "column") applyDragHint(this, tooltip);
+    else this.tooltip = tooltip;
     this.contextValue = `postgresql-workbench-${member.kind}`;
   }
 }
@@ -581,9 +572,8 @@ export class WorkbenchRelationTargetItem extends vscode.TreeItem {
         : target.count > 1
           ? `${target.count} references`
           : (object?.kind ?? target.symbol.kind);
-    this.tooltip = object
-      ? `${object.schema}.${objectLabel(object)}`
-      : `${target.symbol.kind} ${target.symbol.name}`;
+    if (object) applyDragHint(this, `${object.schema}.${objectLabel(object)}`);
+    else this.tooltip = `${target.symbol.kind} ${target.symbol.name}`;
     this.contextValue = object
       ? "postgresql-workbench-relation-target"
       : "postgresql-workbench-relation-target-unresolved";
@@ -617,7 +607,6 @@ export type PlpgsqlTreeItem =
   | DatabaseSourceItem
   | SourcesSnapshotItem
   | WorkbenchDdlSyncItem
-  | ScratchpadsItem
   | SqlNotebookItem
   | ScratchpadAssociationItem
   | ScratchpadTransactionItem
@@ -634,9 +623,12 @@ export type PlpgsqlTreeItem =
 
 export type PlpgsqlConnectionTreeItem = ServerItem | AddServerItem | DebugSessionsItem;
 
+export type WorkbenchTreeScope = "database" | "scratchpads";
+
 class WorkbenchTreeChildren {
   private schemaNames: string[] = [];
   private loadedSnapshot?: string;
+  private scratchpadFilter = "";
 
   constructor(
     private readonly connections: ConnectionManager,
@@ -645,11 +637,16 @@ class WorkbenchTreeChildren {
     private readonly transactions: ScratchpadTransactionManager,
     private readonly ddlSync: WorkbenchDdlSyncController,
     private readonly debugSessionStatuses: () => readonly DebugSessionStatus[],
+    private readonly scope: WorkbenchTreeScope,
   ) {}
 
   refresh(): void {
     this.schemaNames = [];
     this.loadedSnapshot = undefined;
+  }
+
+  setScratchpadFilter(filter: string): void {
+    this.scratchpadFilter = filter.trim().toLocaleLowerCase();
   }
 
   async getChildren(element?: PlpgsqlTreeItem): Promise<PlpgsqlTreeItem[]> {
@@ -665,7 +662,6 @@ class WorkbenchTreeChildren {
     }
     if (element.kind === "databaseSource") return this.databaseChildren(element);
     if (element.kind === "sourcesSnapshot") return this.sourceChildren(element);
-    if (element.kind === "scratchpads") return this.scratchpads();
     if (element.kind === "sqlNotebook") {
       return [
         new ScratchpadAssociationItem(element, element.association),
@@ -693,6 +689,7 @@ class WorkbenchTreeChildren {
   }
 
   private async rootChildren(): Promise<PlpgsqlTreeItem[]> {
+    if (this.scope === "scratchpads") return this.scratchpads();
     return [
       ...this.connections.servers.map((server) => {
         const connected = this.connections.isActiveServer(server.id);
@@ -703,7 +700,6 @@ class WorkbenchTreeChildren {
           connected && this.connections.pldbgapiAvailable,
         );
       }),
-      new ScratchpadsItem(),
       new AddServerItem(),
     ];
   }
@@ -733,7 +729,7 @@ class WorkbenchTreeChildren {
 
   private async scratchpads(): Promise<PlpgsqlTreeItem[]> {
     const entries = await this.notebooks.list();
-    return entries.map((entry) => {
+    const items = entries.map((entry) => {
       const association = resolveScratchpadAssociation(entry.metadata, this.connections.servers);
       return new SqlNotebookItem(
         entry,
@@ -742,6 +738,12 @@ class WorkbenchTreeChildren {
         this.transactions.transaction(entry.uri.toString()),
       );
     });
+    if (!this.scratchpadFilter) return items;
+    return items.filter((item) =>
+      `${String(item.label)} ${String(item.description ?? "")}`
+        .toLocaleLowerCase()
+        .includes(this.scratchpadFilter),
+    );
   }
 
   private schemaChildren(schema: string): PlpgsqlTreeItem[] {
@@ -859,6 +861,7 @@ export class WorkbenchTreeProvider
     transactions: ScratchpadTransactionManager,
     ddlSync: WorkbenchDdlSyncController,
     debugSessionStatuses: () => readonly DebugSessionStatus[] = () => [],
+    private readonly scope: WorkbenchTreeScope = "database",
   ) {
     this.activeDatabaseContextId = connections.activeServer?.id;
     this.children = new WorkbenchTreeChildren(
@@ -868,14 +871,20 @@ export class WorkbenchTreeProvider
       transactions,
       ddlSync,
       debugSessionStatuses,
+      scope,
     );
-    this.subscriptions = [
-      connections.onChanged(() => this.refreshConnections()),
-      index.onDidChangeState((state) => this.refreshIndex(state)),
-      notebooks.onDidChangeEntries(() => this.refresh()),
-      transactions.onDidChange(() => this.refresh()),
-      ddlSync.onDidChangeState((state) => this.refreshDdlSync(state)),
-    ];
+    this.subscriptions = [connections.onChanged(() => this.refreshConnections())];
+    if (scope === "database") {
+      this.subscriptions.push(
+        index.onDidChangeState((state) => this.refreshIndex(state)),
+        ddlSync.onDidChangeState((state) => this.refreshDdlSync(state)),
+      );
+    } else {
+      this.subscriptions.push(
+        notebooks.onDidChangeEntries(() => this.refresh()),
+        transactions.onDidChange(() => this.refresh()),
+      );
+    }
   }
 
   dispose(): void {
@@ -895,6 +904,12 @@ export class WorkbenchTreeProvider
       this.knownSchemas = [];
     }
     this.changeEmitter.fire(undefined);
+  }
+
+  setScratchpadFilter(filter: string): void {
+    if (this.scope !== "scratchpads") return;
+    this.children.setScratchpadFilter(filter);
+    this.refresh();
   }
 
   private refreshConnections(): void {
@@ -982,10 +997,7 @@ export class WorkbenchTreeProvider
           )
         : undefined;
     }
-    if (element.kind === "scratchpads") return undefined;
-    if (element.kind === "sqlNotebook") {
-      return this.canonicalItem(new ScratchpadsItem());
-    }
+    if (element.kind === "sqlNotebook") return undefined;
     if (element.kind === "scratchpadAssociation") {
       return element.scratchpad;
     }
@@ -1186,6 +1198,14 @@ function synchronizeTreeItem(current: PlpgsqlTreeItem, replacement: PlpgsqlTreeI
   current.contextValue = replacement.contextValue;
   current.command = replacement.command;
   Object.assign(current, replacement);
+}
+
+export const SOURCES_DRAG_HINT = "Shift+drop into SQL composes; drop opens the Cockpit.";
+
+/** Appends the drag hint to the hover tooltip while keeping the accessible name unchanged. */
+function applyDragHint(item: vscode.TreeItem, tooltip: string): void {
+  item.tooltip = `${tooltip}\n${SOURCES_DRAG_HINT}`;
+  item.accessibilityInformation = { label: tooltip };
 }
 
 function objectLabel(object: WorkbenchObjectModel): string {

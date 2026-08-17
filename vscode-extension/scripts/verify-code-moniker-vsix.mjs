@@ -32,6 +32,7 @@ const entries = new Set(Object.keys(zip.files).filter((entry) => !zip.files[entr
 const required = [
   "extension/dist/extension.js",
   "extension/dist/dap-server.js",
+  "extension/dist/sql-authoring-server.js",
   "extension/dist/sql-notebook-renderer.js",
   "extension/SECURITY.md",
   "extension/SUPPORT.md",
@@ -167,6 +168,20 @@ try {
     timeoutMs: 30_000,
   });
   await waitForWorkspaceReady(client, 30_000);
+  const wideSql = `SELECT\n${Array.from(
+    { length: 256 },
+    (_, index) => `  ${index + 1} AS projected_column_${index + 1}`,
+  ).join(",\n")};`;
+  const syntax = await client.syntax.parse("sql", wideSql, {
+    maxDepth: 1_024,
+    maxNodes: 100_000,
+    namedOnly: true,
+  });
+  if (syntax.has_error || syntax.truncated) {
+    throw new Error(
+      `VSIX Code Moniker runtime could not analyze the wide SQL smoke query: error=${syntax.has_error} truncated=${syntax.truncated} nodes=${syntax.emitted_nodes}/${syntax.total_nodes} depth=${syntax.max_depth}`,
+    );
+  }
 } finally {
   client?.close();
   try {

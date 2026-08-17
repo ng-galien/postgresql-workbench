@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type * as vscode from "vscode";
+import * as vscode from "vscode";
 import type { LocalCodeMonikerSession } from "../../src/workbench/localCodeMoniker.js";
 import type {
   PostgresCatalogSnapshot,
@@ -29,9 +29,25 @@ vi.mock("vscode", () => {
     }
   }
 
-  return { EventEmitter };
+  return {
+    EventEmitter,
+    ExtensionMode: {
+      Production: 1,
+      Development: 2,
+      Test: 3,
+    },
+  };
 });
 
+vi.mock("../../src/workbench/postgresCatalog.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/workbench/postgresCatalog.js")>();
+  return {
+    ...actual,
+    readPostgresCatalog: vi.fn(actual.readPostgresCatalog),
+  };
+});
+
+import { readPostgresCatalog } from "../../src/workbench/postgresCatalog.js";
 import type { WorkbenchIndexResult } from "./workbenchIndexController.js";
 import { WorkbenchIndexController } from "./workbenchIndexController.js";
 
@@ -68,6 +84,248 @@ class FakeConnections {
 }
 
 describe("WorkbenchIndexController connection state", () => {
+  it("serializes an ad hoc database refresh and invalidates an older active snapshot", async () => {
+    const connections = new FakeConnections();
+    const controller = new WorkbenchIndexController(
+      {
+        extensionPath: "/extension",
+        globalStorageUri: { fsPath: "/storage" },
+      } as vscode.ExtensionContext,
+      connections as unknown as ConnectionManager,
+      { appendLine: vi.fn() } as unknown as vscode.OutputChannel,
+    );
+    const result: WorkbenchIndexResult = {
+      serverId: "server-a",
+      database: "database-a",
+      revision: "revision-b",
+      documents: 1,
+      symbols: 1,
+      generation: 2,
+      introspectionMs: 1,
+      materializationMs: 1,
+      publicationMs: 1,
+      symbolQueryMs: 1,
+      indexingMs: 1,
+      graphQueryMs: 1,
+    };
+    let releasePrevious = () => {};
+    const previous = new Promise<WorkbenchIndexResult>((resolve) => {
+      releasePrevious = () => resolve({ ...result, revision: "revision-a", generation: 1 });
+    });
+    const runPostgresDatabaseIndex = vi.fn().mockResolvedValue(result);
+    const internals = controller as unknown as {
+      currentRun?: Promise<WorkbenchIndexResult>;
+      runPostgresDatabaseIndex: typeof runPostgresDatabaseIndex;
+      scopeRefreshEpoch(scope: string): number;
+    };
+    internals.currentRun = previous;
+    internals.runPostgresDatabaseIndex = runPostgresDatabaseIndex;
+    const oldEpoch = internals.scopeRefreshEpoch("server-a\0database-a");
+
+    const refresh = controller.indexPostgresDatabase({ query: vi.fn() } as never, {
+      serverId: "server-a",
+      database: "database-a",
+    });
+
+    expect(internals.currentRun).toBe(refresh);
+    expect(internals.scopeRefreshEpoch("server-a\0database-a")).toBeGreaterThan(oldEpoch);
+    expect(runPostgresDatabaseIndex).not.toHaveBeenCalled();
+    releasePrevious();
+    await expect(refresh).resolves.toBe(result);
+    expect(runPostgresDatabaseIndex).toHaveBeenCalledTimes(1);
+    controller.dispose();
+  });
+
+  it("adopts a refreshed registry for the active DatabaseContext", () => {
+    const connections = new FakeConnections();
+    const controller = new WorkbenchIndexController(
+      {
+        extensionPath: "/extension",
+        globalStorageUri: { fsPath: "/storage" },
+      } as vscode.ExtensionContext,
+      connections as unknown as ConnectionManager,
+      { appendLine: vi.fn() } as unknown as vscode.OutputChannel,
+    );
+    const result: WorkbenchIndexResult = {
+      serverId: "server-a",
+      database: "database-a",
+      revision: "revision-b",
+      documents: 1,
+      symbols: 1,
+      generation: 2,
+      introspectionMs: 1,
+      materializationMs: 1,
+      publicationMs: 1,
+      symbolQueryMs: 1,
+      indexingMs: 1,
+      graphQueryMs: 1,
+    };
+    const symbol = {
+      uri: "sql:table:orders",
+      file: "orders.sql",
+      name: "orders",
+      kind: "table",
+      signature: "",
+    };
+    const refreshedRegistry = {
+      result,
+      symbols: [symbol],
+      sourceSet: { srcset: "postgres-test", revision: "revision-b", documents: [] },
+      documents: new Map(),
+      origins: new Map(),
+      foreignKeys: [],
+      viewDependencies: [],
+      resources: new Map(),
+    };
+    const internals = controller as unknown as {
+      activateRegistry(
+        scope: string,
+        registry: typeof refreshedRegistry,
+        change: { kind: "full"; schemas: []; sourceUris: [] },
+      ): void;
+    };
+
+    internals.activateRegistry("server-a\0database-a", refreshedRegistry, {
+      kind: "full",
+      schemas: [],
+      sourceUris: [],
+    });
+
+    expect(controller.state).toMatchObject({ status: "available", result });
+    expect(controller.indexedSymbols).toEqual([symbol]);
+    controller.dispose();
+  });
+
+  it("holds an acceptance index phase until that exact run and phase are released", async () => {
+    const previousControlFile = process.env.POSTGRESQL_WORKBENCH_ACCEPTANCE_CONTROL_FILE;
+    process.env.POSTGRESQL_WORKBENCH_ACCEPTANCE_CONTROL_FILE = "/tmp/workbench-control.json";
+    const connections = new FakeConnections();
+    const controller = new WorkbenchIndexController(
+      {
+        extensionMode: vscode.ExtensionMode.Test,
+        extensionPath: "/extension",
+        globalStorageUri: { fsPath: "/storage" },
+      } as vscode.ExtensionContext,
+      connections as unknown as ConnectionManager,
+      { appendLine: vi.fn() } as unknown as vscode.OutputChannel,
+    );
+
+    try {
+      controller.armAcceptancePhaseGate(["reading-catalog"]);
+      const refresh = controller.indexActiveDatabase();
+      await vi.waitFor(() => {
+        expect(controller.acceptanceSnapshot()).toMatchObject({
+          activeRun: { cancelled: false, id: 1 },
+          currentRunPending: true,
+          gate: {
+            nextPhase: "reading-catalog",
+            reachedPhase: "reading-catalog",
+            runId: 1,
+          },
+          state: {
+            status: "indexing",
+            progress: { phase: "reading-catalog" },
+          },
+        });
+      });
+
+      controller.releaseAcceptancePhaseGate(1, "reading-catalog");
+      await expect(refresh).rejects.toThrow("catalog unavailable");
+      expect(controller.acceptanceSnapshot()).toMatchObject({
+        activeRun: undefined,
+        currentRunPending: false,
+        gate: undefined,
+        lastSettledRun: { id: 1, status: "error" },
+      });
+    } finally {
+      controller.dispose();
+      if (previousControlFile === undefined) {
+        delete process.env.POSTGRESQL_WORKBENCH_ACCEPTANCE_CONTROL_FILE;
+      } else {
+        process.env.POSTGRESQL_WORKBENCH_ACCEPTANCE_CONTROL_FILE = previousControlFile;
+      }
+    }
+  });
+
+  it("settles a failed run from its own outcome after the active scope changes", async () => {
+    const previousControlFile = process.env.POSTGRESQL_WORKBENCH_ACCEPTANCE_CONTROL_FILE;
+    process.env.POSTGRESQL_WORKBENCH_ACCEPTANCE_CONTROL_FILE = "/tmp/workbench-control.json";
+    const connections = new FakeConnections();
+    const controller = new WorkbenchIndexController(
+      {
+        extensionMode: vscode.ExtensionMode.Test,
+        extensionPath: "/extension",
+        globalStorageUri: { fsPath: "/storage" },
+      } as vscode.ExtensionContext,
+      connections as unknown as ConnectionManager,
+      { appendLine: vi.fn() } as unknown as vscode.OutputChannel,
+    );
+    const result: WorkbenchIndexResult = {
+      serverId: "server-b",
+      database: "database-b",
+      revision: "revision-b",
+      documents: 1,
+      symbols: 1,
+      generation: 2,
+      introspectionMs: 1,
+      materializationMs: 1,
+      publicationMs: 1,
+      symbolQueryMs: 1,
+      indexingMs: 1,
+      graphQueryMs: 1,
+    };
+    const internals = controller as unknown as {
+      registries: Map<
+        string,
+        {
+          result: WorkbenchIndexResult;
+          symbols: [];
+          documents: Map<string, never>;
+          origins: Map<string, never>;
+          foreignKeys: [];
+          viewDependencies: [];
+          resources: Map<string, never>;
+        }
+      >;
+    };
+    internals.registries.set("server-b\0database-b", {
+      result,
+      symbols: [],
+      documents: new Map<string, never>(),
+      origins: new Map<string, never>(),
+      foreignKeys: [],
+      viewDependencies: [],
+      resources: new Map<string, never>(),
+    });
+
+    try {
+      controller.armAcceptancePhaseGate(["reading-catalog"]);
+      const refresh = controller.indexActiveDatabase();
+      await vi.waitFor(() => {
+        expect(controller.acceptanceSnapshot().gate).toMatchObject({
+          reachedPhase: "reading-catalog",
+          runId: 1,
+        });
+      });
+
+      connections.switchTo({ id: "server-b", database: "database-b" });
+      expect(controller.state).toMatchObject({ status: "available", serverId: "server-b" });
+      controller.releaseAcceptancePhaseGate(1, "reading-catalog");
+      await expect(refresh).rejects.toThrow("catalog unavailable");
+      expect(controller.acceptanceSnapshot()).toMatchObject({
+        lastSettledRun: { id: 1, status: "error" },
+        state: { status: "available", serverId: "server-b" },
+      });
+    } finally {
+      controller.dispose();
+      if (previousControlFile === undefined) {
+        delete process.env.POSTGRESQL_WORKBENCH_ACCEPTANCE_CONTROL_FILE;
+      } else {
+        process.env.POSTGRESQL_WORKBENCH_ACCEPTANCE_CONTROL_FILE = previousControlFile;
+      }
+    }
+  });
+
   it("clears a pre-publication indexing error on switch and disconnect", async () => {
     const connections = new FakeConnections();
     const controller = new WorkbenchIndexController(
@@ -348,4 +606,166 @@ describe("WorkbenchIndexController connection state", () => {
       controller.dispose();
     },
   );
+});
+
+function indexResult(overrides: Partial<WorkbenchIndexResult> = {}): WorkbenchIndexResult {
+  return {
+    serverId: "server-a",
+    database: "database-a",
+    revision: "revision-a",
+    documents: 1,
+    symbols: 2,
+    generation: 1,
+    introspectionMs: 1,
+    materializationMs: 1,
+    publicationMs: 1,
+    symbolQueryMs: 1,
+    indexingMs: 1,
+    graphQueryMs: 1,
+    ...overrides,
+  };
+}
+
+function tableRegistry(result: WorkbenchIndexResult) {
+  const identity = { serverId: result.serverId, database: result.database };
+  const table = {
+    ...identity,
+    schema: "shop",
+    documentKind: "table" as const,
+    oid: 10,
+    name: "orders",
+    signature: "shop.orders",
+  };
+  return {
+    result,
+    symbols: [
+      {
+        uri: "sql:table:orders",
+        file: "postgresql://shop/orders.sql",
+        name: "orders",
+        kind: "table",
+        signature: "shop.orders",
+        postgres: table,
+      },
+      {
+        uri: "sql:column:orders.id",
+        file: "postgresql://shop/orders.sql",
+        name: "id",
+        kind: "column",
+        signature: "bigint",
+        line_range: [2, 2] as [number, number],
+        postgres: table,
+      },
+    ],
+    sourceSet: { srcset: "postgres-test", revision: result.revision, documents: [] },
+    documents: new Map(),
+    origins: new Map(),
+    foreignKeys: [],
+    viewDependencies: [],
+    resources: new Map(),
+  };
+}
+
+function newController(connections: FakeConnections): WorkbenchIndexController {
+  return new WorkbenchIndexController(
+    {
+      extensionPath: "/extension",
+      globalStorageUri: { fsPath: "/storage" },
+    } as vscode.ExtensionContext,
+    connections as unknown as ConnectionManager,
+    { appendLine: vi.fn() } as unknown as vscode.OutputChannel,
+  );
+}
+
+describe("WorkbenchIndexController SQL authoring snapshot", () => {
+  const scope = "server-a\0database-a";
+
+  it("memoizes the snapshot until the registry or its staleness changes", () => {
+    const controller = newController(new FakeConnections());
+    const registry = tableRegistry(indexResult());
+    type Registry = ReturnType<typeof tableRegistry>;
+    const internals = controller as unknown as {
+      registries: Map<string, Registry>;
+      activateRegistry(
+        scope: string,
+        registry: Registry,
+        change: { kind: "full"; schemas: []; sourceUris: [] },
+      ): void;
+    };
+    internals.registries.set(scope, registry);
+    const identity = { serverId: "server-a", database: "database-a" };
+
+    const first = controller.sqlAuthoringSnapshot(identity);
+    expect(first).toMatchObject({
+      status: "available",
+      revision: "revision-a",
+      objects: [{ name: "orders", kind: "table", columns: [{ name: "id", type: "bigint" }] }],
+    });
+    expect(controller.sqlAuthoringSnapshot(identity)).toBe(first);
+
+    controller.markDatabaseStale("server-a", "database-a", "schema changed");
+    const stale = controller.sqlAuthoringSnapshot(identity);
+    expect(stale).not.toBe(first);
+    expect(stale).toMatchObject({ status: "stale", revision: "revision-a" });
+    expect(controller.sqlAuthoringSnapshot(identity)).toBe(stale);
+
+    const refreshed = tableRegistry(indexResult({ revision: "revision-b", generation: 2 }));
+    internals.registries.set(scope, refreshed);
+    internals.activateRegistry(scope, refreshed, { kind: "full", schemas: [], sourceUris: [] });
+    const rebuilt = controller.sqlAuthoringSnapshot(identity);
+    expect(rebuilt).not.toBe(stale);
+    expect(rebuilt).toMatchObject({ status: "available", revision: "revision-b", generation: 2 });
+    expect(controller.sqlAuthoringSnapshot(identity)).toBe(rebuilt);
+
+    registry.result.generation = 7;
+    internals.registries.set(scope, registry);
+    expect(controller.sqlAuthoringSnapshot(identity)).toMatchObject({ generation: 7 });
+    registry.result.generation = 8;
+    expect(controller.sqlAuthoringSnapshot(identity)).toMatchObject({ generation: 8 });
+    controller.dispose();
+  });
+
+  it("clears the stale flag of an inactive scope after its ad hoc refresh and notifies", async () => {
+    const connections = new FakeConnections();
+    const controller = newController(connections);
+    const identity = { serverId: "server-b", database: "database-b" };
+    const inactiveScope = "server-b\0database-b";
+    const previous = tableRegistry(indexResult({ ...identity }));
+    const refreshed = tableRegistry(indexResult({ ...identity, revision: "revision-b" }));
+    const internals = controller as unknown as {
+      registries: Map<string, typeof previous>;
+      publishAndReadCatalog: () => Promise<unknown>;
+    };
+    internals.registries.set(inactiveScope, previous);
+    internals.publishAndReadCatalog = vi.fn(async () => {
+      internals.registries.set(inactiveScope, refreshed);
+      return {
+        result: refreshed.result,
+        registry: refreshed,
+        session: { metadata: { source: "test" } },
+      };
+    });
+    vi.mocked(readPostgresCatalog).mockResolvedValueOnce({} as never);
+    const states: unknown[] = [];
+    controller.onDidChangeState((state) => states.push(state));
+
+    controller.markDatabaseStale(identity.serverId, identity.database, "schema changed");
+    expect(controller.state).toEqual({ status: "not-indexed" });
+    expect(controller.isDatabaseStale(identity.serverId, identity.database)).toBe(true);
+    expect(controller.sqlAuthoringSnapshot(identity)).toMatchObject({ status: "stale" });
+
+    await expect(
+      controller.indexPostgresDatabase({ query: vi.fn() } as never, identity),
+    ).resolves.toBe(refreshed.result);
+
+    expect(controller.isDatabaseStale(identity.serverId, identity.database)).toBe(false);
+    expect(controller.sqlAuthoringSnapshot(identity)).toMatchObject({
+      status: "available",
+      revision: "revision-b",
+    });
+    expect(states).toEqual([{ status: "not-indexed" }]);
+    expect(controller.state).toEqual({ status: "not-indexed" });
+    expect(controller.indexedSymbols).toEqual([]);
+    controller.dispose();
+  });
 });

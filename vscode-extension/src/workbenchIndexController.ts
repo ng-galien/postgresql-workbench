@@ -15,6 +15,7 @@ import {
 import {
   buildPostgresSourceSet,
   type CatalogQueryClient,
+  mergePostgresCatalogRelations,
   PostgresCatalogFullRefreshRequired,
   type PostgresCatalogObjectOrigin,
   type PostgresCatalogPatch,
@@ -38,6 +39,7 @@ import {
   codeMonikerUri,
 } from "./codeMonikerUri.js";
 import type { ConnectionManager } from "./connectionManager.js";
+import type { SqlAuthoringSnapshot, SqlAuthoringTrigger } from "./sqlAuthoring/protocol.js";
 import {
   buildWorkbenchRelationGroups,
   classifyWorkbenchRelationFailure,
@@ -47,6 +49,7 @@ import {
 } from "./workbenchRelations.js";
 import {
   buildWorkbenchObjects,
+  buildWorkbenchTableMembers,
   type WorkbenchObjectModel,
   workbenchObjectFromSymbol,
 } from "./workbenchTreeModel.js";
@@ -85,6 +88,39 @@ export interface WorkbenchIndexState {
     schemas: string[];
     sourceUris: string[];
   };
+}
+
+export interface WorkbenchIndexAcceptanceEvent {
+  sequence: number;
+  runId?: number;
+  status: WorkbenchIndexStatus;
+  phase?: WorkbenchIndexPhase;
+  generation?: number | null;
+  changeKind?: "full" | "incremental";
+}
+
+export interface WorkbenchIndexAcceptanceSnapshot {
+  activeRun?: {
+    cancelled: boolean;
+    id: number;
+    retainedGeneration?: number | null;
+    scope: string;
+  };
+  currentRunPending: boolean;
+  events: WorkbenchIndexAcceptanceEvent[];
+  gate?: {
+    nextPhase?: WorkbenchIndexPhase;
+    phases: WorkbenchIndexPhase[];
+    reachedPhase?: WorkbenchIndexPhase;
+    runId?: number;
+  };
+  lastSettledRun?: {
+    id: number;
+    status: WorkbenchIndexStatus;
+  };
+  runSequence: number;
+  sourceMutationsActive: number;
+  state: WorkbenchIndexState;
 }
 
 export interface WorkbenchIndexResult {
@@ -157,9 +193,18 @@ interface IndexedPostgresRegistry {
 
 interface ActiveIndexRun {
   cancelled: boolean;
+  id: number;
   retainedResult?: WorkbenchIndexResult;
   scope: string;
   serverId: string;
+}
+
+interface AcceptanceIndexPhaseGate {
+  phases: WorkbenchIndexPhase[];
+  next: number;
+  reached?: WorkbenchIndexPhase;
+  release?: () => void;
+  runId?: number;
 }
 
 class WorkbenchIndexCancelledError extends Error {
@@ -192,7 +237,18 @@ export class WorkbenchIndexController implements vscode.Disposable {
   private readonly published = new Map<string, PublishedSourceSet>();
   private readonly registries = new Map<string, IndexedPostgresRegistry>();
   private readonly staleScopes = new Set<string>();
+  private readonly sqlAuthoringSnapshots = new Map<
+    string,
+    { registry: IndexedPostgresRegistry; snapshot: SqlAuthoringSnapshot }
+  >();
+  private readonly scopeRefreshEpochs = new Map<string, number>();
   private sourceMutation: Promise<void> = Promise.resolve();
+  private sourceMutationsActive = 0;
+  private indexRunSequence = 0;
+  private indexStateSequence = 0;
+  private readonly acceptanceEvents: WorkbenchIndexAcceptanceEvent[] = [];
+  private acceptancePhaseGate?: AcceptanceIndexPhaseGate;
+  private lastSettledRun?: { id: number; status: WorkbenchIndexStatus };
   private readonly connectionSubscription: vscode.Disposable;
   private disposed = false;
 
@@ -208,8 +264,114 @@ export class WorkbenchIndexController implements vscode.Disposable {
     return this.currentState;
   }
 
+  acceptanceSnapshot(): WorkbenchIndexAcceptanceSnapshot {
+    this.requireAcceptanceControl();
+    const activeRun = this.activeIndexRun;
+    const gate = this.acceptancePhaseGate;
+    return {
+      activeRun: activeRun
+        ? {
+            cancelled: activeRun.cancelled,
+            id: activeRun.id,
+            retainedGeneration: activeRun.retainedResult?.generation,
+            scope: activeRun.scope,
+          }
+        : undefined,
+      currentRunPending: this.currentRun !== undefined,
+      events: this.acceptanceEvents.map((event) => ({ ...event })),
+      gate: gate
+        ? {
+            nextPhase: gate.phases[gate.next],
+            phases: [...gate.phases],
+            reachedPhase: gate.reached,
+            runId: gate.runId,
+          }
+        : undefined,
+      lastSettledRun: this.lastSettledRun && { ...this.lastSettledRun },
+      runSequence: this.indexRunSequence,
+      sourceMutationsActive: this.sourceMutationsActive,
+      state: {
+        ...this.currentState,
+        change: this.currentState.change && {
+          ...this.currentState.change,
+          schemas: [...this.currentState.change.schemas],
+          sourceUris: [...this.currentState.change.sourceUris],
+        },
+        progress: this.currentState.progress && { ...this.currentState.progress },
+        result: this.currentState.result && { ...this.currentState.result },
+      },
+    };
+  }
+
+  armAcceptancePhaseGate(phases: readonly WorkbenchIndexPhase[]): void {
+    this.requireAcceptanceControl();
+    if (phases.length === 0) throw new Error("An index phase gate requires at least one phase");
+    if (this.acceptancePhaseGate) throw new Error("An index phase gate is already armed");
+    this.acceptancePhaseGate = { phases: [...phases], next: 0 };
+  }
+
+  releaseAcceptancePhaseGate(runId: number, phase: WorkbenchIndexPhase): void {
+    this.requireAcceptanceControl();
+    const gate = this.acceptancePhaseGate;
+    if (!gate || gate.runId !== runId || gate.reached !== phase || !gate.release) {
+      throw new Error(`Index phase gate ${runId}:${phase} is not waiting`);
+    }
+    const release = gate.release;
+    gate.release = undefined;
+    gate.reached = undefined;
+    gate.next += 1;
+    if (gate.next >= gate.phases.length) this.acceptancePhaseGate = undefined;
+    release();
+  }
+
+  async settleAcceptanceOperations(): Promise<void> {
+    this.requireAcceptanceControl();
+    this.clearAcceptancePhaseGate();
+    this.cancelActiveDatabaseIndex();
+    await this.currentRun?.catch(() => undefined);
+    await this.sourceMutation;
+  }
+
   get indexedSymbols(): readonly CodeMonikerSymbol[] {
     return this.currentState.result ? this.currentSymbols : [];
+  }
+
+  sqlAuthoringSnapshot(identity: {
+    serverId: string;
+    database: string;
+  }): SqlAuthoringSnapshot | undefined {
+    const scope = databaseScope(identity.serverId, identity.database);
+    const registry = this.registries.get(scope);
+    if (!registry) {
+      this.sqlAuthoringSnapshots.delete(scope);
+      return undefined;
+    }
+    const status: SqlAuthoringSnapshot["status"] = this.staleScopes.has(scope)
+      ? "stale"
+      : "available";
+    const cached = this.sqlAuthoringSnapshots.get(scope);
+    if (
+      cached &&
+      cached.registry === registry &&
+      cached.snapshot.status === status &&
+      cached.snapshot.revision === registry.result.revision &&
+      cached.snapshot.generation === registry.result.generation
+    ) {
+      return cached.snapshot;
+    }
+    const snapshot = buildSqlAuthoringSnapshot(registry, identity, status);
+    this.sqlAuthoringSnapshots.set(scope, { registry, snapshot });
+    return snapshot;
+  }
+
+  private invalidateSqlAuthoringSnapshot(scope?: string): void {
+    if (scope === undefined) this.sqlAuthoringSnapshots.clear();
+    else this.sqlAuthoringSnapshots.delete(scope);
+  }
+
+  private notifySqlAuthoringSnapshotChanged(): void {
+    if (this.disposed) return;
+    this.stateEmitter.fire(this.currentState);
   }
 
   objectOrigin(sourceUri: string): PostgresCatalogObjectOrigin | undefined {
@@ -652,7 +814,7 @@ export class WorkbenchIndexController implements vscode.Disposable {
     }
     if (!this.currentRun) {
       const epoch = this.sessionEpoch;
-      this.currentRun = this.runIndex()
+      const queued = this.runIndex()
         .catch((error) => {
           if (error instanceof WorkbenchIndexCancelledError) throw error;
           if (this.sessionEpoch === epoch) throw error;
@@ -662,8 +824,9 @@ export class WorkbenchIndexController implements vscode.Disposable {
           return this.runIndex();
         })
         .finally(() => {
-          this.currentRun = undefined;
+          if (this.currentRun === queued) this.currentRun = undefined;
         });
+      this.currentRun = queued;
     }
     return this.currentRun;
   }
@@ -672,6 +835,7 @@ export class WorkbenchIndexController implements vscode.Disposable {
     const run = this.activeIndexRun;
     if (!run || run.cancelled) return false;
     run.cancelled = true;
+    this.clearAcceptancePhaseGate(run.id);
     if (this.activeScope() === run.scope) {
       this.setState({
         status: "indexing",
@@ -689,6 +853,7 @@ export class WorkbenchIndexController implements vscode.Disposable {
   markDatabaseStale(serverId: string, database: string, message: string): void {
     const scope = databaseScope(serverId, database);
     this.staleScopes.add(scope);
+    this.invalidateSqlAuthoringSnapshot(scope);
     if (this.activeScope() !== scope) return;
     const registry = this.registries.get(scope);
     this.stateScope = scope;
@@ -723,22 +888,59 @@ export class WorkbenchIndexController implements vscode.Disposable {
     return queued;
   }
 
-  async indexPostgresDatabase(
+  indexPostgresDatabase(
     client: CatalogQueryClient,
     identity: { serverId: string; database: string },
   ): Promise<WorkbenchIndexResult> {
     if (this.disposed) {
-      throw new Error("The PostgreSQL source registry is disposed");
+      return Promise.reject(new Error("The PostgreSQL source registry is disposed"));
     }
+    const scope = databaseScope(identity.serverId, identity.database);
+    const refreshEpoch = this.advanceScopeRefreshEpoch(scope);
+    if (this.activeScope() === scope) {
+      this.markDatabaseStale(
+        identity.serverId,
+        identity.database,
+        "Refreshing the PostgreSQL source snapshot",
+      );
+    }
+    const previous = this.currentRun;
+    const operation = previous
+      ? previous
+          .catch(() => undefined)
+          .then(() => this.runPostgresDatabaseIndex(client, identity, scope, refreshEpoch))
+      : this.runPostgresDatabaseIndex(client, identity, scope, refreshEpoch);
+    const queued = operation.finally(() => {
+      if (this.currentRun === queued) this.currentRun = undefined;
+    });
+    this.currentRun = queued;
+    return queued;
+  }
+
+  private async runPostgresDatabaseIndex(
+    client: CatalogQueryClient,
+    identity: { serverId: string; database: string },
+    scope: string,
+    refreshEpoch: number,
+  ): Promise<WorkbenchIndexResult> {
     const indexingStarted = performance.now();
     const catalog = await readPostgresCatalog(client, identity);
-    const { result, session } = await this.publishAndReadCatalog(
+    const { result, registry, session } = await this.publishAndReadCatalog(
       catalog,
       identity.serverId,
       identity.database,
       indexingStarted,
-      () => true,
+      () => this.scopeRefreshEpoch(scope) === refreshEpoch,
     );
+    if (this.scopeRefreshEpoch(scope) === refreshEpoch) {
+      if (this.activeScope() === scope) {
+        this.activateRegistry(scope, registry, { kind: "full", schemas: [], sourceUris: [] });
+      } else {
+        this.staleScopes.delete(scope);
+        this.invalidateSqlAuthoringSnapshot(scope);
+        this.notifySqlAuthoringSnapshotChanged();
+      }
+    }
     this.logResult(result, session);
     return result;
   }
@@ -748,10 +950,13 @@ export class WorkbenchIndexController implements vscode.Disposable {
       return;
     }
     this.disposed = true;
+    this.clearAcceptancePhaseGate();
     this.currentSymbols = [];
     this.currentDocuments.clear();
     this.currentOrigins.clear();
     this.registries.clear();
+    this.sqlAuthoringSnapshots.clear();
+    this.scopeRefreshEpochs.clear();
     this.connectionSubscription.dispose();
     this.stateEmitter.dispose();
     const pendingSession = this.sessionPromise;
@@ -785,9 +990,11 @@ export class WorkbenchIndexController implements vscode.Disposable {
     const serverId = server.id;
     const database = server.database;
     const scope = databaseScope(serverId, database);
+    const refreshEpoch = this.scopeRefreshEpoch(scope);
     const retainedResult = this.stateScope === scope ? this.currentState.result : undefined;
     const run: ActiveIndexRun = {
       cancelled: false,
+      id: ++this.indexRunSequence,
       retainedResult,
       scope,
       serverId,
@@ -806,6 +1013,7 @@ export class WorkbenchIndexController implements vscode.Disposable {
       message: retainedResult ? "Refreshing the PostgreSQL source snapshot" : undefined,
       progress: { phase: "reading-catalog" },
     });
+    let settledStatus: WorkbenchIndexStatus = "error";
     try {
       await this.pauseForAcceptance(run);
       const catalog = await readPostgresCatalog(catalogClient(postgres), {
@@ -822,25 +1030,18 @@ export class WorkbenchIndexController implements vscode.Disposable {
         serverId,
         database,
         indexingStarted,
-        () => this.activeScope() === scope,
+        () => this.activeScope() === scope && this.scopeRefreshEpoch(scope) === refreshEpoch,
         (progress) => this.reportProgress(run, progress),
         () => this.throwIfCancelled(run),
       );
       const { result, registry, session } = indexed;
-      this.currentSymbols = registry.symbols;
-      this.currentDocuments = registry.documents;
-      this.currentOrigins = registry.origins;
-      this.staleScopes.delete(scope);
-      this.setState({
-        status: "available",
-        serverId,
-        result,
-        change: { kind: "full", schemas: [], sourceUris: [] },
-      });
+      this.activateRegistry(scope, registry, { kind: "full", schemas: [], sourceUris: [] });
+      settledStatus = "available";
       this.logResult(result, session);
       return result;
     } catch (error) {
       const failure = run.cancelled ? new WorkbenchIndexCancelledError() : error;
+      settledStatus = failure instanceof WorkbenchIndexCancelledError ? "cancelled" : "error";
       const message = failure instanceof Error ? failure.message : String(failure);
       if (this.activeScope() === scope) {
         if (failure instanceof WorkbenchIndexCancelledError) {
@@ -871,6 +1072,8 @@ export class WorkbenchIndexController implements vscode.Disposable {
       );
       throw failure;
     } finally {
+      this.lastSettledRun = { id: run.id, status: settledStatus };
+      this.clearAcceptancePhaseGate(run.id);
       if (this.activeIndexRun === run) this.activeIndexRun = undefined;
     }
   }
@@ -882,6 +1085,7 @@ export class WorkbenchIndexController implements vscode.Disposable {
     fallbackReason?: string,
   ): Promise<WorkbenchIndexResult> {
     const scope = databaseScope(identity.serverId, identity.database);
+    const refreshEpoch = this.scopeRefreshEpoch(scope);
     const registry = this.registries.get(scope);
     this.markDatabaseStale(
       identity.serverId,
@@ -912,27 +1116,18 @@ export class WorkbenchIndexController implements vscode.Disposable {
         identity.serverId,
         identity.database,
         performance.now(),
-        () => this.activeScope() === scope,
+        () => this.activeScope() === scope && this.scopeRefreshEpoch(scope) === refreshEpoch,
       );
-      this.currentSymbols = indexed.registry.symbols;
-      this.currentDocuments = indexed.registry.documents;
-      this.currentOrigins = indexed.registry.origins;
-      this.staleScopes.delete(scope);
-      this.setState({
-        status: "available",
-        serverId: identity.serverId,
-        result: indexed.result,
-        change: {
-          kind: "incremental",
-          schemas: [...new Set(objects.flatMap((object) => object.schemaName ?? []))].sort(),
-          sourceUris: [
-            ...new Set([
-              ...selection.documentUris,
-              ...patch.upsertDocuments.map((document) => document.uri),
-              ...patch.removeDocumentUris,
-            ]),
-          ].sort(),
-        },
+      this.activateRegistry(scope, indexed.registry, {
+        kind: "incremental",
+        schemas: [...new Set(objects.flatMap((object) => object.schemaName ?? []))].sort(),
+        sourceUris: [
+          ...new Set([
+            ...selection.documentUris,
+            ...patch.upsertDocuments.map((document) => document.uri),
+            ...patch.removeDocumentUris,
+          ]),
+        ].sort(),
       });
       this.output.appendLine(
         `workbench DDL direct refresh: objects=${objects.length} existing=${selection.documentUris.size} new=${selection.newResources.length} documents=${patch.upsertDocuments.length} removed=${patch.removeDocumentUris.length}`,
@@ -1225,6 +1420,7 @@ export class WorkbenchIndexController implements vscode.Disposable {
           this.syntaxParserPromise = undefined;
           this.published.clear();
           this.registries.clear();
+          this.invalidateSqlAuthoringSnapshot();
           this.output.appendLine(
             `Code Moniker daemon ${session.metadata.daemonPid} disconnected; session invalidated`,
           );
@@ -1299,6 +1495,35 @@ export class WorkbenchIndexController implements vscode.Disposable {
     }
   }
 
+  private activateRegistry(
+    scope: string,
+    registry: IndexedPostgresRegistry,
+    change: NonNullable<WorkbenchIndexState["change"]>,
+  ): void {
+    this.currentSymbols = registry.symbols;
+    this.currentDocuments = registry.documents;
+    this.currentOrigins = registry.origins;
+    this.stateScope = scope;
+    this.staleScopes.delete(scope);
+    this.invalidateSqlAuthoringSnapshot(scope);
+    this.setState({
+      status: "available",
+      serverId: registry.result.serverId,
+      result: registry.result,
+      change,
+    });
+  }
+
+  private advanceScopeRefreshEpoch(scope: string): number {
+    const epoch = this.scopeRefreshEpoch(scope) + 1;
+    this.scopeRefreshEpochs.set(scope, epoch);
+    return epoch;
+  }
+
+  private scopeRefreshEpoch(scope: string): number {
+    return this.scopeRefreshEpochs.get(scope) ?? 0;
+  }
+
   private activeScope(): string | undefined {
     if (this.disposed) {
       return undefined;
@@ -1331,7 +1556,15 @@ export class WorkbenchIndexController implements vscode.Disposable {
   }
 
   private mutateSources<T>(action: () => Promise<T>): Promise<T> {
-    const result = this.sourceMutation.then(action, action);
+    const monitored = async () => {
+      this.sourceMutationsActive += 1;
+      try {
+        return await action();
+      } finally {
+        this.sourceMutationsActive -= 1;
+      }
+    };
+    const result = this.sourceMutation.then(monitored, monitored);
     this.sourceMutation = result.then(
       () => undefined,
       () => undefined,
@@ -1344,6 +1577,18 @@ export class WorkbenchIndexController implements vscode.Disposable {
       return;
     }
     this.currentState = state;
+    if (this.acceptanceControlEnabled()) {
+      this.indexStateSequence += 1;
+      this.acceptanceEvents.push({
+        sequence: this.indexStateSequence,
+        runId: this.activeIndexRun?.id,
+        status: state.status,
+        phase: state.progress?.phase,
+        generation: state.result?.generation,
+        changeKind: state.change?.kind,
+      });
+      if (this.acceptanceEvents.length > 100) this.acceptanceEvents.shift();
+    }
     this.stateEmitter.fire(state);
   }
 
@@ -1370,18 +1615,44 @@ export class WorkbenchIndexController implements vscode.Disposable {
   }
 
   private async pauseForAcceptance(run: ActiveIndexRun): Promise<void> {
-    const delay = Number.parseInt(
-      process.env.POSTGRESQL_WORKBENCH_ACCEPTANCE_INDEX_PHASE_DELAY_MS ?? "0",
-      10,
-    );
+    const gate = this.acceptancePhaseGate;
+    const phase = this.currentState.progress?.phase;
     if (
-      delay > 0 &&
-      process.env.POSTGRESQL_WORKBENCH_ACCEPTANCE_CONTROL_FILE &&
-      this.context.extensionMode !== vscode.ExtensionMode.Production
+      gate &&
+      phase &&
+      gate.phases[gate.next] === phase &&
+      (gate.runId === undefined || gate.runId === run.id)
     ) {
-      await new Promise((resolve) => setTimeout(resolve, Math.min(delay, 2_000)));
+      gate.runId = run.id;
+      gate.reached = phase;
+      await new Promise<void>((resolve) => {
+        gate.release = resolve;
+      });
     }
     this.throwIfCancelled(run);
+  }
+
+  private acceptanceControlEnabled(): boolean {
+    return Boolean(
+      process.env.POSTGRESQL_WORKBENCH_ACCEPTANCE_CONTROL_FILE &&
+        this.context.extensionMode !== vscode.ExtensionMode.Production,
+    );
+  }
+
+  private requireAcceptanceControl(): void {
+    if (!this.acceptanceControlEnabled()) {
+      throw new Error("Workbench index acceptance controls are unavailable");
+    }
+  }
+
+  private clearAcceptancePhaseGate(runId?: number): void {
+    const gate = this.acceptancePhaseGate;
+    if (!gate || (runId !== undefined && gate.runId !== undefined && gate.runId !== runId)) return;
+    this.acceptancePhaseGate = undefined;
+    const release = gate.release;
+    gate.release = undefined;
+    gate.reached = undefined;
+    release?.();
   }
 
   private logResult(result: WorkbenchIndexResult, session: LocalCodeMonikerSession): void {
@@ -1426,19 +1697,10 @@ function applyCatalogPatch(
   for (const document of patch.upsertDocuments) documents.set(document.uri, document);
   for (const [uri, origin] of patch.origins) origins.set(uri, origin);
 
-  const affected = new Set([...patch.affectedRelationOids, ...removedOids]);
-  const foreignKeys = registry.foreignKeys
-    .filter(
-      (foreignKey) =>
-        !affected.has(foreignKey.sourceTableOid) && !affected.has(foreignKey.targetTableOid),
-    )
-    .concat(patch.foreignKeys);
-  const viewDependencies = registry.viewDependencies
-    .filter(
-      (dependency) =>
-        !affected.has(dependency.sourceViewOid) && !affected.has(dependency.targetRelationOid),
-    )
-    .concat(patch.viewDependencies);
+  const relations = mergePostgresCatalogRelations(registry.foreignKeys, registry.viewDependencies, {
+    ...patch,
+    affectedRelationOids: [...patch.affectedRelationOids, ...removedOids],
+  });
   const sourceSet = buildPostgresSourceSet(identity, [...documents.values()], origins);
   return {
     sourceSet,
@@ -1448,8 +1710,8 @@ function applyCatalogPatch(
       documentCount: sourceSet.documents.length,
     },
     origins,
-    foreignKeys,
-    viewDependencies,
+    foreignKeys: relations.foreignKeys,
+    viewDependencies: relations.viewDependencies,
   };
 }
 
@@ -1489,8 +1751,105 @@ function duration(milliseconds: number): string {
   return `${milliseconds.toFixed(1)}ms`;
 }
 
+function buildSqlAuthoringSnapshot(
+  registry: IndexedPostgresRegistry,
+  identity: { serverId: string; database: string },
+  status: SqlAuthoringSnapshot["status"],
+): SqlAuthoringSnapshot {
+  const workbenchObjects = buildWorkbenchObjects(registry.symbols, identity);
+  const objects = workbenchObjects
+    .filter(
+      (object) =>
+        object.kind === "table" ||
+        object.kind === "view" ||
+        object.kind === "function" ||
+        object.kind === "procedure",
+    )
+    .map((object) => ({
+      serverId: object.serverId,
+      database: object.database,
+      schema: object.schema,
+      oid: object.oid,
+      name: object.name,
+      kind: object.kind as "table" | "view" | "function" | "procedure",
+      signature: object.signature,
+      plpgsql: object.plpgsql,
+      returnType:
+        object.kind === "function"
+          ? routineReturnType(registry.documents.get(object.sourceUri)?.content)
+          : undefined,
+      parameters: object.params.map((parameter) => ({ ...parameter })),
+      columns:
+        object.kind === "table" || object.kind === "view"
+          ? buildWorkbenchTableMembers(registry.symbols, object)
+              .filter((member) => member.kind === "column")
+              .map((member) => ({ name: member.name, type: member.type }))
+          : [],
+    }));
+  const triggers = workbenchObjects.flatMap((object) => {
+    if (object.kind !== "trigger") return [];
+    const definition = registry.documents.get(object.sourceUri)?.content;
+    const trigger = definition
+      ? sqlAuthoringTrigger(object.oid, object.schema, object.name, definition)
+      : undefined;
+    return trigger ? [trigger] : [];
+  });
+  return {
+    status,
+    serverId: identity.serverId,
+    database: identity.database,
+    revision: registry.result.revision,
+    generation: registry.result.generation,
+    objects,
+    foreignKeys: registry.foreignKeys.map((foreignKey) => ({ ...foreignKey })),
+    triggers,
+  };
+}
+
 function databaseScope(serverId: string, database: string): string {
   return `${serverId}\0${database}`;
+}
+
+function routineReturnType(source: string | undefined): string | undefined {
+  if (!source) return undefined;
+  if (/\bRETURNS\s+(?:pg_catalog\.)?event_trigger\b/iu.test(source)) return "event_trigger";
+  if (/\bRETURNS\s+(?:pg_catalog\.)?trigger\b/iu.test(source)) return "trigger";
+  const match = /\bRETURNS\s+((?:SETOF\s+)?[^\s;(]+)/iu.exec(source);
+  return match?.[1];
+}
+
+function sqlAuthoringTrigger(
+  oid: number,
+  schema: string,
+  name: string,
+  definition: string,
+): SqlAuthoringTrigger | undefined {
+  const identifier = String.raw`(?:"(?:""|[^"])+"|[A-Za-z_][\w$]*)`;
+  const relation = new RegExp(
+    String.raw`\bON\s+(?:ONLY\s+)?(${identifier})\.(${identifier})`,
+    "iu",
+  ).exec(definition);
+  const routine = new RegExp(
+    String.raw`\bEXECUTE\s+(?:FUNCTION|PROCEDURE)\s+(${identifier})\.(${identifier})\s*\(`,
+    "iu",
+  ).exec(definition);
+  if (!relation || !routine) return undefined;
+  return {
+    oid,
+    schema,
+    name,
+    relationSchema: unquoteCatalogIdentifier(relation[1]),
+    relationName: unquoteCatalogIdentifier(relation[2]),
+    routineSchema: unquoteCatalogIdentifier(routine[1]),
+    routineName: unquoteCatalogIdentifier(routine[2]),
+    definition,
+  };
+}
+
+function unquoteCatalogIdentifier(identifier: string): string {
+  return identifier.startsWith('"')
+    ? identifier.slice(1, -1).replaceAll('""', '"')
+    : identifier.toLocaleLowerCase();
 }
 
 function databaseDocumentGlob(serverId: string, database: string): string {

@@ -6,6 +6,7 @@ import {
   type SqlNotebookRendererRequest,
   type SqlNotebookRendererResponse,
   type SqlNotebookResultPayload,
+  type SqlNotebookResultRequest,
 } from "./sqlNotebookModel.js";
 import type { SqlResultSession } from "./sqlResultSession.js";
 
@@ -27,6 +28,20 @@ export class SqlNotebookResultHost implements vscode.Disposable {
 
   constructor() {
     this.subscription = this.messaging.onDidReceiveMessage(({ editor, message }) => {
+      if (isOpenSettingsRequest(message)) {
+        void vscode.commands.executeCommand(
+          "workbench.action.openSettings",
+          "@ext:ng-galien.postgresql-workbench postgresql-workbench.sqlAuthoring.syntaxMax",
+        );
+        return;
+      }
+      if (isIncreaseTimeoutRequest(message)) {
+        void vscode.commands.executeCommand(
+          "postgresql-workbench.setScratchpadStatementTimeout",
+          editor.notebook,
+        );
+        return;
+      }
       if (!isRendererRequest(message)) return;
       void this.handleRequest(editor, message);
     });
@@ -92,7 +107,7 @@ export class SqlNotebookResultHost implements vscode.Disposable {
 
   private async handleRequest(
     editor: vscode.NotebookEditor,
-    request: SqlNotebookRendererRequest,
+    request: SqlNotebookResultRequest,
   ): Promise<void> {
     const hosted = this.sessions.get(request.sessionId);
     if (!hosted) {
@@ -163,7 +178,7 @@ export class SqlNotebookResultHost implements vscode.Disposable {
   private async applyAction(
     editor: vscode.NotebookEditor,
     hosted: HostedResultSession,
-    request: SqlNotebookRendererRequest,
+    request: SqlNotebookResultRequest,
   ): Promise<SqlNotebookResultPayload> {
     switch (request.action) {
       case "attach":
@@ -266,7 +281,7 @@ function withoutNavigation(payload: SqlNotebookResultPayload): SqlNotebookResult
   return result;
 }
 
-function isRendererRequest(value: unknown): value is SqlNotebookRendererRequest {
+function isRendererRequest(value: unknown): value is SqlNotebookResultRequest {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const message = value as Partial<SqlNotebookRendererRequest>;
   return (
@@ -277,5 +292,23 @@ function isRendererRequest(value: unknown): value is SqlNotebookRendererRequest 
       message.action === "next" ||
       message.action === "load-all" ||
       message.action === "cancel")
+  );
+}
+
+function isOpenSettingsRequest(value: unknown): boolean {
+  return (
+    Boolean(value) &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    (value as Partial<SqlNotebookRendererRequest>).type === "sql-error/open-analysis-settings"
+  );
+}
+
+function isIncreaseTimeoutRequest(value: unknown): boolean {
+  return (
+    Boolean(value) &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    (value as Partial<SqlNotebookRendererRequest>).type === "sql-error/increase-scratchpad-timeout"
   );
 }

@@ -51,9 +51,11 @@ import {
   DatabaseSourceItem,
   FunctionItem,
   SchemaItem,
+  SOURCES_DRAG_HINT,
   SourcesSnapshotItem,
   WorkbenchObjectItem,
   WorkbenchRelationTargetItem,
+  WorkbenchTableMemberItem,
   WorkbenchTreeProvider,
 } from "./workbenchTreeProvider.js";
 
@@ -90,6 +92,69 @@ const createdTable: WorkbenchObjectModel = {
 };
 
 describe("Workbench tree object navigation", () => {
+  it("separates database roots from filterable Scratchpad roots", async () => {
+    const server = {
+      id: "server",
+      name: "postgres@localhost:5432/testdb",
+      host: "localhost",
+      port: 5432,
+      database: "testdb",
+      user: "postgres",
+    };
+    const event = () => ({ dispose: () => undefined });
+    const connections = {
+      servers: [server],
+      activeServer: server,
+      isConnected: true,
+      pldbgapiAvailable: false,
+      onChanged: event,
+      isActiveServer: () => true,
+    };
+    const index = { state: { status: "not-indexed" }, onDidChangeState: event };
+    const notebooks = {
+      list: async () => [
+        { uri: { toString: () => "scratchpad:first" }, name: "First", metadata: {} },
+        { uri: { toString: () => "scratchpad:second" }, name: "Second", metadata: {} },
+      ],
+      onDidChangeEntries: event,
+    };
+    const transactions = { transaction: () => undefined, onDidChange: event };
+    const ddlSync = { state: () => undefined, onDidChangeState: event };
+    const databaseProvider = new WorkbenchTreeProvider(
+      connections as never,
+      index as never,
+      notebooks as never,
+      transactions as never,
+      ddlSync as never,
+    );
+    const scratchpadProvider = new WorkbenchTreeProvider(
+      connections as never,
+      index as never,
+      notebooks as never,
+      transactions as never,
+      ddlSync as never,
+      undefined,
+      "scratchpads",
+    );
+
+    await expect(databaseProvider.getChildren()).resolves.toMatchObject([
+      { kind: "server" },
+      { kind: "add" },
+    ]);
+    await expect(scratchpadProvider.getChildren()).resolves.toMatchObject([
+      { kind: "sqlNotebook", label: "First" },
+      { kind: "sqlNotebook", label: "Second" },
+    ]);
+
+    scratchpadProvider.setScratchpadFilter("second");
+    await expect(scratchpadProvider.getChildren()).resolves.toMatchObject([
+      { kind: "sqlNotebook", label: "Second" },
+    ]);
+
+    databaseProvider.dispose();
+    scratchpadProvider.dispose();
+  });
+
   it("presents distinct initial indexing and available states on the active database", () => {
     const server = {
       id: "server",
@@ -187,6 +252,39 @@ describe("Workbench tree object navigation", () => {
     expect(resolved.command).toBeUndefined();
     expect(resolved.contextValue).toBe("postgresql-workbench-relation-target");
     expect(unresolved.contextValue).toBe("postgresql-workbench-relation-target-unresolved");
+    expect(resolved.tooltip).toBe(`shop.orders\n${SOURCES_DRAG_HINT}`);
+    expect(unresolved.tooltip).toBe("table orders");
+  });
+
+  it("explains the Shift+drop composition gesture on draggable Sources items", () => {
+    const routine = new FunctionItem(
+      {
+        ...table,
+        name: "total_orders",
+        kind: "function",
+        plpgsql: true,
+        params: [{ name: "customer_id", type: "integer" }],
+      },
+      snapshot,
+    );
+    const object = new WorkbenchObjectItem(table, snapshot);
+    const column = new WorkbenchTableMemberItem(
+      { symbolUri: "", sourceUri: "", kind: "column", name: "id", type: "integer", line: 1 },
+      table,
+    );
+    const constraint = new WorkbenchTableMemberItem(
+      { symbolUri: "", sourceUri: "", kind: "constraint", name: "orders_pkey", type: "", line: 1 },
+      table,
+    );
+
+    expect(routine.tooltip).toBe(`shop.total_orders(customer_id: integer)\n${SOURCES_DRAG_HINT}`);
+    expect(object.tooltip).toBe(`shop.orders\n${SOURCES_DRAG_HINT}`);
+    expect(column.tooltip).toBe(`id · integer\n${SOURCES_DRAG_HINT}`);
+    expect(column.accessibilityInformation).toEqual({ label: "id · integer" });
+    expect(object.accessibilityInformation).toEqual({ label: "shop.orders" });
+    expect(constraint.tooltip).toBe("constraint orders_pkey");
+    expect(constraint.accessibilityInformation).toBeUndefined();
+    expect(new SchemaItem("shop").tooltip).toBeUndefined();
   });
 });
 

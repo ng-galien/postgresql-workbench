@@ -1,7 +1,7 @@
 {
   "name": "postgresql-workbench",
   "displayName": "PostgreSQL Workbench",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Debug PL/pgSQL, run pgTAP tests with coverage, explore schemas, and query data in SQL scratchpads — without leaving VS Code.",
   "publisher": "ng-galien",
   "author": {
@@ -78,7 +78,7 @@
     "notebooks": [
       {
         "type": "postgresql-workbench-sql",
-        "displayName": "PostgreSQL Workbench Notebook",
+        "displayName": "PostgreSQL Workbench Scratchpad",
         "selector": [
           {
             "filenamePattern": "*.pgsql-notebook"
@@ -139,6 +139,51 @@
           "light": "./icons/plpgsql-light.svg",
           "dark": "./icons/plpgsql-dark.svg"
         }
+      },
+      {
+        "id": "postgresql-table",
+        "aliases": ["PostgreSQL Table"],
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./icons/postgresql-table-light.svg",
+          "dark": "./icons/postgresql-table-dark.svg"
+        }
+      },
+      {
+        "id": "postgresql-view",
+        "aliases": ["PostgreSQL View"],
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./icons/postgresql-view-light.svg",
+          "dark": "./icons/postgresql-view-dark.svg"
+        }
+      },
+      {
+        "id": "postgresql-function",
+        "aliases": ["PostgreSQL Function"],
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./icons/postgresql-function-light.svg",
+          "dark": "./icons/postgresql-function-dark.svg"
+        }
+      },
+      {
+        "id": "postgresql-procedure",
+        "aliases": ["PostgreSQL Procedure"],
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./icons/postgresql-procedure-light.svg",
+          "dark": "./icons/postgresql-procedure-dark.svg"
+        }
+      },
+      {
+        "id": "postgresql-trigger",
+        "aliases": ["PostgreSQL Trigger"],
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./icons/postgresql-trigger-light.svg",
+          "dark": "./icons/postgresql-trigger-dark.svg"
+        }
       }
     ],
     "grammars": [
@@ -148,11 +193,93 @@
         "path": "./syntaxes/plpgsql.tmLanguage.json"
       },
       {
+        "language": "postgresql-table",
+        "scopeName": "source.plpgsql",
+        "path": "./syntaxes/plpgsql.tmLanguage.json"
+      },
+      {
+        "language": "postgresql-view",
+        "scopeName": "source.plpgsql",
+        "path": "./syntaxes/plpgsql.tmLanguage.json"
+      },
+      {
+        "language": "postgresql-function",
+        "scopeName": "source.plpgsql",
+        "path": "./syntaxes/plpgsql.tmLanguage.json"
+      },
+      {
+        "language": "postgresql-procedure",
+        "scopeName": "source.plpgsql",
+        "path": "./syntaxes/plpgsql.tmLanguage.json"
+      },
+      {
+        "language": "postgresql-trigger",
+        "scopeName": "source.plpgsql",
+        "path": "./syntaxes/plpgsql.tmLanguage.json"
+      },
+      {
         "scopeName": "source.plpgsql",
         "injectTo": [
           "source.sql"
         ],
         "path": "./syntaxes/plpgsql.tmLanguage.json"
+      }
+    ],
+    "semanticTokenTypes": [
+      {
+        "id": "sqlSchema",
+        "superType": "namespace",
+        "description": "PostgreSQL schema reference"
+      },
+      {
+        "id": "sqlTable",
+        "superType": "class",
+        "description": "PostgreSQL table reference"
+      },
+      {
+        "id": "sqlView",
+        "superType": "interface",
+        "description": "PostgreSQL view reference"
+      },
+      {
+        "id": "sqlCte",
+        "superType": "struct",
+        "description": "SQL common table expression"
+      },
+      {
+        "id": "sqlAlias",
+        "superType": "variable",
+        "description": "SQL relation alias"
+      },
+      {
+        "id": "sqlColumn",
+        "superType": "property",
+        "description": "PostgreSQL column reference"
+      },
+      {
+        "id": "sqlFunction",
+        "superType": "function",
+        "description": "PostgreSQL function call"
+      },
+      {
+        "id": "sqlProcedure",
+        "superType": "method",
+        "description": "PostgreSQL procedure call"
+      },
+      {
+        "id": "sqlParameter",
+        "superType": "parameter",
+        "description": "SQL positional or named parameter"
+      },
+      {
+        "id": "sqlType",
+        "superType": "type",
+        "description": "PostgreSQL type reference"
+      },
+      {
+        "id": "sqlWindow",
+        "superType": "label",
+        "description": "SQL named window"
       }
     ],
     "semanticTokenScopes": [
@@ -169,10 +296,87 @@
           ],
           "function": [
             "entity.name.function.plpgsql"
+          ],
+          "sqlSchema": [
+            "entity.name.namespace.sql"
+          ],
+          "sqlTable": [
+            "entity.name.type.table.sql"
+          ],
+          "sqlView": [
+            "entity.name.type.interface.sql"
+          ],
+          "sqlCte": [
+            "entity.name.type.struct.sql"
+          ],
+          "sqlAlias": [
+            "entity.name.variable.sql"
+          ],
+          "sqlColumn": [
+            "support.variable.sql"
+          ],
+          "sqlFunction": [
+            "entity.name.function.sql"
+          ],
+          "sqlProcedure": [
+            "entity.name.function.method.sql"
+          ],
+          "sqlParameter": [
+            "variable.parameter.sql"
+          ],
+          "sqlType": [
+            "support.type.sql"
+          ],
+          "sqlWindow": [
+            "entity.name.label.sql"
           ]
         }
       }
     ],
+    "configurationDefaults": {
+      "[plpgsql]": {
+        "editor.detectIndentation": false,
+        "editor.dropIntoEditor.showDropSelector": "never",
+        "editor.insertSpaces": true,
+        "editor.tabSize": 2
+      },
+      "[sql]": {
+        "editor.detectIndentation": false,
+        "editor.dropIntoEditor.showDropSelector": "never",
+        "editor.insertSpaces": true,
+        "editor.tabSize": 2
+      },
+      "[postgresql-table]": {
+        "editor.detectIndentation": false,
+        "editor.dropIntoEditor.showDropSelector": "never",
+        "editor.insertSpaces": true,
+        "editor.tabSize": 2
+      },
+      "[postgresql-view]": {
+        "editor.detectIndentation": false,
+        "editor.dropIntoEditor.showDropSelector": "never",
+        "editor.insertSpaces": true,
+        "editor.tabSize": 2
+      },
+      "[postgresql-function]": {
+        "editor.detectIndentation": false,
+        "editor.dropIntoEditor.showDropSelector": "never",
+        "editor.insertSpaces": true,
+        "editor.tabSize": 2
+      },
+      "[postgresql-procedure]": {
+        "editor.detectIndentation": false,
+        "editor.dropIntoEditor.showDropSelector": "never",
+        "editor.insertSpaces": true,
+        "editor.tabSize": 2
+      },
+      "[postgresql-trigger]": {
+        "editor.detectIndentation": false,
+        "editor.dropIntoEditor.showDropSelector": "never",
+        "editor.insertSpaces": true,
+        "editor.tabSize": 2
+      }
+    },
     "viewsContainers": {
       "activitybar": [
         {
@@ -196,6 +400,12 @@
           "name": "Workbench",
           "icon": "$(database)",
           "contextualTitle": "PostgreSQL Workbench"
+        },
+        {
+          "id": "postgresql-workbench-scratchpads",
+          "name": "Scratchpads",
+          "icon": "$(notebook)",
+          "contextualTitle": "SQL Scratchpads"
         }
       ],
       "postgresql-workbench-results-container": [
@@ -279,6 +489,18 @@
           "when": "false"
         },
         {
+          "command": "postgresql-workbench.assignDocumentConnection",
+          "when": "false"
+        },
+        {
+          "command": "postgresql-workbench.runSqlCall",
+          "when": "false"
+        },
+        {
+          "command": "postgresql-workbench.deployManagedRoutine",
+          "when": "false"
+        },
+        {
           "command": "postgresql-workbench.revealRoutineTests",
           "when": "false"
         },
@@ -303,11 +525,19 @@
           "when": "false"
         },
         {
+          "command": "postgresql-workbench.filterSqlNotebooks",
+          "when": "false"
+        },
+        {
           "command": "postgresql-workbench.setScratchpadAutoMode",
           "when": "false"
         },
         {
           "command": "postgresql-workbench.setScratchpadManualMode",
+          "when": "false"
+        },
+        {
+          "command": "postgresql-workbench.setScratchpadCellExecutionIntent",
           "when": "false"
         },
         {
@@ -320,6 +550,10 @@
         },
         {
           "command": "postgresql-workbench.cancelDatabaseIndex",
+          "when": "false"
+        },
+        {
+          "command": "postgresql-workbench.indexAssociation",
           "when": "false"
         },
         {
@@ -354,8 +588,18 @@
         },
         {
           "command": "postgresql-workbench.newSqlNotebook",
-          "when": "view == postgresql-workbench-connections",
-          "group": "navigation@4"
+          "when": "view == postgresql-workbench-scratchpads",
+          "group": "navigation@1"
+        },
+        {
+          "command": "postgresql-workbench.filterSqlNotebooks",
+          "when": "view == postgresql-workbench-scratchpads",
+          "group": "navigation@2"
+        },
+        {
+          "command": "postgresql-workbench.refreshSqlNotebooks",
+          "when": "view == postgresql-workbench-scratchpads",
+          "group": "navigation@3"
         },
         {
           "command": "postgresql-workbench.results.copy",
@@ -435,11 +679,6 @@
           "group": "navigation@9"
         },
         {
-          "command": "postgresql-workbench.newSqlNotebook",
-          "when": "viewItem == postgresql-workbench-scratchpads",
-          "group": "inline@1"
-        },
-        {
           "command": "postgresql-workbench.openFunction",
           "when": "viewItem == postgresql-workbench-function || viewItem == postgresql-workbench-function-debuggable",
           "group": "navigation"
@@ -471,7 +710,7 @@
         },
         {
           "command": "postgresql-workbench.openSqlNotebook",
-          "when": "view == postgresql-workbench-connections && (viewItem == postgresql-workbench-scratchpad-auto || viewItem == postgresql-workbench-scratchpad-manual)",
+          "when": "view == postgresql-workbench-scratchpads && (viewItem == postgresql-workbench-scratchpad-auto || viewItem == postgresql-workbench-scratchpad-manual)",
           "group": "inline@1"
         },
         {
@@ -496,22 +735,22 @@
         },
         {
           "command": "postgresql-workbench.renameSqlNotebook",
-          "when": "view == postgresql-workbench-connections && (viewItem == postgresql-workbench-scratchpad-auto || viewItem == postgresql-workbench-scratchpad-manual)",
+          "when": "view == postgresql-workbench-scratchpads && (viewItem == postgresql-workbench-scratchpad-auto || viewItem == postgresql-workbench-scratchpad-manual)",
           "group": "navigation@3"
         },
         {
           "command": "postgresql-workbench.duplicateSqlNotebook",
-          "when": "view == postgresql-workbench-connections && (viewItem == postgresql-workbench-scratchpad-auto || viewItem == postgresql-workbench-scratchpad-manual)",
+          "when": "view == postgresql-workbench-scratchpads && (viewItem == postgresql-workbench-scratchpad-auto || viewItem == postgresql-workbench-scratchpad-manual)",
           "group": "navigation@4"
         },
         {
           "command": "postgresql-workbench.exportSqlNotebook",
-          "when": "view == postgresql-workbench-connections && (viewItem == postgresql-workbench-scratchpad-auto || viewItem == postgresql-workbench-scratchpad-manual)",
+          "when": "view == postgresql-workbench-scratchpads && (viewItem == postgresql-workbench-scratchpad-auto || viewItem == postgresql-workbench-scratchpad-manual)",
           "group": "navigation@5"
         },
         {
           "command": "postgresql-workbench.deleteSqlNotebook",
-          "when": "view == postgresql-workbench-connections && (viewItem == postgresql-workbench-scratchpad-auto || viewItem == postgresql-workbench-scratchpad-manual)",
+          "when": "view == postgresql-workbench-scratchpads && (viewItem == postgresql-workbench-scratchpad-auto || viewItem == postgresql-workbench-scratchpad-manual)",
           "group": "navigation@6"
         },
         {
@@ -558,7 +797,7 @@
       "editor/context": [
         {
           "command": "postgresql-workbench.executeSqlSelection",
-          "when": "editorHasSelection && (editorLangId == sql || editorLangId == plpgsql)",
+          "when": "editorHasSelection && resourceScheme != code+moniker && (editorLangId == sql || editorLangId == plpgsql)",
           "group": "navigation@1"
         }
       ]
@@ -623,6 +862,11 @@
         "command": "postgresql-workbench.cancelDatabaseIndex",
         "title": "PostgreSQL Workbench: Cancel Database Indexing",
         "icon": "$(debug-stop)"
+      },
+      {
+        "command": "postgresql-workbench.indexAssociation",
+        "title": "PostgreSQL Workbench: Index Association",
+        "icon": "$(refresh)"
       },
       {
         "command": "postgresql-workbench.configureWorkbenchSchemaSync",
@@ -705,6 +949,11 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "postgresql-workbench.filterSqlNotebooks",
+        "title": "Filter SQL Scratchpads...",
+        "icon": "$(search)"
+      },
+      {
         "command": "postgresql-workbench.changeSqlNotebookConnection",
         "title": "Scratchpad Association...",
         "icon": "$(database)"
@@ -730,6 +979,11 @@
         "icon": "$(debug-pause)"
       },
       {
+        "command": "postgresql-workbench.setScratchpadStatementTimeout",
+        "title": "Scratchpad Statement Timeout...",
+        "icon": "$(clock)"
+      },
+      {
         "command": "postgresql-workbench.commitScratchpadTransaction",
         "title": "Commit",
         "icon": "$(check)"
@@ -738,6 +992,10 @@
         "command": "postgresql-workbench.rollbackScratchpadTransaction",
         "title": "Rollback",
         "icon": "$(discard)"
+      },
+      {
+        "command": "postgresql-workbench.setScratchpadCellExecutionIntent",
+        "title": "PostgreSQL Workbench: Change Scratchpad Cell Execution Intent"
       },
       {
         "command": "postgresql-workbench.compareRoutineWithDatabase",
@@ -788,6 +1046,18 @@
         "title": "PL/pgSQL: Debug Call"
       },
       {
+        "command": "postgresql-workbench.assignDocumentConnection",
+        "title": "PostgreSQL Workbench: Choose Document Association"
+      },
+      {
+        "command": "postgresql-workbench.runSqlCall",
+        "title": "PostgreSQL Workbench: Run SQL Statement"
+      },
+      {
+        "command": "postgresql-workbench.deployManagedRoutine",
+        "title": "PostgreSQL Workbench: Deploy Managed PL/pgSQL Routine"
+      },
+      {
         "command": "postgresql-workbench.results.copy",
         "title": "PL/pgSQL Results: Copy Captured Result",
         "icon": "$(copy)"
@@ -806,6 +1076,46 @@
     "configuration": {
       "title": "PostgreSQL Workbench",
       "properties": {
+        "postgresql-workbench.sqlAuthoring.aliasStyle": {
+          "type": "string",
+          "default": "fullName",
+          "enum": [
+            "fullName",
+            "initial"
+          ],
+          "enumItemLabels": [
+            "Full table name",
+            "Initial"
+          ],
+          "enumDescriptions": [
+            "Generate aliases such as address and shipment. Add a numeric suffix only to resolve a collision.",
+            "Generate compact aliases such as a and s. Add a numeric suffix only to resolve a collision."
+          ],
+          "scope": "window",
+          "description": "Alias strategy used when PostgreSQL Workbench composes a query from dragged relations. Changes apply to the next composition."
+        },
+        "postgresql-workbench.sqlAuthoring.syntaxMaxDepth": {
+          "type": "integer",
+          "default": 1024,
+          "minimum": 1,
+          "scope": "window",
+          "description": "Maximum PostgreSQL syntax-tree depth used to classify SQL safely before execution and composition. Code Moniker 0.7.0 applies this client-selected budget without an additional server cap."
+        },
+        "postgresql-workbench.sqlAuthoring.syntaxMaxNodes": {
+          "type": "integer",
+          "default": 100000,
+          "minimum": 1,
+          "scope": "window",
+          "description": "Maximum PostgreSQL syntax-tree nodes used to classify SQL safely before execution and composition. Increase this client-selected budget for exceptionally large SQL documents."
+        },
+        "postgresql-workbench.sql.statementTimeoutMs": {
+          "type": "integer",
+          "default": 60000,
+          "minimum": 1000,
+          "maximum": 3600000,
+          "scope": "window",
+          "description": "Default PostgreSQL Statement timeout in milliseconds for SQL Scratchpads and free SQL documents. Each Scratchpad can persist its own override."
+        },
         "postgresql-workbench.workbench.schemaSync.enabled": {
           "type": "boolean",
           "default": false,
@@ -858,7 +1168,7 @@
           "minimum": 20,
           "maximum": 1000,
           "scope": "window",
-          "description": "Maximum number of PostgreSQL rows retained for SQL selections and debug results. It is also used as the notebook page size when results.pageSize has not been configured explicitly."
+          "description": "Maximum number of PostgreSQL rows retained for SQL selections and debug results. It is also used as the Scratchpad page size when results.pageSize has not been configured explicitly."
         },
         "postgresql-workbench.results.pageSize": {
           "type": "number",
@@ -874,7 +1184,7 @@
           "minimum": 20,
           "maximum": 100000,
           "scope": "window",
-          "description": "Maximum number of cursor-backed notebook rows retained for Previous navigation. Load all explicitly bypasses this limit."
+          "description": "Maximum number of cursor-backed Scratchpad rows retained for Previous navigation. Load all explicitly bypasses this limit."
         },
         "postgresql-workbench.results.cursorIdleTimeoutSeconds": {
           "type": "number",
@@ -890,7 +1200,7 @@
           "minimum": 20,
           "maximum": 1000,
           "scope": "window",
-          "description": "Maximum rows retained for notebook statements that cannot be paged safely, including data-modifying statements with RETURNING."
+          "description": "Maximum rows retained for Scratchpad statements that cannot be paged safely, including data-modifying statements with RETURNING."
         },
         "postgresql-workbench.results.autoReveal": {
           "type": "boolean",
@@ -966,6 +1276,12 @@
     "breakpoints": [
       {
         "language": "plpgsql"
+      },
+      {
+        "language": "postgresql-function"
+      },
+      {
+        "language": "postgresql-procedure"
       },
       {
         "language": "sql"
@@ -1090,7 +1406,7 @@
       {
         "id": "postgresql-workbench.gettingStarted",
         "title": "Getting Started with PostgreSQL Workbench",
-        "description": "Set up PostgreSQL debugging and pgTAP coverage in 6 steps.",
+        "description": "Set up PostgreSQL debugging, SQL authoring, and pgTAP coverage in 7 steps.",
         "steps": [
           {
             "id": "addServer",
@@ -1112,9 +1428,17 @@
           {
             "id": "browseFunctions",
             "title": "Browse Functions",
-            "description": "Open the PostgreSQL Workbench to browse the active database sources and its scratchpads in one tree.\n\n[Open Workbench](command:postgresql-workbench-connections.focus)",
+            "description": "Open the PostgreSQL Workbench to browse active database sources and SQL Scratchpads in separate, resizable views.\n\n[Open Workbench](command:postgresql-workbench-connections.focus)",
             "completionEvents": [
               "onView:postgresql-workbench-connections"
+            ]
+          },
+          {
+            "id": "authorSql",
+            "title": "Author SQL from Sources",
+            "description": "Open a `.sql` file or a Scratchpad cell and pick its connection once. Every non-empty PostgreSQL Statement gets a **Run SQL** CodeLens, **Format Document** uppercases keywords and indents with two spaces, and completion suggests indexed schemas, tables, views, columns, functions, and procedures.\n\nDrag one object from **Sources** into the editor and hold **Shift** while dropping it to compose SQL: a `SELECT` for a table or view, a `JOIN` when a foreign key connects it to the query under the cursor, a call for a function or procedure, or a DML harness for a trigger. A drop without Shift opens the object in the Cockpit. Composed SQL is never executed automatically.\n\n[Open a SQL File](command:workbench.action.files.openFile)",
+            "completionEvents": [
+              "onCommand:workbench.action.files.openFile"
             ]
           },
           {
@@ -1156,8 +1480,12 @@
     "test:smoke": "npm run pretest && node scripts/run-vscode-test.mjs --timeout-ms 90000 -- --config .vscode-smoke.mjs --fail-zero",
     "test:min-vscode": "npm run pretest && node scripts/run-vscode-test.mjs --timeout-ms 90000 -- --config .vscode-smoke.mjs --code-version 1.109.0 --fail-zero",
     "test:acceptance:typecheck": "tsc -p acceptance/tsconfig.json",
-    "test:acceptance": "npm run build:production && npm run test:acceptance:typecheck && playwright test --config playwright.acceptance.config.ts",
-    "test:bootstrap": "npm run build:production && npm run test:acceptance:typecheck && playwright test --config playwright.bootstrap.config.ts",
+    "test:acceptance:prepare": "npm run build:production && npm run test:acceptance:typecheck",
+    "test:acceptance": "npm run test:acceptance:prepare && playwright test --config playwright.acceptance.config.ts && playwright test --config playwright.schema-sync.config.ts",
+    "test:acceptance:core": "npm run test:acceptance:prepare && playwright test --config playwright.acceptance.config.ts",
+    "test:acceptance:schema-sync": "npm run test:acceptance:prepare && playwright test --config playwright.schema-sync.config.ts",
+    "test:acceptance:docker": "bash scripts/run-playwright-docker.sh",
+    "test:bootstrap": "npm run test:acceptance:prepare && playwright test --config playwright.bootstrap.config.ts",
     "test:acceptance:graph-dnd": "npm run build:production && npm run test:acceptance:typecheck && playwright test --config playwright.acceptance.config.ts acceptance/specs/acceptance.spec.ts --grep 'Workbench graph'",
     "test:acceptance:debugger": "npm run build:production && npm run test:acceptance:typecheck && playwright test --config playwright.acceptance.config.ts acceptance/specs/acceptance.spec.ts --grep 'PL/pgSQL debugger'",
     "test:acceptance:source-tab-cleanup": "npm run build:production && npm run test:acceptance:typecheck && playwright test --config playwright.acceptance.config.ts acceptance/specs/acceptance.spec.ts --grep 'virtual source cleanup'",
@@ -1168,7 +1496,7 @@
     "vscode:prepublish": "npm run build:production"
   },
   "dependencies": {
-    "@code-moniker/client": "^0.6.1",
+    "@code-moniker/client": "0.7.0",
     "@shikijs/core": "^4.4.1",
     "@shikijs/engine-javascript": "^4.4.1",
     "@shikijs/langs": "^4.4.1",
@@ -1178,6 +1506,10 @@
     "pg-cursor": "^2.21.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
+    "sql-formatter": "^15.8.2",
+    "vscode-languageclient": "^10.1.0",
+    "vscode-languageserver": "^10.1.0",
+    "vscode-languageserver-textdocument": "^1.0.13",
     "zustand": "^5.0.14"
   },
   "devDependencies": {

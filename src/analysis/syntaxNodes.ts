@@ -39,10 +39,27 @@ export function syntaxTreeHasKind(node: SyntaxNode, kinds: ReadonlySet<string>):
   return node.children.some((child) => syntaxTreeHasKind(child, kinds));
 }
 
+/** Thrown when a syntax tree is truncated or contains syntax errors. */
+export class UnusableSyntaxTreeError extends Error {
+  constructor(
+    message: string,
+    readonly cause: "truncated" | "syntax-error",
+  ) {
+    super(message);
+    this.name = "UnusableSyntaxTreeError";
+  }
+}
+
 export function assertUsableSyntaxTree(syntax: SyntaxTree, language: string): void {
-  if (syntax.truncated)
-    throw new Error(`Code Moniker returned a truncated ${language} syntax tree`);
-  if (syntax.hasError) throw new Error(`${language} source contains syntax errors`);
+  if (syntax.truncated) {
+    throw new UnusableSyntaxTreeError(
+      `Code Moniker returned a truncated ${language} syntax tree`,
+      "truncated",
+    );
+  }
+  if (syntax.hasError) {
+    throw new UnusableSyntaxTreeError(`${language} source contains syntax errors`, "syntax-error");
+  }
 }
 
 export function decodeSqlIdentifier(value: string): string {

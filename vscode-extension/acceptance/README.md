@@ -36,13 +36,26 @@ business outcomes in the spec.
 
 ## Shared VS Code lifecycle
 
-The complete acceptance campaign runs with `workers: 1`, no retries, and one
-worker-scoped VS Code fixture. VS Code and the demo database start once, all
-successful scenarios run in that same application instance, and teardown
-happens after the final scenario. Playwright normally discards its worker after
-a failure, so the campaign is deliberately fail-fast (`maxFailures: 1`) rather
-than silently launching a second VS Code instance and rebuilding the database
-index for the remaining scenarios.
+The database-backed campaign is split into two independent lanes. The Core lane
+contains the connection cinematics, index lifecycle, Scratchpads, notebooks,
+Graph, search, coverage-to-debug transition and SQL authoring. Schema Sync owns
+a second lane because its listener provisioning and DDL cleanup deliberately
+mutate the indexed scope. CI runs those lanes in parallel on separate runners;
+each therefore owns a VS Code profile, demo database and index. A third,
+database-free Bootstrap lane diagnoses Electron or extension activation before
+database and indexing behavior are involved.
+
+Every lane runs with `workers: 1`, no retries, and one worker-scoped VS Code
+fixture. Inside a database-backed lane, VS Code and PostgreSQL start once and
+the scenarios deliberately reuse one index. No test rebuilds an index merely to
+isolate itself. Playwright normally discards its worker after a failure, so each
+lane is deliberately fail-fast (`maxFailures: 1`) rather than silently
+launching a second VS Code instance for the remaining scenarios.
+
+The Playwright project names and `PGWB_ACCEPTANCE_LANE` values are exactly
+`bootstrap`, `core`, and `schema-sync`. Worker fixtures may use that explicit
+identity for lane-owned setup or teardown; they must not infer it from a test
+title or file path.
 
 Before and after every scenario, the harness saves and closes editors, waits
 for in-flight Workbench Graph operations, focuses the Workbench through its
@@ -60,23 +73,66 @@ normally use a five-second bound; database indexing explicitly gets thirty
 seconds. Do not introduce shared timeout constants: a failure must name the
 action that timed out so its measured duration can be reviewed independently.
 
-The Electron worker records one 1440×900 video for the complete shared-instance
-campaign and clears the previous run before launch. Layout scenarios also
-attach full screenshots for the side and bottom Source View states; these are
-the authoritative visual evidence for responsive dimensions and SQL
-readability.
+Local runs retain Playwright traces, screenshots and one 1440×900 Electron video
+per lane. CI and the Linux Docker runner disable that rich Electron
+instrumentation because it can make the renderer unresponsive under Xvfb. They
+instead retain VS Code logs, JUnit output and a rolling 1600×1000 Xvfb
+screenshot. On failure, the last live frame is preserved as the final screenshot
+before Electron teardown can replace it with a black root window.
 
 ## Run
 
 ```bash
 npm run test:acceptance
+npm run test:bootstrap
+npm run test:acceptance:core
+npm run test:acceptance:schema-sync
 npm run test:acceptance:debugger
 npm run test:acceptance:graph-dnd
 npm run test:acceptance:source-tab-cleanup
 ```
 
+`test:acceptance` runs Core and Schema Sync sequentially with a fresh worker for
+each lane. Use a lane-specific command while iterating so the other state
+machine is not needlessly rebuilt.
+
+To reproduce the Linux CI environment locally, run all three lanes or target
+one lane and pass Playwright filters through the runner:
+
+```bash
+npm run test:acceptance:docker
+npm run test:acceptance:docker -- bootstrap
+npm run test:acceptance:docker -- core --grep "SQL authoring"
+npm run test:acceptance:docker -- schema-sync
+```
+
+Each invocation creates a unique Docker Compose project and writes evidence to
+`test-results/docker/<run-id>/<lane>`, so concurrent or repeated runs cannot
+reuse a profile, database, container name, built image tag or result directory.
+Compose derives the runner and PostgreSQL image names from that project and the
+runner removes only those project-local images during cleanup. The default
+command gives Bootstrap, Core and Schema Sync separate projects and gives both
+database-backed lanes fresh PostgreSQL fixtures. Set `PGWB_PLAYWRIGHT_RUN_ID`
+when a stable diagnostic identifier is useful; the runner refuses to overwrite
+evidence for an existing identifier.
+
+The image pins Node 22.23.2 and Playwright 1.62.1 by their multi-architecture
+image manifests, plus VS Code 1.109.0 and Ubuntu Noble. It caches that exact VS
+Code binary during the image build instead of following the moving `stable`
+channel. The PostgreSQL 17/pldebugger demo base is pinned to its verified
+multi-architecture manifest as well, and the runner prints the resulting
+fixture image ID. The runner defaults to `linux/amd64` for GitHub
+Actions parity, uses Xvfb with a 1600x1000 display, runs with an init process and
+2 GiB of shared memory, and shares the demo PostgreSQL network namespace so the
+canonical `localhost:5434` fixture remains unchanged. Bootstrap has no database
+dependency. Set
+`PGWB_PLAYWRIGHT_DOCKER_PLATFORM=linux/arm64` for a faster native Apple Silicon
+diagnostic run. Set `PGWB_PLAYWRIGHT_DOCKER_KEEP=1` only when the isolated demo
+database must remain available after the runner exits.
+
 The command builds the production extension, starts the deterministic demo
 database if needed, launches an isolated VS Code profile, performs the real UI
 scenario, and retains Playwright evidence on failure. Set
 `PGWB_ACCEPTANCE_KEEP_DEMO=1` to leave a database started by the suite running.
-Set `PGWB_ACCEPTANCE_VSCODE_VERSION` to validate a specific VS Code version.
+Set `PGWB_ACCEPTANCE_VSCODE_VERSION` only for an intentional compatibility run;
+CI and Docker always select 1.109.0 unless explicitly rebuilt otherwise.

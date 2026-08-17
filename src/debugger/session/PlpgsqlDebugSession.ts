@@ -76,6 +76,7 @@ interface LaunchRequestArguments extends DebugProtocol.LaunchRequestArguments {
   user: string;
   password: string;
   sql?: string;
+  entryRoutine?: DebugLaunchRoutineTarget;
   routine?: DebugLaunchRoutineTarget;
   routineArgs?: DebugLaunchRoutineArgument[];
   ssl?: boolean | "require" | "prefer" | "disable";
@@ -796,36 +797,38 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
   ): Promise<void> {
     response.body = { stackFrames: [], totalFrames: 0 };
     await this.guarded("stackTraceRequest", response, async () => {
-      const frames = await this.listenerExecutor.getStack();
+      const stackFrames = await this.runInspection(async () => {
+        const frames = await this.listenerExecutor.getStack();
+        const result: StackFrame[] = [];
+        this.frameAnalyses.clear();
+        for (const frame of frames) {
+          let frameId = this.frameIdByLevel.get(frame.level);
+          if (frameId === undefined) {
+            frameId = this.nextFrameId++;
+            this.frameIdByLevel.set(frame.level, frameId);
+            this.frameLevelById.set(frameId, frame.level);
+          }
+          const cached = await this.getSource(frame.oid);
+          if (cached) this.frameAnalyses.set(frameId, cached.analysis);
+          const funcDef = cached?.funcDef;
+          const documentUri = funcDef ? this.sourceUris.get(frame.oid) : undefined;
+          const source = funcDef
+            ? new Source(
+                `${funcDef.schema}.${funcDef.name}`,
+                documentUri,
+                this.sourceReference(frame.oid, documentUri),
+              )
+            : undefined;
 
-      const stackFrames: StackFrame[] = [];
-      this.frameAnalyses.clear();
-      for (const frame of frames) {
-        let frameId = this.frameIdByLevel.get(frame.level);
-        if (frameId === undefined) {
-          frameId = this.nextFrameId++;
-          this.frameIdByLevel.set(frame.level, frameId);
-          this.frameLevelById.set(frameId, frame.level);
+          const absLine = this.convertDebuggerLineToClient(
+            frame.line + (cached?.bodyLineOffset ?? 0),
+          );
+          result.push(
+            new StackFrame(frameId, funcDef?.name ?? `<oid:${frame.oid}>`, source, absLine),
+          );
         }
-        const cached = await this.getSource(frame.oid);
-        if (cached) this.frameAnalyses.set(frameId, cached.analysis);
-        const funcDef = cached?.funcDef;
-        const documentUri = funcDef ? this.sourceUris.get(frame.oid) : undefined;
-        const source = funcDef
-          ? new Source(
-              `${funcDef.schema}.${funcDef.name}`,
-              documentUri,
-              this.sourceReference(frame.oid, documentUri),
-            )
-          : undefined;
-
-        const absLine = this.convertDebuggerLineToClient(
-          frame.line + (cached?.bodyLineOffset ?? 0),
-        );
-        stackFrames.push(
-          new StackFrame(frameId, funcDef?.name ?? `<oid:${frame.oid}>`, source, absLine),
-        );
-      }
+        return result;
+      });
 
       response.body = {
         stackFrames,
