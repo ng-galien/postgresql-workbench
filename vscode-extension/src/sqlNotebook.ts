@@ -101,6 +101,8 @@ export type ScratchpadDebugger = (
   request: ScratchpadDebugRequest,
 ) => Promise<ScratchpadDebugOutcome>;
 
+const DEBUGGABLE_ANALYSIS_DELAY_MS = 500;
+
 /** Tells whether a cell's SQL currently offers one replayable PL/pgSQL entry point. */
 export type ScratchpadDebugEligibility = (request: {
   sql: string;
@@ -1291,6 +1293,7 @@ class SqlNotebookStatusProvider
   private readonly subscriptions: vscode.Disposable[];
 
   private readonly debuggable = new Map<string, { version: number; value?: boolean }>();
+  private readonly debuggableTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   constructor(
     private readonly connections: ConnectionManager,
@@ -1311,6 +1314,8 @@ class SqlNotebookStatusProvider
   }
 
   invalidateDebuggable(): void {
+    for (const timer of this.debuggableTimers.values()) clearTimeout(timer);
+    this.debuggableTimers.clear();
     this.debuggable.clear();
     this.changed.fire();
   }
@@ -1329,16 +1334,26 @@ class SqlNotebookStatusProvider
     const version = cell.document.version;
     const cached = this.debuggable.get(key);
     if (cached?.version === version) return cached.value === true;
+    // Debounce: typing bumps the version on every keystroke; analyse only the settled text.
+    clearTimeout(this.debuggableTimers.get(key));
     this.debuggable.set(key, { version });
-    void this.canDebug({ sql: cell.document.getText(), association })
-      .then((value) => {
+    const sql = cell.document.getText();
+    this.debuggableTimers.set(
+      key,
+      setTimeout(() => {
+        this.debuggableTimers.delete(key);
         if (this.debuggable.get(key)?.version !== version) return;
-        this.debuggable.set(key, { version, value });
-        if (value) this.changed.fire();
-      })
-      .catch(() => {
-        if (this.debuggable.get(key)?.version === version) this.debuggable.delete(key);
-      });
+        void this.canDebug({ sql, association })
+          .then((value) => {
+            if (this.debuggable.get(key)?.version !== version) return;
+            this.debuggable.set(key, { version, value });
+            if (value) this.changed.fire();
+          })
+          .catch(() => {
+            if (this.debuggable.get(key)?.version === version) this.debuggable.delete(key);
+          });
+      }, DEBUGGABLE_ANALYSIS_DELAY_MS),
+    );
     return false;
   }
 
@@ -1416,6 +1431,7 @@ class SqlNotebookStatusProvider
   }
 
   dispose(): void {
+    for (const timer of this.debuggableTimers.values()) clearTimeout(timer);
     for (const subscription of this.subscriptions) subscription.dispose();
     this.changed.dispose();
   }
