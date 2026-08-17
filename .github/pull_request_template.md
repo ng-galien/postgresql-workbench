@@ -26,11 +26,18 @@ You may be brief, expansive, uncertain, critical, enthusiastic, or take the
 testimony somewhere else entirely. There is no required structure, tone,
 length, or conclusion.
 
+Write the testimony in French. Code identifiers, commands, tool output,
+quotations, and technical terms may remain in their original language when
+that is clearer.
+
 Keep the two markers below. The collection gate copies only what is between
 them and preserves it as written.
 -->
 
 ## Agent testimony
+
+<!-- Replace the value below with Codex or Claude. -->
+<!-- agent-name: Codex or Claude -->
 
 <!-- agent-testimony:start -->
 
