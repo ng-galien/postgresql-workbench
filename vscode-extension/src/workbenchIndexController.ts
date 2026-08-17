@@ -237,6 +237,10 @@ export class WorkbenchIndexController implements vscode.Disposable {
   private readonly published = new Map<string, PublishedSourceSet>();
   private readonly registries = new Map<string, IndexedPostgresRegistry>();
   private readonly staleScopes = new Set<string>();
+  private readonly sqlAuthoringSnapshots = new Map<
+    string,
+    { registry: IndexedPostgresRegistry; snapshot: SqlAuthoringSnapshot }
+  >();
   private readonly scopeRefreshEpochs = new Map<string, number>();
   private sourceMutation: Promise<void> = Promise.resolve();
   private sourceMutationsActive = 0;
@@ -336,58 +340,38 @@ export class WorkbenchIndexController implements vscode.Disposable {
     serverId: string;
     database: string;
   }): SqlAuthoringSnapshot | undefined {
-    const registry = this.registries.get(databaseScope(identity.serverId, identity.database));
-    if (!registry) return undefined;
-    const workbenchObjects = buildWorkbenchObjects(registry.symbols, identity);
-    const objects = workbenchObjects
-      .filter(
-        (object) =>
-          object.kind === "table" ||
-          object.kind === "view" ||
-          object.kind === "function" ||
-          object.kind === "procedure",
-      )
-      .map((object) => ({
-        serverId: object.serverId,
-        database: object.database,
-        schema: object.schema,
-        oid: object.oid,
-        name: object.name,
-        kind: object.kind as "table" | "view" | "function" | "procedure",
-        signature: object.signature,
-        plpgsql: object.plpgsql,
-        returnType:
-          object.kind === "function"
-            ? routineReturnType(registry.documents.get(object.sourceUri)?.content)
-            : undefined,
-        parameters: object.params.map((parameter) => ({ ...parameter })),
-        columns:
-          object.kind === "table" || object.kind === "view"
-            ? buildWorkbenchTableMembers(registry.symbols, object)
-                .filter((member) => member.kind === "column")
-                .map((member) => ({ name: member.name, type: member.type }))
-            : [],
-      }));
-    const triggers = workbenchObjects.flatMap((object) => {
-      if (object.kind !== "trigger") return [];
-      const definition = registry.documents.get(object.sourceUri)?.content;
-      const trigger = definition
-        ? sqlAuthoringTrigger(object.oid, object.schema, object.name, definition)
-        : undefined;
-      return trigger ? [trigger] : [];
-    });
-    return {
-      status: this.staleScopes.has(databaseScope(identity.serverId, identity.database))
-        ? "stale"
-        : "available",
-      serverId: identity.serverId,
-      database: identity.database,
-      revision: registry.result.revision,
-      generation: registry.result.generation,
-      objects,
-      foreignKeys: registry.foreignKeys.map((foreignKey) => ({ ...foreignKey })),
-      triggers,
-    };
+    const scope = databaseScope(identity.serverId, identity.database);
+    const registry = this.registries.get(scope);
+    if (!registry) {
+      this.sqlAuthoringSnapshots.delete(scope);
+      return undefined;
+    }
+    const status: SqlAuthoringSnapshot["status"] = this.staleScopes.has(scope)
+      ? "stale"
+      : "available";
+    const cached = this.sqlAuthoringSnapshots.get(scope);
+    if (
+      cached &&
+      cached.registry === registry &&
+      cached.snapshot.status === status &&
+      cached.snapshot.revision === registry.result.revision &&
+      cached.snapshot.generation === registry.result.generation
+    ) {
+      return cached.snapshot;
+    }
+    const snapshot = buildSqlAuthoringSnapshot(registry, identity, status);
+    this.sqlAuthoringSnapshots.set(scope, { registry, snapshot });
+    return snapshot;
+  }
+
+  private invalidateSqlAuthoringSnapshot(scope?: string): void {
+    if (scope === undefined) this.sqlAuthoringSnapshots.clear();
+    else this.sqlAuthoringSnapshots.delete(scope);
+  }
+
+  private notifySqlAuthoringSnapshotChanged(): void {
+    if (this.disposed) return;
+    this.stateEmitter.fire(this.currentState);
   }
 
   objectOrigin(sourceUri: string): PostgresCatalogObjectOrigin | undefined {
@@ -869,6 +853,7 @@ export class WorkbenchIndexController implements vscode.Disposable {
   markDatabaseStale(serverId: string, database: string, message: string): void {
     const scope = databaseScope(serverId, database);
     this.staleScopes.add(scope);
+    this.invalidateSqlAuthoringSnapshot(scope);
     if (this.activeScope() !== scope) return;
     const registry = this.registries.get(scope);
     this.stateScope = scope;
@@ -947,8 +932,14 @@ export class WorkbenchIndexController implements vscode.Disposable {
       indexingStarted,
       () => this.scopeRefreshEpoch(scope) === refreshEpoch,
     );
-    if (this.activeScope() === scope && this.scopeRefreshEpoch(scope) === refreshEpoch) {
-      this.activateRegistry(scope, registry, { kind: "full", schemas: [], sourceUris: [] });
+    if (this.scopeRefreshEpoch(scope) === refreshEpoch) {
+      if (this.activeScope() === scope) {
+        this.activateRegistry(scope, registry, { kind: "full", schemas: [], sourceUris: [] });
+      } else {
+        this.staleScopes.delete(scope);
+        this.invalidateSqlAuthoringSnapshot(scope);
+        this.notifySqlAuthoringSnapshotChanged();
+      }
     }
     this.logResult(result, session);
     return result;
@@ -964,6 +955,7 @@ export class WorkbenchIndexController implements vscode.Disposable {
     this.currentDocuments.clear();
     this.currentOrigins.clear();
     this.registries.clear();
+    this.sqlAuthoringSnapshots.clear();
     this.scopeRefreshEpochs.clear();
     this.connectionSubscription.dispose();
     this.stateEmitter.dispose();
@@ -1428,6 +1420,7 @@ export class WorkbenchIndexController implements vscode.Disposable {
           this.syntaxParserPromise = undefined;
           this.published.clear();
           this.registries.clear();
+          this.invalidateSqlAuthoringSnapshot();
           this.output.appendLine(
             `Code Moniker daemon ${session.metadata.daemonPid} disconnected; session invalidated`,
           );
@@ -1512,6 +1505,7 @@ export class WorkbenchIndexController implements vscode.Disposable {
     this.currentOrigins = registry.origins;
     this.stateScope = scope;
     this.staleScopes.delete(scope);
+    this.invalidateSqlAuthoringSnapshot(scope);
     this.setState({
       status: "available",
       serverId: registry.result.serverId,
@@ -1755,6 +1749,61 @@ function requireCapability(available: boolean, capability: string): void {
 
 function duration(milliseconds: number): string {
   return `${milliseconds.toFixed(1)}ms`;
+}
+
+function buildSqlAuthoringSnapshot(
+  registry: IndexedPostgresRegistry,
+  identity: { serverId: string; database: string },
+  status: SqlAuthoringSnapshot["status"],
+): SqlAuthoringSnapshot {
+  const workbenchObjects = buildWorkbenchObjects(registry.symbols, identity);
+  const objects = workbenchObjects
+    .filter(
+      (object) =>
+        object.kind === "table" ||
+        object.kind === "view" ||
+        object.kind === "function" ||
+        object.kind === "procedure",
+    )
+    .map((object) => ({
+      serverId: object.serverId,
+      database: object.database,
+      schema: object.schema,
+      oid: object.oid,
+      name: object.name,
+      kind: object.kind as "table" | "view" | "function" | "procedure",
+      signature: object.signature,
+      plpgsql: object.plpgsql,
+      returnType:
+        object.kind === "function"
+          ? routineReturnType(registry.documents.get(object.sourceUri)?.content)
+          : undefined,
+      parameters: object.params.map((parameter) => ({ ...parameter })),
+      columns:
+        object.kind === "table" || object.kind === "view"
+          ? buildWorkbenchTableMembers(registry.symbols, object)
+              .filter((member) => member.kind === "column")
+              .map((member) => ({ name: member.name, type: member.type }))
+          : [],
+    }));
+  const triggers = workbenchObjects.flatMap((object) => {
+    if (object.kind !== "trigger") return [];
+    const definition = registry.documents.get(object.sourceUri)?.content;
+    const trigger = definition
+      ? sqlAuthoringTrigger(object.oid, object.schema, object.name, definition)
+      : undefined;
+    return trigger ? [trigger] : [];
+  });
+  return {
+    status,
+    serverId: identity.serverId,
+    database: identity.database,
+    revision: registry.result.revision,
+    generation: registry.result.generation,
+    objects,
+    foreignKeys: registry.foreignKeys.map((foreignKey) => ({ ...foreignKey })),
+    triggers,
+  };
 }
 
 function databaseScope(serverId: string, database: string): string {

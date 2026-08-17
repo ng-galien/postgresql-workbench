@@ -149,6 +149,12 @@ export async function resolveDebugConfiguration(
   const serverId = config.server;
   let server = serverId ? cm.store.get(serverId) : cm.activeServer;
 
+  if (serverId && !server) {
+    await ui.showErrorMessage(
+      "The saved Connexion for this debug target no longer exists. Choose the Association again.",
+    );
+    return undefined;
+  }
   if (!server) {
     const picked = await cm.commands.pickConnection();
     if (!picked) return undefined;

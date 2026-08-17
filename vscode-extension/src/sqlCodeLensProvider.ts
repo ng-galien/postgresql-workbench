@@ -1,10 +1,15 @@
 import * as vscode from "vscode";
+import { UnusableSyntaxTreeError } from "../../src/analysis/syntaxNodes.js";
 import type { SyntaxParser } from "../../src/analysis/syntaxTree.js";
 import type { FunctionDefinition, ParsedCallSite } from "../../src/callParser.js";
 import { parseSqlFileStrict } from "../../src/callParser.js";
 import { CODE_MONIKER_URI_SCHEME } from "./codeMonikerUri.js";
 import { sqlStatementSlices } from "./sqlAuthoring/sqlLexing.js";
-import { shouldProvideSqlCodeLenses } from "./sqlCodeLensPolicy.js";
+import {
+  type SqlDebugAvailability,
+  type SqlDebugUnavailableReason,
+  shouldProvideSqlCodeLenses,
+} from "./sqlCodeLensPolicy.js";
 
 export type { FunctionDefinition, ParsedCallSite as CallSite };
 export interface CommandFunctionDefinition extends FunctionDefinition {
@@ -35,19 +40,43 @@ export interface CodeLensConnection {
   name: string;
 }
 
+export type CodeLensIndexState = "available" | "stale" | "missing";
+
 export interface CodeLensConnections {
   forDocument(documentUri: string): CodeLensConnection | undefined;
-  canDebugCall(connection: CodeLensConnection, call: ParsedCallSite): boolean;
-  canDebugDefinition(connection: CodeLensConnection, definition: FunctionDefinition): boolean;
+  indexState(connection: CodeLensConnection): CodeLensIndexState;
+  debugCallAvailability(connection: CodeLensConnection, call: ParsedCallSite): SqlDebugAvailability;
+  debugDefinitionAvailability(
+    connection: CodeLensConnection,
+    definition: FunctionDefinition,
+  ): SqlDebugAvailability;
   canDeployManagedRoutine(documentUri: string): boolean;
 }
 
+const UNAVAILABLE_INDEX: SqlDebugAvailability = { status: "unavailable", reason: "Index missing" };
+
 const NO_CONNECTIONS: CodeLensConnections = {
   forDocument: () => undefined,
-  canDebugCall: () => false,
-  canDebugDefinition: () => false,
+  indexState: () => "missing",
+  debugCallAvailability: () => UNAVAILABLE_INDEX,
+  debugDefinitionAvailability: () => UNAVAILABLE_INDEX,
   canDeployManagedRoutine: () => false,
 };
+
+/** Statement-level causes worth a lens; index state is reported once on the connection lens. */
+const STATEMENT_UNAVAILABLE_REASONS = new Set<SqlDebugUnavailableReason>([
+  "Several overloads match",
+  "Not a PL/pgSQL routine",
+  "Call depends on a row value or parameter",
+]);
+
+function unavailableLens(range: vscode.Range, reason: SqlDebugUnavailableReason): vscode.CodeLens {
+  return new vscode.CodeLens(range, {
+    title: `$(debug-alt) Debug unavailable: ${reason}`,
+    command: "",
+    tooltip: "PostgreSQL Workbench does not guess a debugger target from incomplete evidence.",
+  });
+}
 
 interface SqlCodeLensAnalysis {
   calls: ParsedCallSite[];
@@ -56,21 +85,66 @@ interface SqlCodeLensAnalysis {
 
 const EMPTY_ANALYSIS: SqlCodeLensAnalysis = { definitions: [], calls: [] };
 
+/**
+ * Analyzes a whole document; when it has a syntax error, falls back to analyzing each
+ * Statement slice so one broken Statement does not hide the entry points of the others.
+ */
+export async function analyzeSqlDocument(
+  sql: string,
+  parser: SyntaxParser,
+): Promise<SqlCodeLensAnalysis> {
+  try {
+    return await parseSqlFileStrict(sql, parser);
+  } catch (error) {
+    if (!(error instanceof UnusableSyntaxTreeError)) throw error;
+  }
+  const analysis: SqlCodeLensAnalysis = { definitions: [], calls: [] };
+  for (const statement of sqlStatementSlices(sql)) {
+    try {
+      const partial = await parseSqlFileStrict(statement.text, parser);
+      const offset = statement.line - 1;
+      analysis.definitions.push(
+        ...partial.definitions.map((definition) => ({
+          ...definition,
+          line: definition.line + offset,
+        })),
+      );
+      analysis.calls.push(...partial.calls.map((call) => ({ ...call, line: call.line + offset })));
+    } catch (error) {
+      if (!(error instanceof UnusableSyntaxTreeError)) throw error;
+    }
+  }
+  return analysis;
+}
+
+export const CHOOSE_DOCUMENT_ASSOCIATION_TITLE = "$(database) Choose Document Association";
+
 function connectionLens(
   range: vscode.Range,
   connection: CodeLensConnection | undefined,
-  command: string,
-  argument?: DocumentConnectionTarget,
+  argument: DocumentConnectionTarget,
 ): vscode.CodeLens {
   return new vscode.CodeLens(range, {
-    title: connection
-      ? `$(database) ${connection.name}`
-      : "$(database) Choose PostgreSQL connection",
-    command,
-    ...(argument ? { arguments: [argument] } : {}),
+    title: connection ? `$(database) ${connection.name}` : CHOOSE_DOCUMENT_ASSOCIATION_TITLE,
+    command: "postgresql-workbench.assignDocumentConnection",
+    arguments: [argument],
     tooltip: connection
-      ? `PostgreSQL connection: ${connection.name}. Click to change.`
-      : "Choose the PostgreSQL Document Association.",
+      ? `Document Association: ${connection.name}. Run and Debug use it. Click to change.`
+      : "Choose the saved Connexion that Run and Debug use for this document.",
+  });
+}
+
+function indexStateLens(
+  range: vscode.Range,
+  connection: CodeLensConnection,
+  state: CodeLensIndexState,
+): vscode.CodeLens {
+  return new vscode.CodeLens(range, {
+    title:
+      state === "stale" ? "$(refresh) Index stale: reindex" : "$(refresh) Index missing: index",
+    command: "postgresql-workbench.indexAssociation",
+    arguments: [{ serverId: connection.id }],
+    tooltip: `Debug needs a fresh Workbench Index of ${connection.name}. Run SQL does not.`,
   });
 }
 
@@ -126,19 +200,21 @@ export class SqlCodeLensProvider implements vscode.CodeLensProvider {
       const range = firstStatement
         ? new vscode.Range(firstStatement.line - 1, 0, firstStatement.line - 1, 0)
         : new vscode.Range(0, 0, 0, 0);
-      lenses.push(
-        connectionLens(range, documentConnection, "postgresql-workbench.assignDocumentConnection", {
-          documentUri,
-        }),
-      );
+      lenses.push(connectionLens(range, documentConnection, { documentUri }));
+      if (documentConnection) {
+        const state = this.connections.indexState(documentConnection);
+        if (state !== "available") lenses.push(indexStateLens(range, documentConnection, state));
+      }
     }
 
     if (isVirtualPlpgsql && this.connections.canDeployManagedRoutine(documentUri)) {
       lenses.push(
         new vscode.CodeLens(new vscode.Range(0, 0, 0, 0), {
-          title: "$(cloud-upload) Deploy managed routine",
+          title: "$(cloud-upload) Deploy",
           command: "postgresql-workbench.deployManagedRoutine",
           arguments: [document.uri],
+          tooltip:
+            "Replace the deployed routine with this working copy after validating its identity.",
         }),
       );
     }
@@ -152,14 +228,25 @@ export class SqlCodeLensProvider implements vscode.CodeLensProvider {
         documentVersion: document.version,
         ...(isVirtualPlpgsql && documentConnection ? { serverId: documentConnection.id } : {}),
       } satisfies CommandFunctionDefinition;
-      if (documentConnection && this.connections.canDebugDefinition(documentConnection, def)) {
+      const definitionDebug = documentConnection
+        ? this.connections.debugDefinitionAvailability(documentConnection, def)
+        : undefined;
+      if (definitionDebug?.status === "available") {
         lenses.push(
           new vscode.CodeLens(range, {
-            title: `$(debug-start) Debug PL/pgSQL ${def.kind}`,
+            title: "$(debug-start) Debug deployed routine",
             command: "postgresql-workbench.debugDefinition",
             arguments: [target],
+            tooltip: isVirtualPlpgsql
+              ? "Debug the routine deployed in PostgreSQL. An unsaved or undeployed working copy is not debugged."
+              : "Debug the routine deployed in PostgreSQL with this signature, not the text of this file. Compare with Database first if unsure.",
           }),
         );
+      } else if (
+        definitionDebug?.status === "unavailable" &&
+        STATEMENT_UNAVAILABLE_REASONS.has(definitionDebug.reason)
+      ) {
+        lenses.push(unavailableLens(range, definitionDebug.reason));
       }
       if (!isVirtualPlpgsql) {
         lenses.push(
@@ -173,23 +260,24 @@ export class SqlCodeLensProvider implements vscode.CodeLensProvider {
     }
 
     for (const call of calls) {
-      if (isVirtualPlpgsql || !call.isLaunchable) {
-        continue;
-      }
+      if (isVirtualPlpgsql || !documentConnection) continue;
       const range = new vscode.Range(call.line - 1, 0, call.line - 1, 0);
       const target = {
         ...call,
         documentUri: document.uri.toString(),
       } satisfies CommandCallSite;
-      const connection = this.connections.forDocument(documentUri);
-      if (connection && this.connections.canDebugCall(connection, call)) {
+      const callDebug = this.connections.debugCallAvailability(documentConnection, call);
+      if (callDebug.status === "available") {
         lenses.push(
           new vscode.CodeLens(range, {
             title: "$(debug-start) Debug PL/pgSQL",
             command: "postgresql-workbench.debugCall",
             arguments: [target],
+            tooltip: "Run this Statement with the PL/pgSQL debugger attached to its routine.",
           }),
         );
+      } else if (STATEMENT_UNAVAILABLE_REASONS.has(callDebug.reason)) {
+        lenses.push(unavailableLens(range, callDebug.reason));
       }
     }
 
@@ -213,7 +301,7 @@ export class SqlCodeLensProvider implements vscode.CodeLensProvider {
       this.analysisPending.delete(documentUri);
       try {
         const parser = await this.syntaxParser();
-        const value = await parseSqlFileStrict(requested.sql, parser);
+        const value = await analyzeSqlDocument(requested.sql, parser);
         if (this.analysisPending.has(documentUri)) continue;
         this.analysis.set(documentUri, { version: requested.version, value });
         this._onDidChangeCodeLenses.fire();

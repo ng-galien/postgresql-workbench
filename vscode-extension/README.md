@@ -115,8 +115,8 @@ running `CREATE EXTENSION pldbgapi` for you when possible.
 - **SQL results panel** — bounded result grid with JSON/composite inspection, history, copy, and CSV/JSON preview export
 - **CodeLens** — associate a free SQL document with one PostgreSQL connection,
   run every Statement directly, and debug only the `CALL` / `SELECT` routine
-  entries that Workbench can resolve safely; routine definitions remain
-  directly debuggable
+  entries that Workbench can resolve safely; routine definitions offer
+  **Debug deployed routine**
 - **Routine comparison** — compare a local PL/pgSQL definition with the exact overloaded routine in the active indexed PostgreSQL snapshot
 - **Function explorer** — browse servers → schemas → functions in the sidebar, debug from a right-click
 - **Zero launch.json needed** — registered servers appear in "Run and Debug"; launched sessions are saved to `launch.json` for one-key replay with F5
@@ -128,9 +128,9 @@ running `CREATE EXTENSION pldbgapi` for you when possible.
 ## Quick Start
 
 1. Open any `.sql` or `.pgsql` file. Each non-empty PostgreSQL Statement gets a **Run SQL** CodeLens.
-2. Click **Choose PostgreSQL connection** once to create the document's Association. A single saved connection is associated automatically on the first Run.
+2. Click **Choose Document Association** once. A single saved connection is associated automatically on the first Run.
 3. Click **Run SQL**. PostgreSQL executes that Statement and reports its result or error without requiring it to be debuggable.
-4. For a resolved PL/pgSQL `CALL`, function `SELECT`, or routine definition, click the additional **Debug PL/pgSQL** CodeLens.
+4. For a resolved PL/pgSQL `CALL` or function `SELECT`, click the additional **Debug PL/pgSQL** CodeLens; a `CREATE OR REPLACE` definition offers **Debug deployed routine**, which debugs the routine deployed in PostgreSQL, not the edited text.
 5. The debugger stops on entry — step with F10/F11, inspect variables, or set breakpoints in the source.
 6. Run and Debug results appear in the **PL/pgSQL Results** panel.
 

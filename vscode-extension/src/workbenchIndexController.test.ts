@@ -39,6 +39,15 @@ vi.mock("vscode", () => {
   };
 });
 
+vi.mock("../../src/workbench/postgresCatalog.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/workbench/postgresCatalog.js")>();
+  return {
+    ...actual,
+    readPostgresCatalog: vi.fn(actual.readPostgresCatalog),
+  };
+});
+
+import { readPostgresCatalog } from "../../src/workbench/postgresCatalog.js";
 import type { WorkbenchIndexResult } from "./workbenchIndexController.js";
 import { WorkbenchIndexController } from "./workbenchIndexController.js";
 
@@ -597,4 +606,166 @@ describe("WorkbenchIndexController connection state", () => {
       controller.dispose();
     },
   );
+});
+
+function indexResult(overrides: Partial<WorkbenchIndexResult> = {}): WorkbenchIndexResult {
+  return {
+    serverId: "server-a",
+    database: "database-a",
+    revision: "revision-a",
+    documents: 1,
+    symbols: 2,
+    generation: 1,
+    introspectionMs: 1,
+    materializationMs: 1,
+    publicationMs: 1,
+    symbolQueryMs: 1,
+    indexingMs: 1,
+    graphQueryMs: 1,
+    ...overrides,
+  };
+}
+
+function tableRegistry(result: WorkbenchIndexResult) {
+  const identity = { serverId: result.serverId, database: result.database };
+  const table = {
+    ...identity,
+    schema: "shop",
+    documentKind: "table" as const,
+    oid: 10,
+    name: "orders",
+    signature: "shop.orders",
+  };
+  return {
+    result,
+    symbols: [
+      {
+        uri: "sql:table:orders",
+        file: "postgresql://shop/orders.sql",
+        name: "orders",
+        kind: "table",
+        signature: "shop.orders",
+        postgres: table,
+      },
+      {
+        uri: "sql:column:orders.id",
+        file: "postgresql://shop/orders.sql",
+        name: "id",
+        kind: "column",
+        signature: "bigint",
+        line_range: [2, 2] as [number, number],
+        postgres: table,
+      },
+    ],
+    sourceSet: { srcset: "postgres-test", revision: result.revision, documents: [] },
+    documents: new Map(),
+    origins: new Map(),
+    foreignKeys: [],
+    viewDependencies: [],
+    resources: new Map(),
+  };
+}
+
+function newController(connections: FakeConnections): WorkbenchIndexController {
+  return new WorkbenchIndexController(
+    {
+      extensionPath: "/extension",
+      globalStorageUri: { fsPath: "/storage" },
+    } as vscode.ExtensionContext,
+    connections as unknown as ConnectionManager,
+    { appendLine: vi.fn() } as unknown as vscode.OutputChannel,
+  );
+}
+
+describe("WorkbenchIndexController SQL authoring snapshot", () => {
+  const scope = "server-a\0database-a";
+
+  it("memoizes the snapshot until the registry or its staleness changes", () => {
+    const controller = newController(new FakeConnections());
+    const registry = tableRegistry(indexResult());
+    type Registry = ReturnType<typeof tableRegistry>;
+    const internals = controller as unknown as {
+      registries: Map<string, Registry>;
+      activateRegistry(
+        scope: string,
+        registry: Registry,
+        change: { kind: "full"; schemas: []; sourceUris: [] },
+      ): void;
+    };
+    internals.registries.set(scope, registry);
+    const identity = { serverId: "server-a", database: "database-a" };
+
+    const first = controller.sqlAuthoringSnapshot(identity);
+    expect(first).toMatchObject({
+      status: "available",
+      revision: "revision-a",
+      objects: [{ name: "orders", kind: "table", columns: [{ name: "id", type: "bigint" }] }],
+    });
+    expect(controller.sqlAuthoringSnapshot(identity)).toBe(first);
+
+    controller.markDatabaseStale("server-a", "database-a", "schema changed");
+    const stale = controller.sqlAuthoringSnapshot(identity);
+    expect(stale).not.toBe(first);
+    expect(stale).toMatchObject({ status: "stale", revision: "revision-a" });
+    expect(controller.sqlAuthoringSnapshot(identity)).toBe(stale);
+
+    const refreshed = tableRegistry(indexResult({ revision: "revision-b", generation: 2 }));
+    internals.registries.set(scope, refreshed);
+    internals.activateRegistry(scope, refreshed, { kind: "full", schemas: [], sourceUris: [] });
+    const rebuilt = controller.sqlAuthoringSnapshot(identity);
+    expect(rebuilt).not.toBe(stale);
+    expect(rebuilt).toMatchObject({ status: "available", revision: "revision-b", generation: 2 });
+    expect(controller.sqlAuthoringSnapshot(identity)).toBe(rebuilt);
+
+    registry.result.generation = 7;
+    internals.registries.set(scope, registry);
+    expect(controller.sqlAuthoringSnapshot(identity)).toMatchObject({ generation: 7 });
+    registry.result.generation = 8;
+    expect(controller.sqlAuthoringSnapshot(identity)).toMatchObject({ generation: 8 });
+    controller.dispose();
+  });
+
+  it("clears the stale flag of an inactive scope after its ad hoc refresh and notifies", async () => {
+    const connections = new FakeConnections();
+    const controller = newController(connections);
+    const identity = { serverId: "server-b", database: "database-b" };
+    const inactiveScope = "server-b\0database-b";
+    const previous = tableRegistry(indexResult({ ...identity }));
+    const refreshed = tableRegistry(indexResult({ ...identity, revision: "revision-b" }));
+    const internals = controller as unknown as {
+      registries: Map<string, typeof previous>;
+      publishAndReadCatalog: () => Promise<unknown>;
+    };
+    internals.registries.set(inactiveScope, previous);
+    internals.publishAndReadCatalog = vi.fn(async () => {
+      internals.registries.set(inactiveScope, refreshed);
+      return {
+        result: refreshed.result,
+        registry: refreshed,
+        session: { metadata: { source: "test" } },
+      };
+    });
+    vi.mocked(readPostgresCatalog).mockResolvedValueOnce({} as never);
+    const states: unknown[] = [];
+    controller.onDidChangeState((state) => states.push(state));
+
+    controller.markDatabaseStale(identity.serverId, identity.database, "schema changed");
+    expect(controller.state).toEqual({ status: "not-indexed" });
+    expect(controller.isDatabaseStale(identity.serverId, identity.database)).toBe(true);
+    expect(controller.sqlAuthoringSnapshot(identity)).toMatchObject({ status: "stale" });
+
+    await expect(
+      controller.indexPostgresDatabase({ query: vi.fn() } as never, identity),
+    ).resolves.toBe(refreshed.result);
+
+    expect(controller.isDatabaseStale(identity.serverId, identity.database)).toBe(false);
+    expect(controller.sqlAuthoringSnapshot(identity)).toMatchObject({
+      status: "available",
+      revision: "revision-b",
+    });
+    expect(states).toEqual([{ status: "not-indexed" }]);
+    expect(controller.state).toEqual({ status: "not-indexed" });
+    expect(controller.indexedSymbols).toEqual([]);
+    controller.dispose();
+  });
 });

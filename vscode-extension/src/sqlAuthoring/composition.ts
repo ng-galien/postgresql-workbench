@@ -62,6 +62,7 @@ function composePostgresStatement(
     return {
       status: "rejected",
       message: "The Workbench Index is stale. Reindex before composing SQL.",
+      reason: "stale",
     };
   }
   if (payload.kind === "trigger") {

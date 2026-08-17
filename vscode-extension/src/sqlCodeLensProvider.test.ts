@@ -46,6 +46,7 @@ describe("SQL CodeLens provider", () => {
     expect(lenses.map((lens) => lens.command?.title)).toEqual([
       "$(play) Run SQL",
       "$(database) demo",
+      "$(refresh) Index missing: index",
     ]);
   });
 
@@ -60,7 +61,7 @@ describe("SQL CodeLens provider", () => {
     const lenses = provider.provideCodeLenses(document("file", "file:///query.sql", ""));
 
     expect(lenses.map((lens) => lens.command?.title)).toEqual([
-      "$(database) Choose PostgreSQL connection",
+      "$(database) Choose Document Association",
     ]);
   });
 
@@ -72,8 +73,71 @@ describe("SQL CodeLens provider", () => {
       document("code+moniker", "code+moniker://routine", "CREATE OR REPLACE FUNCTION"),
     );
 
+    expect(lenses.map((lens) => lens.command?.title)).toEqual(["$(cloud-upload) Deploy"]);
+  });
+
+  it("explains a Statement-level Debug refusal and stays silent for unindexed routines", async () => {
+    const calls = [
+      {
+        schema: "shop",
+        routine: "a",
+        args: [],
+        sql: "SELECT shop.a()",
+        isLaunchable: true,
+        line: 1,
+        kind: "select" as const,
+      },
+      {
+        schema: null,
+        routine: "now",
+        args: [],
+        sql: "SELECT now()",
+        isLaunchable: true,
+        line: 2,
+        kind: "select" as const,
+      },
+    ];
+    const provider = new SqlCodeLensProvider(async () => ({ parse: vi.fn() }), {
+      ...connections(false, "available"),
+      debugCallAvailability: (_connection, call) =>
+        call.routine === "a"
+          ? { status: "unavailable", reason: "Several overloads match" }
+          : { status: "unavailable", reason: "Routine not indexed" },
+    });
+    const internals = provider as unknown as {
+      analysis: Map<
+        string,
+        { version: number; value: { calls: unknown[]; definitions: unknown[] } }
+      >;
+    };
+    internals.analysis.set("file:///q.sql", { version: 1, value: { calls, definitions: [] } });
+
+    const lenses = provider.provideCodeLenses(
+      document("file", "file:///q.sql", "SELECT shop.a();\nSELECT now();"),
+    );
+
     expect(lenses.map((lens) => lens.command?.title)).toEqual([
-      "$(cloud-upload) Deploy managed routine",
+      "$(play) Run SQL",
+      "$(play) Run SQL",
+      "$(database) demo",
+      "$(debug-alt) Debug unavailable: Several overloads match",
+    ]);
+  });
+
+  it("falls back to per-Statement analysis when the whole document has a syntax error", async () => {
+    const parse = vi.fn(async ({ source }: { source: string }) =>
+      source.includes("SELECT +") ? { ...emptySyntaxTree(), hasError: true } : emptySyntaxTree(),
+    );
+    const { analyzeSqlDocument } = await import("./sqlCodeLensProvider.js");
+
+    await expect(
+      analyzeSqlDocument("SELECT 1;\nSELECT +;\nSELECT 2;", { parse } as never),
+    ).resolves.toEqual({ definitions: [], calls: [] });
+    expect(parse.mock.calls.map(([request]) => request.source)).toEqual([
+      "SELECT 1;\nSELECT +;\nSELECT 2;",
+      "SELECT 1;",
+      "SELECT +;",
+      "SELECT 2;",
     ]);
   });
 
@@ -123,11 +187,21 @@ describe("SQL CodeLens provider", () => {
   });
 });
 
-function connections(canDeploy: boolean) {
+function connections(
+  canDeploy: boolean,
+  indexState: "available" | "stale" | "missing" = "missing",
+) {
   return {
     forDocument: () => ({ id: "demo", name: "demo" }),
-    canDebugCall: () => false,
-    canDebugDefinition: () => false,
+    indexState: () => indexState,
+    debugCallAvailability: () => ({
+      status: "unavailable" as const,
+      reason: "Index missing" as const,
+    }),
+    debugDefinitionAvailability: () => ({
+      status: "unavailable" as const,
+      reason: "Index missing" as const,
+    }),
     canDeployManagedRoutine: () => canDeploy,
   };
 }

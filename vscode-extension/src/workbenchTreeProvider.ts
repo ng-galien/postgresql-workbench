@@ -493,7 +493,7 @@ export class FunctionItem extends vscode.TreeItem {
     this.sourceUri = object.sourceUri;
     this.iconPath = objectThemeIcon(this.isProc ? "procedure" : "function");
     this.contextValue = "postgresql-workbench-function-debuggable";
-    this.tooltip = `${object.schema}.${object.name}(${signature})`;
+    this.tooltip = withDragHint(`${object.schema}.${object.name}(${signature})`);
   }
 }
 
@@ -508,7 +508,7 @@ export class WorkbenchObjectItem extends vscode.TreeItem {
     this.id = `postgres-object:${object.symbolUri}`;
     this.iconPath = objectThemeIcon(object.kind);
     this.contextValue = `postgresql-workbench-${object.kind}`;
-    this.tooltip = `${object.schema}.${objectLabel(object)}`;
+    this.tooltip = withDragHint(`${object.schema}.${objectLabel(object)}`);
   }
 }
 
@@ -522,9 +522,10 @@ export class WorkbenchTableMemberItem extends vscode.TreeItem {
     super(member.name, vscode.TreeItemCollapsibleState.None);
     this.iconPath = postgresThemeIcon(member.kind);
     this.description = member.type || "constraint";
-    this.tooltip = member.type
+    const tooltip = member.type
       ? `${member.name} · ${member.type}`
       : `${member.kind} ${member.name}`;
+    this.tooltip = member.kind === "column" ? withDragHint(tooltip) : tooltip;
     this.contextValue = `postgresql-workbench-${member.kind}`;
   }
 }
@@ -571,7 +572,7 @@ export class WorkbenchRelationTargetItem extends vscode.TreeItem {
           ? `${target.count} references`
           : (object?.kind ?? target.symbol.kind);
     this.tooltip = object
-      ? `${object.schema}.${objectLabel(object)}`
+      ? withDragHint(`${object.schema}.${objectLabel(object)}`)
       : `${target.symbol.kind} ${target.symbol.name}`;
     this.contextValue = object
       ? "postgresql-workbench-relation-target"
@@ -1197,6 +1198,13 @@ function synchronizeTreeItem(current: PlpgsqlTreeItem, replacement: PlpgsqlTreeI
   current.contextValue = replacement.contextValue;
   current.command = replacement.command;
   Object.assign(current, replacement);
+}
+
+export const SOURCES_DRAG_HINT =
+  "Drag into a SQL editor: Shift+drop composes SQL, drop opens it in the Cockpit.";
+
+function withDragHint(tooltip: string): string {
+  return `${tooltip}\n${SOURCES_DRAG_HINT}`;
 }
 
 function objectLabel(object: WorkbenchObjectModel): string {

@@ -37,6 +37,7 @@ export class CodeMonikerContentProvider implements vscode.FileSystemProvider, vs
   readonly onDidChangeFile = this.changeEmitter.event;
   private readonly cache = new Map<string, Uint8Array>();
   private readonly workingCopies = new Map<string, ManagedWorkingCopy>();
+  private readonly openBases = new Map<string, string>();
   private readonly subscriptions: vscode.Disposable[];
   private closingUnavailableTabs: Promise<void> | undefined;
   private unavailableTabsReconciliationRequested = false;
@@ -81,6 +82,7 @@ export class CodeMonikerContentProvider implements vscode.FileSystemProvider, vs
     this.changeEmitter.dispose();
     this.cache.clear();
     this.workingCopies.clear();
+    this.openBases.clear();
   }
 
   invalidateAll(): void {
@@ -143,6 +145,7 @@ export class CodeMonikerContentProvider implements vscode.FileSystemProvider, vs
         this.workingCopies.get(key)?.content.length ??
         this.cache.get(key)?.length ??
         new TextEncoder().encode(descriptor.content).length,
+      ...(descriptor.plpgsql ? {} : { permissions: vscode.FilePermission.Readonly }),
     };
   }
 
@@ -169,15 +172,14 @@ export class CodeMonikerContentProvider implements vscode.FileSystemProvider, vs
     }
     const key = descriptor?.symbolUri ?? codeMonikerUriString(uri);
     const existing = this.workingCopies.get(key);
+    const baseContent = existing
+      ? existing.baseContent
+      : descriptor
+        ? (this.openBases.get(key) ?? descriptor.content)
+        : undefined;
     this.workingCopies.set(key, {
       content,
-      ...(existing
-        ? existing.baseContent === undefined
-          ? {}
-          : { baseContent: existing.baseContent }
-        : descriptor
-          ? { baseContent: descriptor.content }
-          : {}),
+      ...(baseContent === undefined ? {} : { baseContent }),
     });
     await this.persistWorkingCopies();
     this.changeEmitter.fire([{ type: vscode.FileChangeType.Changed, uri }]);
@@ -189,7 +191,12 @@ export class CodeMonikerContentProvider implements vscode.FileSystemProvider, vs
     if (!workingCopy) {
       throw vscode.FileSystemError.FileNotFound("No managed routine working copy is open");
     }
-    if (workingCopy.baseContent === undefined || workingCopy.baseContent !== descriptor.content) {
+    if (workingCopy.baseContent === undefined) {
+      throw vscode.FileSystemError.NoPermissions(
+        "No deployment base is recorded for this working copy. Reopen the routine before deploying.",
+      );
+    }
+    if (workingCopy.baseContent !== descriptor.content) {
       throw vscode.FileSystemError.NoPermissions(
         "The deployed routine changed after this working copy was created. Compare or reopen it before deploying.",
       );
@@ -237,6 +244,15 @@ export class CodeMonikerContentProvider implements vscode.FileSystemProvider, vs
         this.output?.appendLine(
           `Deploy applied: ${descriptor.schema}.${descriptor.name} on ${descriptor.serverId}/${descriptor.database}`,
         );
+        this.workingCopies.set(descriptor.symbolUri, {
+          content: workingCopy.content,
+          baseContent: sql,
+        });
+        await this.persistWorkingCopies().catch((error) => {
+          this.output?.appendLine(
+            `Deploy persistence warning: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        });
         return {
           status: "deployed-with-warning",
           message: "the Workbench index refresh failed and must be retried",
@@ -264,6 +280,22 @@ export class CodeMonikerContentProvider implements vscode.FileSystemProvider, vs
     }
   }
 
+  hasWorkingCopy(uri: vscode.Uri): boolean {
+    if (this.workingCopies.has(codeMonikerUriString(uri))) return true;
+    const descriptor = this.index.sourceDescriptorForDocumentUri(uri);
+    return descriptor ? this.workingCopies.has(descriptor.symbolUri) : false;
+  }
+
+  workingCopyDiffersFromDeployed(uri: vscode.Uri): boolean {
+    const descriptor = this.index.sourceDescriptorForDocumentUri(uri);
+    const workingCopy =
+      this.workingCopies.get(codeMonikerUriString(uri)) ??
+      (descriptor ? this.workingCopies.get(descriptor.symbolUri) : undefined);
+    if (!workingCopy) return false;
+    if (!descriptor) return true;
+    return new TextDecoder().decode(workingCopy.content) !== descriptor.content;
+  }
+
   async readFile(uri: vscode.Uri): Promise<Uint8Array> {
     const persisted = this.workingCopies.get(codeMonikerUriString(uri));
     if (persisted) return persisted.content;
@@ -274,6 +306,7 @@ export class CodeMonikerContentProvider implements vscode.FileSystemProvider, vs
     if (cached) return cached;
     const bytes = new TextEncoder().encode(descriptor.content);
     this.cache.set(descriptor.symbolUri, bytes);
+    this.openBases.set(descriptor.symbolUri, descriptor.content);
     return bytes;
   }
 

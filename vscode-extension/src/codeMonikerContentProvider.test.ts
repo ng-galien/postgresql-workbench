@@ -54,6 +54,8 @@ vi.mock("vscode", () => ({
     NoPermissions: (message: unknown) => new Error(String(message)),
   },
   FileChangeType: { Changed: 1 },
+  FileType: { File: 1, Directory: 2 },
+  FilePermission: { Readonly: 1 },
 }));
 
 import {
@@ -142,7 +144,7 @@ describe("stale Code Moniker source tabs", () => {
     descriptor = routineDescriptor("SELECT 3");
     await provider.writeFile(sourceUri as never, new TextEncoder().encode("SELECT 4"));
 
-    await expect(provider.deploy(sourceUri as never)).rejects.toThrow(/changed after/u);
+    await expect(provider.deploy(sourceUri as never)).rejects.toThrow(/No deployment base/u);
     expect(deploymentState.openClient).not.toHaveBeenCalled();
     provider.dispose();
   });
@@ -171,11 +173,116 @@ describe("stale Code Moniker source tabs", () => {
     expect(new TextDecoder().decode(await provider.readFile(sourceUri as never))).toBe("SELECT 2");
     provider.dispose();
   });
+
+  it("captures the deployment base when the source is opened, not at the first save", async () => {
+    const sourceUri = uri("code+moniker", "code+moniker://routine");
+    let descriptor = routineDescriptor("SELECT 1");
+    const provider = providerFor(() => descriptor);
+    expect(new TextDecoder().decode(await provider.readFile(sourceUri as never))).toBe("SELECT 1");
+    descriptor = routineDescriptor("SELECT 3");
+    provider.invalidateAll();
+    await provider.writeFile(sourceUri as never, new TextEncoder().encode("SELECT 2"));
+
+    await expect(provider.deploy(sourceUri as never)).rejects.toThrow(/changed after/u);
+    expect(deploymentState.openClient).not.toHaveBeenCalled();
+    provider.dispose();
+  });
+
+  it("deploys a working copy whose base matches the source the user opened", async () => {
+    const sourceUri = uri("code+moniker", "code+moniker://routine");
+    let descriptor = routineDescriptor("SELECT 1");
+    const provider = providerFor(() => descriptor, {
+      indexPostgresDatabase: vi.fn(async () => {
+        descriptor = routineDescriptor("SELECT 2");
+      }),
+    });
+    await provider.readFile(sourceUri as never);
+    await provider.writeFile(sourceUri as never, new TextEncoder().encode("SELECT 2"));
+
+    await expect(provider.deploy(sourceUri as never)).resolves.toEqual({ status: "deployed" });
+    expect(deploymentState.client.query).toHaveBeenCalledWith("SELECT 2");
+    expect(provider.hasWorkingCopy(sourceUri as never)).toBe(false);
+    provider.dispose();
+  });
+
+  it("rebases the working copy after a deployment whose index refresh failed", async () => {
+    const sourceUri = uri("code+moniker", "code+moniker://routine");
+    let descriptor = routineDescriptor("SELECT 1");
+    const indexPostgresDatabase = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("refresh failed"))
+      .mockImplementation(async () => {
+        descriptor = routineDescriptor("SELECT 2");
+      });
+    const provider = providerFor(() => descriptor, {
+      indexPostgresDatabase,
+      markDatabaseStale: vi.fn(),
+    });
+    await provider.readFile(sourceUri as never);
+    await provider.writeFile(sourceUri as never, new TextEncoder().encode("SELECT 2"));
+    await expect(provider.deploy(sourceUri as never)).resolves.toMatchObject({
+      status: "deployed-with-warning",
+    });
+
+    descriptor = routineDescriptor("SELECT 2");
+    await expect(provider.deploy(sourceUri as never)).resolves.toEqual({ status: "deployed" });
+    expect(deploymentState.client.query).toHaveBeenCalledTimes(2);
+    provider.dispose();
+  });
+
+  it("asks to reopen a persisted working copy that has no deployment base", async () => {
+    const sourceUri = uri("code+moniker", "code+moniker://routine");
+    const descriptor = routineDescriptor("SELECT 1");
+    const provider = providerFor(
+      () => descriptor,
+      {},
+      {
+        get: () => ({ "code+moniker://routine": "SELECT 2" }),
+        update: vi.fn(async () => {}),
+      },
+    );
+
+    await expect(provider.deploy(sourceUri as never)).rejects.toThrow(
+      "No deployment base is recorded for this working copy. Reopen the routine before deploying.",
+    );
+    expect(deploymentState.openClient).not.toHaveBeenCalled();
+    provider.dispose();
+  });
+
+  it("reports whether a working copy diverges from the deployed source", async () => {
+    const sourceUri = uri("code+moniker", "code+moniker://routine");
+    const descriptor = routineDescriptor("SELECT 1");
+    const provider = providerFor(() => descriptor);
+
+    expect(provider.workingCopyDiffersFromDeployed(sourceUri as never)).toBe(false);
+    await provider.writeFile(sourceUri as never, new TextEncoder().encode("SELECT 1"));
+    expect(provider.workingCopyDiffersFromDeployed(sourceUri as never)).toBe(false);
+    await provider.writeFile(sourceUri as never, new TextEncoder().encode("SELECT 2"));
+    expect(provider.workingCopyDiffersFromDeployed(sourceUri as never)).toBe(true);
+    provider.dispose();
+  });
+
+  it("marks managed non-PL/pgSQL sources read-only in stat", async () => {
+    const sourceUri = uri("code+moniker", "code+moniker://routine");
+    const table = { ...routineDescriptor("CREATE TABLE t ()"), plpgsql: false };
+    const provider = providerFor(() => table);
+
+    await expect(provider.stat(sourceUri as never)).resolves.toMatchObject({ permissions: 1 });
+    await expect(provider.writeFile(sourceUri as never, new Uint8Array())).rejects.toThrow(
+      /read-only/u,
+    );
+
+    const routine = providerFor(() => routineDescriptor("SELECT 1"));
+    expect(await routine.stat(sourceUri as never)).not.toHaveProperty("permissions");
+    provider.dispose();
+    routine.dispose();
+  });
 });
 
 function providerFor(
   descriptor: () => ReturnType<typeof routineDescriptor> | undefined,
   indexOverrides: Record<string, unknown> = {},
+  state?: { get: (key: string, defaultValue: unknown) => unknown; update: () => Promise<void> },
 ) {
   return new CodeMonikerContentProvider(
     {
@@ -186,8 +293,11 @@ function providerFor(
       sourceDescriptorForDocumentUri: descriptor,
       sqlAuthoringSnapshot: () => ({ status: "available" }),
       syntaxParser: vi.fn(),
+      indexPostgresDatabase: vi.fn(async () => {}),
       ...indexOverrides,
     } as never,
+    undefined,
+    state as never,
   );
 }
 

@@ -29,6 +29,16 @@ not on a database context.
 Reindexing and synchronized DDL updates replace the snapshot used by subsequent
 authoring requests; restarting VS Code or the language server is not required.
 
+The editor language status (the `{}` item in the status bar) shows which
+Association governs the current SQL document and why completion may be silent:
+**No Document Association**, **No Scratchpad Association**, **Index missing**,
+or **Index stale**, each with the command that repairs it. Composition warnings
+offer the same follow-up actions (Change Association, Reindex, or Open Settings
+for the `postgresql-workbench.sqlAuthoring.syntaxMaxDepth` and `syntaxMaxNodes`
+budget). Format Document reports why it was skipped when the SQL has a syntax
+error or exceeds that budget; untitled SQL documents are formatted and completed
+like saved files.
+
 ## Format PostgreSQL SQL
 
 Run the standard **Format Document** action in an SQL document or Scratchpad

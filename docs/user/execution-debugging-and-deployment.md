@@ -53,7 +53,7 @@ context column above still decides which Connexion and index are authoritative.
 | Generated `DO` block containing one procedure `CALL` | Yes | Yes when the inner call and its target are resolved uniquely | The debugger executes the block but stops in the bound procedure; it does not pretend the anonymous block is a deployed routine. |
 | Workbench-generated DML harness for one indexed trigger | Yes | Yes | The harness carries the exact indexed PL/pgSQL trigger-function identity selected during generation. |
 | Handwritten DML, or DML that may fire several eligible triggers | Yes | Not until one entry trigger is selected explicitly | Workbench does not guess which of several PostgreSQL triggers should own the debug session. |
-| `CREATE OR REPLACE FUNCTION` or `PROCEDURE` | Yes, as explicit DDL | Not as the edited definition | Debug targets the deployed counterpart only after identity and source state are clear. Use Compare or Deploy first. |
+| `CREATE OR REPLACE FUNCTION` or `PROCEDURE` | Yes, as explicit DDL | Only as **Debug deployed routine** | The lens debugs the routine deployed in PostgreSQL with that exact signature, never the edited text. Use **Compare with Database** first when unsure, or run the DDL explicitly before debugging. |
 | Multiple Statements or several routine entry points | Yes as a Run plan where the surface supports it | Choice required, otherwise unavailable | Debug always launches one selected Statement and one entry routine. |
 | Parser error, truncated analysis, stale index, unresolved overload, external parameter, or row-dependent call | PostgreSQL execution may still be possible where Run explicitly allows it | No | Workbench must not invent a debugger target from incomplete evidence. |
 
@@ -126,18 +126,30 @@ rejected.
 ## Visible controls and feedback
 
 - A Scratchpad cell shows its persisted **Run** or **Debug** intent beside its
-  Association and Statement timeout. The native cell action executes that
-  intent.
-- A free SQL document shows one connection control for its Document
-  Association. Every non-empty PostgreSQL Statement has a **Run SQL** CodeLens,
-  even when semantic analysis cannot prove that it is valid. A second **Debug
-  PL/pgSQL** CodeLens appears only for an eligible routine entry point. Both
-  actions use the same Association.
+  Association and Statement timeout; clicking the intent opens a Run/Debug
+  picker. The native cell action executes that intent, and a Debug cell shows
+  the SQL result of the debugged Statement in the cell exactly like Run (the
+  Statement timeout does not apply to the debugger, so its indicator is hidden
+  for Debug cells). In Mode MANUAL the intent control is hidden. When the
+  Association's Workbench Index is missing or stale, the cell error offers
+  **Index Association**.
+- A free SQL document shows one **Choose Document Association** control at
+  its first Statement; once chosen, it displays the Connexion name and, when
+  the Workbench Index of that Connexion is missing or stale, a second
+  **Index missing: index** or **Index stale: reindex** lens that indexes that
+  Association without changing the active DatabaseContext. Every non-empty
+  PostgreSQL Statement has a **Run SQL** CodeLens, even when semantic analysis
+  cannot prove that it is valid. A second **Debug PL/pgSQL** CodeLens appears
+  only for an eligible routine entry point; a resolved routine that is still
+  not debuggable shows **Debug unavailable: Several overloads match**,
+  **Not a PL/pgSQL routine**, or **Call depends on a row value or parameter**
+  instead. A syntax error in one Statement hides only that Statement's Debug
+  lens. Both actions use the same Association.
 - A managed routine source keeps Save separate from Deploy. It offers
   **Deploy** and **Debug deployed routine** only when applicable; a rejected
   deployment leaves the working copy intact.
 - An unavailable action explains one concrete cause, such as **Index stale**,
-  **Call depends on a row value**, **Several overloads match**, or **Mode MANUAL
-  has an open Transaction**.
+  **Call depends on a row value**, **Several overloads match**, or **Debug
+  unavailable in Mode MANUAL**.
 - User-facing messages stay short. Full URIs, parser diagnostics, and technical
   deployment details belong in the PostgreSQL Workbench output channel.

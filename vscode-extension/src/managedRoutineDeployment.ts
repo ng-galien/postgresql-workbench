@@ -63,14 +63,33 @@ export async function validateManagedRoutineDeployment(
     parameter.mode === "default" ? "in" : parameter.mode,
   );
   if (
-    snapshot?.status !== "available" ||
+    !snapshot ||
     snapshot.serverId !== binding.serverId ||
-    snapshot.database !== binding.database ||
-    !bound ||
+    snapshot.database !== binding.database
+  ) {
+    return { status: "rejected", message: "Index missing: reindex the bound database first" };
+  }
+  if (snapshot.status !== "available") {
+    return { status: "rejected", message: "Index stale: reindex the bound database first" };
+  }
+  if (!bound || !deployedDefinition) {
+    return {
+      status: "rejected",
+      message: "The bound routine is no longer in the index. Reindex and reopen it",
+    };
+  }
+  if (
     definition.kind !== binding.symbolKind ||
     definition.schema !== binding.schema ||
-    definition.name !== binding.name ||
-    !deployedDefinition ||
+    definition.name !== binding.name
+  ) {
+    return {
+      status: "rejected",
+      message:
+        "The routine kind, schema, or name changed: this is another object, not the bound routine identity",
+    };
+  }
+  if (
     inputTypes.length !== boundTypes?.length ||
     inputTypes.some((type, index) => type !== boundTypes[index]) ||
     inputModes.length !== deployedModes?.length ||
@@ -78,7 +97,7 @@ export async function validateManagedRoutineDeployment(
   ) {
     return {
       status: "rejected",
-      message: "The working copy no longer matches the managed routine identity and signature",
+      message: "The input parameter signature changed: this is an overload, not the bound routine",
     };
   }
   return { status: "valid" };

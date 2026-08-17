@@ -6,6 +6,7 @@ import {
   type ServerOptions,
   TransportKind,
 } from "vscode-languageclient/node";
+import type { SyntaxNode } from "../../../src/analysis/syntaxTree.js";
 import type { ConnectionManager } from "../connectionManager.js";
 import { PlpgsqlSemanticTokensProvider } from "../plpgsqlSemanticTokens.js";
 import {
@@ -22,17 +23,25 @@ import {
   sqlAliasAfterRelation,
 } from "./identifiers.js";
 import {
+  type SqlAuthoringScope,
+  sqlAuthoringLanguageStatus,
+  sqlAuthoringRejectionAction,
+} from "./languageStatus.js";
+import {
   DEFAULT_SQL_AUTHORING_SETTINGS,
+  decodeSemanticTokenData,
   parseSqlAuthoringDrag,
   SQL_AUTHORING_COMPOSE_REQUEST,
   SQL_AUTHORING_CONTEXT_REQUEST,
   SQL_AUTHORING_OBJECT_MIME,
+  SQL_AUTHORING_PLPGSQL_TOKENS_REQUEST,
   SQL_AUTHORING_SEMANTIC_TOKENS_CHANGED,
   SQL_AUTHORING_SETTINGS_REQUEST,
   SQL_AUTHORING_SYNTAX_REQUEST,
   type SqlAuthoringComposeRequest,
   type SqlAuthoringComposeResult,
   type SqlAuthoringDocumentContext,
+  type SqlAuthoringPlpgsqlTokensResult,
   type SqlAuthoringSettings,
   type SqlAuthoringSyntaxResult,
   sqlAuthoringContextMatchesToken,
@@ -42,8 +51,11 @@ import { postgresPlpgsqlRanges, scanPostgresSql } from "./sqlLexing.js";
 const SQL_DOCUMENT_SELECTOR = [
   { language: "sql", scheme: "file" },
   { language: "plpgsql", scheme: "file" },
+  { language: "sql", scheme: "untitled" },
+  { language: "plpgsql", scheme: "untitled" },
   { language: "plpgsql", scheme: "vscode-notebook-cell" },
 ] as const;
+const SQL_AUTHORING_LANGUAGE_STATUS_ID = "postgresql-workbench.sqlAuthoring";
 const REVEAL_SQL_REFERENCE_COMMAND = "postgresql-workbench.revealSqlReference";
 export const REFRESH_SQL_AUTHORING_CONTEXT_COMMAND =
   "postgresql-workbench.refreshSqlAuthoringContext";
@@ -70,14 +82,6 @@ export async function registerSqlAuthoring(
   const plpgsqlSemanticTokens = new PlpgsqlSemanticTokensProvider(() => index.syntaxParser());
   const clientOptions: LanguageClientOptions = {
     documentSelector: [...SQL_DOCUMENT_SELECTOR],
-    middleware: {
-      provideDocumentSemanticTokens(document, token, next) {
-        if (document.languageId === "plpgsql" && document.uri.scheme === "file") {
-          return plpgsqlSemanticTokens.provideDocumentSemanticTokens(document);
-        }
-        return next(document, token);
-      },
-    },
     outputChannelName: "PostgreSQL Workbench SQL Authoring",
   };
   const client = new LanguageClient(
@@ -86,8 +90,22 @@ export async function registerSqlAuthoring(
     serverOptions,
     clientOptions,
   );
-  await client.start();
 
+  client.onRequest(
+    SQL_AUTHORING_PLPGSQL_TOKENS_REQUEST,
+    async ({ uri }: { uri: string }): Promise<SqlAuthoringPlpgsqlTokensResult> => {
+      const document = vscode.workspace.textDocuments.find(
+        (candidate) => candidate.uri.toString() === uri,
+      );
+      if (!document) return { tokens: [] };
+      try {
+        const tokens = await plpgsqlSemanticTokens.provideDocumentSemanticTokens(document);
+        return { tokens: decodeSemanticTokenData(tokens.data) };
+      } catch {
+        return { tokens: [] };
+      }
+    },
+  );
   client.onRequest<SqlAuthoringDocumentContext, never>(
     SQL_AUTHORING_CONTEXT_REQUEST,
     (parameters) =>
@@ -103,20 +121,63 @@ export async function registerSqlAuthoring(
     async ({ uri, source }: { uri: string; source: string }): Promise<SqlAuthoringSyntaxResult> => {
       const parser = await index.syntaxParser();
       const settings = resolveSqlAuthoringSettings(uri);
-      const syntax = await parser.parse({
-        language: "sql",
+      const budget = {
         source,
         uri,
         maxDepth: settings.syntaxMaxDepth,
         maxNodes: settings.syntaxMaxNodes,
         namedOnly: true,
-      });
-      return { hasError: syntax.hasError, truncated: syntax.truncated };
+      };
+      const syntax = await parser.parse({ language: "sql", ...budget });
+      if (!syntax.hasError || syntax.truncated) {
+        return { hasError: syntax.hasError, truncated: syntax.truncated };
+      }
+      const languageId = vscode.workspace.textDocuments.find(
+        (candidate) => candidate.uri.toString() === uri,
+      )?.languageId;
+      const plpgsqlBody =
+        languageId === "plpgsql" &&
+        !(await parser.parse({ language: "plpgsql", ...budget })).hasError;
+      const errorLine = firstSyntaxErrorLine(syntax.root);
+      return {
+        hasError: true,
+        truncated: false,
+        ...(errorLine === undefined ? {} : { errorLine }),
+        ...(plpgsqlBody ? { plpgsqlBody } : {}),
+      };
     },
   );
   client.onRequest<SqlAuthoringSettings, never>(SQL_AUTHORING_SETTINGS_REQUEST, (parameters) =>
     resolveSqlAuthoringSettings((parameters as { uri: string }).uri),
   );
+  await client.start();
+
+  const languageStatus = vscode.languages.createLanguageStatusItem(
+    SQL_AUTHORING_LANGUAGE_STATUS_ID,
+    [...SQL_DOCUMENT_SELECTOR] satisfies vscode.DocumentSelector,
+  );
+  languageStatus.name = "PostgreSQL Workbench SQL authoring";
+  const updateLanguageStatus = () => {
+    const document = vscode.window.activeTextEditor?.document;
+    if (!document) return;
+    const uri = document.uri.toString();
+    const context = resolveDocumentContext(uri, connections, index, documentAssociation);
+    const scope = sqlAuthoringScope(uri, documentAssociation);
+    const status = sqlAuthoringLanguageStatus({
+      context,
+      documentUri: uri,
+      scope,
+      connexionName: sqlAuthoringConnexionName(uri, context, connections, documentAssociation),
+    });
+    languageStatus.text = status.text;
+    languageStatus.detail = status.detail;
+    languageStatus.severity =
+      status.severity === "warning"
+        ? vscode.LanguageStatusSeverity.Warning
+        : vscode.LanguageStatusSeverity.Information;
+    languageStatus.command = status.command;
+  };
+  updateLanguageStatus();
 
   const dropProvider = vscode.languages.registerDocumentDropEditProvider(
     [...SQL_DOCUMENT_SELECTOR] satisfies vscode.DocumentSelector,
@@ -167,7 +228,19 @@ export async function registerSqlAuthoring(
           );
         }
         if (result.status === "rejected") {
-          void vscode.window.showWarningMessage(result.message);
+          const documentUri = document.uri.toString();
+          const action = sqlAuthoringRejectionAction(
+            result.reason,
+            documentUri,
+            sqlAuthoringScope(documentUri, documentAssociation),
+          );
+          void vscode.window
+            .showWarningMessage(result.message, ...(action ? [action.title] : []))
+            .then((choice) => {
+              if (action && choice === action.title) {
+                void vscode.commands.executeCommand(action.command, ...(action.arguments ?? []));
+              }
+            });
           return unchangedDropEdit("Leave unsupported SQL unchanged");
         }
         if (result.status !== "edit") return unchangedDropEdit("Leave SQL unchanged");
@@ -234,6 +307,7 @@ export async function registerSqlAuthoring(
   );
   const refreshSemanticTokens = () => {
     void client.sendNotification(SQL_AUTHORING_SEMANTIC_TOKENS_CHANGED).catch(() => undefined);
+    updateLanguageStatus();
   };
   const refreshContext = vscode.commands.registerCommand(
     REFRESH_SQL_AUTHORING_CONTEXT_COMMAND,
@@ -242,6 +316,9 @@ export async function registerSqlAuthoring(
   const semanticTokenRefreshSubscriptions = vscode.Disposable.from(
     index.onDidChangeState(refreshSemanticTokens),
     connections.onServerChanged(refreshSemanticTokens),
+    connections.onChanged(updateLanguageStatus),
+    vscode.window.onDidChangeActiveTextEditor(updateLanguageStatus),
+    vscode.window.onDidChangeActiveNotebookEditor(updateLanguageStatus),
     vscode.workspace.onDidChangeNotebookDocument((event) => {
       if (event.notebook.notebookType === SQL_NOTEBOOK_TYPE && event.metadata !== undefined) {
         refreshSemanticTokens();
@@ -254,6 +331,7 @@ export async function registerSqlAuthoring(
     hovers,
     revealReference,
     refreshContext,
+    languageStatus,
     semanticTokenRefreshSubscriptions,
     {
       dispose: () => void client.stop(),
@@ -513,11 +591,41 @@ export function resolveDocumentContext(
     }
     return indexedContext(index, server.id, server.database, "SQL Document Association");
   }
-  const active = connections.activeServer;
-  if (!active || !connections.isConnected) {
-    return { status: "unavailable", message: "No active DatabaseContext is connected." };
+  return { status: "unassociated", message: "This SQL document has no Association." };
+}
+
+function sqlAuthoringScope(
+  uri: string,
+  documentAssociation?: (uri: string) => string | undefined,
+): SqlAuthoringScope {
+  if (vscode.Uri.parse(uri).scheme === "vscode-notebook-cell") return "scratchpad";
+  return documentAssociation ? "document" : "active";
+}
+
+function sqlAuthoringConnexionName(
+  uri: string,
+  context: SqlAuthoringDocumentContext,
+  connections: Pick<ConnectionManager, "servers">,
+  documentAssociation?: (uri: string) => string | undefined,
+): string | undefined {
+  const serverId =
+    context.status === "available"
+      ? context.snapshot.serverId
+      : vscode.Uri.parse(uri).scheme === "vscode-notebook-cell"
+        ? undefined
+        : documentAssociation?.(uri);
+  return serverId
+    ? connections.servers.find((candidate) => candidate.id === serverId)?.name
+    : undefined;
+}
+
+function firstSyntaxErrorLine(node: SyntaxNode): number | undefined {
+  if (node.error || node.missing) return node.start.line;
+  for (const child of node.children) {
+    const line = firstSyntaxErrorLine(child);
+    if (line !== undefined) return line;
   }
-  return indexedContext(index, active.id, active.database, "active DatabaseContext");
+  return undefined;
 }
 
 function indexedContext(

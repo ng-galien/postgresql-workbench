@@ -51,9 +51,11 @@ import {
   DatabaseSourceItem,
   FunctionItem,
   SchemaItem,
+  SOURCES_DRAG_HINT,
   SourcesSnapshotItem,
   WorkbenchObjectItem,
   WorkbenchRelationTargetItem,
+  WorkbenchTableMemberItem,
   WorkbenchTreeProvider,
 } from "./workbenchTreeProvider.js";
 
@@ -250,6 +252,36 @@ describe("Workbench tree object navigation", () => {
     expect(resolved.command).toBeUndefined();
     expect(resolved.contextValue).toBe("postgresql-workbench-relation-target");
     expect(unresolved.contextValue).toBe("postgresql-workbench-relation-target-unresolved");
+    expect(resolved.tooltip).toBe(`shop.orders\n${SOURCES_DRAG_HINT}`);
+    expect(unresolved.tooltip).toBe("table orders");
+  });
+
+  it("explains the Shift+drop composition gesture on draggable Sources items", () => {
+    const routine = new FunctionItem(
+      {
+        ...table,
+        name: "total_orders",
+        kind: "function",
+        plpgsql: true,
+        params: [{ name: "customer_id", type: "integer" }],
+      },
+      snapshot,
+    );
+    const object = new WorkbenchObjectItem(table, snapshot);
+    const column = new WorkbenchTableMemberItem(
+      { symbolUri: "", sourceUri: "", kind: "column", name: "id", type: "integer", line: 1 },
+      table,
+    );
+    const constraint = new WorkbenchTableMemberItem(
+      { symbolUri: "", sourceUri: "", kind: "constraint", name: "orders_pkey", type: "", line: 1 },
+      table,
+    );
+
+    expect(routine.tooltip).toBe(`shop.total_orders(customer_id: integer)\n${SOURCES_DRAG_HINT}`);
+    expect(object.tooltip).toBe(`shop.orders\n${SOURCES_DRAG_HINT}`);
+    expect(column.tooltip).toBe(`id · integer\n${SOURCES_DRAG_HINT}`);
+    expect(constraint.tooltip).toBe("constraint orders_pkey");
+    expect(new SchemaItem("shop").tooltip).toBeUndefined();
   });
 });
 

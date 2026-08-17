@@ -3,6 +3,7 @@ export const SQL_AUTHORING_SYNTAX_REQUEST = "postgresql-workbench/syntax";
 export const SQL_AUTHORING_COMPOSE_REQUEST = "postgresql-workbench/compose";
 export const SQL_AUTHORING_SETTINGS_REQUEST = "postgresql-workbench/sqlAuthoringSettings";
 export const SQL_AUTHORING_SEMANTIC_TOKENS_CHANGED = "postgresql-workbench/semanticTokensChanged";
+export const SQL_AUTHORING_PLPGSQL_TOKENS_REQUEST = "postgresql-workbench/plpgsqlSemanticTokens";
 export const SQL_AUTHORING_OBJECT_MIME = "application/vnd.postgresql-workbench.sql-object";
 
 export type SqlAuthoringAliasStyle = "fullName" | "initial";
@@ -88,6 +89,43 @@ export type SqlAuthoringDocumentContext =
 export interface SqlAuthoringSyntaxResult {
   hasError: boolean;
   truncated: boolean;
+  /** 1-based line of the first syntax problem when `hasError` is set. */
+  errorLine?: number;
+  /** The source is a bare PL/pgSQL body rather than SQL. */
+  plpgsqlBody?: boolean;
+}
+
+/** One absolute semantic token encoded against the SQL authoring legend. */
+export interface SqlAuthoringSemanticToken {
+  line: number;
+  character: number;
+  length: number;
+  tokenType: number;
+  tokenModifiers: number;
+}
+
+export interface SqlAuthoringPlpgsqlTokensResult {
+  tokens: SqlAuthoringSemanticToken[];
+}
+
+/** Decodes LSP delta-encoded semantic token data into absolute tokens. */
+export function decodeSemanticTokenData(data: ArrayLike<number>): SqlAuthoringSemanticToken[] {
+  const tokens: SqlAuthoringSemanticToken[] = [];
+  let line = 0;
+  let character = 0;
+  for (let index = 0; index + 4 < data.length; index += 5) {
+    const deltaLine = data[index];
+    line += deltaLine;
+    character = deltaLine === 0 ? character + data[index + 1] : data[index + 1];
+    tokens.push({
+      line,
+      character,
+      length: data[index + 2],
+      tokenType: data[index + 3],
+      tokenModifiers: data[index + 4],
+    });
+  }
+  return tokens;
 }
 
 export type SqlAuthoringDragPayload =
@@ -160,7 +198,16 @@ export type SqlAuthoringComposeResult =
       placeHolder?: string;
       snapshot?: SqlAuthoringSnapshotToken;
     }
-  | { status: "rejected"; message: string };
+  | { status: "rejected"; message: string; reason?: SqlAuthoringRejectionReason };
+
+export type SqlAuthoringRejectionReason =
+  | "unassociated"
+  | "unavailable"
+  | "not-indexed"
+  | "stale"
+  | "syntax-budget"
+  | "syntax-error"
+  | "snapshot-changed";
 
 export function sqlAuthoringSnapshotToken(
   snapshot: SqlAuthoringSnapshot,

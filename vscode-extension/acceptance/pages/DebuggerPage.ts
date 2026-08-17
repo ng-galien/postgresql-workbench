@@ -72,7 +72,7 @@ export class DebuggerPage {
       if ((await this.visibleNearestCodeLensIndex(line, /Debug PL\/pgSQL/)) >= 0) {
         return "assigned";
       }
-      return (await this.visibleNearestCodeLensIndex(line, /Choose PostgreSQL connection/)) >= 0
+      return (await this.visibleNearestCodeLensIndex(line, /Choose Document Association/)) >= 0
         ? "unassigned"
         : "pending";
     };
@@ -84,7 +84,7 @@ export class DebuggerPage {
       .not.toBe("pending");
     if ((await associationState()) === "assigned") return;
 
-    await this.clickNearestCodeLens(line, /Choose PostgreSQL connection/);
+    await this.clickNearestCodeLens(line, /Choose Document Association/);
     const associationOutcome = async (): Promise<"assigned" | "picker" | "pending"> => {
       if ((await this.page.locator(".quick-input-list:visible .monaco-list-row").count()) > 0) {
         return "picker";

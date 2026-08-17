@@ -6,7 +6,11 @@ import {
   splitSqlQualifiedIdentifier,
   sqlAliasAfterRelation,
 } from "./identifiers.js";
-import type { SqlAuthoringObject, SqlAuthoringSnapshot } from "./protocol.js";
+import type {
+  SqlAuthoringObject,
+  SqlAuthoringSemanticToken,
+  SqlAuthoringSnapshot,
+} from "./protocol.js";
 import { postgresPlpgsqlRanges, scanPostgresSql } from "./sqlLexing.js";
 
 export const SQL_SEMANTIC_TOKEN_TYPES = [
@@ -26,6 +30,8 @@ export const SQL_SEMANTIC_TOKEN_TYPES = [
   "sqlType",
   "sqlWindow",
 ] as const;
+
+export const SQL_SEMANTIC_TOKEN_MODIFIERS = ["declaration", "readonly"] as const;
 
 type SqlSemanticTokenType = (typeof SQL_SEMANTIC_TOKEN_TYPES)[number];
 
@@ -121,24 +127,61 @@ const UNQUALIFIED_COLUMN_EXCLUSIONS = new Set([
   "merge",
 ]);
 
-export function postgresSemanticTokens(document: TextDocument, snapshot: SqlAuthoringSnapshot) {
+interface EncodedToken {
+  length: number;
+  offset: number;
+  tokenType: number;
+  tokenModifiers: number;
+}
+
+/**
+ * Builds the semantic tokens of one document. `plpgsqlTokens` are syntax-tree PL/pgSQL tokens
+ * (variables, parameters, types) already encoded against the SQL authoring legend; they take
+ * precedence over indexed tokens covering the same range. Without a snapshot only those tokens
+ * are emitted.
+ */
+export function postgresSemanticTokens(
+  document: TextDocument,
+  snapshot: SqlAuthoringSnapshot | undefined,
+  plpgsqlTokens: readonly SqlAuthoringSemanticToken[] = [],
+) {
   const source = document.getText();
-  const tokens = collectSemanticTokens(source, snapshot, 0);
-  for (const range of postgresPlpgsqlRanges(source)) {
-    tokens.push(
-      ...collectSemanticTokens(source.slice(range.start, range.end), snapshot, range.start, true),
-    );
+  const encoded: EncodedToken[] = plpgsqlTokens
+    .filter((token) => token.length > 0 && token.tokenType >= 0)
+    .map((token) => ({
+      length: token.length,
+      offset: document.offsetAt({ line: token.line, character: token.character }),
+      tokenType: token.tokenType,
+      tokenModifiers: token.tokenModifiers,
+    }));
+  const occupied = new Set(encoded.map((token) => `${token.offset}:${token.length}`));
+  if (snapshot) {
+    const tokens = collectSemanticTokens(source, snapshot, 0);
+    for (const range of postgresPlpgsqlRanges(source)) {
+      tokens.push(
+        ...collectSemanticTokens(source.slice(range.start, range.end), snapshot, range.start, true),
+      );
+    }
+    for (const token of tokens) {
+      if (occupied.has(`${token.offset}:${token.length}`)) continue;
+      encoded.push({
+        length: token.length,
+        offset: token.offset,
+        tokenType: SQL_SEMANTIC_TOKEN_TYPES.indexOf(token.type),
+        tokenModifiers: 0,
+      });
+    }
   }
-  tokens.sort((left, right) => left.offset - right.offset);
+  encoded.sort((left, right) => left.offset - right.offset || left.length - right.length);
   const builder = new SemanticTokensBuilder();
-  for (const token of tokens) {
+  for (const token of encoded) {
     const position = document.positionAt(token.offset);
     builder.push(
       position.line,
       position.character,
       token.length,
-      SQL_SEMANTIC_TOKEN_TYPES.indexOf(token.type),
-      0,
+      token.tokenType,
+      token.tokenModifiers,
     );
   }
   return builder.build();

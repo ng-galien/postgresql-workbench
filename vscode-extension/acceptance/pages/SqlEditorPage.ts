@@ -25,9 +25,7 @@ export class SqlEditorPage {
   async associateDocumentAutomatically(connection: RegExp): Promise<void> {
     const assigned = this.editor.getByRole("button", { name: connection }).first();
     if (await assigned.isVisible()) return;
-    const choose = this.editor
-      .getByRole("button", { name: /Choose PostgreSQL connection/ })
-      .first();
+    const choose = this.editor.getByRole("button", { name: /Choose Document Association/ }).first();
     await expect(choose).toBeVisible({ timeout: 5_000 });
     await choose.click();
     await expect(assigned).toBeVisible({ timeout: 5_000 });

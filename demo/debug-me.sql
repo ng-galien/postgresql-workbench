@@ -49,3 +49,17 @@ SELECT * FROM playground.fizzbuzz_rows(20);
 
 -- SETOF composite: every low-stock product is returned as a separate row.
 SELECT * FROM shop.low_stock_rows(10);
+
+
+SELECT
+  id,
+  label,
+  line1,
+  line2,
+  postal_code,
+  city,
+  country_code,
+  created_at
+FROM
+  shop.address
+  LEFT JOIN shop.sales_order ON shop.address.id = shop.sales_order.shipping_address_id;

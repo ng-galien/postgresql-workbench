@@ -31,6 +31,7 @@ export class NotebookClientCancellation {
   private requested = false;
   private binding?: NotebookCancellationBinding;
   private cancellation?: Promise<void>;
+  private readonly handlers: Array<() => void> = [];
 
   get isCancellationRequested(): boolean {
     return this.requested;
@@ -39,7 +40,14 @@ export class NotebookClientCancellation {
   request(): void {
     if (this.requested) return;
     this.requested = true;
+    for (const handler of this.handlers.splice(0)) handler();
     this.startCancellation();
+  }
+
+  /** Runs `handler` once when cancellation is requested (immediately if already requested). */
+  onCancel(handler: () => void): void {
+    if (this.requested) handler();
+    else this.handlers.push(handler);
   }
 
   bind(provider: DedicatedNotebookClientProvider, serverId: string, client: Client): void {

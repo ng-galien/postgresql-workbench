@@ -41,6 +41,9 @@ export interface ParsedCall {
   kind?: "function" | "procedure" | null;
 }
 
+/** Top-level statement kinds that may own a replayable debugger entry point. */
+const DEBUG_ENTRY_STATEMENT_KINDS = new Set(["SelectStmt", "CallStmt", "DoStmt"]);
+
 export interface ParsedCallSite {
   schema: string | null;
   routine: string;
@@ -119,6 +122,16 @@ function topLevelStatements(syntax: SyntaxTree): SyntaxNode[] {
   return syntax.root.children.filter((child) => child.kind === "toplevel_stmt");
 }
 
+/** Statement node owning a top-level statement (`SelectStmt`, `InsertStmt`, ...). */
+function statementKindNode(statement: SyntaxNode): SyntaxNode | undefined {
+  if (/Stmt$/u.test(statement.kind)) return statement;
+  for (const child of statement.children) {
+    const found = statementKindNode(child);
+    if (found) return found;
+  }
+  return undefined;
+}
+
 function extractDefinitions(source: string, syntax: SyntaxTree): FunctionDefinition[] {
   const definitions: FunctionDefinition[] = [];
   for (const statement of topLevelStatements(syntax)) {
@@ -155,7 +168,9 @@ async function extractCalls(
 ): Promise<ParsedCallSite[]> {
   const calls: ParsedCallSite[] = [];
   for (const statement of topLevelStatements(syntax)) {
-    const doStatement = findSyntaxNode(statement, "DoStmt");
+    const entry = statementKindNode(statement);
+    if (!entry || !DEBUG_ENTRY_STATEMENT_KINDS.has(entry.kind)) continue;
+    const doStatement = entry.kind === "DoStmt" ? entry : undefined;
     if (doStatement) {
       const call = await callInsideDo(source, doStatement, parser);
       if (!call) continue;
@@ -172,10 +187,8 @@ async function extractCalls(
       });
       continue;
     }
-    const callStatement = findSyntaxNode(statement, "CallStmt");
-    const selectStatement = findSyntaxNode(statement, "SelectStmt");
-    if (!callStatement && !selectStatement) continue;
-    const application = preferredSqlCallApplication(callStatement ?? selectStatement!);
+    const callStatement = entry.kind === "CallStmt" ? entry : undefined;
+    const application = preferredSqlCallApplication(entry);
     if (!application) continue;
     const parsed = extractCall(source, application);
     if (!parsed.routine) continue;

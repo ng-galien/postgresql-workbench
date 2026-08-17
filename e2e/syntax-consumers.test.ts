@@ -146,6 +146,20 @@ $workbench$;`;
     expect(singleQuoted?.body).toBe("BEGIN RETURN value; END;");
     expect(quotedType?.params).toEqual([{ name: "value", type: '"App"."ItemCode"[]', mode: "in" }]);
     expect(calls).toHaveLength(11);
+    await expect(
+      parseSqlCalls(
+        `INSERT INTO audit.log SELECT audit.record(1);
+CREATE VIEW audit.v AS SELECT audit.record(2);
+EXPLAIN SELECT audit.record(3);
+CREATE TABLE audit.t AS SELECT audit.record(4);
+WITH x AS (SELECT audit.record(5)) SELECT audit.record(6);
+CALL audit.run(7);`,
+        codeMoniker.parser,
+      ),
+    ).resolves.toMatchObject([
+      { routine: "record", args: ["6"], line: 5, kind: "select" },
+      { routine: "run", args: ["7"], line: 6, kind: "call" },
+    ]);
     expect(calls.find((call) => call.schema === "public")).toMatchObject({
       routine: "test_inner",
       args: ["42"],

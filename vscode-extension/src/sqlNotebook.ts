@@ -5,6 +5,7 @@ import {
   clampDebugResultRows,
   DEBUG_RESULT_LIMITS,
   type DebugResult,
+  type DebugResultEntry,
   type DebugResultError,
   type DebugResultStatus,
 } from "../../src/debugger/launch/index.js";
@@ -87,9 +88,18 @@ export interface ScratchpadDebugRequest {
   source: { name: string; uri: string; line: number };
 }
 
+export type ScratchpadDebugOutcome =
+  | {
+      started: true;
+      /** Resolves with the captured SQL result when the debug session ends. */
+      completion: Promise<DebugResultEntry | undefined>;
+      stop: () => Promise<void>;
+    }
+  | { started: false; cancelled?: boolean; message?: string };
+
 export type ScratchpadDebugger = (
   request: ScratchpadDebugRequest,
-) => Promise<{ started: boolean; message?: string }>;
+) => Promise<ScratchpadDebugOutcome>;
 
 export function registerSqlNotebook(
   context: vscode.ExtensionContext,
@@ -125,7 +135,15 @@ export function registerSqlNotebook(
       async (cell: vscode.NotebookCell, requested?: ScratchpadCellExecutionIntent) => {
         if (!cell || cell.notebook.notebookType !== SQL_NOTEBOOK_TYPE) return false;
         const current = scratchpadCellExecutionIntent(cell.metadata);
-        const executionIntent = requested ?? (current === "run" ? "debug" : "run");
+        if (scratchpadExecutionMode(notebookMetadata(cell.notebook.metadata)) === "manual") {
+          void vscode.window.showInformationMessage(
+            "Debug is unavailable in Mode MANUAL: the debugger cannot join the Scratchpad Transaction. Change to Mode AUTO first.",
+          );
+          return false;
+        }
+        const executionIntent = requested ?? (await pickScratchpadCellExecutionIntent(current));
+        if (!executionIntent) return false;
+        if (executionIntent === current) return true;
         const edit = new vscode.WorkspaceEdit();
         edit.set(cell.notebook.uri, [
           vscode.NotebookEdit.updateCellMetadata(cell.index, {
@@ -872,6 +890,13 @@ class SqlNotebookController implements vscode.Disposable {
         execution.end(false, Date.now());
         return;
       }
+      const debugPlan = await this.planResult(sql);
+      cancellation.throwIfCancellationRequested();
+      if (debugPlan.status !== "ready" && debugPlan.status !== "empty") {
+        await execution.replaceOutput(errorOutput(planErrorPayload(debugPlan)));
+        execution.end(false, Date.now());
+        return;
+      }
       const debug = await this.debug({
         sql,
         association: association.snapshot,
@@ -882,6 +907,10 @@ class SqlNotebookController implements vscode.Disposable {
         },
       });
       if (!debug.started) {
+        if (debug.cancelled) {
+          execution.end(undefined, Date.now());
+          return;
+        }
         await execution.replaceOutput(
           errorOutput(
             notebookErrorPayload(
@@ -894,7 +923,38 @@ class SqlNotebookController implements vscode.Disposable {
         execution.end(false, Date.now());
         return;
       }
-      await execution.clearOutput();
+      cancellation.onCancel(() => void debug.stop());
+      const entry = await debug.completion;
+      if (cancellation.isCancellationRequested) {
+        await execution.replaceOutput(errorOutput(executionCancelledPayload()));
+        execution.end(false, Date.now());
+        return;
+      }
+      if (!entry) {
+        await execution.replaceOutput(
+          new vscode.NotebookCellOutput([
+            vscode.NotebookCellOutputItem.text("Debug session ended without a SQL result."),
+          ]),
+        );
+        execution.end(true, Date.now());
+        return;
+      }
+      if ("status" in entry) {
+        if (entry.status === "error") {
+          await execution.replaceOutput(errorOutput(debugResultErrorPayload(entry)));
+        }
+        execution.end(entry.status !== "error", Date.now());
+        return;
+      }
+      await execution.replaceOutput(
+        entry.columns.length > 0
+          ? resultOutput(sqlNotebookResultPayload(entry, association.snapshot))
+          : new vscode.NotebookCellOutput([
+              vscode.NotebookCellOutputItem.text(
+                `${entry.command} · ${entry.rowCount} row${entry.rowCount === 1 ? "" : "s"} · ${entry.durationMs} ms · debugged`,
+              ),
+            ]),
+      );
       execution.end(true, Date.now());
       return;
     }
@@ -1215,19 +1275,21 @@ class SqlNotebookStatusProvider
   ): vscode.NotebookCellStatusBarItem[] | undefined {
     if (cell.kind === vscode.NotebookCellKind.Markup) return undefined;
     const executionIntent = scratchpadCellExecutionIntent(cell.metadata);
+    const manualMode =
+      scratchpadExecutionMode(notebookMetadata(cell.notebook.metadata)) === "manual";
     const intentItem = new vscode.NotebookCellStatusBarItem(
       executionIntent === "debug" ? "$(debug-alt) Debug" : "$(play) Run",
       vscode.NotebookCellStatusBarAlignment.Right,
     );
     intentItem.command = {
-      title: executionIntent === "debug" ? "Use Run intent" : "Use Debug intent",
+      title: "Change cell execution intent",
       command: SET_SCRATCHPAD_CELL_EXECUTION_INTENT_COMMAND,
-      arguments: [cell, executionIntent === "debug" ? "run" : "debug"],
+      arguments: [cell],
     };
     intentItem.tooltip =
       executionIntent === "debug"
-        ? "Cell execution intent: Debug — click to use Run"
-        : "Cell execution intent: Run — click to use Debug";
+        ? "Execution intent: Debug — the cell action attaches the PL/pgSQL debugger. Click to choose Run or Debug."
+        : "Execution intent: Run — click to choose Run or Debug.";
     intentItem.priority = 101;
     const association = resolveScratchpadAssociation(
       notebookMetadata(cell.notebook.metadata),
@@ -1268,7 +1330,10 @@ class SqlNotebookStatusProvider
         ? "Scratchpad Statement timeout from the global setting — click to change"
         : "Scratchpad Statement timeout override — click to change or use the global setting";
     timeoutItem.priority = 99;
-    return [intentItem, associationItem, timeoutItem];
+    if (manualMode) return [associationItem, timeoutItem];
+    return executionIntent === "debug"
+      ? [intentItem, associationItem]
+      : [intentItem, associationItem, timeoutItem];
   }
 
   refresh(): void {
@@ -1279,6 +1344,33 @@ class SqlNotebookStatusProvider
     for (const subscription of this.subscriptions) subscription.dispose();
     this.changed.dispose();
   }
+}
+
+async function pickScratchpadCellExecutionIntent(
+  current: ScratchpadCellExecutionIntent,
+): Promise<ScratchpadCellExecutionIntent | undefined> {
+  const picked = await vscode.window.showQuickPick(
+    [
+      {
+        label: "$(play) Run",
+        description: current === "run" ? "Current" : undefined,
+        detail: "Execute the cell SQL and show its result in the cell.",
+        intent: "run" as const,
+      },
+      {
+        label: "$(debug-alt) Debug",
+        description: current === "debug" ? "Current" : undefined,
+        detail:
+          "Execute one replayable PL/pgSQL entry point with the debugger attached, then show its result in the cell.",
+        intent: "debug" as const,
+      },
+    ],
+    {
+      title: "Scratchpad cell execution intent",
+      placeHolder: "What the native cell action does for this cell",
+    },
+  );
+  return picked?.intent;
 }
 
 function notebookMetadata(value: unknown): SqlNotebookMetadata {

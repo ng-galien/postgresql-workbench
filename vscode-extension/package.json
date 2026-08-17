@@ -78,7 +78,7 @@
     "notebooks": [
       {
         "type": "postgresql-workbench-sql",
-        "displayName": "PostgreSQL Workbench Notebook",
+        "displayName": "PostgreSQL Workbench Scratchpad",
         "selector": [
           {
             "filenamePattern": "*.pgsql-notebook"
@@ -553,6 +553,10 @@
           "when": "false"
         },
         {
+          "command": "postgresql-workbench.indexAssociation",
+          "when": "false"
+        },
+        {
           "command": "postgresql-workbench.provisionWorkbenchSchemaSync",
           "when": "false"
         },
@@ -793,7 +797,7 @@
       "editor/context": [
         {
           "command": "postgresql-workbench.executeSqlSelection",
-          "when": "editorHasSelection && (editorLangId == sql || editorLangId == plpgsql || editorLangId == postgresql-table || editorLangId == postgresql-view || editorLangId == postgresql-function || editorLangId == postgresql-procedure || editorLangId == postgresql-trigger)",
+          "when": "editorHasSelection && resourceScheme != code+moniker && (editorLangId == sql || editorLangId == plpgsql)",
           "group": "navigation@1"
         }
       ]
@@ -858,6 +862,11 @@
         "command": "postgresql-workbench.cancelDatabaseIndex",
         "title": "PostgreSQL Workbench: Cancel Database Indexing",
         "icon": "$(debug-stop)"
+      },
+      {
+        "command": "postgresql-workbench.indexAssociation",
+        "title": "PostgreSQL Workbench: Index Association",
+        "icon": "$(refresh)"
       },
       {
         "command": "postgresql-workbench.configureWorkbenchSchemaSync",
@@ -1038,7 +1047,7 @@
       },
       {
         "command": "postgresql-workbench.assignDocumentConnection",
-        "title": "PostgreSQL Workbench: Change SQL Document Association"
+        "title": "PostgreSQL Workbench: Choose Document Association"
       },
       {
         "command": "postgresql-workbench.runSqlCall",
@@ -1105,7 +1114,7 @@
           "minimum": 1000,
           "maximum": 3600000,
           "scope": "window",
-          "description": "Default PostgreSQL Statement timeout in milliseconds for SQL Scratchpads. Each Scratchpad can persist its own override."
+          "description": "Default PostgreSQL Statement timeout in milliseconds for SQL Scratchpads and free SQL documents. Each Scratchpad can persist its own override."
         },
         "postgresql-workbench.workbench.schemaSync.enabled": {
           "type": "boolean",
@@ -1159,7 +1168,7 @@
           "minimum": 20,
           "maximum": 1000,
           "scope": "window",
-          "description": "Maximum number of PostgreSQL rows retained for SQL selections and debug results. It is also used as the notebook page size when results.pageSize has not been configured explicitly."
+          "description": "Maximum number of PostgreSQL rows retained for SQL selections and debug results. It is also used as the Scratchpad page size when results.pageSize has not been configured explicitly."
         },
         "postgresql-workbench.results.pageSize": {
           "type": "number",
@@ -1175,7 +1184,7 @@
           "minimum": 20,
           "maximum": 100000,
           "scope": "window",
-          "description": "Maximum number of cursor-backed notebook rows retained for Previous navigation. Load all explicitly bypasses this limit."
+          "description": "Maximum number of cursor-backed Scratchpad rows retained for Previous navigation. Load all explicitly bypasses this limit."
         },
         "postgresql-workbench.results.cursorIdleTimeoutSeconds": {
           "type": "number",
@@ -1191,7 +1200,7 @@
           "minimum": 20,
           "maximum": 1000,
           "scope": "window",
-          "description": "Maximum rows retained for notebook statements that cannot be paged safely, including data-modifying statements with RETURNING."
+          "description": "Maximum rows retained for Scratchpad statements that cannot be paged safely, including data-modifying statements with RETURNING."
         },
         "postgresql-workbench.results.autoReveal": {
           "type": "boolean",
@@ -1397,7 +1406,7 @@
       {
         "id": "postgresql-workbench.gettingStarted",
         "title": "Getting Started with PostgreSQL Workbench",
-        "description": "Set up PostgreSQL debugging and pgTAP coverage in 6 steps.",
+        "description": "Set up PostgreSQL debugging, SQL authoring, and pgTAP coverage in 7 steps.",
         "steps": [
           {
             "id": "addServer",
@@ -1422,6 +1431,14 @@
             "description": "Open the PostgreSQL Workbench to browse active database sources and SQL Scratchpads in separate, resizable views.\n\n[Open Workbench](command:postgresql-workbench-connections.focus)",
             "completionEvents": [
               "onView:postgresql-workbench-connections"
+            ]
+          },
+          {
+            "id": "authorSql",
+            "title": "Author SQL from Sources",
+            "description": "Open a `.sql` file or a Scratchpad cell and pick its connection once. Every non-empty PostgreSQL Statement gets a **Run SQL** CodeLens, **Format Document** uppercases keywords and indents with two spaces, and completion suggests indexed schemas, tables, views, columns, functions, and procedures.\n\nDrag one object from **Sources** into the editor and hold **Shift** while dropping it to compose SQL: a `SELECT` for a table or view, a `JOIN` when a foreign key connects it to the query under the cursor, a call for a function or procedure, or a DML harness for a trigger. A drop without Shift opens the object in the Cockpit. Composed SQL is never executed automatically.\n\n[Open a SQL File](command:workbench.action.files.openFile)",
+            "completionEvents": [
+              "onCommand:workbench.action.files.openFile"
             ]
           },
           {

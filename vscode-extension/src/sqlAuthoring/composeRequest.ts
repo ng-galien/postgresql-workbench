@@ -11,6 +11,9 @@ import {
 } from "./protocol.js";
 import { sqlStatementAtOffset } from "./sqlLexing.js";
 
+export const SQL_AUTHORING_SYNTAX_BUDGET_MESSAGE =
+  "The SQL syntax tree reached the configured analysis budget. Increase postgresql-workbench.sqlAuthoring.syntaxMaxDepth or syntaxMaxNodes before composing.";
+
 export async function composeSqlAuthoringRequest(
   request: SqlAuthoringComposeRequest,
   documentContext: () => Promise<SqlAuthoringDocumentContext>,
@@ -19,12 +22,13 @@ export async function composeSqlAuthoringRequest(
 ): Promise<SqlAuthoringComposeResult> {
   const initial = await documentContext();
   if (initial.status !== "available") {
-    return { status: "rejected", message: initial.message };
+    return { status: "rejected", message: initial.message, reason: initial.status };
   }
   if (initial.snapshot.status !== "available") {
     return {
       status: "rejected",
       message: "The Workbench Index is stale. Reindex before composing SQL.",
+      reason: "stale",
     };
   }
   const initialToken = sqlAuthoringSnapshotToken(initial.snapshot);
@@ -34,14 +38,15 @@ export async function composeSqlAuthoringRequest(
     if (syntax.truncated) {
       return {
         status: "rejected",
-        message:
-          "The SQL syntax tree reached the configured analysis budget. Increase the SQL analysis settings before composing the query.",
+        message: SQL_AUTHORING_SYNTAX_BUDGET_MESSAGE,
+        reason: "syntax-budget",
       };
     }
     if (syntax.hasError) {
       return {
         status: "rejected",
         message: "The current SQL contains a syntax error. Fix it before composing the query.",
+        reason: "syntax-error",
       };
     }
   }
@@ -51,6 +56,7 @@ export async function composeSqlAuthoringRequest(
       status: "rejected",
       message:
         "The Workbench Index changed while composing SQL. Retry the drop on the fresh snapshot.",
+      reason: "snapshot-changed",
     };
   }
   const result = composePostgresSql(request, current.snapshot, settings);
