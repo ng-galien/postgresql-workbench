@@ -2576,8 +2576,13 @@ async function revealStoppedSource(
   const document = await vscode.workspace.openTextDocument(vscode.Uri.parse(status.source.path));
   if (!isLatest() || !debugSessions.matches(session.id, status.sessionId)) return;
   const line = Math.max(0, status.source.line - 1);
+  // Reuse an editor group already showing this source instead of opening a second copy.
+  const visible = vscode.window.visibleTextEditors.filter(
+    (editor) => editor.document.uri.toString() === document.uri.toString(),
+  );
+  const target = visible.find((editor) => editor.viewColumn === viewColumn) ?? visible[0];
   await vscode.window.showTextDocument(document, {
-    viewColumn: viewColumn ?? vscode.ViewColumn.Active,
+    viewColumn: target?.viewColumn ?? viewColumn ?? vscode.ViewColumn.Active,
     preview: false,
     preserveFocus: false,
     selection: new vscode.Range(line, 0, line, 0),
