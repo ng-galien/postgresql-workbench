@@ -125,9 +125,10 @@ rejected.
 
 ## Visible controls and feedback
 
-- A Scratchpad cell shows its persisted **Run** or **Debug** intent beside its
-  Association and Statement timeout; clicking the intent opens a Run/Debug
-  picker. The native cell action executes that intent, and a Debug cell shows
+- A Scratchpad cell whose SQL resolves to one replayable PL/pgSQL entry point
+  shows its persisted **Run** or **Debug** intent beside its Association and
+  Statement timeout; clicking the intent opens a Run/Debug picker. A cell
+  without such an entry point has no intent control and always runs. The native cell action executes that intent, and a Debug cell shows
   the SQL result of the debugged Statement in the cell exactly like Run (the
   Statement timeout does not apply to the debugger, so its indicator is hidden
   for Debug cells). In Mode MANUAL the intent control is hidden. When the

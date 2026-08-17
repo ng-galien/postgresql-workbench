@@ -101,16 +101,29 @@ export type ScratchpadDebugger = (
   request: ScratchpadDebugRequest,
 ) => Promise<ScratchpadDebugOutcome>;
 
+/** Tells whether a cell's SQL currently offers one replayable PL/pgSQL entry point. */
+export type ScratchpadDebugEligibility = (request: {
+  sql: string;
+  association: ScratchpadAssociationSnapshot;
+}) => Promise<boolean>;
+
 export function registerSqlNotebook(
   context: vscode.ExtensionContext,
   connections: ConnectionManager,
   planResult: ResultPlanner,
   debug: ScratchpadDebugger,
+  canDebug: ScratchpadDebugEligibility = async () => false,
 ): ScratchpadFeature {
   const serializer = new SqlNotebookSerializer();
   const transactions = new ScratchpadTransactionManager(connections);
-  const controller = new SqlNotebookController(connections, planResult, transactions, debug);
-  const statusProvider = new SqlNotebookStatusProvider(connections);
+  const controller = new SqlNotebookController(
+    connections,
+    planResult,
+    transactions,
+    debug,
+    canDebug,
+  );
+  const statusProvider = new SqlNotebookStatusProvider(connections, canDebug);
   const fileSystem = new SqlNotebookFileSystemProvider(context.globalStorageUri);
   const workspace = new SqlNotebookWorkspace(fileSystem);
 
@@ -135,6 +148,12 @@ export function registerSqlNotebook(
       async (cell: vscode.NotebookCell, requested?: ScratchpadCellExecutionIntent) => {
         if (!cell || cell.notebook.notebookType !== SQL_NOTEBOOK_TYPE) return false;
         const current = scratchpadCellExecutionIntent(cell.metadata);
+        if (!statusProvider.isDebuggable(cell)) {
+          void vscode.window.showInformationMessage(
+            "This cell has no replayable PL/pgSQL entry point, so it always runs. Debug needs one indexed CALL or function SELECT.",
+          );
+          return false;
+        }
         if (scratchpadExecutionMode(notebookMetadata(cell.notebook.metadata)) === "manual") {
           void vscode.window.showInformationMessage(
             "Debug is unavailable in Mode MANUAL: the debugger cannot join the Scratchpad Transaction. Change to Mode AUTO first.",
@@ -356,13 +375,20 @@ export function registerSqlNotebook(
       },
     ),
   );
-  return { workspace, transactions, shutdown: () => transactions.shutdown() };
+  return {
+    workspace,
+    transactions,
+    shutdown: () => transactions.shutdown(),
+    refreshCellStatus: () => statusProvider.invalidateDebuggable(),
+  };
 }
 
 export interface ScratchpadFeature {
   readonly workspace: SqlNotebookWorkspace;
   readonly transactions: ScratchpadTransactionManager;
   shutdown(): Promise<void>;
+  /** Re-evaluates cell status items (Debug eligibility) after the Workbench Index changed. */
+  refreshCellStatus(): void;
 }
 
 interface SqlNotebookPick extends vscode.QuickPickItem {
@@ -746,6 +772,7 @@ class SqlNotebookController implements vscode.Disposable {
     private readonly planResult: ResultPlanner,
     private readonly transactions: ScratchpadTransactionManager,
     private readonly debug: ScratchpadDebugger,
+    private readonly canDebug: ScratchpadDebugEligibility,
   ) {
     this.controller = vscode.notebooks.createNotebookController(
       "postgresql-workbench.sql",
@@ -876,7 +903,11 @@ class SqlNotebookController implements vscode.Disposable {
       return;
     }
 
-    if (scratchpadCellExecutionIntent(cell.metadata) === "debug") {
+    const wantsDebug =
+      scratchpadCellExecutionIntent(cell.metadata) === "debug" &&
+      (await this.canDebug({ sql, association: association.snapshot }));
+    cancellation.throwIfCancellationRequested();
+    if (wantsDebug) {
       if (mode === "manual") {
         await execution.replaceOutput(
           errorOutput(
@@ -1259,15 +1290,56 @@ class SqlNotebookStatusProvider
   readonly onDidChangeCellStatusBarItems = this.changed.event;
   private readonly subscriptions: vscode.Disposable[];
 
-  constructor(private readonly connections: ConnectionManager) {
+  private readonly debuggable = new Map<string, { version: number; value?: boolean }>();
+
+  constructor(
+    private readonly connections: ConnectionManager,
+    private readonly canDebug: ScratchpadDebugEligibility,
+  ) {
     this.subscriptions = [
       connections.onChanged(() => this.changed.fire()),
+      vscode.workspace.onDidCloseNotebookDocument((notebook) => {
+        for (const cell of notebook.getCells())
+          this.debuggable.delete(cell.document.uri.toString());
+      }),
       vscode.workspace.onDidChangeConfiguration((event) => {
         if (event.affectsConfiguration("postgresql-workbench.sql.statementTimeoutMs")) {
           this.changed.fire();
         }
       }),
     ];
+  }
+
+  invalidateDebuggable(): void {
+    this.debuggable.clear();
+    this.changed.fire();
+  }
+
+  /** Last known Debug eligibility of a cell; false until the analysis has completed. */
+  isDebuggable(cell: vscode.NotebookCell): boolean {
+    const cached = this.debuggable.get(cell.document.uri.toString());
+    return cached?.version === cell.document.version && cached.value === true;
+  }
+
+  private requestDebuggable(
+    cell: vscode.NotebookCell,
+    association: ScratchpadAssociationSnapshot,
+  ): boolean {
+    const key = cell.document.uri.toString();
+    const version = cell.document.version;
+    const cached = this.debuggable.get(key);
+    if (cached?.version === version) return cached.value === true;
+    this.debuggable.set(key, { version });
+    void this.canDebug({ sql: cell.document.getText(), association })
+      .then((value) => {
+        if (this.debuggable.get(key)?.version !== version) return;
+        this.debuggable.set(key, { version, value });
+        if (value) this.changed.fire();
+      })
+      .catch(() => {
+        if (this.debuggable.get(key)?.version === version) this.debuggable.delete(key);
+      });
+    return false;
   }
 
   provideCellStatusBarItems(
@@ -1331,6 +1403,9 @@ class SqlNotebookStatusProvider
         : "Scratchpad Statement timeout override — click to change or use the global setting";
     timeoutItem.priority = 99;
     if (manualMode) return [associationItem, timeoutItem];
+    const debuggable =
+      association.status === "associated" && this.requestDebuggable(cell, association.snapshot);
+    if (!debuggable) return [associationItem, timeoutItem];
     return executionIntent === "debug"
       ? [intentItem, associationItem]
       : [intentItem, associationItem, timeoutItem];

@@ -4,7 +4,7 @@ import {
   planSqlResultExecution,
 } from "../../src/analysis/sqlStatements.js";
 import type { SyntaxParser } from "../../src/analysis/syntaxTree.js";
-import { parseCall, parseSqlCalls } from "../../src/callParser.js";
+import { type ParsedCallSite, parseCall, parseSqlCalls } from "../../src/callParser.js";
 import type {
   DebugLaunchRoutineArgument,
   DebugLaunchRoutineTarget,
@@ -60,6 +60,7 @@ import {
   resolveSqlAuthoringSettings,
   type SqlAuthoringNavigationTarget,
 } from "./sqlAuthoring/client.js";
+import type { SqlAuthoringObject, SqlAuthoringSnapshot } from "./sqlAuthoring/protocol.js";
 import { debuggableSqlCall, debuggableSqlDefinition } from "./sqlCodeLensPolicy.js";
 import {
   type CommandCallSite,
@@ -71,6 +72,7 @@ import {
 } from "./sqlCodeLensProvider.js";
 import {
   registerSqlNotebook,
+  type ScratchpadDebugEligibility,
   type ScratchpadDebugger,
   type ScratchpadDebugOutcome,
 } from "./sqlNotebook.js";
@@ -1750,12 +1752,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
     started: false,
     message: "The PL/pgSQL debugger is still starting.",
   });
+  let canDebugScratchpadSql: ScratchpadDebugEligibility = async () => false;
   const scratchpads = registerSqlNotebook(
     context,
     cm,
     async (sql) =>
       planSqlResultExecution(sql, await workbenchIndex.syntaxParser(), sqlSyntaxAnalysisBudget()),
     (request) => debugScratchpadSql(request),
+    (request) => canDebugScratchpadSql(request),
+  );
+  context.subscriptions.push(
+    workbenchIndex.onDidChangeState(() => scratchpads.refreshCellStatus()),
   );
   const sqlNotebooks = scratchpads.workspace;
   shutdownScratchpads = scratchpads.shutdown;
@@ -1979,6 +1986,65 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
     }
     return { started: true, completion: pending.completion, stop: pending.stop };
   };
+  /** Resolves the debuggable entry points of a Scratchpad cell against an available snapshot. */
+  const scratchpadDebugTargets = async (
+    sql: string,
+    snapshot: SqlAuthoringSnapshot,
+  ): Promise<{
+    triggerRoutine?: SqlAuthoringObject;
+    picks: Array<{ label: string; description: string; call: ParsedCallSite }>;
+  }> => {
+    const parsed = (await parseSqlCalls(sql, await workbenchIndex.syntaxParser())).filter(
+      (call) => call.isLaunchable,
+    );
+    if (parsed.length === 0) {
+      const triggerHarness = /-- Invokes trigger\s+\S+\s+and function\s+([^\s.]+)\.([^\s]+)/u.exec(
+        sql,
+      );
+      const triggerRoutine = triggerHarness
+        ? snapshot.objects.find(
+            (object) =>
+              object.kind === "function" &&
+              object.plpgsql === true &&
+              object.schema === triggerHarness[1] &&
+              object.name === triggerHarness[2] &&
+              object.returnType?.toLocaleLowerCase() === "trigger",
+          )
+        : undefined;
+      return { triggerRoutine, picks: [] };
+    }
+    const picks = parsed.flatMap((call) => {
+      const expectedKind = call.kind === "call" ? "procedure" : "function";
+      const candidates = snapshot.objects.filter(
+        (object) =>
+          object.kind === expectedKind &&
+          object.plpgsql === true &&
+          object.name === call.routine &&
+          (call.schema === null || object.schema === call.schema) &&
+          object.parameters.length === call.args.length,
+      );
+      return candidates.length === 1
+        ? [
+            {
+              label: `${call.kind === "call" ? "CALL" : "SELECT"} ${candidates[0].schema}.${candidates[0].name}`,
+              description: `Line ${call.line}`,
+              call,
+            },
+          ]
+        : [];
+    });
+    return { picks };
+  };
+  canDebugScratchpadSql = async ({ sql, association }) => {
+    const snapshot = workbenchIndex.sqlAuthoringSnapshot(association);
+    if (snapshot?.status !== "available" || !sql.trim()) return false;
+    try {
+      const targets = await scratchpadDebugTargets(sql, snapshot);
+      return Boolean(targets.triggerRoutine) || targets.picks.length > 0;
+    } catch {
+      return false;
+    }
+  };
   debugScratchpadSql = async ({ sql, association, source }) => {
     const snapshot = workbenchIndex.sqlAuthoringSnapshot(association);
     if (snapshot?.status !== "available") {
@@ -2001,23 +2067,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
           "The Scratchpad Association has no fresh Workbench Index. Use Index Association, then run the cell again.",
       };
     }
-    const parsed = (await parseSqlCalls(sql, await workbenchIndex.syntaxParser())).filter(
-      (call) => call.isLaunchable,
-    );
-    if (parsed.length === 0) {
-      const triggerHarness = /-- Invokes trigger\s+\S+\s+and function\s+([^\s.]+)\.([^\s]+)/u.exec(
-        sql,
-      );
-      const triggerRoutine = triggerHarness
-        ? snapshot.objects.find(
-            (object) =>
-              object.kind === "function" &&
-              object.plpgsql === true &&
-              object.schema === triggerHarness[1] &&
-              object.name === triggerHarness[2] &&
-              object.returnType?.toLocaleLowerCase() === "trigger",
-          )
-        : undefined;
+    const { triggerRoutine, picks } = await scratchpadDebugTargets(sql, snapshot);
+    if (picks.length === 0) {
       if (triggerRoutine) {
         return startScratchpadDebug(
           {
@@ -2041,33 +2092,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
         started: false,
         message:
           "Debug requires a direct replayable CALL or SELECT of one indexed PL/pgSQL routine.",
-      };
-    }
-    const picks = parsed.flatMap((call) => {
-      const expectedKind = call.kind === "call" ? "procedure" : "function";
-      const candidates = snapshot.objects.filter(
-        (object) =>
-          object.kind === expectedKind &&
-          object.plpgsql === true &&
-          object.name === call.routine &&
-          (call.schema === null || object.schema === call.schema) &&
-          object.parameters.length === call.args.length,
-      );
-      return candidates.length === 1
-        ? [
-            {
-              label: `${call.kind === "call" ? "CALL" : "SELECT"} ${candidates[0].schema}.${candidates[0].name}`,
-              description: `Line ${call.line}`,
-              call,
-            },
-          ]
-        : [];
-    });
-    if (picks.length === 0) {
-      return {
-        started: false,
-        message:
-          "No unique indexed PL/pgSQL overload matches this call. Qualify the schema and make the argument list unambiguous.",
       };
     }
     const selected =

@@ -13,8 +13,10 @@ Connexion, never to a live PostgreSQL session, and never silently follows the
 active DatabaseContext.
 
 Run and Debug are separate execution intents but use that same Association.
-Each code cell shows its intent (**Run** or **Debug**) in its status bar; click
-it to choose the other one, and the native cell action executes that intent. A
+A code cell whose SQL resolves to one replayable PL/pgSQL entry point shows its
+intent (**Run** or **Debug**) in its status bar; click it to choose the other
+one, and the native cell action executes that intent. A cell without such an
+entry point offers no choice: it always runs. A
 Debug cell shows the SQL result of the debugged Statement in the cell exactly
 like Run, and the native Stop action ends the debug session. In Mode MANUAL the
 intent control is hidden because the debugger cannot join the Scratchpad
