@@ -1,7 +1,7 @@
 {
   "name": "postgresql-workbench",
   "displayName": "PostgreSQL Workbench",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Debug PL/pgSQL, run pgTAP tests with coverage, explore schemas, and query data in SQL scratchpads — without leaving VS Code.",
   "publisher": "ng-galien",
   "author": {
