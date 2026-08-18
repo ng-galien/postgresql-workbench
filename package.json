@@ -23,8 +23,8 @@
     "typecheck": "tsc --noEmit && npm --prefix vscode-extension run compile",
     "watch": "node scripts/clean-dap.mjs && tsc -w",
     "start": "node dist/main.js",
-    "check": "node scripts/check-issue-templates.mjs && biome check src/ vscode-extension/src/ vscode-extension/acceptance/ vscode-extension/playwright.acceptance.config.ts vscode-extension/playwright.bootstrap.config.ts vscode-extension/playwright.schema-sync.config.ts vscode-extension/playwright.vscode.config.ts e2e/ site/ packages/postgresql-dap/ scripts/build-site.mjs scripts/dev-site.mjs scripts/build-dap-package.mjs scripts/verify-dap-package.mjs scripts/test-dap-package.mjs scripts/create-issue.mjs scripts/check-issue-templates.mjs scripts/issue-workflow.mjs",
-    "check:fix": "node scripts/check-issue-templates.mjs && biome check --write src/ vscode-extension/src/ vscode-extension/acceptance/ vscode-extension/playwright.acceptance.config.ts vscode-extension/playwright.bootstrap.config.ts vscode-extension/playwright.schema-sync.config.ts vscode-extension/playwright.vscode.config.ts e2e/ site/ packages/postgresql-dap/ scripts/build-site.mjs scripts/dev-site.mjs scripts/build-dap-package.mjs scripts/verify-dap-package.mjs scripts/test-dap-package.mjs scripts/create-issue.mjs scripts/check-issue-templates.mjs scripts/issue-workflow.mjs",
+    "check": "node scripts/check-issue-templates.mjs && biome check src/ vscode-extension/src/ vscode-extension/acceptance/ vscode-extension/playwright.acceptance.config.ts vscode-extension/playwright.bootstrap.config.ts vscode-extension/playwright.schema-sync.config.ts vscode-extension/playwright.vscode.config.ts e2e/ site/ packages/postgresql-dap/ scripts/build-site.mjs scripts/dev-site.mjs scripts/build-dap-package.mjs scripts/verify-dap-package.mjs scripts/test-dap-package.mjs scripts/create-issue.mjs scripts/check-issue-templates.mjs scripts/issue-workflow.mjs scripts/workbench-index-benchmark.mjs scripts/workbench-index-benchmark.node-test.mjs",
+    "check:fix": "node scripts/check-issue-templates.mjs && biome check --write src/ vscode-extension/src/ vscode-extension/acceptance/ vscode-extension/playwright.acceptance.config.ts vscode-extension/playwright.bootstrap.config.ts vscode-extension/playwright.schema-sync.config.ts vscode-extension/playwright.vscode.config.ts e2e/ site/ packages/postgresql-dap/ scripts/build-site.mjs scripts/dev-site.mjs scripts/build-dap-package.mjs scripts/verify-dap-package.mjs scripts/test-dap-package.mjs scripts/create-issue.mjs scripts/check-issue-templates.mjs scripts/issue-workflow.mjs scripts/workbench-index-benchmark.mjs scripts/workbench-index-benchmark.node-test.mjs",
     "test": "vitest run --exclude e2e/ --exclude vscode-extension/src/test/ --exclude vscode-extension/acceptance/ --exclude '.worktrees/**' --exclude '**/.vscode-test/**' && npm --prefix vscode-extension run test:scripts",
     "test:dap": "vitest run --exclude 'vscode-extension/**' --exclude 'e2e/**' --exclude '.worktrees/**' --exclude '**/.vscode-test/**'",
     "test:dap:package": "node scripts/test-dap-package.mjs",
@@ -39,13 +39,14 @@
     "test:e2e:legacy:run": "npm run build:dap && vitest run e2e/legacy-compat.test.ts --exclude '.worktrees/**' --fileParallelism=false",
     "test:e2e:legacy:down": "cd e2e && docker compose -f docker-compose.legacy.yml down -v",
     "test:e2e:legacy": "node scripts/run-e2e.mjs legacy",
+    "bench:workbench-index": "node scripts/workbench-index-benchmark.mjs",
     "package:ext": "npm --prefix vscode-extension run package",
     "marketplace:media": "node scripts/marketplace-media.mjs",
     "site:build": "node scripts/build-site.mjs",
     "site:dev": "node scripts/dev-site.mjs"
   },
   "dependencies": {
-    "@code-moniker/client": "0.7.0",
+    "@code-moniker/client": "0.7.1",
     "@vscode/debugadapter": "^1.68.0",
     "@vscode/debugprotocol": "^1.68.0",
     "pg": "^8.13.1"

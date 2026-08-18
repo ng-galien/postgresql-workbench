@@ -10,9 +10,10 @@ dependency graph on something larger than a toy schema.
 The playground uses the same
 [`galien0xffffff/postgres-debugger:17`](https://hub.docker.com/r/galien0xffffff/postgres-debugger)
 image offered by the VS Code command **PL/pgSQL: Start Local Debug Database
-(Docker)**. The local [Dockerfile](Dockerfile) adds the PostgreSQL 17 pgTAP
-package. Published debugger image tags cover PostgreSQL 13–18 on amd64 and
-arm64.
+(Docker)**. The canonical local [Dockerfile](Dockerfile) adds the PostgreSQL 17
+pgTAP package once and is shared by the demo, integration tests, and internal
+index benchmark. Published debugger image tags cover PostgreSQL 13–18 on amd64
+and arm64.
 
 ## Start
 

@@ -13,6 +13,8 @@
       "scripts/create-issue.mjs",
       "scripts/check-issue-templates.mjs",
       "scripts/issue-workflow.mjs",
+      "scripts/workbench-index-benchmark.mjs",
+      "scripts/workbench-index-benchmark.node-test.mjs",
       "!!**/dist/",
       "!!**/node_modules/"
     ]

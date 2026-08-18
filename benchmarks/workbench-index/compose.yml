@@ -1,0 +1,16 @@
+services:
+  postgres:
+    build:
+      context: ../../demo
+    image: postgresql-workbench-postgres:pg17
+    ports:
+      - "${PGWB_BENCH_PORT:-55433}:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 2s
+      timeout: 5s
+      retries: 15

@@ -39,3 +39,5 @@ and password are all `postgres`.
 - [Standalone DAP server](dap.md) — integrate the debugger engine with another
   editor or DAP client.
 - [Commands and settings](reference.md) — browse the complete generated reference.
+- [Measured performance](performance.md) — review reproducible indexing measurements
+  on synthetic ERP-scale PostgreSQL catalogs.

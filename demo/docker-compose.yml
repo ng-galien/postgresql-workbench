@@ -2,7 +2,7 @@ services:
   postgres:
     build:
       context: .
-    image: postgresql-workbench-demo:pg17
+    image: postgresql-workbench-postgres:pg17
     container_name: postgresql-workbench-demo
     ports:
       - "5434:5432"

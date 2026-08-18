@@ -1,8 +1,10 @@
 services:
   postgres:
+    # Reuse the canonical debugger + pgTAP fixture instead of maintaining a
+    # second image definition for integration tests.
     build:
-      context: .
-    image: postgresql-workbench-e2e:pg17
+      context: ../demo
+    image: postgresql-workbench-postgres:pg17
     ports:
       - "5433:5432"
     environment:
