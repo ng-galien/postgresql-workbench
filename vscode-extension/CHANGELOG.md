@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+## [1.2.1] - 2026-08-18
+
+PostgreSQL Workbench 1.2.1 adopts the published Code Moniker 0.7.1 runtime and
+consolidates the performance and CI work validated against it.
+
+- Updated the packaged Code Moniker client and native runtimes to 0.7.1,
+  enabling parallel bulk SourceSet extraction, exact incremental publication,
+  and client-selected SQL syntax budgets without a server clamp
+- Added a reproducible synthetic ERP catalog benchmark and generated-site guide
+  with real medium and large indexing measurements and explicit producer versus
+  Workbench consumer costs
+- Stabilized the Coverage-to-Debug Playwright journey by reusing the already
+  active routine editor instead of re-entering a virtualized TreeView after the
+  second coverage run
+- Consolidated demo, integration, and benchmark PostgreSQL fixtures on one
+  pinned debugger image augmented once with pgTAP
+
 ## [1.2.0] - 2026-08-17
 
 PostgreSQL Workbench 1.2.0 adds indexed SQL authoring and unifies Run, Debug,

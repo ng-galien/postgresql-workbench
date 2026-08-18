@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "extensionVsix": "postgresql-workbench-1.2.0-darwin-arm64.vsix",
+  "extensionVsix": "postgresql-workbench-1.2.1-darwin-arm64.vsix",
   "window": {
     "title": "PostgreSQL Workbench Showcase",
     "x": 219,

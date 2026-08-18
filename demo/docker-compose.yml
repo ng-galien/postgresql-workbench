@@ -1,8 +1,9 @@
 services:
   postgres:
     build:
-      context: .
-    image: postgresql-workbench-demo:pg17
+      context: ..
+      dockerfile: demo/Dockerfile
+    image: postgresql-workbench-postgres:pg17
     container_name: postgresql-workbench-demo
     ports:
       - "5434:5432"
@@ -20,8 +21,3 @@ services:
       - ./init/03-shop.sql:/docker-entrypoint-initdb.d/93-shop.sql:ro
       - ./init/04-pgtap.sql:/docker-entrypoint-initdb.d/94-pgtap.sql:ro
       - ./init/05-commerce.sql:/docker-entrypoint-initdb.d/95-commerce.sql:ro
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d demo"]
-      interval: 2s
-      timeout: 5s
-      retries: 10

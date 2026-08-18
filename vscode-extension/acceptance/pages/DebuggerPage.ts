@@ -131,6 +131,11 @@ export class DebuggerPage {
     expectedStopLine?: string,
   ): Promise<void> {
     await expect(this.debugToolbar()).toBeVisible({ timeout: 20_000 });
+    await this.expectActiveRoutineSource(sourceTab, routineSource);
+    if (expectedStopLine) await this.expectStoppedAt(expectedStopLine);
+  }
+
+  async expectActiveRoutineSource(sourceTab: RegExp, routineSource: RegExp): Promise<void> {
     const tab = this.page.getByRole("tab", { name: sourceTab });
     await expect(tab).toBeVisible({ timeout: 10_000 });
     await expect(tab).toHaveAttribute("aria-selected", "true", { timeout: 10_000 });
@@ -139,7 +144,6 @@ export class DebuggerPage {
     ).toBeVisible({
       timeout: 10_000,
     });
-    if (expectedStopLine) await this.expectStoppedAt(expectedStopLine);
   }
 
   async continueToCompletion(expectedResult?: string): Promise<void> {

@@ -16,10 +16,12 @@ const guides = [
   ["cockpit.md", "Workbench Cockpit"],
   ["notebooks.md", "SQL scratchpads"],
   ["sql-authoring.md", "SQL authoring"],
+  ["execution-debugging-and-deployment.md", "Run, debug, and deploy SQL"],
   ["testing-coverage.md", "pgTAP and coverage"],
   ["debugger.md", "PL/pgSQL debugger"],
   ["dap.md", "Standalone DAP server"],
   ["reference.md", "Commands and settings"],
+  ["performance.md", "Measured performance"],
 ];
 
 const assets = [

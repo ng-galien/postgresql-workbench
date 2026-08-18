@@ -205,13 +205,7 @@ test.describe("pgTAP tests and coverage", () => {
           timeout: 30_000,
         })
         .toBe(previousSequence + 1);
-      await vscode.executeCommand("postgresql-workbench-connections.focus");
-      await workbench.openRoutineSource(
-        server,
-        database,
-        /^shop/u,
-        /^restock_report\(threshold: int4\)/u,
-      );
+      await debuggerPage.expectActiveRoutineSource(/^restock_report$/, /shop\.restock_report/);
       await vscode.executeCommand("testing.openCoverage");
       await expect(
         workbench.page.locator(
