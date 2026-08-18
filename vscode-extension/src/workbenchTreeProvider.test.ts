@@ -209,14 +209,17 @@ describe("Workbench tree object navigation", () => {
     expect(emitted.length).toBeGreaterThan(0);
     expect(emitted).not.toContain(undefined);
     expect(emitted.every((item) => item?.id?.includes(serverA.id))).toBe(true);
-    expect(rootA?.collapsibleState).toBe(0);
+    // A disconnected Connexion keeps a closed chevron so sibling rows stay aligned.
+    expect(rootA?.collapsibleState).toBe(1);
     expect(rootB?.collapsibleState).toBe(1);
     expect(rootA?.iconPath).toMatchObject({ id: "debug-disconnect" });
     expect(rootB?.iconPath).toMatchObject({
       id: "plug",
       color: { id: "testing.iconPassed" },
     });
-    await expect(provider.getChildren(rootA)).resolves.toEqual([]);
+    await expect(provider.getChildren(rootA)).resolves.toMatchObject([
+      { kind: "message", label: "Not connected" },
+    ]);
     await expect(provider.getChildren(sourcesB)).resolves.toMatchObject([{ label: "beta" }]);
 
     emitted.length = 0;
@@ -301,8 +304,10 @@ describe("Workbench tree object navigation", () => {
 
     connected = false;
     const disconnectedRoots = await databaseProvider.getChildren();
-    expect(disconnectedRoots[0]?.collapsibleState).toBe(0);
-    await expect(databaseProvider.getChildren(disconnectedRoots[0])).resolves.toEqual([]);
+    expect(disconnectedRoots[0]?.collapsibleState).toBe(1);
+    await expect(databaseProvider.getChildren(disconnectedRoots[0])).resolves.toMatchObject([
+      { kind: "message", label: "Not connected" },
+    ]);
     await expect(scratchpadProvider.getChildren()).resolves.toMatchObject([
       { kind: "sqlNotebook", label: "First" },
       { kind: "sqlNotebook", label: "Second" },

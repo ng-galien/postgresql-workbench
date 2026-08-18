@@ -57,10 +57,9 @@ export class ServerItem extends vscode.TreeItem {
     public readonly connected: boolean,
     public readonly debugCapability: DebugCapabilitySnapshot,
   ) {
-    super(
-      getConnectionName(server),
-      connected ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None,
-    );
+    // Always collapsible: a disconnected Connexion keeps a closed chevron so
+    // sibling rows stay aligned and its branch offers the connect hint.
+    super(getConnectionName(server), vscode.TreeItemCollapsibleState.Collapsed);
     this.id = `postgres-server:${server.id}`;
     if (!connected) {
       this.iconPath = new vscode.ThemeIcon("debug-disconnect");
@@ -601,6 +600,21 @@ class MessageItem extends vscode.TreeItem {
   }
 }
 
+class ConnectServerMessageItem extends MessageItem {
+  constructor(server: ServerConfig) {
+    super("Not connected");
+    this.id = `postgres-server-connect:${server.id}`;
+    this.iconPath = new vscode.ThemeIcon("plug");
+    this.description = "select to connect";
+    this.tooltip = `${getConnectionName(server)} is disconnected. Select to connect.`;
+    this.command = {
+      command: "postgresql-workbench.connectServer",
+      title: "Connect",
+      arguments: [server.id],
+    };
+  }
+}
+
 class ReindexDatabaseMessageItem extends MessageItem {
   constructor(message: string) {
     super(message);
@@ -663,7 +677,9 @@ class WorkbenchTreeChildren {
   async getChildren(element?: PlpgsqlTreeItem): Promise<PlpgsqlTreeItem[]> {
     if (!element) return this.rootChildren();
     if (element.kind === "server") {
-      if (!this.connections.isServerConnected(element.server.id)) return [];
+      if (!this.connections.isServerConnected(element.server.id)) {
+        return [new ConnectServerMessageItem(element.server)];
+      }
       return [
         new DatabaseSourceItem(
           element.server,

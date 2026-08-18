@@ -359,8 +359,15 @@ export class WorkbenchIndexController implements vscode.Disposable {
 
   async settleAcceptanceOperations(): Promise<void> {
     this.requireAcceptanceControl();
+    // Only a run held by the phase gate is abandoned; automatic refreshes of
+    // any Connexion settle normally so the next scenario finds a fresh index.
+    const heldRunId = this.acceptancePhaseGate?.runId;
     this.clearAcceptancePhaseGate();
-    this.cancelDatabaseIndex();
+    if (heldRunId !== undefined) {
+      for (const run of this.activeIndexRuns.values()) {
+        if (run.id === heldRunId) this.cancelDatabaseIndex(run.serverId);
+      }
+    }
     await Promise.all([...this.scopeRuns.values()].map(({ tail }) => tail.catch(() => undefined)));
     await this.sourceMutation;
   }
