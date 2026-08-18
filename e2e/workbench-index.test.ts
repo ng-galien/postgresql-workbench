@@ -7,7 +7,11 @@ import {
   ensureLocalCodeMonikerWorkspace,
   type LocalCodeMonikerSession,
 } from "../src/workbench/localCodeMoniker.js";
-import { type CatalogQueryClient, readPostgresCatalog } from "../src/workbench/postgresCatalog.js";
+import {
+  type CatalogQueryClient,
+  postgresDatabaseDocumentGlob,
+  readPostgresCatalog,
+} from "../src/workbench/postgresCatalog.js";
 
 const PG_CONFIG = {
   host: "127.0.0.1",
@@ -39,7 +43,7 @@ describe.skipIf(!LOCAL_CODE_MONIKER_AVAILABLE)(
     let admin: Client;
     let postgres: Client;
     let session: LocalCodeMonikerSession | undefined;
-    let publishedSourceSet: string | undefined;
+    const publishedSourceSets = new Set<string>();
     let workspaceRoot: string;
 
     beforeAll(async () => {
@@ -83,12 +87,18 @@ describe.skipIf(!LOCAL_CODE_MONIKER_AVAILABLE)(
         AFTER INSERT ON workbench_u1.account
         FOR EACH ROW EXECUTE FUNCTION workbench_u1.audit_account();
       `);
+      session = await ensureLocalCodeMonikerWorkspace({
+        runtimePath: CODE_MONIKER_RUNTIME,
+        workspaceRoots: [workspaceRoot],
+        clientName: "postgresql-workbench-u1-e2e",
+      });
+      await waitForWorkspaceReady(session);
     }, 30_000);
 
     afterAll(async () => {
       if (session) {
-        if (publishedSourceSet) {
-          await session.client.sources.remove(publishedSourceSet).catch(() => undefined);
+        for (const sourceSet of publishedSourceSets) {
+          await session.client.sources.remove(sourceSet).catch(() => undefined);
         }
         await session.dispose().catch(() => undefined);
       }
@@ -115,12 +125,6 @@ describe.skipIf(!LOCAL_CODE_MONIKER_AVAILABLE)(
       expect(snapshot.sourceSet.documents.length).toBeGreaterThanOrEqual(8);
       expect(snapshot.metrics.introspectionMs).toBeLessThan(10_000);
 
-      session = await ensureLocalCodeMonikerWorkspace({
-        runtimePath: CODE_MONIKER_RUNTIME,
-        workspaceRoots: [workspaceRoot],
-        clientName: "postgresql-workbench-u1-e2e",
-      });
-      await waitForWorkspaceReady(session);
       expect(session.metadata.packageVersion).toMatch(/^\d+\.\d+\.\d+$/);
       expect(session.metadata.source).toBe(
         `npm:@code-moniker/client@${session.metadata.packageVersion}+` +
@@ -131,7 +135,7 @@ describe.skipIf(!LOCAL_CODE_MONIKER_AVAILABLE)(
 
       const publicationStarted = performance.now();
       await session.client.sources.replace(snapshot.sourceSet);
-      publishedSourceSet = snapshot.sourceSet.srcset;
+      publishedSourceSets.add(snapshot.sourceSet.srcset);
       const publicationMs = performance.now() - publicationStarted;
       const indexingMs =
         snapshot.metrics.introspectionMs + snapshot.metrics.materializationMs + publicationMs;
@@ -232,6 +236,50 @@ describe.skipIf(!LOCAL_CODE_MONIKER_AVAILABLE)(
           `graph=${graphQueryMs.toFixed(1)}ms\n`,
       );
     }, 90_000);
+
+    it("keeps identical PostgreSQL objects isolated by Connexion URI", async () => {
+      if (!session) throw new Error("The local Code Moniker session is not available");
+      const alice = { serverId: "127.0.0.1:5433/scope:alice", database: WORKBENCH_DATABASE };
+      const bob = { serverId: "127.0.0.1:5433/scope:bob", database: WORKBENCH_DATABASE };
+      const aliceSnapshot = await readPostgresCatalog(catalogClient(postgres), alice);
+      const bobSnapshot = await readPostgresCatalog(catalogClient(postgres), bob);
+      publishedSourceSets.add(aliceSnapshot.sourceSet.srcset);
+      publishedSourceSets.add(bobSnapshot.sourceSet.srcset);
+
+      expect(aliceSnapshot.sourceSet.srcset).not.toBe(bobSnapshot.sourceSet.srcset);
+      expect(aliceSnapshot.sourceSet.documents.map(({ uri }) => uri)).not.toEqual(
+        bobSnapshot.sourceSet.documents.map(({ uri }) => uri),
+      );
+
+      await session.client.sources.replace(aliceSnapshot.sourceSet);
+      await session.client.sources.replace(bobSnapshot.sourceSet);
+
+      const aliceTables = await session.client.symbols.search(
+        {
+          language: ["sql"],
+          kind: ["table"],
+          path: [postgresDatabaseDocumentGlob(alice)],
+        },
+        { consistency: "stale_ok", limit: 500 },
+      );
+      const bobTables = await session.client.symbols.search(
+        {
+          language: ["sql"],
+          kind: ["table"],
+          path: [postgresDatabaseDocumentGlob(bob)],
+        },
+        { consistency: "stale_ok", limit: 500 },
+      );
+      const alicePrefix = postgresDatabaseDocumentGlob(alice).slice(0, -2);
+      const bobPrefix = postgresDatabaseDocumentGlob(bob).slice(0, -2);
+
+      expect(aliceTables.data.rows.some(({ name }) => name === "account")).toBe(true);
+      expect(bobTables.data.rows.some(({ name }) => name === "account")).toBe(true);
+      expect(aliceTables.data.rows.every(({ file }) => file.startsWith(alicePrefix))).toBe(true);
+      expect(bobTables.data.rows.every(({ file }) => file.startsWith(bobPrefix))).toBe(true);
+      expect(aliceTables.data.rows.some(({ file }) => file.startsWith(bobPrefix))).toBe(false);
+      expect(bobTables.data.rows.some(({ file }) => file.startsWith(alicePrefix))).toBe(false);
+    }, 60_000);
   },
 );
 

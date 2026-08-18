@@ -50,9 +50,10 @@ Drag-and-drop composition also follows that Association exclusively. The cell
 does not show the standalone-editor connection CodeLens because the Association
 in the cell footer is the single connection control. See the exhaustive
 [drag-and-drop behavior](sql-authoring.md#compose-sql-by-drag-and-drop).
-**Use Association as Active** is an explicit promotion; ordinary execution never
-switches the active DatabaseContext. If the Connexion disappears, editing remains
-available while execution offers Reconnect or Change Association.
+**Connect Scratchpad Association** explicitly opens the associated Connexion;
+ordinary execution never connects or switches another Connexion. If the Connexion
+disappears, editing remains available while execution offers Reconnect or Change
+Association.
 
 ## Mode and Transaction
 

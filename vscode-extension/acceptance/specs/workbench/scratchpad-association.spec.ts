@@ -7,6 +7,7 @@ import {
   loopbackConnexionTreeItem,
 } from "../../fixtures/demoDatabase";
 import { expect, test } from "../../fixtures/test";
+import { SCHEMAS_TREE_ITEM } from "../../pages/WorkbenchTreeLabels";
 
 test.describe("Scratchpad Association", () => {
   test("creates an unassociated Scratchpad when a multiple-Connexion choice is cancelled", async ({
@@ -23,12 +24,13 @@ test.describe("Scratchpad Association", () => {
           loopbackConnexionTreeItem,
           database,
         ]);
-        const loopbackSources = await workbench.tree.findChild(loopbackDatabase, /^Sources/);
-        await expect(loopbackSources).toContainText("not indexed");
+        const loopbackSources = await workbench.tree.findChild(loopbackDatabase, SCHEMAS_TREE_ITEM);
+        await expect(loopbackSources).toContainText("available", { timeout: 30_000 });
 
         const localDatabase = await workbench.tree.expandPath([connexion, database]);
-        const localSources = await workbench.tree.findChild(localDatabase, /^Sources/);
-        await expect(localSources).toContainText("inactive");
+        const localSources = await workbench.tree.findChild(localDatabase, SCHEMAS_TREE_ITEM);
+        await expect(localSources).toContainText("available");
+        await workbench.expectFreshIndexRuntime({ serverId: loopbackConnectionId });
       });
 
       await workbench.scratchpads.create();

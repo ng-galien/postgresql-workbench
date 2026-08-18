@@ -10,6 +10,7 @@ import type { VSCodeInstance, WorkbenchStateSnapshot } from "../../fixtures/vsco
 import { createScratchpad } from "../../journeys/scratchpad";
 import type { NotebookPage } from "../../pages/NotebookPage";
 import type { WorkbenchPage } from "../../pages/WorkbenchPage";
+import { SCHEMAS_TREE_ITEM } from "../../pages/WorkbenchTreeLabels";
 
 const probe = /^ddl_sync_probe(?:\s|$)/;
 const renamedProbe = /^ddl_sync_probe_renamed(?:\s|$)/;
@@ -35,10 +36,13 @@ async function expectSchemaSyncQuiescent(
       async () => {
         snapshot = await vscode.inspectWorkbenchState();
         const sync = schemaSyncState(snapshot);
-        const result = snapshot.index.state.result;
+        const exactIndex = snapshot.index.states.find(
+          (state) => state.result?.serverId === demoConnectionId,
+        );
+        const result = exactIndex?.result;
         return Boolean(
           snapshot.connection.connected &&
-            snapshot.connection.activeServerId === demoConnectionId &&
+            snapshot.connection.connectedServerIds.includes(demoConnectionId) &&
             sync?.desired?.enabled &&
             sync.state.status === "listening" &&
             typeof sync.listener?.processId === "number" &&
@@ -51,7 +55,7 @@ async function expectSchemaSyncQuiescent(
             sync.lifecycle.queued === 0 &&
             !sync.refresh.active &&
             sync.refresh.queued === 0 &&
-            snapshot.index.state.status === "available" &&
+            exactIndex?.status === "available" &&
             result?.serverId === demoConnectionId &&
             typeof result.generation === "number" &&
             !snapshot.index.activeRun &&
@@ -61,12 +65,14 @@ async function expectSchemaSyncQuiescent(
       },
       {
         timeout: 30_000,
-        message: "Schema Sync listener, notification drain, and active index must be quiescent",
+        message: "Schema Sync listener, notification drain, and exact index must be quiescent",
       },
     )
     .toBe(true);
 
-  const result = snapshot?.index.state.result;
+  const result = snapshot?.index.states.find(
+    (state) => state.result?.serverId === demoConnectionId,
+  )?.result;
   if (!snapshot || typeof result?.generation !== "number") {
     throw new Error(`Schema Sync checkpoint is incomplete: ${JSON.stringify(snapshot)}`);
   }
@@ -90,7 +96,10 @@ async function expectIncrementalDdlRefresh(
       async () => {
         snapshot = await vscode.inspectWorkbenchState();
         const sync = schemaSyncState(snapshot);
-        const result = snapshot.index.state.result;
+        const exactIndex = snapshot.index.states.find(
+          (state) => state.result?.serverId === demoConnectionId,
+        );
+        const result = exactIndex?.result;
         const matchingPublication = snapshot.index.events.some(
           (event) =>
             event.sequence > before.eventSequence &&
@@ -113,7 +122,7 @@ async function expectIncrementalDdlRefresh(
             sync.lifecycle.queued === 0 &&
             !sync.refresh.active &&
             sync.refresh.queued === 0 &&
-            snapshot.index.state.status === "available" &&
+            exactIndex?.status === "available" &&
             typeof result?.generation === "number" &&
             result.generation > before.generation &&
             !snapshot.index.activeRun &&
@@ -162,7 +171,12 @@ async function expectPublicChild(
   child: RegExp,
   present: boolean,
 ): Promise<void> {
-  await expectChildAtPath(workbench, [server, database, /^Sources/, /^public$/], child, present);
+  await expectChildAtPath(
+    workbench,
+    [server, database, SCHEMAS_TREE_ITEM, /^public$/],
+    child,
+    present,
+  );
 }
 
 async function executeDdl(
@@ -226,7 +240,7 @@ test.describe("Workbench schema synchronization", () => {
       // Provisioning itself is structural DDL and intentionally invalidates the
       // pre-provisioning snapshot. Rebuild once, then every business DDL below
       // must advance this baseline incrementally.
-      await workbench.ensureActiveDatabaseIndexed(server, database);
+      await workbench.ensureDatabaseIndexed(server, database);
       await workbench.restartSchemaSync(server, database);
       await expectSchemaSyncQuiescent(vscode);
     });
@@ -264,14 +278,14 @@ test.describe("Workbench schema synchronization", () => {
       });
       await expectChildAtPath(
         workbench,
-        [server, database, /^Sources/, /^public$/, probe],
+        [server, database, SCHEMAS_TREE_ITEM, /^public$/, probe],
         /^note/,
         true,
       );
       const table = await workbench.tree.expandPath([
         server,
         database,
-        /^Sources/,
+        SCHEMAS_TREE_ITEM,
         /^public$/,
         probe,
       ]);
@@ -299,14 +313,14 @@ test.describe("Workbench schema synchronization", () => {
       await expectPublicChild(workbench, renamedProbe, true);
       await expectChildAtPath(
         workbench,
-        [server, database, /^Sources/, /^public$/, renamedProbe],
+        [server, database, SCHEMAS_TREE_ITEM, /^public$/, renamedProbe],
         /^note/,
         true,
       );
       const renamedTable = await workbench.tree.expandPath([
         server,
         database,
-        /^Sources/,
+        SCHEMAS_TREE_ITEM,
         /^public$/,
         renamedProbe,
       ]);

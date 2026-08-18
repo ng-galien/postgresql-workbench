@@ -12,18 +12,29 @@ export const demoAutomaticAssociationText = /postgres@localhost:5434\/demo.*AUTO
 export const demoConnexionQuickPickItem = /^postgres@localhost:5434\/demo(?:\s*Connected)?$/u;
 export const demoProductSearchQuickPickItem =
   /^shop\.producttable\ndemo · postgresql:\/\/localhost%3A5434%2Fdemo%3Apostgres\/demo\/shop\/table\/product\.sql$/u;
-export const demoConnexionTreeItem =
-  /^postgres@localhost:5434\s*demo(?:\s*·\s*connected(?:\s*\(no pldbgapi\))?)?$/u;
-export const demoDatabaseTreeItem =
-  /^demo\s*(?:active|inactive)(?:\s*·\s*(?:indexing|refreshing))?$/u;
+export const demoConnexionTreeItem = connexionTreeItem("postgres@localhost:5434/demo");
+export const demoDatabaseTreeItem = databaseTreeItem("demo");
 export const alternateConnectionUrl = "postgresql://postgres:postgres@localhost:5434/postgres";
-export const alternateConnexionTreeItem =
-  /^postgres@localhost:5434\s*postgres(?:\s*·\s*connected(?:\s*\(no pldbgapi\))?)?$/u;
+export const alternateConnexionTreeItem = connexionTreeItem("postgres@localhost:5434/postgres");
 export const alternateConnectionId = "localhost:5434/postgres:postgres";
 export const loopbackConnectionUrl = "postgresql://postgres:postgres@127.0.0.1:5434/demo";
-export const loopbackConnexionTreeItem =
-  /^postgres@127\.0\.0\.1:5434\s*demo(?:\s*·\s*connected(?:\s*\(no pldbgapi\))?)?$/u;
+export const loopbackConnexionTreeItem = connexionTreeItem("postgres@127.0.0.1:5434/demo");
 export const loopbackConnectionId = "127.0.0.1:5434/demo:postgres";
+
+function connexionTreeItem(name: string): RegExp {
+  return new RegExp(`^${escapeRegExp(name)}(?:\\s*·?\\s*(?:connected|disconnected))?$`, "u");
+}
+
+function databaseTreeItem(database: string): RegExp {
+  return new RegExp(
+    `^${escapeRegExp(database)}(?:\\s*·?\\s*(?:preparing index|indexing|refreshing|ready|degraded|indexing paused|indexing failed))?$`,
+    "u",
+  );
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+}
 
 export interface DemoDatabase {
   resetSchemaSyncFixture(): Promise<void>;

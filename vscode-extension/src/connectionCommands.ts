@@ -1,6 +1,12 @@
 import * as vscode from "vscode";
 import type { ConnectionManager } from "./connectionManager.js";
-import { type ServerConfig, ServerStore, sameDatabaseContextIdentity } from "./serverStore.js";
+import {
+  getConnectionName,
+  getCustomConnectionName,
+  type ServerConfig,
+  ServerStore,
+  sameConnectionIdentity,
+} from "./serverStore.js";
 
 export class ConnectionCommands {
   constructor(private readonly connections: ConnectionManager) {}
@@ -33,12 +39,6 @@ export class ConnectionCommands {
 
     const server: ServerConfig = {
       id,
-      name: ServerStore.makeName(
-        connection.host,
-        connection.port,
-        connection.database,
-        connection.user,
-      ),
       host: connection.host,
       port: connection.port,
       database: connection.database,
@@ -55,34 +55,39 @@ export class ConnectionCommands {
     const server = this.connections.store.get(id);
     if (!server) return;
     const confirm = await vscode.window.showWarningMessage(
-      `Remove server "${server.name}"? Its saved password will be deleted.`,
+      `Remove server "${getConnectionName(server)}"? Its saved password will be deleted.`,
       { modal: true },
       "Remove",
     );
     if (confirm !== "Remove") return;
-    await this.connections.removeDatabaseContextConfiguration(id);
+    await this.connections.removeConnectionConfiguration(id);
   }
 
-  async pickConnection(): Promise<boolean> {
+  /** Picks, imports, or creates a Connexion and returns the connected server id. */
+  async pickConnection(): Promise<string | undefined> {
     const external = [...loadSqlToolsConnections(), ...loadPgsqlConnections()];
     const newExternal = external.filter((connection) => !this.connections.store.has(connection.id));
     const items = connectionQuickPickItems(this.connections, newExternal);
     const picked = await vscode.window.showQuickPick(items, {
       placeHolder: "Select a PostgreSQL server",
     });
-    if (!picked?.detail) return false;
-    if (picked.detail === "__add__") return (await this.addServer()) !== undefined;
-    if (picked.detail === "__docker__") {
-      return (
-        (await vscode.commands.executeCommand<boolean>(
-          "postgresql-workbench.startDockerDebugDatabase",
-        )) ?? false
-      );
+    if (!picked?.target) return undefined;
+    switch (picked.target.kind) {
+      case "add":
+        return (await this.addServer())?.id;
+      case "docker":
+        return (
+          (await vscode.commands.executeCommand<string | undefined>(
+            "postgresql-workbench.startDockerDebugDatabase",
+          )) ?? undefined
+        );
+      case "external":
+        return this.importExternalConnection(picked.target.id, newExternal);
+      case "server":
+        return (await this.connections.connectServer(picked.target.id))
+          ? picked.target.id
+          : undefined;
     }
-    if (picked.detail.startsWith("__ext__")) {
-      return this.importExternalConnection(picked.detail.slice(7), newExternal);
-    }
-    return this.connections.connectServer(picked.detail);
   }
 
   async editServer(id: string): Promise<void> {
@@ -93,7 +98,7 @@ export class ConnectionCommands {
     const updated = editedServer(server, edit);
     if (!updated) return;
 
-    const changesDatabaseIdentity = !sameDatabaseContextIdentity(server, updated);
+    const changesDatabaseIdentity = !sameConnectionIdentity(server, updated);
     if (changesDatabaseIdentity) {
       await this.replaceConnexion(server, updated);
       return;
@@ -104,11 +109,11 @@ export class ConnectionCommands {
       updated,
       edit.key === "password" ? edit.value : undefined,
     );
-    if (this.connections.activeServer?.id === id) {
-      if (!(await this.connections.disconnect())) return;
+    if (this.connections.isServerConnected(id)) {
+      if (!(await this.connections.disconnect(id))) return;
       await this.connections.connectServer(updated.id);
     } else {
-      this.connections.notifyConfigurationChanged();
+      this.connections.notifyConfigurationChanged(id);
     }
   }
 
@@ -116,29 +121,51 @@ export class ConnectionCommands {
     const server = this.connections.store.get(id);
     if (!server) return;
     const password = await vscode.window.showInputBox({
-      prompt: `New password for ${server.name}`,
+      prompt: `New password for ${getConnectionName(server)}`,
       password: true,
       ignoreFocusOut: true,
     });
     if (password === undefined) return;
     await this.connections.store.setPassword(id, password);
-    void vscode.window.showInformationMessage(`Password updated for ${server.name}.`);
-    if (this.connections.isActiveServer(id)) {
+    void vscode.window.showInformationMessage(`Password updated for ${getConnectionName(server)}.`);
+    if (this.connections.isServerConnected(id)) {
       const action = await vscode.window.showInformationMessage(
         "Reconnect with new password?",
         "Reconnect",
         "Later",
       );
-      if (action === "Reconnect") await this.connections.connectServer(id, { force: true });
+      if (action === "Reconnect") {
+        await this.connections.connectServer(id, { force: true });
+      }
     }
+  }
+
+  async renameServer(id: string): Promise<void> {
+    const server = this.connections.store.get(id);
+    if (!server) return;
+    const name = await vscode.window.showInputBox({
+      prompt: "Connexion name — leave empty to use its URL",
+      placeHolder: getConnectionName({ ...server, name: undefined }),
+      value: getCustomConnectionName(server) ?? "",
+      ignoreFocusOut: true,
+      validateInput: (candidate) => {
+        const trimmed = candidate.trim();
+        return !trimmed || this.connections.store.isConnectionNameAvailable(trimmed, id)
+          ? undefined
+          : `A Connexion named "${trimmed}" already exists.`;
+      },
+    });
+    if (name === undefined) return;
+    await this.connections.store.update(id, { ...server, name: name.trim() || undefined });
+    this.connections.notifyConfigurationChanged(id);
   }
 
   private async importExternalConnection(
     id: string,
     connections: readonly ExternalConnection[],
-  ): Promise<boolean> {
+  ): Promise<string | undefined> {
     const external = connections.find((connection) => connection.id === id);
-    if (!external) return false;
+    if (!external) return undefined;
     const server: ServerConfig = {
       id: external.id,
       name: external.name,
@@ -149,18 +176,24 @@ export class ConnectionCommands {
     };
     await this.connections.store.add(server, external.password);
     this.connections.notifyConfigurationChanged();
-    return this.connections.connectServer(external.id);
+    return (await this.connections.connectServer(external.id)) ? external.id : undefined;
   }
 
   private async replaceConnexion(server: ServerConfig, updated: ServerConfig): Promise<void> {
     if (this.connections.store.has(updated.id)) {
       void vscode.window.showWarningMessage(
-        `${updated.name} already exists. Change each Scratchpad Association explicitly instead of replacing it.`,
+        `${getConnectionName(updated)} already exists. Change each Scratchpad Association explicitly instead of replacing it.`,
+      );
+      return;
+    }
+    if (!this.connections.store.isConnectionNameAvailable(getConnectionName(updated), server.id)) {
+      void vscode.window.showWarningMessage(
+        `A Connexion named "${getConnectionName(updated)}" already exists. Rename it first.`,
       );
       return;
     }
     if (
-      !(await this.connections.replaceDatabaseContextConfiguration(
+      !(await this.connections.replaceConnectionConfiguration(
         server.id,
         updated,
         await this.connections.getPassword(server.id),
@@ -169,7 +202,7 @@ export class ConnectionCommands {
       return;
     }
     void vscode.window.showInformationMessage(
-      `Created ${updated.name} as a new Connexion. Scratchpad Associations to ${server.name} are now unavailable until explicitly changed.`,
+      `Created ${getConnectionName(updated)} as a new Connexion. Scratchpad Associations to ${getConnectionName(server)} are now unavailable until explicitly changed.`,
     );
   }
 }
@@ -254,7 +287,7 @@ async function promptServerEdit(server: ServerConfig): Promise<ServerEdit | unde
       description: field.value,
       detail: field.key,
     })),
-    { placeHolder: `Edit ${server.name} — pick a field to change` },
+    { placeHolder: `Edit ${getConnectionName(server)} — pick a field to change` },
   );
   if (!picked?.detail) return undefined;
   const key = picked.detail as ServerEditKey;
@@ -293,7 +326,7 @@ function editedServer(server: ServerConfig, edit: ServerEdit): ServerConfig | un
       : server.ssl;
   return {
     id: ServerStore.makeId(host, port, database, user),
-    name: ServerStore.makeName(host, port, database, user),
+    name: getCustomConnectionName(server),
     host,
     port,
     database,
@@ -343,16 +376,26 @@ interface ExternalConnection extends ConnectionInput {
   name: string;
 }
 
+type ConnectionQuickPickTarget =
+  | { kind: "server"; id: string }
+  | { kind: "external"; id: string }
+  | { kind: "docker" }
+  | { kind: "add" };
+
+interface ConnectionQuickPickItem extends vscode.QuickPickItem {
+  target?: ConnectionQuickPickTarget;
+}
+
 function connectionQuickPickItems(
   connections: ConnectionManager,
   external: readonly ExternalConnection[],
-): vscode.QuickPickItem[] {
-  const items: vscode.QuickPickItem[] = connections.servers.map((server) => {
-    const active = connections.isActiveServer(server.id);
+): ConnectionQuickPickItem[] {
+  const items: ConnectionQuickPickItem[] = connections.servers.map((server) => {
+    const connected = connections.isServerConnected(server.id);
     return {
-      label: `${active ? "$(plug) " : "$(circle-outline) "}${server.name}`,
-      description: active ? "Connected" : "",
-      detail: server.id,
+      label: `${connected ? "$(pass-filled) " : "$(circle-outline) "}${getConnectionName(server)}`,
+      description: connected ? "Connected" : "",
+      target: { kind: "server", id: server.id },
     };
   });
   if (external.length > 0) {
@@ -361,7 +404,7 @@ function connectionQuickPickItems(
       ...external.map((connection) => ({
         label: `$(extensions) ${connection.name}`,
         description: connection.id,
-        detail: `__ext__${connection.id}`,
+        target: { kind: "external" as const, id: connection.id },
       })),
     );
   }
@@ -370,9 +413,9 @@ function connectionQuickPickItems(
     {
       label: "$(vm-running) Start local debug database (Docker)...",
       description: "PostgreSQL 13–18 with pldebugger",
-      detail: "__docker__",
+      target: { kind: "docker" },
     },
-    { label: "$(add) Add server...", detail: "__add__" },
+    { label: "$(add) Add server...", target: { kind: "add" } },
   );
   return items;
 }

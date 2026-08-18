@@ -100,7 +100,7 @@ export const useCockpitStore = create<CockpitStore>((set, get) => ({
       set({ appearance: message.appearance });
       return;
     }
-    if (message.type === "databaseContextInvalidated") {
+    if (message.type === "cockpitContextInvalidated") {
       set({
         session: null,
         exploration: emptyExploration(),

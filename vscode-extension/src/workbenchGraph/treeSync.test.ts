@@ -32,6 +32,7 @@ function fixture() {
   const reveal = vi.fn(async () => undefined);
   let selectionListener: ((event: { selection: readonly PlpgsqlTreeItem[] }) => void) | undefined;
   const graph = {
+    currentDatabase: { serverId: "server", database: "testdb" },
     currentScope: "testdb",
     isOpen: true,
     openDatabase: vi.fn(async () => true),
@@ -47,7 +48,11 @@ function fixture() {
       }),
     } as never,
     { itemForObject: vi.fn(() => item) } as never,
-    { state: snapshot } as never,
+    {
+      databaseState: vi.fn((identity: { serverId: string }) =>
+        identity.serverId === "server" ? snapshot : { status: "not-indexed" },
+      ),
+    } as never,
     graph as never,
   );
   return {
@@ -102,7 +107,19 @@ describe("Workbench graph and Sources tree synchronization", () => {
     expect(await sync.select(item)).toBe(true);
     expect(graph.syncObjectFromTree).toHaveBeenCalledWith(object, snapshot.result);
 
-    expect(await sync.select({ kind: "schema", schema: "shop" } as PlpgsqlTreeItem)).toBe(true);
+    expect(
+      await sync.select({
+        kind: "schema",
+        schema: "shop",
+        server: {
+          id: "server",
+          host: "localhost",
+          port: 5432,
+          database: "testdb",
+          user: "postgres",
+        },
+      } as PlpgsqlTreeItem),
+    ).toBe(true);
     expect(graph.syncSchemaFromTree).toHaveBeenCalledWith("shop", snapshot.result);
   });
 
@@ -115,23 +132,28 @@ describe("Workbench graph and Sources tree synchronization", () => {
     expect(graph.syncObjectFromTree).toHaveBeenCalledWith(object, snapshot.result);
   });
 
-  it("does not project an inactive database context into the active graph", async () => {
+  it("does not project an unindexed Connexion into the Cockpit", async () => {
     const { graph, sync } = fixture();
     const inactive = {
       kind: "sourcesSnapshot",
-      active: false,
-      server: { id: "other-server", database: "otherdb" },
+      server: {
+        id: "other-server",
+        host: "localhost",
+        port: 5433,
+        database: "otherdb",
+        user: "postgres",
+      },
     } as PlpgsqlTreeItem;
 
     expect(await sync.select(inactive)).toBe(false);
     expect(graph.openDatabase).not.toHaveBeenCalled();
   });
 
-  it("forgets a tree selection when the active database context changes", async () => {
+  it("forgets a tree selection when the Cockpit Connexion changes", async () => {
     const { item, sync } = fixture();
 
     await sync.select(item);
-    sync.invalidateDatabaseContext();
+    sync.invalidateCockpitContext();
 
     expect(sync.currentSelection).toBeUndefined();
   });

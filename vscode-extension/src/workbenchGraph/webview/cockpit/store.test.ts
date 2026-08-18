@@ -3,7 +3,7 @@ import { emptyExploration } from "./domain.js";
 import { useCockpitStore } from "./store.js";
 
 describe("Workbench graph cockpit invalidation", () => {
-  it("clears retained graph state when the active database context changes", () => {
+  it("clears retained graph state when the Cockpit Connexion changes", () => {
     useCockpitStore.setState({
       session: {
         renderId: 1,
@@ -49,8 +49,8 @@ describe("Workbench graph cockpit invalidation", () => {
     });
 
     useCockpitStore.getState().receive({
-      type: "databaseContextInvalidated",
-      message: "Database context changed.",
+      type: "cockpitContextInvalidated",
+      message: "Cockpit Connexion changed.",
     });
 
     const state = useCockpitStore.getState();
@@ -63,7 +63,7 @@ describe("Workbench graph cockpit invalidation", () => {
     expect(state.selectedEdgeId).toBeNull();
     expect(state.hoveredIdentity).toBeNull();
     expect(state.pathIdentities).toEqual([]);
-    expect(state.error).toBe("Database context changed.");
+    expect(state.error).toBe("Cockpit Connexion changed.");
   });
 });
 

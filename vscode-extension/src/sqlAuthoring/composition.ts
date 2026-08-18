@@ -55,7 +55,7 @@ function composePostgresStatement(
   if (payload.serverId !== snapshot.serverId || payload.database !== snapshot.database) {
     return {
       status: "rejected",
-      message: "The dragged object belongs to another DatabaseContext.",
+      message: "The dragged object belongs to another Connexion.",
     };
   }
   if (snapshot.status === "stale") {

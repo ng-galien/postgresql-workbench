@@ -1,5 +1,6 @@
 import {
   demoDatabaseTreeItem as database,
+  demoConnectionId,
   demoConnectionUrl,
   demoConnexionTreeItem as server,
 } from "../../fixtures/demoDatabase";
@@ -10,6 +11,7 @@ import type {
   WorkbenchStateSnapshot,
 } from "../../fixtures/vscode";
 import type { WorkbenchPage } from "../../pages/WorkbenchPage";
+import { SCHEMAS_TREE_ITEM } from "../../pages/WorkbenchTreeLabels";
 
 async function waitForHeldPhase(
   vscode: VSCodeInstance,
@@ -46,7 +48,7 @@ async function currentSources(workbench: WorkbenchPage) {
   const activeDatabase = await workbench.tree.expandPath([server, database]);
   return {
     activeDatabase,
-    sources: await workbench.tree.findChild(activeDatabase, /^Sources/),
+    sources: await workbench.tree.findChild(activeDatabase, SCHEMAS_TREE_ITEM),
   };
 }
 
@@ -56,10 +58,10 @@ test.describe("Workbench indexing feedback", () => {
     vscode,
   }) => {
     await workbench.ensureServer(demoConnectionUrl, server);
-    await workbench.expectActiveDatabaseIndexed(server, database);
+    await workbench.expectDatabaseIndexed(server, database);
     const baseline = await workbench.expectFreshIndexRuntime();
     const { sources } = await currentSources(workbench);
-    await workbench.tree.expandItem(sources, /^Sources/);
+    await workbench.tree.expandItem(sources, SCHEMAS_TREE_ITEM);
     const schema = await workbench.tree.findChild(sources, /^shop/);
     await workbench.tree.expandItem(schema, /^shop/);
     const product = await workbench.tree.findChild(schema, /^product(?:\s|$)/);
@@ -67,7 +69,7 @@ test.describe("Workbench indexing feedback", () => {
 
     await test.step("show the refresh phase while retaining the previous snapshot", async () => {
       await vscode.armIndexPhaseGate(["reading-catalog"]);
-      await workbench.tree.clickHeaderAction(/Reindex Active Database/i);
+      await workbench.tree.clickHeaderAction(/Reindex Database/i);
       const held = await waitForHeldPhase(vscode, "reading-catalog");
       expect(held.snapshot.index.activeRun?.retainedGeneration).toBe(baseline.generation);
       const { activeDatabase: refreshingDatabase, sources: refreshingSources } =
@@ -75,14 +77,14 @@ test.describe("Workbench indexing feedback", () => {
       await expect(refreshingSources).toContainText(/refreshing.*reading catalog/i, {
         timeout: 5_000,
       });
-      await expect(refreshingDatabase).toContainText(/active.*refreshing/i);
+      await expect(refreshingDatabase).toContainText(/refreshing/i);
       await expect(refreshingSources).toHaveAccessibleName(
-        /Sources, demo, refreshing, reading catalog, previous snapshot available/i,
+        /Schemas, demo, refreshing, reading catalog, previous snapshot available/i,
       );
       const refreshingSchema = await workbench.tree.expandPath([
         server,
         database,
-        /^Sources/,
+        SCHEMAS_TREE_ITEM,
         /^shop/,
       ]);
       const refreshingProduct = await workbench.tree.findChild(
@@ -109,7 +111,7 @@ test.describe("Workbench indexing feedback", () => {
         throw new Error("Index cancellation step requires a held acceptance run");
       }
       const { sources: cancellingSources } = await currentSources(workbench);
-      await workbench.tree.hoverItem(cancellingSources, /^Sources/);
+      await workbench.tree.hoverItem(cancellingSources, SCHEMAS_TREE_ITEM);
       const cancel = cancellingSources.getByRole("button", {
         name: /Cancel Database Indexing/i,
       });
@@ -120,14 +122,16 @@ test.describe("Workbench indexing feedback", () => {
         timeout: 5_000,
       });
       await expect(cancelledSources).toHaveAccessibleName(
-        /Sources, demo, indexing cancelled, previous snapshot available, select to retry/i,
+        /Schemas, demo, indexing cancelled, previous snapshot available, select to retry/i,
       );
       await expect
         .poll(async () => {
           const state = await vscode.inspectWorkbenchState();
           return {
             active: state.index.activeRun?.id,
-            generation: state.index.state.result?.generation,
+            generation: state.index.states.find(
+              (entry) => entry.result?.serverId === demoConnectionId,
+            )?.result?.generation,
             pending: state.index.currentRunPending,
             settled: state.index.lastSettledRun,
           };
@@ -141,7 +145,7 @@ test.describe("Workbench indexing feedback", () => {
       const cancelledSchema = await workbench.tree.expandPath([
         server,
         database,
-        /^Sources/,
+        SCHEMAS_TREE_ITEM,
         /^shop/,
       ]);
       await workbench.tree.collapseItem(cancelledSchema, /^shop/);
@@ -152,7 +156,7 @@ test.describe("Workbench indexing feedback", () => {
 
     await test.step("retry with real phase and count feedback", async () => {
       await vscode.armIndexPhaseGate(["reading-catalog", "publishing-sources", "reading-symbols"]);
-      await workbench.tree.clickHeaderAction(/Reindex Active Database/i);
+      await workbench.tree.clickHeaderAction(/Reindex Database/i);
       const readingCatalog = await waitForHeldPhase(vscode, "reading-catalog");
       let current = await currentSources(workbench);
       await expect(current.sources).toContainText(/refreshing.*reading catalog/i);
@@ -187,7 +191,7 @@ test.describe("Workbench indexing feedback", () => {
       const availableSchema = await workbench.tree.expandPath([
         server,
         database,
-        /^Sources/,
+        SCHEMAS_TREE_ITEM,
         /^shop/,
       ]);
       await expect(

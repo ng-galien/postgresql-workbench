@@ -21,22 +21,17 @@ export function createRoutineComparisonHandler(
       );
       return false;
     }
-    const client = connections.getClient();
-    const activeServer = connections.activeServer;
-    if (!client || !connections.isConnected || !activeServer) {
+    const server = definition.serverId ? connections.store.get(definition.serverId) : undefined;
+    const client = server ? connections.getClient(server.id) : undefined;
+    if (!client || !server) {
       void vscode.window.showInformationMessage(
         "Connect to a PostgreSQL database before comparing this routine.",
       );
       return false;
     }
-    if (definition.serverId && definition.serverId !== activeServer.id) {
-      void vscode.window.showInformationMessage(
-        "The routine comparison belongs to another PostgreSQL connection. Refresh the CodeLens before comparing.",
-      );
-      return false;
-    }
-    const snapshot = index.state.result;
-    if (index.state.status !== "available" || !snapshot || snapshot.serverId !== activeServer.id) {
+    const state = index.databaseState({ serverId: server.id, database: server.database });
+    const snapshot = state.result;
+    if (state.status !== "available" || !snapshot) {
       void vscode.window.showInformationMessage(
         "Index the active PostgreSQL database before comparing this routine.",
       );
@@ -46,14 +41,17 @@ export function createRoutineComparisonHandler(
     const oid = await resolveRoutineOid(client, identity);
     if (oid === undefined) {
       void vscode.window.showInformationMessage(
-        `Routine ${identity} is not deployed in the active database.`,
+        `Routine ${identity} is not deployed in this Connexion.`,
       );
       return false;
     }
-    const object = buildWorkbenchObjects(index.indexedSymbols, {
-      serverId: snapshot.serverId,
-      database: snapshot.database,
-    }).find((candidate) => candidate.oid === oid && candidate.kind === definition.kind);
+    const object = buildWorkbenchObjects(
+      index.databaseSymbols({ serverId: server.id, database: server.database }),
+      {
+        serverId: snapshot.serverId,
+        database: snapshot.database,
+      },
+    ).find((candidate) => candidate.oid === oid && candidate.kind === definition.kind);
     if (!object) {
       void vscode.window.showInformationMessage(
         `Routine ${identity} is not present in the current Workbench snapshot. Refresh the database index.`,

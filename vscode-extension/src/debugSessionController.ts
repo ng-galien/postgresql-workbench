@@ -10,6 +10,7 @@ export const DEBUG_LAUNCH_TOKEN_PROPERTY = "__plpgsqlDebugLaunchToken";
 
 export interface DebugLaunchDescriptor {
   name: string;
+  serverId?: string;
   sql?: string;
   routine?: DebugLaunchRoutineTarget;
   viewColumn?: number;

@@ -22,7 +22,7 @@ function validatePort(value: string): string | undefined {
 export async function startDockerDebugDatabase(
   cm: ConnectionManager,
   out: vscode.OutputChannel,
-): Promise<boolean> {
+): Promise<string | undefined> {
   const version = await vscode.window.showQuickPick<VersionItem>(
     DOCKER_DEBUGGER_VERSIONS.map((candidate, index) => ({
       label: `PostgreSQL ${candidate}`,
@@ -35,7 +35,7 @@ export async function startDockerDebugDatabase(
       placeHolder: "Choose a PostgreSQL version",
     },
   );
-  if (!version) return false;
+  if (!version) return undefined;
 
   const portText = await vscode.window.showInputBox({
     title: `PostgreSQL ${version.version} local port`,
@@ -44,7 +44,7 @@ export async function startDockerDebugDatabase(
     validateInput: validatePort,
     ignoreFocusOut: true,
   });
-  if (portText === undefined) return false;
+  if (portText === undefined) return undefined;
   const port = Number(portText);
 
   try {
@@ -69,12 +69,6 @@ export async function startDockerDebugDatabase(
         connection.database,
         connection.user,
       ),
-      name: ServerStore.makeName(
-        connection.host,
-        connection.port,
-        connection.database,
-        connection.user,
-      ),
       host: connection.host,
       port: connection.port,
       database: connection.database,
@@ -82,12 +76,12 @@ export async function startDockerDebugDatabase(
     };
     await cm.store.add(server, connection.password);
     const connected = await cm.connectServer(server.id);
-    if (!connected) return false;
+    if (!connected) return undefined;
 
     vscode.window.showInformationMessage(
       `PostgreSQL ${version.version} is ready and connected on 127.0.0.1:${port}.`,
     );
-    return true;
+    return server.id;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     out.appendLine(`Docker setup failed: ${message}`);
@@ -96,6 +90,6 @@ export async function startDockerDebugDatabase(
       "Show Logs",
     );
     if (action === "Show Logs") out.show();
-    return false;
+    return undefined;
   }
 }

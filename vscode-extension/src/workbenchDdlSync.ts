@@ -11,7 +11,7 @@ import {
   workbenchDdlProvisioningStatusSql,
 } from "../../src/workbench/postgresDdlSync.js";
 import type { ConnectionManager } from "./connectionManager.js";
-import type { ServerConfig } from "./serverStore.js";
+import { getConnectionName, type ServerConfig } from "./serverStore.js";
 import {
   classifyWorkbenchDdlSyncFailure,
   resolveWorkbenchDdlSyncConfiguration,
@@ -105,7 +105,12 @@ export class WorkbenchDdlSyncController implements vscode.Disposable {
     private readonly output: vscode.OutputChannel,
   ) {
     this.subscriptions = [
-      connections.onChanged(() => this.reconcile()),
+      connections.onChanged((change) => {
+        // Debug capability probes run after every DDL notification; they do
+        // not alter connectivity and must not restart or refresh a listener.
+        if (change.debugCapabilityOnly) return;
+        this.reconcile(change.serverIds);
+      }),
       vscode.workspace.onDidChangeConfiguration((event) => {
         if (event.affectsConfiguration("postgresql-workbench.workbench.schemaSync")) {
           void this.restartAll();
@@ -247,7 +252,7 @@ export class WorkbenchDdlSyncController implements vscode.Disposable {
       const server = this.requireServer(serverId);
       const configuration = this.configuration(server);
       if (!configuration.enabled) {
-        throw new Error("Enable schema synchronization for this DatabaseContext first");
+        throw new Error("Enable schema synchronization for this Connexion first");
       }
       this.output.appendLine(
         `Workbench schema synchronization provisioning started: database=${server.database} schema=${configuration.supportSchema}`,
@@ -257,7 +262,7 @@ export class WorkbenchDdlSyncController implements vscode.Disposable {
       try {
         await client.query(buildWorkbenchDdlProvisioningSql(configuration.supportSchema));
         this.output.appendLine(
-          `Workbench schema synchronization provisioned on ${server.name} using schema ${configuration.supportSchema}`,
+          `Workbench schema synchronization provisioned on ${getConnectionName(server)} using schema ${configuration.supportSchema}`,
         );
       } catch (error) {
         this.output.appendLine(
@@ -331,15 +336,17 @@ export class WorkbenchDdlSyncController implements vscode.Disposable {
     this.stateEmitter.dispose();
   }
 
-  private reconcile(): void {
+  private reconcile(changedServerIds?: readonly string[]): void {
     if (this.disposed) return;
-    const serverIds = new Set([
-      ...this.connections.servers.map((server) => server.id),
-      ...this.listeners.keys(),
-      ...this.states.keys(),
-      ...this.fullRefreshDebtEpochs.keys(),
-      ...this.pendingFullRefreshTransactions.keys(),
-    ]);
+    const serverIds = changedServerIds
+      ? new Set(changedServerIds)
+      : new Set([
+          ...this.connections.servers.map((server) => server.id),
+          ...this.listeners.keys(),
+          ...this.states.keys(),
+          ...this.fullRefreshDebtEpochs.keys(),
+          ...this.pendingFullRefreshTransactions.keys(),
+        ]);
     for (const serverId of serverIds) void this.requestReconcile(serverId);
   }
 
@@ -439,18 +446,13 @@ export class WorkbenchDdlSyncController implements vscode.Disposable {
     if (
       currentListener &&
       currentServer &&
-      this.connections.isActiveServer(serverId) &&
       this.index.isDatabaseStale(serverId, currentServer.database) &&
       !this.activeRefreshes.has(serverId) &&
       (this.refreshPending.get(serverId) ?? 0) === 0
     ) {
       try {
         await this.enqueueRefresh(serverId, () =>
-          this.refreshActive(
-            currentServer,
-            [],
-            "DatabaseContext became active after schema changes while inactive",
-          ),
+          this.refreshActive(currentServer, [], "Restoring index freshness after schema changes"),
         );
       } catch (error) {
         this.output.appendLine(
@@ -583,17 +585,15 @@ export class WorkbenchDdlSyncController implements vscode.Disposable {
           status: "desynchronized",
           message: `Restoring index freshness after a listener gap on ${server.database}`,
         });
-        if (this.connections.isActiveServer(server.id)) {
-          await this.enqueueRefresh(server.id, () =>
-            this.refreshActive(
-              server,
-              [],
-              hasFullRefreshDebt
-                ? "listener reconnected after a notification gap"
-                : "listener connected while index freshness was unknown",
-            ),
-          );
-        }
+        await this.enqueueRefresh(server.id, () =>
+          this.refreshActive(
+            server,
+            [],
+            hasFullRefreshDebt
+              ? "listener reconnected after a notification gap"
+              : "listener connected while index freshness was unknown",
+          ),
+        );
       } else {
         this.setState({
           serverId: server.id,
@@ -689,11 +689,7 @@ export class WorkbenchDdlSyncController implements vscode.Disposable {
       while (!runtime.closed && runtime.notifications.length > 0) {
         const pending = runtime.notifications.splice(0);
         for (const group of coalescePostgresDdlNotifications(pending)) {
-          if (!this.connections.isActiveServer(server.id)) {
-            this.requireFullRefresh(server.id);
-            this.pendingFullRefreshTransactions.set(server.id, group.transactionId);
-            continue;
-          }
+          void this.connections.refreshDebugCapability?.(server.id);
           const reason = group.fallback
             ? group.reasons.join(", ") || "DDL notification requested a full refresh"
             : undefined;
@@ -708,7 +704,7 @@ export class WorkbenchDdlSyncController implements vscode.Disposable {
           } catch (error) {
             this.pendingFullRefreshTransactions.set(server.id, group.transactionId);
             this.output.appendLine(
-              `Workbench schema synchronization failed for ${server.name}: ${error instanceof Error ? error.message : String(error)}`,
+              `Workbench schema synchronization failed for ${getConnectionName(server)}: ${error instanceof Error ? error.message : String(error)}`,
             );
             this.onListenerClosed(
               server,
@@ -730,7 +726,7 @@ export class WorkbenchDdlSyncController implements vscode.Disposable {
 
   private async refreshActive(
     server: ServerConfig,
-    objects: Parameters<WorkbenchIndexController["synchronizeActiveDatabaseDdl"]>[2],
+    objects: Parameters<WorkbenchIndexController["synchronizeDatabaseDdl"]>[2],
     fallbackReason?: string,
   ): Promise<void> {
     const fullRefreshDebtEpoch = this.fullRefreshDebtEpochs.get(server.id);
@@ -741,7 +737,7 @@ export class WorkbenchDdlSyncController implements vscode.Disposable {
         : undefined);
     const client = await this.connections.createDedicatedClient(server.id);
     try {
-      const result = await this.index.synchronizeActiveDatabaseDdl(
+      const result = await this.index.synchronizeDatabaseDdl(
         {
           async query(sql: string) {
             const result = await client.query(sql);
@@ -1059,7 +1055,7 @@ export class WorkbenchDdlSyncController implements vscode.Disposable {
 
   private requireServer(serverId: string): ServerConfig {
     const server = this.connections.store.get(serverId);
-    if (!server) throw new Error("The PostgreSQL DatabaseContext no longer exists");
+    if (!server) throw new Error("The PostgreSQL Connexion no longer exists");
     return server;
   }
 
@@ -1078,7 +1074,7 @@ export class WorkbenchDdlSyncController implements vscode.Disposable {
 }
 
 function ddlObjectSummary(
-  objects: Parameters<WorkbenchIndexController["synchronizeActiveDatabaseDdl"]>[2],
+  objects: Parameters<WorkbenchIndexController["synchronizeDatabaseDdl"]>[2],
 ): string {
   if (objects.length === 0) return "none";
   const counts = new Map<string, number>();

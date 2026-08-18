@@ -1,6 +1,10 @@
 import { expect, type Locator } from "@playwright/test";
 import { currentPage, type PageProvider } from "./PageProvider";
 
+// Consecutive scans without a new row before the tree is declared stuck; the
+// list may briefly stop growing while VS Code re-projects rows.
+const STALLED_SCROLL_ATTEMPTS = 8;
+
 class TreeChildNotFoundError extends Error {}
 class TreeItemNotFoundError extends Error {}
 
@@ -99,6 +103,39 @@ export class WorkbenchTree {
     const twistie = await this.revealTwistie(item, label);
     await twistie.click({ timeout: 2_000 });
     await expect(item).toHaveAttribute("aria-expanded", "true", { timeout: 5_000 });
+    if (await this.waitForChildrenRendered(item)) return;
+    // A branch expanded while its provider was still transitioning (for
+    // example a Connexion row that just switched to connected) can publish an
+    // empty child list once. Collapse and expand again to request it anew.
+    await twistie.click({ timeout: 2_000 });
+    await expect(item).toHaveAttribute("aria-expanded", "false", { timeout: 5_000 });
+    await twistie.click({ timeout: 2_000 });
+    await expect(item).toHaveAttribute("aria-expanded", "true", { timeout: 5_000 });
+    await this.waitForChildrenRendered(item);
+  }
+
+  // VS Code renders asynchronous children after aria-expanded flips; give a
+  // freshly expanded branch a bounded window to publish its first row.
+  private async waitForChildrenRendered(item: Locator): Promise<boolean> {
+    const [indexValue, levelValue] = await Promise.all([
+      item.getAttribute("data-index"),
+      item.getAttribute("aria-level"),
+    ]);
+    const index = Number(indexValue);
+    const level = Number(levelValue);
+    if (!Number.isInteger(index) || !Number.isInteger(level)) return true;
+    const next = this.locator().locator(
+      `.monaco-list-rows > .monaco-list-row[role="treeitem"][data-index="${index + 1}"]`,
+    );
+    return expect
+      .poll(async () => Number(await next.getAttribute("aria-level").catch(() => undefined)), {
+        timeout: 3_000,
+      })
+      .toBe(level + 1)
+      .then(
+        () => true,
+        () => false,
+      );
   }
 
   async collapse(label: RegExp): Promise<void> {
@@ -318,14 +355,14 @@ export class WorkbenchTree {
         );
       }
       stalledAttempts = scan.maximum > previousMaximum ? 0 : stalledAttempts + 1;
-      if (stalledAttempts >= 3) {
+      if (stalledAttempts >= STALLED_SCROLL_ATTEMPTS) {
         throw new Error(
           `The ${this.accessibleName} TreeView stopped scrolling before resolving child ${label}: ${JSON.stringify([...seen.entries()])}`,
         );
       }
       await this.page.mouse.wheel(0, scrollStep);
       previousMaximum = Math.max(previousMaximum, scan.maximum);
-      await this.page.waitForTimeout(50);
+      await this.page.waitForTimeout(stalledAttempts > 0 ? 150 : 50);
     }
     throw new TreeChildNotFoundError(
       `The ${this.accessibleName} TreeView did not reveal child ${label}`,
@@ -441,14 +478,14 @@ export class WorkbenchTree {
 
       const maximum = Math.max(previousMaximum, ...visible.map(({ index }) => index));
       stalledAttempts = maximum > previousMaximum ? 0 : stalledAttempts + 1;
-      if (stalledAttempts >= 3) {
+      if (stalledAttempts >= STALLED_SCROLL_ATTEMPTS) {
         throw new Error(
           `The ${this.accessibleName} TreeView stopped scrolling before its final row`,
         );
       }
       previousMaximum = maximum;
       await this.page.mouse.wheel(0, scrollStep);
-      await this.page.waitForTimeout(50);
+      await this.page.waitForTimeout(stalledAttempts > 0 ? 150 : 50);
     }
     throw new Error(`The ${this.accessibleName} TreeView exceeded its bounded full-tree scan`);
   }
@@ -463,9 +500,20 @@ export class WorkbenchTree {
     const scrollable = this.locator()
       .locator(".monaco-scrollable-element:has(.monaco-list-rows)")
       .first();
-    return scrollable.evaluate(
-      (element: HTMLElement) =>
-        element.scrollTop + element.clientHeight >= element.scrollHeight - 1,
-    );
+    // The list is virtualized: the last row is rendered only when the viewport
+    // reaches the end. Accept either the DOM scroll position or a rendered
+    // final row, because a short pane can leave scrollHeight slightly stale
+    // right after rows are removed.
+    return scrollable.evaluate((element: HTMLElement) => {
+      if (element.scrollTop + element.clientHeight >= element.scrollHeight - 1) return true;
+      const rows = element.querySelector<HTMLElement>(".monaco-list-rows");
+      if (!rows) return false;
+      const total = rows.offsetHeight;
+      let lastBottom = 0;
+      for (const row of rows.querySelectorAll<HTMLElement>('.monaco-list-row[role="treeitem"]')) {
+        lastBottom = Math.max(lastBottom, row.offsetTop + row.offsetHeight);
+      }
+      return total > 0 && lastBottom >= total - 1;
+    });
   }
 }

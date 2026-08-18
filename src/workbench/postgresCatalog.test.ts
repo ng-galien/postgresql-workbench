@@ -3,6 +3,9 @@ import {
   type CatalogQueryClient,
   mergePostgresCatalogRelations,
   PostgresCatalogFullRefreshRequired,
+  postgresDatabaseDocumentGlob,
+  postgresDocumentUri,
+  postgresSourceSetName,
   readPostgresCatalog,
   readPostgresCatalogDocuments,
 } from "./postgresCatalog.js";
@@ -271,6 +274,46 @@ describe("readPostgresCatalog", () => {
     expect(firstRoutine?.uri).not.toBe(secondRoutine?.uri);
     expect(firstRoutine?.uri).not.toContain("/40.sql");
     expect(secondRoutine?.uri).not.toContain("/40.sql");
+    expect(first.sourceSet.srcset).not.toBe(second.sourceSet.srcset);
+    expect(
+      first.sourceSet.documents.every((document) =>
+        document.uri.startsWith(
+          postgresDatabaseDocumentGlob({
+            serverId: "first:5432/sample:postgres",
+            database: "sample",
+          }).slice(0, -2),
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      second.sourceSet.documents.every((document) =>
+        document.uri.startsWith(
+          postgresDatabaseDocumentGlob({
+            serverId: "second:5432/sample:postgres",
+            database: "sample",
+          }).slice(0, -2),
+        ),
+      ),
+    ).toBe(true);
+  });
+
+  it("derives every PostgreSQL index identity from the exact Connexion and database", () => {
+    const first = {
+      serverId: "db.example.test:5432/app:alice",
+      database: "app",
+    };
+    const second = {
+      serverId: "db.example.test:5432/app:bob",
+      database: "app",
+    };
+
+    const firstUri = postgresDocumentUri(first, "public", "table", "shared_name");
+    const secondUri = postgresDocumentUri(second, "public", "table", "shared_name");
+
+    expect(firstUri).not.toBe(secondUri);
+    expect(firstUri.startsWith(postgresDatabaseDocumentGlob(first).slice(0, -2))).toBe(true);
+    expect(secondUri.startsWith(postgresDatabaseDocumentGlob(second).slice(0, -2))).toBe(true);
+    expect(postgresSourceSetName(first)).not.toBe(postgresSourceSetName(second));
   });
 
   it("reprojects only the exact documents selected by the SourceSet provider", async () => {

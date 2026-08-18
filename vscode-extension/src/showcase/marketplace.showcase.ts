@@ -66,7 +66,7 @@ suite("PostgreSQL Workbench Marketplace showcase", function () {
       true,
     );
     assert.ok(
-      await vscode.commands.executeCommand("postgresql-workbench.indexActiveDatabase"),
+      await vscode.commands.executeCommand("postgresql-workbench.indexDatabase"),
       "The demo database must be indexed before a scene starts",
     );
     await vscode.commands.executeCommand("workbench.action.closePanel");
@@ -86,7 +86,11 @@ suite("PostgreSQL Workbench Marketplace showcase", function () {
     for (const uri of notebooks) {
       await vscode.workspace.fs.delete(uri).then(undefined, () => {});
     }
-    await api?.connectionManager.disconnect();
+    if (api) {
+      for (const id of api.connectionManager.connectedServerIds) {
+        await api.connectionManager.disconnect(id);
+      }
+    }
     await api?.connectionManager.store.remove(SERVER.id).catch(() => {});
   });
 
@@ -385,7 +389,7 @@ function object(
   kind: WorkbenchObjectModel["kind"],
 ): WorkbenchObjectModel {
   const database = { serverId: SERVER.id, database: SERVER.database };
-  const target = buildWorkbenchObjects(api.workbenchIndex.indexedSymbols, database).find(
+  const target = buildWorkbenchObjects(api.workbenchIndex.databaseSymbols(database), database).find(
     (candidate) =>
       candidate.schema === schema && candidate.name === name && candidate.kind === kind,
   );
@@ -394,9 +398,17 @@ function object(
 }
 
 function snapshot(api: PlpgsqlExtensionApi) {
-  const result = api.workbenchIndex.state.result;
+  const result = api.workbenchIndex.databaseState({
+    serverId: SERVER.id,
+    database: SERVER.database,
+  }).result;
   assert.ok(result);
-  return { revision: result.revision, generation: result.generation };
+  return {
+    serverId: result.serverId,
+    database: result.database,
+    revision: result.revision,
+    generation: result.generation,
+  };
 }
 
 function receiveGraphMessage(
@@ -461,7 +473,8 @@ async function waitForStoppedSource(timeoutMs = 15_000): Promise<void> {
 }
 
 async function resetShopDebugData(api: PlpgsqlExtensionApi): Promise<void> {
-  const client = api.connectionManager.getClient();
+  const firstConnected = api.connectionManager.connectedServerIds[0];
+  const client = firstConnected ? api.connectionManager.getClient(firstConnected) : undefined;
   assert.ok(client);
   await client.query(`
     TRUNCATE shop.order_line, shop.stock_movement RESTART IDENTITY;

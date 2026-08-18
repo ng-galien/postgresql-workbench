@@ -12,6 +12,7 @@ export interface SqlExecutionStatement {
   sql: string;
   resultKind: "paged-query" | "non-paged";
   line: number;
+  schemaMutation?: true;
   transactionControl?: true;
 }
 
@@ -40,6 +41,42 @@ export type SqlExecutionPlan =
     };
 
 const MUTATING_STATEMENT_KINDS = new Set(["InsertStmt", "UpdateStmt", "DeleteStmt", "MergeStmt"]);
+const SCHEMA_MUTATING_STATEMENT_KINDS = new Set([
+  "AlterDatabaseStmt",
+  "AlterDomainStmt",
+  "AlterEnumStmt",
+  "AlterFunctionStmt",
+  "AlterObjectSchemaStmt",
+  "AlterOwnerStmt",
+  "AlterPolicyStmt",
+  "AlterRoleStmt",
+  "AlterSeqStmt",
+  "AlterTableStmt",
+  "AlterTypeStmt",
+  "CommentStmt",
+  "CompositeTypeStmt",
+  "CreateDomainStmt",
+  "CreateEnumStmt",
+  "CreateExtensionStmt",
+  "CreateFunctionStmt",
+  "CreatePolicyStmt",
+  "CreateRoleStmt",
+  "CreateSchemaStmt",
+  "CreateSeqStmt",
+  "CreateStmt",
+  "CreateTableAsStmt",
+  "CreateTrigStmt",
+  "CreateTypeStmt",
+  "CreateViewStmt",
+  "DefineStmt",
+  "DropStmt",
+  "GrantStmt",
+  "IndexStmt",
+  "RenameStmt",
+  "RuleStmt",
+  "TruncateStmt",
+  "ViewStmt",
+]);
 
 export async function classifySqlStatementCount(
   sql: string,
@@ -99,18 +136,24 @@ export async function planSqlResultExecution(
     if (statements.length === 0) return { status: "empty" };
     return {
       status: "ready",
-      statements: statements.map((statement) => ({
-        sql: syntaxNodeText(sql, statement).trim(),
-        resultKind:
-          !syntaxTreeHasKind(statement, MUTATING_STATEMENT_KINDS) &&
-          topLevelStatementNode(statement)?.kind === "SelectStmt"
-            ? "paged-query"
-            : "non-paged",
-        line: statement.start.line,
-        ...(syntaxTreeHasKind(statement, new Set(["TransactionStmt"]))
-          ? { transactionControl: true as const }
-          : {}),
-      })),
+      statements: statements.map((statement) => {
+        const statementNode = topLevelStatementNode(statement);
+        return {
+          sql: syntaxNodeText(sql, statement).trim(),
+          resultKind:
+            !syntaxTreeHasKind(statement, MUTATING_STATEMENT_KINDS) &&
+            statementNode?.kind === "SelectStmt"
+              ? "paged-query"
+              : "non-paged",
+          line: statement.start.line,
+          ...(statementNode && SCHEMA_MUTATING_STATEMENT_KINDS.has(statementNode.kind)
+            ? { schemaMutation: true as const }
+            : {}),
+          ...(syntaxTreeHasKind(statement, new Set(["TransactionStmt"]))
+            ? { transactionControl: true as const }
+            : {}),
+        };
+      }),
     };
   } catch (error) {
     return {

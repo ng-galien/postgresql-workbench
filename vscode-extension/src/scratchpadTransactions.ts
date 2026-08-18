@@ -175,7 +175,7 @@ export class ScratchpadTransactionManager implements vscode.Disposable {
 
   async acquireConnectionChange(
     connectionId: string,
-    action: string,
+    _action: string,
   ): Promise<vscode.Disposable | undefined> {
     if (!this.acceptingOperations) return undefined;
     this.block(this.blockedConnections, connectionId);
@@ -187,14 +187,17 @@ export class ScratchpadTransactionManager implements vscode.Disposable {
           )
           .map(([, tail]) => tail),
       );
-      for (const transaction of this.transactionsForConnection(connectionId)) {
-        const resolved = await this.runExclusive(transaction.scratchpadUri, undefined, () =>
-          this.resolveOpenTransaction(transaction.scratchpadUri, action),
-        );
-        if (!resolved) {
-          this.unblock(this.blockedConnections, connectionId);
-          return undefined;
-        }
+      for (const transaction of [...this.transactions.values()].filter(
+        ({ association }) => association.serverId === connectionId,
+      )) {
+        await this.runExclusive(transaction.scratchpadUri, undefined, async () => {
+          try {
+            await this.settle(transaction, "ROLLBACK");
+          } catch {
+            // A connection lifecycle action must always be able to proceed. ROLLBACK settlement
+            // already closes the dedicated Scratchpad client in its finally block.
+          }
+        });
       }
       return new vscode.Disposable(() => this.unblock(this.blockedConnections, connectionId));
     } catch (error) {

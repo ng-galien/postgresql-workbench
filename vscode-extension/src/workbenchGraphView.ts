@@ -41,7 +41,10 @@ import {
   workbenchObjectFromSymbol,
 } from "./workbenchTreeModel.js";
 
-type WorkbenchSnapshot = Pick<WorkbenchIndexResult, "revision" | "generation">;
+type WorkbenchSnapshot = Pick<
+  WorkbenchIndexResult,
+  "serverId" | "database" | "revision" | "generation"
+>;
 
 interface NavigationState {
   perspective?: CockpitPerspective;
@@ -148,6 +151,10 @@ export class WorkbenchGraphView implements vscode.Disposable {
     return this.session?.breadcrumbs ?? [];
   }
 
+  get currentDatabase(): WorkbenchDatabaseIdentity | undefined {
+    return this.database && { ...this.database };
+  }
+
   get currentPresentations(): Readonly<Record<string, WorkbenchGraphIdentityPresentation>> {
     return this.presentations;
   }
@@ -171,7 +178,7 @@ export class WorkbenchGraphView implements vscode.Disposable {
     this.panel.reveal();
     if (changed) {
       this.navigation.reset(
-        databaseLandingIdentity(this.index.indexedSymbols, object) ?? object.symbolUri,
+        databaseLandingIdentity(this.symbols(object), object) ?? object.symbolUri,
       );
     }
     return this.focusNode(object.symbolUri);
@@ -186,7 +193,7 @@ export class WorkbenchGraphView implements vscode.Disposable {
     this.setContext(database, snapshot);
     this.panel.ensure(database.database);
     this.panel.reveal();
-    const prefix = databaseLandingIdentity(this.index.indexedSymbols, database);
+    const prefix = databaseLandingIdentity(this.symbols(database), database);
     if (!prefix) return false;
     this.navigation.reset(prefix);
     return this.showLanding(prefix);
@@ -202,7 +209,7 @@ export class WorkbenchGraphView implements vscode.Disposable {
     this.setContext(database, snapshot);
     this.panel.ensure(database.database);
     this.panel.reveal();
-    const prefix = schemaLandingIdentity(this.index.indexedSymbols, database, schema);
+    const prefix = schemaLandingIdentity(this.symbols(database), database, schema);
     if (!prefix) return false;
     this.navigation.reset(prefix);
     return this.showLanding(prefix, schema);
@@ -231,7 +238,7 @@ export class WorkbenchGraphView implements vscode.Disposable {
   async syncSchemaFromTree(schema: string, snapshot: WorkbenchSnapshot): Promise<boolean> {
     if (this.refreshRun) await this.refreshRun;
     if (!this.panel.current || !this.database || !this.sameSnapshot(snapshot)) return false;
-    const prefix = schemaLandingIdentity(this.index.indexedSymbols, this.database, schema);
+    const prefix = schemaLandingIdentity(this.symbols(), this.database, schema);
     if (!prefix) return false;
     const checkpoint = this.navigation.snapshot();
     this.navigation.push(prefix);
@@ -267,17 +274,19 @@ export class WorkbenchGraphView implements vscode.Disposable {
       return false;
     }
     if (this.refreshRun) await this.refreshRun;
-    const result = this.index.state.result;
+    const identity = { serverId: payload.serverId, database: payload.database };
+    const state = this.index.databaseState(identity);
+    const result = state.result;
     if (
-      this.index.state.status !== "available" ||
+      state.status !== "available" ||
       !result ||
       result.serverId !== payload.serverId ||
       result.database !== payload.database
     ) {
-      await this.rejectTreeDrop("This object is not part of the active indexed database context.");
+      await this.rejectTreeDrop("This object is not part of the Cockpit Connexion index.");
       return false;
     }
-    const object = buildWorkbenchObjects(this.index.indexedSymbols, {
+    const object = buildWorkbenchObjects(this.symbols(identity), {
       serverId: result.serverId,
       database: result.database,
     }).find(
@@ -310,7 +319,15 @@ export class WorkbenchGraphView implements vscode.Disposable {
   }
 
   async refreshSnapshot(snapshot: WorkbenchSnapshot): Promise<boolean> {
-    if (!this.database || !this.panel.current || this.sameSnapshot(snapshot)) return false;
+    if (
+      !this.database ||
+      snapshot.serverId !== this.database.serverId ||
+      snapshot.database !== this.database.database ||
+      !this.panel.current ||
+      this.sameSnapshot(snapshot)
+    ) {
+      return false;
+    }
     this.pendingSnapshot = snapshot;
     if (this.refreshRun) return this.refreshRun;
     const run = this.drainSnapshotRefreshes();
@@ -339,9 +356,10 @@ export class WorkbenchGraphView implements vscode.Disposable {
   private async applySnapshotRefreshNow(snapshot: WorkbenchSnapshot): Promise<boolean> {
     const database = this.database;
     if (!database || !this.panel.current || this.sameSnapshot(snapshot)) return false;
-    const result = this.index.state.result;
+    const state = this.index.databaseState(database);
+    const result = state.result;
     if (
-      this.index.state.status !== "available" ||
+      state.status !== "available" ||
       !result ||
       result.serverId !== database.serverId ||
       result.database !== database.database
@@ -358,7 +376,10 @@ export class WorkbenchGraphView implements vscode.Disposable {
         ? this.resolveCurrentSymbol(this.previewSymbol)
         : undefined;
       const sourcePreview = currentPreviewSymbol
-        ? await this.index.graphSourcePreview(currentPreviewSymbol.uri, snapshot)
+        ? await this.index.graphSourcePreview(
+            currentPreviewSymbol.uri,
+            this.indexSnapshot(snapshot),
+          )
         : undefined;
       this.previewSymbol = currentPreviewSymbol;
       if (this.sourceVisible && (!currentPreviewSymbol || !sourcePreview)) {
@@ -376,7 +397,7 @@ export class WorkbenchGraphView implements vscode.Disposable {
           neighborhoods: [],
           identityRemap: {},
           presentations: {},
-          validIdentities: buildWorkbenchObjects(this.index.indexedSymbols, database).map(
+          validIdentities: buildWorkbenchObjects(this.symbols(database), database).map(
             (object) => object.symbolUri,
           ),
           pinnedIdentities: [],
@@ -406,7 +427,10 @@ export class WorkbenchGraphView implements vscode.Disposable {
           ? this.resolveCurrentSymbol(this.previewSymbol)
           : undefined;
         const sourcePreview = currentPreviewSymbol
-          ? await this.index.graphSourcePreview(currentPreviewSymbol.uri, snapshot)
+          ? await this.index.graphSourcePreview(
+              currentPreviewSymbol.uri,
+              this.indexSnapshot(snapshot),
+            )
           : undefined;
         this.previewSymbol = currentPreviewSymbol;
         if (this.sourceVisible && (!currentPreviewSymbol || !sourcePreview)) {
@@ -415,9 +439,9 @@ export class WorkbenchGraphView implements vscode.Disposable {
         }
         const schema = previousFocus.postgres?.schema;
         const prefix = schema
-          ? schemaLandingIdentity(this.index.indexedSymbols, database, schema)
+          ? schemaLandingIdentity(this.symbols(database), database, schema)
           : undefined;
-        const landing = prefix ?? databaseLandingIdentity(this.index.indexedSymbols, database);
+        const landing = prefix ?? databaseLandingIdentity(this.symbols(database), database);
         if (!landing) return false;
         this.snapshot = snapshot;
         this.navigation.replace(landing);
@@ -438,14 +462,14 @@ export class WorkbenchGraphView implements vscode.Disposable {
       for (const [previousIdentity, previousSymbol] of this.loadedNeighborhoods) {
         const symbol = remapped.get(previousIdentity) ?? this.resolveCurrentSymbol(previousSymbol);
         if (!symbol) continue;
-        const source = await this.index.graphFocus(symbol.uri, snapshot);
+        const source = await this.index.graphFocus(symbol.uri, this.indexSnapshot(snapshot));
         if (sequence !== this.loadSequence) return false;
-        const neighborhood = neighborhoodFromGraph(source, database, this.index.indexedSymbols);
+        const neighborhood = neighborhoodFromGraph(source, database, this.symbols(database));
         this.rememberCounts(source);
         const presentations = presentationsForSymbols(
           neighborhoodSymbols(neighborhood),
           database,
-          (sourceUri) => this.index.objectOrigin(sourceUri),
+          (sourceUri) => this.objectOrigin(sourceUri, database),
         );
         identityRemap[previousIdentity] = symbol.uri;
         nextLoaded.set(symbol.uri, symbol);
@@ -454,7 +478,7 @@ export class WorkbenchGraphView implements vscode.Disposable {
       for (const [previousIdentity, symbol] of remapped) {
         identityRemap[previousIdentity] = symbol.uri;
       }
-      await this.index.assertGraphSnapshot(snapshot);
+      await this.index.assertGraphSnapshot(this.indexSnapshot(snapshot));
       if (sequence !== this.loadSequence) return false;
       this.loadedNeighborhoods.clear();
       for (const [identity, symbol] of nextLoaded) this.loadedNeighborhoods.set(identity, symbol);
@@ -465,7 +489,7 @@ export class WorkbenchGraphView implements vscode.Disposable {
       );
       if (focusNeighborhood) this.graph = initialCockpitGraph(focusNeighborhood.neighborhood);
       if (currentFocus.uri !== previousFocus.uri) this.navigation.replace(currentFocus.uri);
-      const validIdentities = buildWorkbenchObjects(this.index.indexedSymbols, database).map(
+      const validIdentities = buildWorkbenchObjects(this.symbols(database), database).map(
         (object) => object.symbolUri,
       );
       const validSet = new Set(validIdentities);
@@ -482,13 +506,16 @@ export class WorkbenchGraphView implements vscode.Disposable {
       this.presentations = presentationsForSymbols(
         [...this.knownSymbols.values()],
         database,
-        (sourceUri) => this.index.objectOrigin(sourceUri),
+        (sourceUri) => this.objectOrigin(sourceUri, database),
       );
       const currentPreviewSymbol = this.previewSymbol
         ? this.resolveCurrentSymbol(this.previewSymbol)
         : undefined;
       const sourcePreview = currentPreviewSymbol
-        ? await this.index.graphSourcePreview(currentPreviewSymbol.uri, snapshot)
+        ? await this.index.graphSourcePreview(
+            currentPreviewSymbol.uri,
+            this.indexSnapshot(snapshot),
+          )
         : undefined;
       if (sequence !== this.loadSequence) return false;
       this.previewSymbol = currentPreviewSymbol;
@@ -498,7 +525,7 @@ export class WorkbenchGraphView implements vscode.Disposable {
       }
       const preview = sourcePreview ? sourcePreviewPresentation(sourcePreview) : null;
       const session = this.createSession(
-        cockpitBreadcrumbs(currentFocus, database, this.index.indexedSymbols),
+        cockpitBreadcrumbs(currentFocus, database, this.symbols(database)),
       );
       this.session = session;
       const refreshMessage: WorkbenchGraphHostMessage = {
@@ -554,7 +581,7 @@ export class WorkbenchGraphView implements vscode.Disposable {
     const object = this.objectFor(symbolUri);
     if (!object || !this.snapshot) return false;
     try {
-      await this.index.assertGraphSnapshot(this.snapshot);
+      await this.index.assertGraphSnapshot(this.indexSnapshot(this.snapshot));
       const result = await this.openDefinition(object, this.snapshot);
       return result !== undefined && result !== false;
     } catch {
@@ -562,11 +589,11 @@ export class WorkbenchGraphView implements vscode.Disposable {
     }
   }
 
-  invalidateDatabaseContext(): void {
+  invalidateCockpitContext(): void {
     this.reset();
     this.lastMessage = {
-      type: "databaseContextInvalidated",
-      message: "The active PostgreSQL database context changed. Open the active graph again.",
+      type: "cockpitContextInvalidated",
+      message: "The Cockpit Connexion changed. Open the graph again.",
     };
     void this.panel.post(this.lastMessage);
   }
@@ -629,13 +656,15 @@ export class WorkbenchGraphView implements vscode.Disposable {
   private sameSnapshot(snapshot: WorkbenchSnapshot): boolean {
     return (
       this.snapshot?.revision === snapshot.revision &&
-      this.snapshot.generation === snapshot.generation
+      this.snapshot.generation === snapshot.generation &&
+      this.snapshot.serverId === snapshot.serverId &&
+      this.snapshot.database === snapshot.database
     );
   }
 
   private async show(prefix: string, perspective?: CockpitPerspective): Promise<boolean> {
     if (!this.database) return false;
-    const target = resolveCockpitTarget(prefix, this.index.indexedSymbols, this.database);
+    const target = resolveCockpitTarget(prefix, this.symbols(), this.database);
     return target.kind === "object"
       ? this.showFocus(target.symbol, perspective)
       : this.showLanding(prefix, target.schemaHint);
@@ -647,7 +676,7 @@ export class WorkbenchGraphView implements vscode.Disposable {
       schemaHint
         ? [
             {
-              prefix: databaseLandingIdentity(this.index.indexedSymbols, this.database) ?? prefix,
+              prefix: databaseLandingIdentity(this.symbols(), this.database) ?? prefix,
               label: this.database.database,
             },
             { prefix, label: schemaHint },
@@ -697,7 +726,7 @@ export class WorkbenchGraphView implements vscode.Disposable {
       this.knownSymbols.clear();
       this.rememberSymbols(symbols);
       this.rememberSymbols(pinned.map(({ symbol }) => symbol));
-      const breadcrumbs = cockpitBreadcrumbs(symbol, database, this.index.indexedSymbols);
+      const breadcrumbs = cockpitBreadcrumbs(symbol, database, this.symbols(database));
       const session = this.createSession(breadcrumbs);
       this.graph = initialCockpitGraph(neighborhood);
       this.currentFocus = symbol;
@@ -734,9 +763,7 @@ export class WorkbenchGraphView implements vscode.Disposable {
     breadcrumbs: WorkbenchGraphBreadcrumb[],
     schemaHint?: string,
   ): CockpitSession {
-    const objects = this.database
-      ? buildWorkbenchObjects(this.index.indexedSymbols, this.database)
-      : [];
+    const objects = this.database ? buildWorkbenchObjects(this.symbols(), this.database) : [];
     return {
       renderId: ++this.renderSequence,
       serverId: this.database?.serverId ?? "",
@@ -813,7 +840,7 @@ export class WorkbenchGraphView implements vscode.Disposable {
       case "pinPreview":
         this.sourcePinned = message.pinned;
         if (message.pinned) {
-          this.previewSymbol = this.index.indexedSymbols.find(
+          this.previewSymbol = this.symbols().find(
             (candidate) => candidate.uri === message.symbolUri,
           );
         }
@@ -888,14 +915,14 @@ export class WorkbenchGraphView implements vscode.Disposable {
     const database = this.database;
     if (!snapshot || !database) return;
     try {
-      const source = await this.index.graphFocus(message.symbolUri, snapshot);
-      const neighborhood = neighborhoodFromGraph(source, database, this.index.indexedSymbols);
+      const source = await this.index.graphFocus(message.symbolUri, this.indexSnapshot(snapshot));
+      const neighborhood = neighborhoodFromGraph(source, database, this.symbols(database));
       this.loadedNeighborhoods.set(neighborhood.focus.uri, neighborhood.focus);
       this.rememberSymbols(neighborhoodSymbols(neighborhood));
       this.rememberCounts(source);
       const symbols = neighborhoodSymbols(neighborhood);
       const presentations = presentationsForSymbols(symbols, database, (sourceUri) =>
-        this.index.objectOrigin(sourceUri),
+        this.objectOrigin(sourceUri, database),
       );
       await this.panel.post({
         type: "cockpitNeighborhood",
@@ -942,8 +969,8 @@ export class WorkbenchGraphView implements vscode.Disposable {
   private async inspectNow(symbolUri: string): Promise<void> {
     const snapshot = this.snapshot;
     if (!snapshot) return;
-    const symbol = this.index.indexedSymbols.find((candidate) => candidate.uri === symbolUri);
-    const preview = await this.index.graphSourcePreview(symbolUri, snapshot);
+    const symbol = this.symbols().find((candidate) => candidate.uri === symbolUri);
+    const preview = await this.index.graphSourcePreview(symbolUri, this.indexSnapshot(snapshot));
     if (!preview) return;
     this.previewSymbol = symbol;
     this.sourceVisible = true;
@@ -974,18 +1001,18 @@ export class WorkbenchGraphView implements vscode.Disposable {
 
   private async loadGraphObject(symbol: CodeMonikerSymbol, snapshot: WorkbenchSnapshot) {
     const database = this.database;
-    if (!database) throw new Error("The PostgreSQL Cockpit has no active database context.");
+    if (!database) throw new Error("The PostgreSQL Cockpit has no selected Connexion.");
     const [source, sourcePreview] = await Promise.all([
-      this.index.graphFocus(symbol.uri, snapshot),
-      this.index.graphSourcePreview(symbol.uri, snapshot),
+      this.index.graphFocus(symbol.uri, this.indexSnapshot(snapshot)),
+      this.index.graphSourcePreview(symbol.uri, this.indexSnapshot(snapshot)),
     ]);
-    await this.index.assertGraphSnapshot(snapshot);
-    const neighborhood = neighborhoodFromGraph(source, database, this.index.indexedSymbols);
+    await this.index.assertGraphSnapshot(this.indexSnapshot(snapshot));
+    const neighborhood = neighborhoodFromGraph(source, database, this.symbols(database));
     this.rememberCounts(source);
     const presentations = presentationsForSymbols(
       neighborhoodSymbols(neighborhood),
       database,
-      (sourceUri) => this.index.objectOrigin(sourceUri),
+      (sourceUri) => this.objectOrigin(sourceUri, database),
     );
     return {
       neighborhood,
@@ -1008,8 +1035,8 @@ export class WorkbenchGraphView implements vscode.Disposable {
     const normalized = query.trim();
     const sequence = ++this.searchSequence;
     const results = database
-      ? searchGraphObjects(this.index.indexedSymbols, database, normalized, (sourceUri) =>
-          this.index.objectOrigin(sourceUri),
+      ? searchGraphObjects(this.symbols(database), database, normalized, (sourceUri) =>
+          this.objectOrigin(sourceUri, database),
         ).map((result) => withCounts(result, this.counts.get(result.symbolUri)))
       : [];
     void this.panel.post({ type: "searchResults", requestId, query: normalized, results });
@@ -1036,7 +1063,7 @@ export class WorkbenchGraphView implements vscode.Disposable {
     for (let offset = 0; offset < identities.length; offset += 4) {
       const batch = identities.slice(offset, offset + 4);
       const loaded = await Promise.allSettled(
-        batch.map((identity) => this.index.graphFocus(identity, snapshot, 1)),
+        batch.map((identity) => this.index.graphFocus(identity, this.indexSnapshot(snapshot), 1)),
       );
       if (sequence !== this.searchSequence || !this.sameSnapshot(snapshot)) return;
       for (const [index, result] of loaded.entries()) {
@@ -1075,9 +1102,9 @@ export class WorkbenchGraphView implements vscode.Disposable {
       ...this.pinnedIdentities,
       ...(perspective?.state.pinnedIdentities ?? []),
     ]);
-    const symbols = this.index.indexedSymbols.filter((symbol) => requested.has(symbol.uri));
+    const symbols = this.symbols().filter((symbol) => requested.has(symbol.uri));
     const pinnedPresentations = presentationsForSymbols(symbols, this.database, (sourceUri) =>
-      this.index.objectOrigin(sourceUri),
+      this.objectOrigin(sourceUri),
     );
     return symbols.map((symbol) => ({
       symbol,
@@ -1135,17 +1162,36 @@ export class WorkbenchGraphView implements vscode.Disposable {
     await this.panel.post({ type: "cockpitPerspectives", perspectives });
   }
 
+  private symbols(
+    database: WorkbenchDatabaseIdentity | undefined = this.database,
+  ): readonly CodeMonikerSymbol[] {
+    return database ? this.index.databaseSymbols(database) : [];
+  }
+
+  private indexSnapshot(snapshot: WorkbenchSnapshot) {
+    const database = this.database;
+    if (!database) throw new Error("The PostgreSQL Cockpit has no selected Connexion.");
+    return snapshot;
+  }
+
+  private objectOrigin(
+    sourceUri: string,
+    database: WorkbenchDatabaseIdentity | undefined = this.database,
+  ) {
+    return database ? this.index.databaseObjectOrigin(database, sourceUri) : undefined;
+  }
+
   private objectFor(symbolUri: string): WorkbenchObjectModel | undefined {
-    const symbol = this.index.indexedSymbols.find((candidate) => candidate.uri === symbolUri);
+    const symbol = this.symbols().find((candidate) => candidate.uri === symbolUri);
     return symbol && this.database ? workbenchObjectFromSymbol(symbol, this.database) : undefined;
   }
 
   private resolveCurrentSymbol(previous: CodeMonikerSymbol): CodeMonikerSymbol | undefined {
-    const direct = this.index.indexedSymbols.find((candidate) => candidate.uri === previous.uri);
+    const direct = this.symbols().find((candidate) => candidate.uri === previous.uri);
     if (direct) return direct;
     const descriptor = previous.postgres;
     if (!descriptor) return undefined;
-    return this.index.indexedSymbols.find(
+    return this.symbols().find(
       (candidate) =>
         candidate.postgres?.serverId === descriptor.serverId &&
         candidate.postgres.database === descriptor.database &&

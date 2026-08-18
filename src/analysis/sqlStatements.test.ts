@@ -153,7 +153,12 @@ describe("SQL result execution classification", () => {
       status: "ready",
       statements: [
         { sql: "SELECT 1;", resultKind: "paged-query", line: 1 },
-        { sql: "CREATE TEMP TABLE silent(id int);", resultKind: "non-paged", line: 2 },
+        {
+          sql: "CREATE TEMP TABLE silent(id int);",
+          resultKind: "non-paged",
+          line: 2,
+          schemaMutation: true,
+        },
         { sql: "SELECT 2;", resultKind: "paged-query", line: 3 },
       ],
     });
