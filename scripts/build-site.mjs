@@ -10,6 +10,7 @@ const outputDirectory = path.join(repositoryRoot, "dist", "site");
 const marketplaceMedia = path.join(repositoryRoot, "vscode-extension", "media", "marketplace");
 const extensionManifestPath = path.join(repositoryRoot, "vscode-extension", "package.json");
 const icon = path.join(repositoryRoot, "vscode-extension", "icons", "plpgsql-icon.png");
+const siteUrl = "https://ng-galien.github.io/postgresql-workbench/";
 
 const guides = [
   ["index.md", "Overview"],
@@ -40,6 +41,17 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+function sitemapXml(paths) {
+  const urls = paths
+    .map((relativePath) => `  <url><loc>${siteUrl}${relativePath}</loc></url>`)
+    .join("\n");
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${urls}
+</urlset>
+`;
 }
 
 function parseFrontmatter(source) {
@@ -221,6 +233,12 @@ export async function buildSite() {
       .replace("{{content}}", rendered.content);
     await writeFile(path.join(documentationOutput, outputFile), output, "utf8");
   }
+
+  const sitemapPaths = [
+    "",
+    ...documentationFiles.map((file) => `docs/${file.replace(/\.md$/, ".html")}`),
+  ];
+  await writeFile(path.join(outputDirectory, "sitemap.xml"), sitemapXml(sitemapPaths), "utf8");
 
   await writeFile(path.join(outputDirectory, ".nojekyll"), "", "utf8");
   // biome-ignore lint/suspicious/noConsole: This build script reports its generated artifact to CI and local users.

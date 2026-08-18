@@ -1,6 +1,6 @@
 ---
 title: SQL Scratchpads
-description: Create, associate, and run SQL Scratchpads.
+description: Create persistent PostgreSQL SQL Scratchpads, associate connections, run statements, and inspect results in VS Code.
 eyebrow: SQL scratchpads
 media: notebook.gif
 mediaAlt: SQL scratchpad executing a query and showing a PostgreSQL result grid
@@ -8,9 +8,9 @@ mediaAlt: SQL scratchpad executing a query and showing a PostgreSQL result grid
 
 # SQL Scratchpads
 
-A Scratchpad is a persistent SQL workspace. Its Association points to a saved
-Connexion, never to a live PostgreSQL session, and never silently follows the
-active DatabaseContext.
+A Scratchpad is a persistent PostgreSQL SQL workspace in VS Code. Its
+Association points to a saved Connexion, never to a live PostgreSQL session,
+and never silently follows the active DatabaseContext.
 
 Run and Debug are separate execution intents but use that same Association.
 A code cell whose SQL resolves to one replayable PL/pgSQL entry point shows its

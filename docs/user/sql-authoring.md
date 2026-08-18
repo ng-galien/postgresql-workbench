@@ -1,15 +1,16 @@
 ---
 title: SQL authoring
-description: Format, complete, and compose PostgreSQL SQL from the Workbench Index.
+description: Use PostgreSQL SQL autocomplete, formatting, navigation, and drag-and-drop query composition in VS Code.
 eyebrow: SQL authoring
 ---
 
 # SQL authoring
 
-PostgreSQL Workbench provides one SQL authoring service through the standard VS
-Code Language Server Protocol client and server. Formatting uses the shared
-PostgreSQL syntax service. Completion and query composition use the indexed
-schema snapshot and never run a second catalog introspection.
+PostgreSQL Workbench provides PostgreSQL SQL autocomplete, formatting,
+navigation, and query composition through the standard VS Code Language Server
+Protocol client and server. Formatting uses the shared PostgreSQL syntax
+service. Completion and query composition use the indexed schema snapshot and
+never run a second catalog introspection.
 
 Authoring does not decide whether SQL is run, debugged, or deployed. Those
 actions follow the canonical [Run, debug, and deploy SQL](execution-debugging-and-deployment.md)

@@ -1,13 +1,14 @@
 ---
 title: Workbench Cockpit
-description: Browse indexed PostgreSQL relations.
+description: Explore PostgreSQL schemas and dependency graphs in VS Code with the Workbench Cockpit.
 eyebrow: Workbench Cockpit
 ---
 
 # Workbench Cockpit
 
-The Cockpit is a structural view. It uses the active DatabaseContext and the
-current Code Moniker index; it never displays table rows.
+The Cockpit is a PostgreSQL schema explorer and dependency graph for VS Code. It
+uses the active DatabaseContext and the current Code Moniker index; it never
+displays table rows.
 
 ## Cockpit map
 

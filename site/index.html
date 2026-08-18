@@ -5,21 +5,52 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       name="description"
-      content="PostgreSQL Workbench for VS Code: explore schemas, query data, run pgTAP tests with coverage, and debug PL/pgSQL."
+      content="PostgreSQL development extension for VS Code with schema exploration, SQL scratchpads, pgTAP coverage, and PL/pgSQL debugging."
     />
     <meta name="theme-color" content="#f7f9fa" />
-    <meta property="og:title" content="PostgreSQL Workbench for VS Code" />
+    <meta property="og:title" content="PostgreSQL VS Code Extension | PostgreSQL Workbench" />
     <meta
       property="og:description"
-      content="Explore schemas, query data, run pgTAP tests with coverage, and debug PL/pgSQL without leaving VS Code."
+      content="PostgreSQL development extension for VS Code with schema exploration, SQL scratchpads, pgTAP coverage, and PL/pgSQL debugging."
     />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://ng-galien.github.io/postgresql-workbench/" />
     <meta property="og:image" content="https://ng-galien.github.io/postgresql-workbench/assets/cockpit.png" />
     <link rel="canonical" href="https://ng-galien.github.io/postgresql-workbench/" />
-    <title>PostgreSQL Workbench for VS Code</title>
+    <title>PostgreSQL VS Code Extension | PostgreSQL Workbench</title>
     <link rel="icon" href="assets/icon.png" />
     <link rel="stylesheet" href="styles.css" />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "WebSite",
+            "name": "PostgreSQL Workbench",
+            "url": "https://ng-galien.github.io/postgresql-workbench/",
+            "description": "PostgreSQL development extension for VS Code with schema exploration, SQL scratchpads, pgTAP coverage, and PL/pgSQL debugging."
+          },
+          {
+            "@type": "SoftwareApplication",
+            "name": "PostgreSQL Workbench",
+            "applicationCategory": "DeveloperApplication",
+            "operatingSystem": "Windows, macOS, Linux",
+            "url": "https://ng-galien.github.io/postgresql-workbench/",
+            "downloadUrl": "https://marketplace.visualstudio.com/items?itemName=ng-galien.postgresql-workbench",
+            "sameAs": [
+              "https://github.com/ng-galien/postgresql-workbench",
+              "https://marketplace.visualstudio.com/items?itemName=ng-galien.postgresql-workbench"
+            ],
+            "description": "Explore PostgreSQL schemas, write and run SQL, execute pgTAP tests with coverage, and debug PL/pgSQL in VS Code.",
+            "offers": {
+              "@type": "Offer",
+              "price": "0",
+              "priceCurrency": "USD"
+            }
+          }
+        ]
+      }
+    </script>
     <script src="site.js" defer></script>
   </head>
   <body>
@@ -56,7 +87,12 @@
       <section class="hero" id="top" aria-labelledby="hero-title">
         <div class="hero-copy reveal">
           <p class="eyebrow">VS Code extension</p>
-          <h1 id="hero-title">Explore schemas, run SQL, test routines, and debug PL/pgSQL.</h1>
+          <h1 id="hero-title">PostgreSQL development, directly in VS Code.</h1>
+          <p class="hero-summary">
+            PostgreSQL Workbench is a PostgreSQL development extension for VS Code.
+            Explore schemas, write and run SQL, execute pgTAP tests with coverage, and
+            debug PL/pgSQL without leaving the editor.
+          </p>
           <div class="hero-actions">
             <a
               class="button button-primary"
@@ -111,6 +147,7 @@
             statements, page and sort results, inspect structured values, and export
             result sets.
           </p>
+          <a href="docs/notebooks.html">Scratchpad guide</a>
         </div>
         <img
           src="assets/notebook.gif"
@@ -129,6 +166,7 @@
             Discover tests in the native VS Code Test Explorer, run selected suites,
             and inspect PL/pgSQL statement and branch coverage directly in the editor.
           </p>
+          <a href="docs/testing-coverage.html">Testing and coverage guide</a>
         </div>
         <img
           src="assets/coverage.gif"

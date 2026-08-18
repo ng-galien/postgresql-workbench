@@ -41,7 +41,13 @@
     "coverage",
     "sql",
     "database",
-    "notebook"
+    "notebook",
+    "vscode",
+    "database explorer",
+    "schema explorer",
+    "postgresql debugger",
+    "sql editor",
+    "testing"
   ],
   "engines": {
     "node": ">=22.0.0",

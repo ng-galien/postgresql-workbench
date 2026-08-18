@@ -1,6 +1,6 @@
 ---
 title: pgTAP and coverage
-description: Run pgTAP tests and inspect PL/pgSQL coverage.
+description: Run pgTAP tests and inspect PL/pgSQL statement and branch coverage in VS Code.
 eyebrow: pgTAP and coverage
 media: coverage.gif
 mediaAlt: pgTAP tests with PL/pgSQL coverage in VS Code
@@ -8,8 +8,9 @@ mediaAlt: pgTAP tests with PL/pgSQL coverage in VS Code
 
 # pgTAP tests and coverage
 
-Tests use VS Code's native Testing UI. Coverage is collected independently from
-the debugger in a dedicated transaction.
+PostgreSQL Workbench runs pgTAP tests in VS Code's native Testing UI and reports
+PL/pgSQL statement and branch coverage in the editor. Coverage is collected
+independently from the debugger in a dedicated transaction.
 
 {{media}}
 

@@ -7,9 +7,9 @@
 [![Docker pulls](https://img.shields.io/docker/pulls/galien0xffffff/postgres-debugger?logo=docker)](https://hub.docker.com/r/galien0xffffff/postgres-debugger)
 [![License: MIT](https://img.shields.io/github/license/ng-galien/postgresql-workbench)](LICENSE)
 
-PostgreSQL Workbench is a VS Code extension for database exploration, SQL
-scratchpads, result inspection, schema synchronization, pgTAP testing,
-coverage, and PL/pgSQL debugging. Its standalone
+PostgreSQL Workbench is a PostgreSQL development extension for VS Code. It
+combines database exploration, SQL scratchpads, result inspection, schema
+synchronization, pgTAP testing, coverage, and PL/pgSQL debugging. Its standalone
 [Debug Adapter Protocol](https://microsoft.github.io/debug-adapter-protocol/)
 server remains usable from other DAP clients such as Neovim and Emacs.
 
