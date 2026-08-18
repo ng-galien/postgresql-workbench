@@ -8,21 +8,36 @@ export type SslMode = "disable" | "prefer" | "require";
 export interface ServerConfig {
   /** Unique key: "host:port/database:user" */
   id: string;
-  /** Display name: "user@host:port/database" */
-  name: string;
+  /** Optional unique user-facing name. The canonical URL is used when absent. */
+  name?: string;
   host: string;
   port: number;
   database: string;
   user: string;
   ssl?: SslMode;
-  /** Optional per-DatabaseContext overrides for Workbench schema synchronization. */
+  /** Optional per-Connexion overrides for Workbench schema synchronization. */
   schemaSync?: {
     enabled?: boolean;
     supportSchema?: string;
   };
 }
 
-export function sameDatabaseContextIdentity(
+type ConnectionUrlIdentity = Pick<ServerConfig, "host" | "port" | "database" | "user">;
+
+export function getConnectionUrl(server: ConnectionUrlIdentity): string {
+  return `${server.user}@${server.host}:${server.port}/${server.database}`;
+}
+
+export function getCustomConnectionName(server: ServerConfig): string | undefined {
+  const name = server.name?.trim();
+  return name && name !== getConnectionUrl(server) ? name : undefined;
+}
+
+export function getConnectionName(server: ServerConfig): string {
+  return getCustomConnectionName(server) ?? getConnectionUrl(server);
+}
+
+export function sameConnectionIdentity(
   left: Pick<ServerConfig, "host" | "port" | "database" | "user">,
   right: Pick<ServerConfig, "host" | "port" | "database" | "user">,
 ): boolean {
@@ -36,7 +51,7 @@ export function sameDatabaseContextIdentity(
 
 const SERVERS_KEY = "postgresql-workbench.servers";
 const PASSWORD_PREFIX = "postgresql-workbench.pw.";
-const ACTIVE_SERVER_KEY = "postgresql-workbench.activeServer";
+const OPEN_SERVERS_KEY = "postgresql-workbench.openServers";
 
 /**
  * Persists server configs in globalState and passwords in VS Code secrets.
@@ -59,15 +74,17 @@ export class ServerStore {
   }
 
   async add(server: ServerConfig, password: string): Promise<void> {
-    const servers = this.getAll().filter((s) => s.id !== server.id);
-    servers.push(server);
+    const servers = this.getAll();
+    this.assertUnique(server, servers);
+    servers.push(normalizeServer(server));
     await this.context.globalState.update(SERVERS_KEY, servers);
     await this.context.secrets.store(PASSWORD_PREFIX + server.id, password);
   }
 
   async update(oldId: string, server: ServerConfig, password?: string): Promise<void> {
     const servers = this.getAll().filter((s) => s.id !== oldId);
-    servers.push(server);
+    this.assertUnique(server, servers);
+    servers.push(normalizeServer(server));
     await this.context.globalState.update(SERVERS_KEY, servers);
     if (password !== undefined) {
       await this.context.secrets.store(PASSWORD_PREFIX + server.id, password);
@@ -77,7 +94,11 @@ export class ServerStore {
     }
     if (oldId !== server.id) {
       await this.context.secrets.delete(PASSWORD_PREFIX + oldId);
-      if (this.getActiveServerId() === oldId) await this.setActiveServerId(server.id);
+      const open = this.getOpenServerIds();
+      if (open.includes(oldId)) {
+        await this.setConnectionOpen(oldId, false);
+        await this.setConnectionOpen(server.id, true);
+      }
     }
   }
 
@@ -85,9 +106,7 @@ export class ServerStore {
     const servers = this.getAll().filter((s) => s.id !== id);
     await this.context.globalState.update(SERVERS_KEY, servers);
     await this.context.secrets.delete(PASSWORD_PREFIX + id);
-    if (this.getActiveServerId() === id) {
-      await this.setActiveServerId(undefined);
-    }
+    await this.setConnectionOpen(id, false);
   }
 
   // --- Password ---
@@ -100,14 +119,17 @@ export class ServerStore {
     await this.context.secrets.store(PASSWORD_PREFIX + id, password);
   }
 
-  // --- Active server (per workspace) ---
+  // --- Per-Connexion open intent (per workspace) ---
 
-  getActiveServerId(): string | undefined {
-    return this.context.workspaceState.get<string>(ACTIVE_SERVER_KEY);
+  getOpenServerIds(): string[] {
+    return this.context.workspaceState.get<string[]>(OPEN_SERVERS_KEY) ?? [];
   }
 
-  async setActiveServerId(id: string | undefined): Promise<void> {
-    await this.context.workspaceState.update(ACTIVE_SERVER_KEY, id);
+  async setConnectionOpen(id: string, open: boolean): Promise<void> {
+    const ids = new Set(this.getOpenServerIds());
+    if (open) ids.add(id);
+    else ids.delete(id);
+    await this.context.workspaceState.update(OPEN_SERVERS_KEY, [...ids]);
   }
 
   // --- Helpers ---
@@ -117,6 +139,34 @@ export class ServerStore {
   }
 
   static makeName(host: string, port: number, database: string, user: string): string {
-    return `${user}@${host}:${port}/${database}`;
+    return getConnectionUrl({ host, port, database, user });
   }
+
+  isConnectionNameAvailable(name: string, exceptId?: string): boolean {
+    const normalized = normalizedName(name);
+    if (!normalized) return true;
+    return !this.getAll().some(
+      (server) =>
+        server.id !== exceptId && normalizedName(getConnectionName(server)) === normalized,
+    );
+  }
+
+  private assertUnique(server: ServerConfig, existing: readonly ServerConfig[]): void {
+    if (existing.some((candidate) => sameConnectionIdentity(candidate, server))) {
+      throw new Error(`Connexion URL ${getConnectionUrl(server)} is already saved.`);
+    }
+    const name = getConnectionName(server);
+    const normalized = normalizedName(name);
+    if (existing.some((candidate) => normalizedName(getConnectionName(candidate)) === normalized)) {
+      throw new Error(`Connexion name ${name} is already used.`);
+    }
+  }
+}
+
+function normalizeServer(server: ServerConfig): ServerConfig {
+  return { ...server, name: getCustomConnectionName(server) };
+}
+
+function normalizedName(name: string): string {
+  return name.trim().toLocaleLowerCase();
 }

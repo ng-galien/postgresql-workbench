@@ -22,6 +22,8 @@ import {
   type PostgresCatalogSnapshot,
   type PostgresForeignKey,
   type PostgresViewDependency,
+  postgresDatabaseDocumentGlob,
+  postgresDatabaseDocumentRoot,
   readPostgresCatalog,
   readPostgresCatalogDocuments,
   type VirtualSqlDocument,
@@ -97,16 +99,26 @@ export interface WorkbenchIndexAcceptanceEvent {
   phase?: WorkbenchIndexPhase;
   generation?: number | null;
   changeKind?: "full" | "incremental";
+  message?: string;
+  serverId?: string;
+}
+
+export interface WorkbenchIndexAcceptanceActiveRun {
+  cancelled: boolean;
+  id: number;
+  retainedGeneration?: number | null;
+  scope: string;
+  serverId: string;
 }
 
 export interface WorkbenchIndexAcceptanceSnapshot {
-  activeRun?: {
-    cancelled: boolean;
-    id: number;
-    retainedGeneration?: number | null;
-    scope: string;
-  };
+  /** First entry of `activeRuns`, retained for single-Connexion scenarios. */
+  activeRun?: WorkbenchIndexAcceptanceActiveRun;
+  activeRuns: WorkbenchIndexAcceptanceActiveRun[];
+  /** True while any scope still has a queued or executing operation. */
   currentRunPending: boolean;
+  /** Scopes with a queued or executing operation. */
+  pendingRuns: Array<{ scope: string; serverId: string }>;
   events: WorkbenchIndexAcceptanceEvent[];
   gate?: {
     nextPhase?: WorkbenchIndexPhase;
@@ -120,6 +132,8 @@ export interface WorkbenchIndexAcceptanceSnapshot {
   };
   runSequence: number;
   sourceMutationsActive: number;
+  states: WorkbenchIndexState[];
+  /** Most recent event, retained only for phase-gate diagnostics. */
   state: WorkbenchIndexState;
 }
 
@@ -137,6 +151,11 @@ export interface WorkbenchIndexResult {
   indexingMs: number;
   graphQueryMs: number;
 }
+
+export type WorkbenchIndexSnapshot = Pick<
+  WorkbenchIndexResult,
+  "serverId" | "database" | "revision" | "generation"
+>;
 
 export interface WorkbenchSyntaxRuntimeConfiguration {
   runtimePath: string;
@@ -222,18 +241,19 @@ export class WorkbenchIndexController implements vscode.Disposable {
   private readonly stateEmitter = new vscode.EventEmitter<WorkbenchIndexState>();
   readonly onDidChangeState = this.stateEmitter.event;
 
-  private currentState: WorkbenchIndexState = { status: "not-indexed" };
+  /** Index lifecycle is owned per exact Connexion/database scope. */
+  private readonly states = new Map<string, WorkbenchIndexState>();
+  /** Last event is diagnostic-only for acceptance telemetry; product code never reads it. */
+  private lastEventState: WorkbenchIndexState = { status: "not-indexed" };
   private sessionPromise?: Promise<LocalCodeMonikerSession>;
   private activeSession?: LocalCodeMonikerSession;
   private removeSessionCloseListener?: () => void;
   private sessionEpoch = 0;
   private syntaxParserPromise?: Promise<SyntaxParser>;
-  private currentRun?: Promise<WorkbenchIndexResult>;
-  private activeIndexRun?: ActiveIndexRun;
-  private currentSymbols: CodeMonikerSymbol[] = [];
-  private currentDocuments = new Map<string, VirtualSqlDocument>();
-  private currentOrigins = new Map<string, PostgresCatalogObjectOrigin>();
-  private stateScope?: string;
+  /** Serialized index/DDL operations, one queue per exact Connexion/database scope. */
+  private readonly scopeRuns = new Map<string, { serverId: string; tail: Promise<unknown> }>();
+  /** Runs currently executing, one at most per scope. */
+  private readonly activeIndexRuns = new Map<string, ActiveIndexRun>();
   private readonly published = new Map<string, PublishedSourceSet>();
   private readonly registries = new Map<string, IndexedPostgresRegistry>();
   private readonly staleScopes = new Set<string>();
@@ -250,6 +270,7 @@ export class WorkbenchIndexController implements vscode.Disposable {
   private acceptancePhaseGate?: AcceptanceIndexPhaseGate;
   private lastSettledRun?: { id: number; status: WorkbenchIndexStatus };
   private readonly connectionSubscription: vscode.Disposable;
+  private readonly observedConnectedServerIds = new Set<string>();
   private disposed = false;
 
   constructor(
@@ -257,27 +278,29 @@ export class WorkbenchIndexController implements vscode.Disposable {
     private readonly connections: ConnectionManager,
     private readonly output: vscode.OutputChannel,
   ) {
-    this.connectionSubscription = connections.onChanged(() => this.observeConnection());
-  }
-
-  get state(): WorkbenchIndexState {
-    return this.currentState;
+    this.connectionSubscription = connections.onChanged((change) =>
+      this.observeConnections(change.serverIds),
+    );
   }
 
   acceptanceSnapshot(): WorkbenchIndexAcceptanceSnapshot {
     this.requireAcceptanceControl();
-    const activeRun = this.activeIndexRun;
+    const activeRuns = [...this.activeIndexRuns.values()].map((run) => ({
+      cancelled: run.cancelled,
+      id: run.id,
+      retainedGeneration: run.retainedResult?.generation,
+      scope: run.scope,
+      serverId: run.serverId,
+    }));
     const gate = this.acceptancePhaseGate;
     return {
-      activeRun: activeRun
-        ? {
-            cancelled: activeRun.cancelled,
-            id: activeRun.id,
-            retainedGeneration: activeRun.retainedResult?.generation,
-            scope: activeRun.scope,
-          }
-        : undefined,
-      currentRunPending: this.currentRun !== undefined,
+      activeRun: activeRuns[0],
+      activeRuns,
+      currentRunPending: this.scopeRuns.size > 0,
+      pendingRuns: [...this.scopeRuns.entries()].map(([scope, { serverId }]) => ({
+        scope,
+        serverId,
+      })),
       events: this.acceptanceEvents.map((event) => ({ ...event })),
       gate: gate
         ? {
@@ -290,15 +313,25 @@ export class WorkbenchIndexController implements vscode.Disposable {
       lastSettledRun: this.lastSettledRun && { ...this.lastSettledRun },
       runSequence: this.indexRunSequence,
       sourceMutationsActive: this.sourceMutationsActive,
-      state: {
-        ...this.currentState,
-        change: this.currentState.change && {
-          ...this.currentState.change,
-          schemas: [...this.currentState.change.schemas],
-          sourceUris: [...this.currentState.change.sourceUris],
+      states: [...this.states.values()].map((state) => ({
+        ...state,
+        change: state.change && {
+          ...state.change,
+          schemas: [...state.change.schemas],
+          sourceUris: [...state.change.sourceUris],
         },
-        progress: this.currentState.progress && { ...this.currentState.progress },
-        result: this.currentState.result && { ...this.currentState.result },
+        progress: state.progress && { ...state.progress },
+        result: state.result && { ...state.result },
+      })),
+      state: {
+        ...this.lastEventState,
+        change: this.lastEventState.change && {
+          ...this.lastEventState.change,
+          schemas: [...this.lastEventState.change.schemas],
+          sourceUris: [...this.lastEventState.change.sourceUris],
+        },
+        progress: this.lastEventState.progress && { ...this.lastEventState.progress },
+        result: this.lastEventState.result && { ...this.lastEventState.result },
       },
     };
   }
@@ -326,14 +359,43 @@ export class WorkbenchIndexController implements vscode.Disposable {
 
   async settleAcceptanceOperations(): Promise<void> {
     this.requireAcceptanceControl();
+    // Only a run held by the phase gate is abandoned; automatic refreshes of
+    // any Connexion settle normally so the next scenario finds a fresh index.
+    const heldRunId = this.acceptancePhaseGate?.runId;
     this.clearAcceptancePhaseGate();
-    this.cancelActiveDatabaseIndex();
-    await this.currentRun?.catch(() => undefined);
+    if (heldRunId !== undefined) {
+      for (const run of this.activeIndexRuns.values()) {
+        if (run.id === heldRunId) this.cancelDatabaseIndex(run.serverId);
+      }
+    }
+    await Promise.all([...this.scopeRuns.values()].map(({ tail }) => tail.catch(() => undefined)));
     await this.sourceMutation;
   }
 
-  get indexedSymbols(): readonly CodeMonikerSymbol[] {
-    return this.currentState.result ? this.currentSymbols : [];
+  databaseState(identity: { serverId: string; database: string }): WorkbenchIndexState {
+    const scope = databaseScope(identity.serverId, identity.database);
+    const state = this.states.get(scope);
+    if (state) return state;
+    const registry = this.registries.get(scope);
+    if (!registry) return { status: "not-indexed", serverId: identity.serverId };
+    return {
+      status: this.staleScopes.has(scope) ? "stale" : "available",
+      serverId: identity.serverId,
+      result: registry.result,
+    };
+  }
+
+  databaseSymbols(identity: { serverId: string; database: string }): readonly CodeMonikerSymbol[] {
+    return this.registries.get(databaseScope(identity.serverId, identity.database))?.symbols ?? [];
+  }
+
+  databaseObjectOrigin(
+    identity: { serverId: string; database: string },
+    sourceUri: string,
+  ): PostgresCatalogObjectOrigin | undefined {
+    return this.registries
+      .get(databaseScope(identity.serverId, identity.database))
+      ?.origins.get(sourceUri);
   }
 
   sqlAuthoringSnapshot(identity: {
@@ -367,15 +429,6 @@ export class WorkbenchIndexController implements vscode.Disposable {
   private invalidateSqlAuthoringSnapshot(scope?: string): void {
     if (scope === undefined) this.sqlAuthoringSnapshots.clear();
     else this.sqlAuthoringSnapshots.delete(scope);
-  }
-
-  private notifySqlAuthoringSnapshotChanged(): void {
-    if (this.disposed) return;
-    this.stateEmitter.fire(this.currentState);
-  }
-
-  objectOrigin(sourceUri: string): PostgresCatalogObjectOrigin | undefined {
-    return this.currentState.result ? this.currentOrigins.get(sourceUri) : undefined;
   }
 
   symbol(symbolUri: string): CodeMonikerSymbol | undefined {
@@ -522,28 +575,30 @@ export class WorkbenchIndexController implements vscode.Disposable {
     };
   }
 
-  async routineDependencies(routineOid: number): Promise<ReadonlySet<string> | undefined> {
-    const server = this.connections.activeServer;
-    if (!server || !this.connections.isConnected) return undefined;
+  async routineDependencies(
+    routineOid: number,
+    serverId: string,
+  ): Promise<ReadonlySet<string> | undefined> {
+    const server = this.connections.store.get(serverId);
+    if (!server || !this.connections.isServerConnected(server.id)) return undefined;
     const database = { serverId: server.id, database: server.database };
-    let result = this.currentState.result;
-    if (
-      this.currentState.status === "indexing" ||
-      result?.serverId !== database.serverId ||
-      result.database !== database.database
-    ) {
+    let state = this.databaseState(database);
+    let result = state.result;
+    if (state.status === "indexing" || !result) {
       try {
-        result = await this.indexActiveDatabase();
+        result = await this.indexDatabase(server.id);
+        state = this.databaseState(database);
       } catch {
         return undefined;
       }
     }
-    const routine = buildWorkbenchObjects(this.currentSymbols, database).find(
+    const symbols = this.databaseSymbols(database);
+    const routine = buildWorkbenchObjects(symbols, database).find(
       (object) =>
         object.oid === routineOid && (object.kind === "function" || object.kind === "procedure"),
     );
     if (!routine || result.generation === null) return undefined;
-    const snapshot = { revision: result.revision, generation: result.generation };
+    const snapshot: WorkbenchIndexSnapshot = result;
     try {
       const session = await this.ensureSession();
       const graphLimit = 501;
@@ -562,7 +617,7 @@ export class WorkbenchIndexController implements vscode.Disposable {
       );
       if (
         !isWorkbenchRelationSnapshotCurrent(
-          workspaceGeneration(generationPage.generation),
+          result.generation,
           snapshot.generation,
           generationPage.data.rows.some((symbol) => symbol.uri === routine.symbolUri),
         ) ||
@@ -576,7 +631,11 @@ export class WorkbenchIndexController implements vscode.Disposable {
       const dependencies = new Set<string>();
       for (const callee of graph.callees) {
         if (!callee.kinds.includes("calls")) continue;
-        const object = workbenchObjectFromSymbol(this.enrichSymbol(callee.symbol), database);
+        const registry = this.registries.get(databaseScope(server.id, server.database));
+        const object = workbenchObjectFromSymbol(
+          enrichSymbol(callee.symbol, registry?.documents ?? new Map()),
+          database,
+        );
         if (object?.kind === "function" || object?.kind === "procedure") {
           dependencies.add(`${object.schema}.${object.name}`);
         }
@@ -592,39 +651,44 @@ export class WorkbenchIndexController implements vscode.Disposable {
 
   async graphChildren(
     prefix: string,
-    snapshot: Pick<WorkbenchIndexResult, "revision" | "generation">,
+    snapshot: WorkbenchIndexSnapshot,
   ): Promise<CodeMonikerIdentitySegment[]> {
     const result = this.requireGraphSnapshot(snapshot);
     const session = await this.ensureSession();
     const response = await session.client.graph.children(prefix, {}, { consistency: "stale_ok" });
-    const status = await session.client.workspace.status();
-    if (
-      workspaceGeneration(status.generation ?? null) !== snapshot.generation ||
-      !this.matchesSnapshot(result, snapshot)
-    ) {
-      throw new Error("The Code Moniker generation changed while loading graph children.");
+    if (!this.matchesSnapshot(result, snapshot)) {
+      throw new Error("The PostgreSQL snapshot changed while loading graph children.");
     }
     return response.children.map((child) => ({
       ...child,
-      symbol: child.symbol ? this.enrichSymbol(child.symbol) : child.symbol,
+      symbol: child.symbol
+        ? enrichSymbol(child.symbol, this.requireGraphRegistry(snapshot).documents)
+        : child.symbol,
     }));
   }
 
   async graphScope(
     prefix: string,
-    snapshot: Pick<WorkbenchIndexResult, "revision" | "generation">,
+    snapshot: WorkbenchIndexSnapshot,
     cursor: unknown | null = null,
   ): Promise<WorkbenchIdentityGraphPage> {
     const result = this.requireGraphSnapshot(snapshot);
     const session = await this.ensureSession();
     const page = await session.client.graph.identity(
       prefix,
-      { path: [databaseDocumentGlob(result.serverId, result.database)], minCount: 1 },
+      {
+        path: [
+          postgresDatabaseDocumentGlob({
+            serverId: result.serverId,
+            database: result.database,
+          }),
+        ],
+        minCount: 1,
+      },
       { consistency: "stale_ok", limit: 200, cursor },
     );
-    const generation = workspaceGeneration(page.generation);
-    if (generation !== snapshot.generation || !this.matchesSnapshot(result, snapshot)) {
-      throw new Error("The Code Moniker generation changed while loading the graph.");
+    if (!this.matchesSnapshot(result, snapshot)) {
+      throw new Error("The PostgreSQL snapshot changed while loading the graph.");
     }
     return {
       ...page,
@@ -632,16 +696,18 @@ export class WorkbenchIndexController implements vscode.Disposable {
         ...page.data,
         nodes: page.data.nodes.map((node) => ({
           ...node,
-          symbol: node.symbol ? this.enrichSymbol(node.symbol) : node.symbol,
+          symbol: node.symbol
+            ? enrichSymbol(node.symbol, this.requireGraphRegistry(snapshot).documents)
+            : node.symbol,
         })),
       },
-      generation,
+      generation: snapshot.generation,
     };
   }
 
   async graphFocus(
     symbolUri: string,
-    snapshot: Pick<WorkbenchIndexResult, "revision" | "generation">,
+    snapshot: WorkbenchIndexSnapshot,
     limit = 200,
   ): Promise<CodeMonikerGraphResult> {
     const result = this.requireGraphSnapshot(snapshot);
@@ -651,36 +717,25 @@ export class WorkbenchIndexController implements vscode.Disposable {
       { relation: ["calls", "reads", "writes", "references", "uses_type"] },
       { consistency: "stale_ok", limit },
     );
-    const status = await session.client.workspace.status();
-    if (
-      workspaceGeneration(status.generation ?? null) !== snapshot.generation ||
-      !this.matchesSnapshot(result, snapshot)
-    ) {
-      throw new Error("The Code Moniker generation changed while loading the dependency graph.");
+    if (!this.matchesSnapshot(result, snapshot)) {
+      throw new Error("The PostgreSQL snapshot changed while loading the dependency graph.");
     }
     if (graph.focus.kind !== "symbol" || graph.focus.symbol?.uri !== symbolUri) {
       throw new Error("Code Moniker could not resolve the selected PostgreSQL object.");
     }
-    return this.enrichGraph(graph);
+    return this.enrichGraph(graph, this.requireGraphRegistry(snapshot).documents);
   }
 
-  async assertGraphSnapshot(
-    snapshot: Pick<WorkbenchIndexResult, "revision" | "generation">,
-  ): Promise<void> {
+  async assertGraphSnapshot(snapshot: WorkbenchIndexSnapshot): Promise<void> {
     const result = this.requireGraphSnapshot(snapshot);
-    const session = await this.ensureSession();
-    const status = await session.client.workspace.status();
-    if (
-      workspaceGeneration(status.generation ?? null) !== snapshot.generation ||
-      !this.matchesSnapshot(result, snapshot)
-    ) {
+    if (!this.matchesSnapshot(result, snapshot)) {
       throw new Error("The PostgreSQL graph snapshot changed while loading the view.");
     }
   }
 
   async graphSourcePreview(
     symbolUri: string,
-    snapshot: Pick<WorkbenchIndexResult, "revision" | "generation">,
+    snapshot: WorkbenchIndexSnapshot,
   ): Promise<WorkbenchGraphSourcePreview | undefined> {
     const result = this.requireGraphSnapshot(snapshot);
     const session = await this.ensureSession();
@@ -689,26 +744,32 @@ export class WorkbenchIndexController implements vscode.Disposable {
       { contextLines: 40 },
       { consistency: "stale_ok" },
     );
-    const status = await session.client.workspace.status();
-    if (
-      workspaceGeneration(status.generation ?? null) !== snapshot.generation ||
-      !this.matchesSnapshot(result, snapshot)
-    ) {
-      throw new Error("The Code Moniker generation changed while loading the source preview.");
+    if (!this.matchesSnapshot(result, snapshot)) {
+      throw new Error("The PostgreSQL snapshot changed while loading the source preview.");
     }
     const source = detail.source ?? detail.symbol.source;
-    return source ? { symbol: this.enrichSymbol(detail.symbol), source } : undefined;
+    return source
+      ? {
+          symbol: enrichSymbol(detail.symbol, this.requireGraphRegistry(snapshot).documents),
+          source,
+        }
+      : undefined;
   }
 
   async relations(
     object: WorkbenchObjectModel,
     snapshot: Pick<WorkbenchIndexResult, "revision" | "generation">,
   ): Promise<WorkbenchRelationsResult> {
-    const result = this.currentState.result;
+    const identity = { serverId: object.serverId, database: object.database };
+    const exactSnapshot: WorkbenchIndexSnapshot = { ...identity, ...snapshot };
+    const state = this.databaseState(identity);
+    const result = state.result;
+    const registry = this.registries.get(databaseScope(object.serverId, object.database));
     if (
       this.disposed ||
-      this.currentState.status === "indexing" ||
+      state.status === "indexing" ||
       !result ||
+      !registry ||
       result.serverId !== object.serverId ||
       result.database !== object.database ||
       result.revision !== snapshot.revision ||
@@ -725,7 +786,7 @@ export class WorkbenchIndexController implements vscode.Disposable {
       const graphLimit = 201;
       const relationSymbols = [
         object.symbolUri,
-        ...this.currentSymbols
+        ...registry.symbols
           .filter(
             (symbol) =>
               symbol.file === object.sourceUri &&
@@ -751,19 +812,21 @@ export class WorkbenchIndexController implements vscode.Disposable {
         },
         { consistency: "stale_ok", limit: 20 },
       );
+      // Currency is judged against this scope's own registry: the daemon
+      // workspace generation also moves whenever another Connexion publishes.
       if (
         !isWorkbenchRelationSnapshotCurrent(
-          workspaceGeneration(generationPage.generation),
+          result.generation,
           snapshot.generation,
           generationPage.data.rows.some((symbol) => symbol.uri === object.symbolUri),
         )
       ) {
         return {
           status: "stale",
-          message: "The Code Moniker generation changed. Refresh the database index.",
+          message: "The PostgreSQL snapshot changed. Refresh the database index.",
         };
       }
-      if (!this.matchesSnapshot(result, snapshot)) {
+      if (!this.matchesSnapshot(result, exactSnapshot)) {
         return {
           status: "stale",
           message: "The PostgreSQL Workbench snapshot changed while loading relations.",
@@ -779,7 +842,7 @@ export class WorkbenchIndexController implements vscode.Disposable {
       const groups = mergeWorkbenchRelationGroups([
         ...graphs
           .flatMap((candidate) =>
-            buildWorkbenchRelationGroups(candidate, object, this.currentSymbols).map((group) => ({
+            buildWorkbenchRelationGroups(candidate, object, registry.symbols).map((group) => ({
               ...group,
               targets: group.targets.filter(
                 (target) => target.object?.sourceUri !== object.sourceUri,
@@ -808,36 +871,39 @@ export class WorkbenchIndexController implements vscode.Disposable {
     }
   }
 
-  indexActiveDatabase(): Promise<WorkbenchIndexResult> {
+  indexDatabase(serverId: string): Promise<WorkbenchIndexResult> {
     if (this.disposed) {
       return Promise.reject(new Error("The PostgreSQL Workbench index is disposed"));
     }
-    if (!this.currentRun) {
-      const epoch = this.sessionEpoch;
-      const queued = this.runIndex()
-        .catch((error) => {
-          if (error instanceof WorkbenchIndexCancelledError) throw error;
-          if (this.sessionEpoch === epoch) throw error;
-          this.output.appendLine(
-            "Code Moniker connection closed during indexing; reconnecting once",
-          );
-          return this.runIndex();
-        })
-        .finally(() => {
-          if (this.currentRun === queued) this.currentRun = undefined;
-        });
-      this.currentRun = queued;
+    const server = this.connections.store.get(serverId);
+    if (!server) {
+      return Promise.reject(new Error("Connect to a PostgreSQL database before indexing it"));
     }
-    return this.currentRun;
+    const scope = databaseScope(serverId, server.database);
+    const epoch = this.sessionEpoch;
+    return this.enqueueScopeRun(scope, serverId, () =>
+      this.runIndex(serverId).catch((error) => {
+        if (error instanceof WorkbenchIndexCancelledError) throw error;
+        if (this.sessionEpoch === epoch) throw error;
+        this.output.appendLine("Code Moniker connection closed during indexing; reconnecting once");
+        return this.runIndex(serverId);
+      }),
+    );
   }
 
-  cancelActiveDatabaseIndex(): boolean {
-    const run = this.activeIndexRun;
-    if (!run || run.cancelled) return false;
-    run.cancelled = true;
-    this.clearAcceptancePhaseGate(run.id);
-    if (this.activeScope() === run.scope) {
-      this.setState({
+  /**
+   * Cancels the executing run of `serverId`, or of every Connexion when omitted.
+   * Queued runs cannot be cancelled: they start only once their scope is idle.
+   */
+  cancelDatabaseIndex(serverId?: string): boolean {
+    let cancelled = false;
+    for (const run of this.activeIndexRuns.values()) {
+      if (run.cancelled) continue;
+      if (serverId !== undefined && run.serverId !== serverId) continue;
+      run.cancelled = true;
+      cancelled = true;
+      this.clearAcceptancePhaseGate(run.id);
+      this.setState(run.scope, {
         status: "indexing",
         serverId: run.serverId,
         result: run.retainedResult,
@@ -847,45 +913,57 @@ export class WorkbenchIndexController implements vscode.Disposable {
         progress: { phase: "cancelling" },
       });
     }
-    return true;
+    return cancelled;
+  }
+
+  /** Chains `operation` after the previous operation of the same scope only. */
+  private enqueueScopeRun<T>(
+    scope: string,
+    serverId: string,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    const previous = this.scopeRuns.get(scope)?.tail;
+    // An idle scope starts synchronously so its "indexing" state is visible to
+    // the caller immediately, exactly like a direct call.
+    const run = previous
+      ? previous.then(
+          () => operation(),
+          () => operation(),
+        )
+      : operation();
+    const tail = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.scopeRuns.set(scope, { serverId, tail });
+    void tail.then(() => {
+      if (this.scopeRuns.get(scope)?.tail === tail) this.scopeRuns.delete(scope);
+    });
+    return run;
   }
 
   markDatabaseStale(serverId: string, database: string, message: string): void {
     const scope = databaseScope(serverId, database);
     this.staleScopes.add(scope);
     this.invalidateSqlAuthoringSnapshot(scope);
-    if (this.activeScope() !== scope) return;
     const registry = this.registries.get(scope);
-    this.stateScope = scope;
-    this.setState({ status: "stale", serverId, message, result: registry?.result });
+    this.setState(scope, { status: "stale", serverId, message, result: registry?.result });
   }
 
   isDatabaseStale(serverId: string, database: string): boolean {
     return this.staleScopes.has(databaseScope(serverId, database));
   }
 
-  synchronizeActiveDatabaseDdl(
+  synchronizeDatabaseDdl(
     client: CatalogQueryClient,
     identity: { serverId: string; database: string },
     objects: readonly PostgresDdlObject[],
     fallbackReason?: string,
   ): Promise<WorkbenchIndexResult> {
     const scope = databaseScope(identity.serverId, identity.database);
-    if (this.activeScope() !== scope) {
-      this.markDatabaseStale(identity.serverId, identity.database, "Schema changed while inactive");
-      return Promise.reject(new Error("The changed PostgreSQL database is not active"));
-    }
-    const previous = this.currentRun;
-    const synchronization = previous
-      ? previous
-          .catch(() => undefined)
-          .then(() => this.runDdlSynchronization(client, identity, objects, fallbackReason))
-      : this.runDdlSynchronization(client, identity, objects, fallbackReason);
-    const queued = synchronization.finally(() => {
-      if (this.currentRun === queued) this.currentRun = undefined;
-    });
-    this.currentRun = queued;
-    return queued;
+    return this.enqueueScopeRun(scope, identity.serverId, () =>
+      this.runDdlSynchronization(client, identity, objects, fallbackReason),
+    );
   }
 
   indexPostgresDatabase(
@@ -896,25 +974,26 @@ export class WorkbenchIndexController implements vscode.Disposable {
       return Promise.reject(new Error("The PostgreSQL source registry is disposed"));
     }
     const scope = databaseScope(identity.serverId, identity.database);
+    const retainedResult = this.databaseState(identity).result;
     const refreshEpoch = this.advanceScopeRefreshEpoch(scope);
-    if (this.activeScope() === scope) {
-      this.markDatabaseStale(
-        identity.serverId,
-        identity.database,
-        "Refreshing the PostgreSQL source snapshot",
-      );
-    }
-    const previous = this.currentRun;
-    const operation = previous
-      ? previous
-          .catch(() => undefined)
-          .then(() => this.runPostgresDatabaseIndex(client, identity, scope, refreshEpoch))
-      : this.runPostgresDatabaseIndex(client, identity, scope, refreshEpoch);
-    const queued = operation.finally(() => {
-      if (this.currentRun === queued) this.currentRun = undefined;
-    });
-    this.currentRun = queued;
-    return queued;
+    this.markDatabaseStale(
+      identity.serverId,
+      identity.database,
+      "Refreshing the PostgreSQL source snapshot",
+    );
+    return this.enqueueScopeRun(scope, identity.serverId, () =>
+      this.runPostgresDatabaseIndex(client, identity, scope, refreshEpoch).catch((error) => {
+        if (error instanceof WorkbenchIndexCancelledError) throw error;
+        const message = error instanceof Error ? error.message : String(error);
+        this.setState(scope, {
+          status: "error",
+          serverId: identity.serverId,
+          message,
+          result: retainedResult,
+        });
+        throw error;
+      }),
+    );
   }
 
   private async runPostgresDatabaseIndex(
@@ -923,26 +1002,17 @@ export class WorkbenchIndexController implements vscode.Disposable {
     scope: string,
     refreshEpoch: number,
   ): Promise<WorkbenchIndexResult> {
-    const indexingStarted = performance.now();
-    const catalog = await readPostgresCatalog(client, identity);
-    const { result, registry, session } = await this.publishAndReadCatalog(
-      catalog,
-      identity.serverId,
-      identity.database,
-      indexingStarted,
-      () => this.scopeRefreshEpoch(scope) === refreshEpoch,
-    );
-    if (this.scopeRefreshEpoch(scope) === refreshEpoch) {
-      if (this.activeScope() === scope) {
-        this.activateRegistry(scope, registry, { kind: "full", schemas: [], sourceUris: [] });
-      } else {
-        this.staleScopes.delete(scope);
-        this.invalidateSqlAuthoringSnapshot(scope);
-        this.notifySqlAuthoringSnapshotChanged();
-      }
-    }
-    this.logResult(result, session);
-    return result;
+    return this.executeIndexRun({
+      scope,
+      serverId: identity.serverId,
+      database: identity.database,
+      readCatalog: () => readPostgresCatalog(client, identity),
+      isCurrent: () => this.scopeRefreshEpoch(scope) === refreshEpoch,
+      // A newer refresh of this scope owns publication; the older result is
+      // still returned so its caller can complete without an error.
+      publish: () => this.scopeRefreshEpoch(scope) === refreshEpoch,
+      reportFailureState: false,
+    });
   }
 
   dispose(): void {
@@ -951,9 +1021,8 @@ export class WorkbenchIndexController implements vscode.Disposable {
     }
     this.disposed = true;
     this.clearAcceptancePhaseGate();
-    this.currentSymbols = [];
-    this.currentDocuments.clear();
-    this.currentOrigins.clear();
+    this.states.clear();
+    this.observedConnectedServerIds.clear();
     this.registries.clear();
     this.sqlAuthoringSnapshots.clear();
     this.scopeRefreshEpochs.clear();
@@ -965,8 +1034,13 @@ export class WorkbenchIndexController implements vscode.Disposable {
     this.removeSessionCloseListener?.();
     this.removeSessionCloseListener = undefined;
     this.syntaxParserPromise = undefined;
+    this.cancelDatabaseIndex();
+    const pendingRuns = [...this.scopeRuns.values()].map(({ tail }) => tail.catch(() => undefined));
     if (pendingSession) {
-      void this.sourceMutation
+      void Promise.all(pendingRuns)
+        // Read the mutation chain only once every run has settled: a run still
+        // publishing appends to it after dispose() returned.
+        .then(() => this.sourceMutation)
         .then(async () => {
           const session = await pendingSession;
           for (const source of this.published.values()) {
@@ -979,19 +1053,45 @@ export class WorkbenchIndexController implements vscode.Disposable {
     }
   }
 
-  private async runIndex(): Promise<WorkbenchIndexResult> {
-    const indexingStarted = performance.now();
-    const server = this.connections.activeServer;
-    const postgres = this.connections.getClient();
-    if (!server || !postgres || !this.connections.isConnected) {
+  private async runIndex(serverId: string): Promise<WorkbenchIndexResult> {
+    const server = this.connections.store.get(serverId);
+    const postgres = this.connections.getClient(serverId);
+    if (!server || !postgres) {
       throw new Error("Connect to a PostgreSQL database before indexing it");
     }
-
-    const serverId = server.id;
     const database = server.database;
     const scope = databaseScope(serverId, database);
     const refreshEpoch = this.scopeRefreshEpoch(scope);
-    const retainedResult = this.stateScope === scope ? this.currentState.result : undefined;
+    return this.executeIndexRun({
+      scope,
+      serverId,
+      database,
+      readCatalog: () => readPostgresCatalog(catalogClient(postgres), { serverId, database }),
+      isCurrent: () =>
+        this.connections.isServerConnected(serverId) &&
+        this.scopeRefreshEpoch(scope) === refreshEpoch,
+      publish: () => true,
+      reportFailureState: true,
+    });
+  }
+
+  /**
+   * One full index run of a scope: tracked for progress, cancellation, and the
+   * acceptance phase gate. Runs of different scopes execute concurrently; only
+   * the Code Moniker publication itself is serialized by `mutateSources`.
+   */
+  private async executeIndexRun(options: {
+    scope: string;
+    serverId: string;
+    database: string;
+    readCatalog: () => Promise<PostgresCatalogSnapshot>;
+    isCurrent: () => boolean;
+    publish: () => boolean;
+    reportFailureState: boolean;
+  }): Promise<WorkbenchIndexResult> {
+    const { scope, serverId, database } = options;
+    const indexingStarted = performance.now();
+    const retainedResult = this.databaseState({ serverId, database }).result;
     const run: ActiveIndexRun = {
       cancelled: false,
       id: ++this.indexRunSequence,
@@ -999,14 +1099,8 @@ export class WorkbenchIndexController implements vscode.Disposable {
       scope,
       serverId,
     };
-    this.activeIndexRun = run;
-    if (!retainedResult) {
-      this.currentSymbols = [];
-      this.currentDocuments.clear();
-      this.currentOrigins.clear();
-    }
-    this.stateScope = scope;
-    this.setState({
+    this.activeIndexRuns.set(scope, run);
+    this.setState(scope, {
       status: "indexing",
       serverId,
       result: retainedResult,
@@ -1016,26 +1110,21 @@ export class WorkbenchIndexController implements vscode.Disposable {
     let settledStatus: WorkbenchIndexStatus = "error";
     try {
       await this.pauseForAcceptance(run);
-      const catalog = await readPostgresCatalog(catalogClient(postgres), {
-        serverId,
-        database,
-      });
+      const catalog = await options.readCatalog();
       this.throwIfCancelled(run);
-      if (this.activeScope() !== scope) {
-        throw new Error("The active PostgreSQL connection changed during indexing");
-      }
-
       const indexed = await this.publishAndReadCatalog(
         catalog,
         serverId,
         database,
         indexingStarted,
-        () => this.activeScope() === scope && this.scopeRefreshEpoch(scope) === refreshEpoch,
+        options.isCurrent,
         (progress) => this.reportProgress(run, progress),
         () => this.throwIfCancelled(run),
       );
       const { result, registry, session } = indexed;
-      this.activateRegistry(scope, registry, { kind: "full", schemas: [], sourceUris: [] });
+      if (options.publish()) {
+        this.publishRegistry(scope, registry, { kind: "full", schemas: [], sourceUris: [] });
+      }
       settledStatus = "available";
       this.logResult(result, session);
       return result;
@@ -1043,27 +1132,22 @@ export class WorkbenchIndexController implements vscode.Disposable {
       const failure = run.cancelled ? new WorkbenchIndexCancelledError() : error;
       settledStatus = failure instanceof WorkbenchIndexCancelledError ? "cancelled" : "error";
       const message = failure instanceof Error ? failure.message : String(failure);
-      if (this.activeScope() === scope) {
-        if (failure instanceof WorkbenchIndexCancelledError) {
-          this.setState({
-            status: "cancelled",
-            serverId,
-            message: retainedResult
-              ? "Refresh cancelled; showing the previous snapshot"
-              : "Indexing cancelled",
-            result: retainedResult,
-          });
-        } else if (retainedResult) {
-          this.setState({ status: "error", serverId, message, result: retainedResult });
-        } else {
-          this.currentSymbols = [];
-          this.currentDocuments.clear();
-          this.currentOrigins.clear();
-          this.setState({ status: "error", serverId, message });
-        }
-      } else if (this.stateScope === scope && this.currentState.status === "indexing") {
-        this.stateScope = undefined;
-        this.setState({ status: "not-indexed" });
+      if (failure instanceof WorkbenchIndexCancelledError) {
+        this.setState(scope, {
+          status: "cancelled",
+          serverId,
+          message: retainedResult
+            ? "Refresh cancelled; showing the previous snapshot"
+            : "Indexing cancelled",
+          result: retainedResult,
+        });
+      } else if (options.reportFailureState) {
+        this.setState(scope, {
+          status: "error",
+          serverId,
+          message,
+          ...(retainedResult ? { result: retainedResult } : {}),
+        });
       }
       this.output.appendLine(
         failure instanceof WorkbenchIndexCancelledError
@@ -1074,7 +1158,7 @@ export class WorkbenchIndexController implements vscode.Disposable {
     } finally {
       this.lastSettledRun = { id: run.id, status: settledStatus };
       this.clearAcceptancePhaseGate(run.id);
-      if (this.activeIndexRun === run) this.activeIndexRun = undefined;
+      if (this.activeIndexRuns.get(scope) === run) this.activeIndexRuns.delete(scope);
     }
   }
 
@@ -1096,7 +1180,12 @@ export class WorkbenchIndexController implements vscode.Disposable {
       this.output.appendLine(
         `workbench DDL full-refresh fallback: ${fallbackReason ?? "no indexed baseline"}`,
       );
-      return this.runIndex();
+      return this.runPostgresDatabaseIndex(
+        client,
+        identity,
+        scope,
+        this.advanceScopeRefreshEpoch(scope),
+      );
     }
 
     try {
@@ -1116,10 +1205,10 @@ export class WorkbenchIndexController implements vscode.Disposable {
         identity.serverId,
         identity.database,
         performance.now(),
-        () => this.activeScope() === scope && this.scopeRefreshEpoch(scope) === refreshEpoch,
+        () => this.scopeRefreshEpoch(scope) === refreshEpoch,
       );
-      this.activateRegistry(scope, indexed.registry, {
-        kind: "incremental",
+      const change = {
+        kind: "incremental" as const,
         schemas: [...new Set(objects.flatMap((object) => object.schemaName ?? []))].sort(),
         sourceUris: [
           ...new Set([
@@ -1128,7 +1217,8 @@ export class WorkbenchIndexController implements vscode.Disposable {
             ...patch.removeDocumentUris,
           ]),
         ].sort(),
-      });
+      };
+      this.publishRegistry(scope, indexed.registry, change);
       this.output.appendLine(
         `workbench DDL direct refresh: objects=${objects.length} existing=${selection.documentUris.size} new=${selection.newResources.length} documents=${patch.upsertDocuments.length} removed=${patch.removeDocumentUris.length}`,
       );
@@ -1139,7 +1229,12 @@ export class WorkbenchIndexController implements vscode.Disposable {
           ? error.message
           : `incremental update failed: ${error instanceof Error ? error.message : String(error)}`;
       this.output.appendLine(`workbench DDL full-refresh fallback: ${reason}`);
-      return this.runIndex();
+      return this.runPostgresDatabaseIndex(
+        client,
+        identity,
+        scope,
+        this.advanceScopeRefreshEpoch(scope),
+      );
     }
   }
 
@@ -1348,7 +1443,7 @@ export class WorkbenchIndexController implements vscode.Disposable {
             "procedure",
             "trigger",
           ],
-          path: [databaseDocumentGlob(serverId, database)],
+          path: [postgresDatabaseDocumentGlob({ serverId, database })],
           includeCode: true,
           contextLines: 16,
         },
@@ -1367,24 +1462,23 @@ export class WorkbenchIndexController implements vscode.Disposable {
     };
   }
 
-  private enrichSymbol(symbol: CodeMonikerSymbol): CodeMonikerSymbol {
-    return enrichSymbol(symbol, this.currentDocuments);
-  }
-
-  private enrichGraph(graph: CodeMonikerGraphResult): CodeMonikerGraphResult {
+  private enrichGraph(
+    graph: CodeMonikerGraphResult,
+    documents: ReadonlyMap<string, VirtualSqlDocument>,
+  ): CodeMonikerGraphResult {
     return {
       ...graph,
       focus: {
         ...graph.focus,
-        symbol: graph.focus.symbol ? this.enrichSymbol(graph.focus.symbol) : undefined,
+        symbol: graph.focus.symbol ? enrichSymbol(graph.focus.symbol, documents) : undefined,
       },
       callers: graph.callers.map((neighbor) => ({
         ...neighbor,
-        symbol: this.enrichSymbol(neighbor.symbol),
+        symbol: enrichSymbol(neighbor.symbol, documents),
       })),
       callees: graph.callees.map((neighbor) => ({
         ...neighbor,
-        symbol: this.enrichSymbol(neighbor.symbol),
+        symbol: enrichSymbol(neighbor.symbol, documents),
       })),
     };
   }
@@ -1469,44 +1563,53 @@ export class WorkbenchIndexController implements vscode.Disposable {
     return [fallback];
   }
 
-  private observeConnection(): void {
-    const activeScope = this.activeScope();
-    if (!this.stateScope || activeScope === this.stateScope) return;
-    this.currentSymbols = [];
-    this.currentDocuments.clear();
-    this.currentOrigins.clear();
-    this.stateScope = activeScope;
-    const registry = activeScope ? this.registries.get(activeScope) : undefined;
-    if (registry) {
-      const stale = activeScope !== undefined && this.staleScopes.has(activeScope);
-      this.currentSymbols = registry.symbols;
-      this.currentDocuments = registry.documents;
-      this.currentOrigins = registry.origins;
-      this.setState({
-        status: stale ? "stale" : "available",
-        serverId: registry.result.serverId,
-        message: stale
-          ? "PostgreSQL schema changed while this DatabaseContext was inactive"
-          : undefined,
-        result: registry.result,
+  private observeConnections(serverIds: readonly string[]): void {
+    for (const serverId of serverIds) {
+      if (!this.connections.isServerConnected(serverId)) {
+        this.observedConnectedServerIds.delete(serverId);
+      }
+    }
+    for (const serverId of serverIds) {
+      const server = this.connections.store.get(serverId);
+      const client = server ? this.connections.getClient(serverId) : undefined;
+      if (!server || !client) continue;
+      const scope = databaseScope(server.id, server.database);
+      const newlyConnected = !this.observedConnectedServerIds.has(serverId);
+      this.observedConnectedServerIds.add(serverId);
+      if (newlyConnected && !this.registries.has(scope)) {
+        void this.indexPostgresDatabase(client, {
+          serverId: server.id,
+          database: server.database,
+        }).catch((error) => {
+          this.output.appendLine(
+            `Automatic Workbench indexing failed for ${server.id}: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        });
+      }
+    }
+    for (const serverId of serverIds) {
+      if (this.connections.isServerConnected(serverId)) continue;
+      const server = this.connections.store.get(serverId);
+      if (!server) continue;
+      const scope = databaseScope(server.id, server.database);
+      const registry = this.registries.get(scope);
+      this.setState(scope, {
+        status: registry ? (this.staleScopes.has(scope) ? "stale" : "available") : "not-indexed",
+        serverId,
+        result: registry?.result,
       });
-    } else {
-      this.setState({ status: "not-indexed" });
     }
   }
 
-  private activateRegistry(
+  private publishRegistry(
     scope: string,
     registry: IndexedPostgresRegistry,
     change: NonNullable<WorkbenchIndexState["change"]>,
   ): void {
-    this.currentSymbols = registry.symbols;
-    this.currentDocuments = registry.documents;
-    this.currentOrigins = registry.origins;
-    this.stateScope = scope;
+    this.registries.set(scope, registry);
     this.staleScopes.delete(scope);
     this.invalidateSqlAuthoringSnapshot(scope);
-    this.setState({
+    this.setState(scope, {
       status: "available",
       serverId: registry.result.serverId,
       result: registry.result,
@@ -1524,35 +1627,34 @@ export class WorkbenchIndexController implements vscode.Disposable {
     return this.scopeRefreshEpochs.get(scope) ?? 0;
   }
 
-  private activeScope(): string | undefined {
-    if (this.disposed) {
-      return undefined;
-    }
-    const server = this.connections.isConnected ? this.connections.activeServer : undefined;
-    return server ? databaseScope(server.id, server.database) : undefined;
-  }
-
-  private matchesSnapshot(
-    result: WorkbenchIndexResult,
-    snapshot: Pick<WorkbenchIndexResult, "revision" | "generation">,
-  ): boolean {
+  private matchesSnapshot(result: WorkbenchIndexResult, snapshot: WorkbenchIndexSnapshot): boolean {
+    const state = this.databaseState(snapshot);
     return (
       !this.disposed &&
-      this.currentState.status !== "indexing" &&
-      this.currentState.result === result &&
+      state.status !== "indexing" &&
+      state.result === result &&
+      result.serverId === snapshot.serverId &&
+      result.database === snapshot.database &&
       result.revision === snapshot.revision &&
       result.generation === snapshot.generation
     );
   }
 
-  private requireGraphSnapshot(
-    snapshot: Pick<WorkbenchIndexResult, "revision" | "generation">,
-  ): WorkbenchIndexResult {
-    const result = this.currentState.result;
+  private requireGraphSnapshot(snapshot: WorkbenchIndexSnapshot): WorkbenchIndexResult {
+    const result = this.databaseState(snapshot).result;
     if (!result || !this.matchesSnapshot(result, snapshot)) {
       throw new Error("This graph belongs to an outdated PostgreSQL Workbench snapshot.");
     }
     return result;
+  }
+
+  private requireGraphRegistry(snapshot: WorkbenchIndexSnapshot): IndexedPostgresRegistry {
+    this.requireGraphSnapshot(snapshot);
+    const registry = this.registries.get(databaseScope(snapshot.serverId, snapshot.database));
+    if (!registry) {
+      throw new Error("This graph belongs to an unavailable PostgreSQL Workbench snapshot.");
+    }
+    return registry;
   }
 
   private mutateSources<T>(action: () => Promise<T>): Promise<T> {
@@ -1572,20 +1674,23 @@ export class WorkbenchIndexController implements vscode.Disposable {
     return result;
   }
 
-  private setState(state: WorkbenchIndexState): void {
+  private setState(scope: string, state: WorkbenchIndexState): void {
     if (this.disposed) {
       return;
     }
-    this.currentState = state;
+    this.states.set(scope, state);
+    this.lastEventState = state;
     if (this.acceptanceControlEnabled()) {
       this.indexStateSequence += 1;
       this.acceptanceEvents.push({
         sequence: this.indexStateSequence,
-        runId: this.activeIndexRun?.id,
+        runId: this.activeIndexRuns.get(scope)?.id,
         status: state.status,
         phase: state.progress?.phase,
         generation: state.result?.generation,
         changeKind: state.change?.kind,
+        message: state.message,
+        serverId: state.serverId,
       });
       if (this.acceptanceEvents.length > 100) this.acceptanceEvents.shift();
     }
@@ -1597,10 +1702,7 @@ export class WorkbenchIndexController implements vscode.Disposable {
     progress: WorkbenchIndexProgress,
   ): Promise<void> {
     this.throwIfCancelled(run);
-    if (this.activeScope() !== run.scope) {
-      throw new Error("The PostgreSQL source scope changed during indexing");
-    }
-    this.setState({
+    this.setState(run.scope, {
       status: "indexing",
       serverId: run.serverId,
       result: run.retainedResult,
@@ -1616,7 +1718,7 @@ export class WorkbenchIndexController implements vscode.Disposable {
 
   private async pauseForAcceptance(run: ActiveIndexRun): Promise<void> {
     const gate = this.acceptancePhaseGate;
-    const phase = this.currentState.progress?.phase;
+    const phase = this.states.get(run.scope)?.progress?.phase;
     if (
       gate &&
       phase &&
@@ -1647,7 +1749,9 @@ export class WorkbenchIndexController implements vscode.Disposable {
 
   private clearAcceptancePhaseGate(runId?: number): void {
     const gate = this.acceptancePhaseGate;
-    if (!gate || (runId !== undefined && gate.runId !== undefined && gate.runId !== runId)) return;
+    // A gate not yet bound to a run stays armed: a run of another scope
+    // settling must not disarm the gate meant for a later run.
+    if (!gate || (runId !== undefined && gate.runId !== runId)) return;
     this.acceptancePhaseGate = undefined;
     const release = gate.release;
     gate.release = undefined;
@@ -1807,7 +1911,7 @@ function buildSqlAuthoringSnapshot(
 }
 
 function databaseScope(serverId: string, database: string): string {
-  return `${serverId}\0${database}`;
+  return postgresDatabaseDocumentRoot({ serverId, database });
 }
 
 function routineReturnType(source: string | undefined): string | undefined {
@@ -1850,10 +1954,6 @@ function unquoteCatalogIdentifier(identifier: string): string {
   return identifier.startsWith('"')
     ? identifier.slice(1, -1).replaceAll('""', '"')
     : identifier.toLocaleLowerCase();
-}
-
-function databaseDocumentGlob(serverId: string, database: string): string {
-  return `postgresql://${encodeURIComponent(serverId)}/${encodeURIComponent(database)}/**`;
 }
 
 function workspaceGeneration(generation: { value?: number } | number | null): number | null {

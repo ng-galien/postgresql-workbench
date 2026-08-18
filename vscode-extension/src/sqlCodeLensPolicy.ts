@@ -10,6 +10,8 @@ export type SqlDebugAvailability =
 export type SqlDebugUnavailableReason =
   | "Index missing"
   | "Index stale"
+  | "Checking debugger capability"
+  | "Debugger extension unavailable"
   | "Routine not indexed"
   | "Several overloads match"
   | "Not a PL/pgSQL routine"

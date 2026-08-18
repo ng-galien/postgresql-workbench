@@ -59,10 +59,21 @@ vi.mock("./workbenchGraph/panel.js", () => ({
 import { WorkbenchGraphView } from "./workbenchGraphView.js";
 import { WorkbenchTreeDragAndDropController } from "./workbenchTreeDragAndDrop.js";
 
+function scopedIndex<T extends Record<string, unknown>>(index: T): T {
+  return Object.assign(index, {
+    databaseState: () => index.state ?? { status: "not-indexed" },
+    databaseSymbols: () => index.indexedSymbols ?? [],
+    databaseObjectOrigin: (_identity: unknown, sourceUri: string) =>
+      typeof index.objectOrigin === "function"
+        ? (index.objectOrigin as (uri: string) => unknown)(sourceUri)
+        : undefined,
+  });
+}
+
 function graphView(): WorkbenchGraphView {
   return new WorkbenchGraphView({
     extensionUri: {} as never,
-    index: { indexedSymbols: [] } as never,
+    index: scopedIndex({ indexedSymbols: [] }) as never,
     openDefinition: async () => undefined,
     showActions: async () => undefined,
   });
@@ -78,7 +89,7 @@ beforeEach(() => {
   graphConfiguration.listener = undefined;
 });
 
-describe("Workbench graph database context invalidation", () => {
+describe("Workbench graph Connexion context invalidation", () => {
   it("sends graph appearance settings on ready and when they change", async () => {
     const view = graphView();
 
@@ -118,11 +129,11 @@ describe("Workbench graph database context invalidation", () => {
     panel.visible = visible;
     const view = graphView();
 
-    view.invalidateDatabaseContext();
+    view.invalidateCockpitContext();
 
     expect(panel.post).toHaveBeenCalledWith({
-      type: "databaseContextInvalidated",
-      message: "The active PostgreSQL database context changed. Open the active graph again.",
+      type: "cockpitContextInvalidated",
+      message: "The Cockpit Connexion changed. Open the graph again.",
     });
     expect(view.currentModel).toBeUndefined();
     expect(view.currentScope).toBeUndefined();
@@ -133,8 +144,8 @@ describe("Workbench graph database context invalidation", () => {
     const database = { serverId: "server", database: "demo" };
     const symbol = postgresSymbol("orders", "table", 42);
     const added = postgresSymbol("invoice", "table", 43);
-    const initial = { revision: "revision-1", generation: 1 };
-    const refreshed = { revision: "revision-2", generation: 2 };
+    const initial = { ...database, revision: "revision-1", generation: 1 };
+    const refreshed = { ...database, revision: "revision-2", generation: 2 };
     const index = {
       state: {
         status: "available",
@@ -150,7 +161,7 @@ describe("Workbench graph database context invalidation", () => {
     };
     const view = new WorkbenchGraphView({
       extensionUri: {} as never,
-      index: index as never,
+      index: scopedIndex(index) as never,
       openDefinition: async () => undefined,
       showActions: async () => undefined,
     });
@@ -170,6 +181,17 @@ describe("Workbench graph database context invalidation", () => {
       initial,
     );
     panel.post.mockClear();
+    await expect(
+      view.refreshSnapshot({
+        serverId: "server-b",
+        database: "other",
+        revision: "other-revision",
+        generation: 99,
+      }),
+    ).resolves.toBe(false);
+    expect(panel.post).not.toHaveBeenCalled();
+    expect(view.currentDatabase).toEqual(database);
+
     index.indexedSymbols = [symbol, added];
     index.state = {
       status: "available",
@@ -209,8 +231,8 @@ describe("Workbench graph database context invalidation", () => {
     const focus = postgresSymbol("orders", "table", 42);
     const pinned = postgresSymbol("invoice", "table", 43);
     const renamed = postgresSymbol("archived_invoice", "table", 43);
-    const initial = { revision: "revision-1", generation: 1 };
-    const refreshed = { revision: "revision-2", generation: 2 };
+    const initial = { ...database, revision: "revision-1", generation: 1 };
+    const refreshed = { ...database, revision: "revision-2", generation: 2 };
     const index = {
       state: { status: "available", result: { ...initial, ...database } },
       indexedSymbols: [focus, pinned],
@@ -221,7 +243,7 @@ describe("Workbench graph database context invalidation", () => {
     };
     const view = new WorkbenchGraphView({
       extensionUri: {} as never,
-      index: index as never,
+      index: scopedIndex(index) as never,
       openDefinition: async () => undefined,
       showActions: async () => undefined,
     });
@@ -267,7 +289,7 @@ describe("Workbench graph database context invalidation", () => {
     const database = { serverId: "server", database: "demo" };
     const focus = postgresSymbol("orders", "table", 42);
     const dropped = postgresSymbol("invoice", "table", 43);
-    const snapshot = { revision: "revision-1", generation: 1 };
+    const snapshot = { ...database, revision: "revision-1", generation: 1 };
     const index = {
       state: { status: "available", result: { ...snapshot, ...database } },
       indexedSymbols: [focus, dropped],
@@ -295,7 +317,7 @@ describe("Workbench graph database context invalidation", () => {
     controller.handleDrag([{ kind: "object", object: droppedObject }] as never, transfer);
     const view = new WorkbenchGraphView({
       extensionUri: {} as never,
-      index: index as never,
+      index: scopedIndex(index) as never,
       openDefinition: async () => undefined,
       showActions: async () => undefined,
       treeDragPayload: (consume) => controller.activePayload(consume),
@@ -348,7 +370,7 @@ describe("Workbench graph database context invalidation", () => {
   it("waits for an active TreeView drop before closing the graph", async () => {
     const database = { serverId: "server", database: "demo" };
     const dropped = postgresSymbol("invoice", "table", 43);
-    const snapshot = { revision: "revision-1", generation: 1 };
+    const snapshot = { ...database, revision: "revision-1", generation: 1 };
     let resolveFocus: ((value: ReturnType<typeof graph>) => void) | undefined;
     const index = {
       state: { status: "available", result: { ...snapshot, ...database } },
@@ -382,7 +404,7 @@ describe("Workbench graph database context invalidation", () => {
     );
     const view = new WorkbenchGraphView({
       extensionUri: {} as never,
-      index: index as never,
+      index: scopedIndex(index) as never,
       openDefinition: async () => undefined,
       showActions: async () => undefined,
       treeDragPayload: (consume) => controller.activePayload(consume),
@@ -416,8 +438,8 @@ describe("Workbench graph database context invalidation", () => {
     const database = { serverId: "server", database: "demo" };
     const orders = postgresSymbol("orders", "table", 42);
     const invoice = postgresSymbol("invoice", "table", 43);
-    const initial = { revision: "revision-1", generation: 1 };
-    const refreshed = { revision: "revision-2", generation: 2 };
+    const initial = { ...database, revision: "revision-1", generation: 1 };
+    const refreshed = { ...database, revision: "revision-2", generation: 2 };
     let resolveFocus: ((value: ReturnType<typeof graph>) => void) | undefined;
     let delayInvoice = true;
     const index = {
@@ -438,7 +460,7 @@ describe("Workbench graph database context invalidation", () => {
     };
     const view = new WorkbenchGraphView({
       extensionUri: {} as never,
-      index: index as never,
+      index: scopedIndex(index) as never,
       openDefinition: async () => undefined,
       showActions: async () => undefined,
     });
@@ -480,7 +502,7 @@ describe("Workbench graph database context invalidation", () => {
     const orders = postgresSymbol("orders", "table", 42);
     const invoice = postgresSymbol("invoice", "table", 43);
     const schema = postgresSchemaSymbol("shop", 2_200);
-    const snapshot = { revision: "revision-1", generation: 1 };
+    const snapshot = { ...database, revision: "revision-1", generation: 1 };
     let delayInspection = false;
     let resolveInspection: ((value: ReturnType<typeof sourcePreview>) => void) | undefined;
     const index = {
@@ -503,7 +525,7 @@ describe("Workbench graph database context invalidation", () => {
     };
     const view = new WorkbenchGraphView({
       extensionUri: {} as never,
-      index: index as never,
+      index: scopedIndex(index) as never,
       openDefinition: async () => undefined,
       showActions: async () => undefined,
     });

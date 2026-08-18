@@ -1,5 +1,6 @@
 import { Client } from "pg";
 import type { ConnectionManager } from "./connectionManager.js";
+import { getConnectionName } from "./serverStore.js";
 
 export async function openCoverageClient(
   connections: ConnectionManager,
@@ -13,7 +14,7 @@ export async function openCoverageClient(
   if (!server) throw new Error(`PostgreSQL connection ${serverId} is no longer configured.`);
   const password = await connections.store.getPassword(serverId);
   if (password === undefined) {
-    throw new Error(`PostgreSQL connection ${server.name} has no saved password.`);
+    throw new Error(`PostgreSQL connection ${getConnectionName(server)} has no saved password.`);
   }
   const client = new Client({
     host: server.host,

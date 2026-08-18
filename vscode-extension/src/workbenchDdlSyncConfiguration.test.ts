@@ -29,7 +29,7 @@ describe("Workbench DDL synchronization configuration", () => {
     });
   });
 
-  it("gives explicit DatabaseContext overrides precedence over Settings", () => {
+  it("gives explicit Connexion overrides precedence over Settings", () => {
     expect(
       resolveWorkbenchDdlSyncConfiguration(
         { ...SERVER, schemaSync: { enabled: true, supportSchema: "project_workbench" } },

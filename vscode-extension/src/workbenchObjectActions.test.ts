@@ -33,8 +33,8 @@ function actionIds(
 }
 
 describe("Workbench object actions", () => {
-  it("keeps generic database objects limited to definition and graph navigation", () => {
-    expect(actionIds(object("table"))).toEqual(["open-definition", "open-graph"]);
+  it("keeps generic database objects limited to definition, data, and graph navigation", () => {
+    expect(actionIds(object("table"))).toEqual(["open-definition", "open-data", "open-graph"]);
   });
 
   it("adds deployed source and debugging only for PL/pgSQL routines", () => {
@@ -65,7 +65,9 @@ describe("Workbench object actions", () => {
       hasMappedTests: true,
     });
 
-    expect(actionsForWorkbenchSurface(generic, "cockpit")).toEqual([]);
+    expect(actionsForWorkbenchSurface(generic, "cockpit").map(({ id }) => id)).toEqual([
+      "open-data",
+    ]);
     expect(actionsForWorkbenchSurface(routine, "cockpit").map(({ id }) => id)).toEqual([
       "open-deployed-source",
       "debug",

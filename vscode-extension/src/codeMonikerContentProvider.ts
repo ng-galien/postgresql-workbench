@@ -36,6 +36,7 @@ export class CodeMonikerContentProvider implements vscode.FileSystemProvider, vs
   private readonly changeEmitter = new vscode.EventEmitter<vscode.FileChangeEvent[]>();
   readonly onDidChangeFile = this.changeEmitter.event;
   private readonly cache = new Map<string, Uint8Array>();
+  private readonly cacheServers = new Map<string, string>();
   private readonly workingCopies = new Map<string, ManagedWorkingCopy>();
   private readonly openBases = new Map<string, string>();
   private readonly subscriptions: vscode.Disposable[];
@@ -64,12 +65,12 @@ export class CodeMonikerContentProvider implements vscode.FileSystemProvider, vs
       });
     }
     this.subscriptions = [
-      connections.onServerChanged(() => {
-        this.invalidateAll();
+      connections.onServerChanged((change) => {
+        this.invalidateServers(change.serverIds);
         this.reconcileUnavailableTabs();
       }),
-      index.onDidChangeState(() => {
-        this.invalidateAll();
+      index.onDidChangeState((state) => {
+        if (state.serverId) this.invalidateServers([state.serverId]);
         this.reconcileUnavailableTabs();
       }),
       vscode.window.tabGroups.onDidChangeTabs(() => this.reconcileUnavailableTabs()),
@@ -81,12 +82,23 @@ export class CodeMonikerContentProvider implements vscode.FileSystemProvider, vs
     for (const subscription of this.subscriptions) subscription.dispose();
     this.changeEmitter.dispose();
     this.cache.clear();
+    this.cacheServers.clear();
     this.workingCopies.clear();
     this.openBases.clear();
   }
 
   invalidateAll(): void {
     this.cache.clear();
+    this.cacheServers.clear();
+  }
+
+  private invalidateServers(serverIds: readonly string[]): void {
+    const changed = new Set(serverIds);
+    for (const [symbolUri, serverId] of this.cacheServers) {
+      if (!changed.has(serverId)) continue;
+      this.cache.delete(symbolUri);
+      this.cacheServers.delete(symbolUri);
+    }
   }
 
   private reconcileUnavailableTabs(): void {
@@ -306,6 +318,7 @@ export class CodeMonikerContentProvider implements vscode.FileSystemProvider, vs
     if (cached) return cached;
     const bytes = new TextEncoder().encode(descriptor.content);
     this.cache.set(descriptor.symbolUri, bytes);
+    this.cacheServers.set(descriptor.symbolUri, descriptor.serverId);
     this.openBases.set(descriptor.symbolUri, descriptor.content);
     return bytes;
   }

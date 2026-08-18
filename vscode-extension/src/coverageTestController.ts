@@ -14,6 +14,7 @@ import { CODE_MONIKER_URI_SCHEME } from "./codeMonikerUri.js";
 import type { ConnectionManager } from "./connectionManager.js";
 import { openCoverageClient } from "./coverageConnection.js";
 import { PgTapCoverageProfile, type PgTapCoverageTarget } from "./coverageRunProfile.js";
+import { getConnectionName } from "./serverStore.js";
 
 type TestItemData =
   | { kind: "connection"; serverId: string }
@@ -39,7 +40,10 @@ export interface PgTapTestControllerOptions {
   connections: ConnectionManager;
   output: vscode.OutputChannel;
   syntaxParser: () => Promise<SyntaxParser>;
-  indexedDependencies?: PgTapRoutineDependencyResolver;
+  indexedDependencies?: (
+    serverId: string,
+    routine: Parameters<PgTapRoutineDependencyResolver>[0],
+  ) => ReturnType<PgTapRoutineDependencyResolver>;
   indexDatabase: (serverId: string, client: Client) => Promise<void>;
   resolveRoutineSymbolUri: (serverId: string, oid: number) => string | undefined;
   resolveDocumentUri: (symbolUri: string) => vscode.Uri | undefined;
@@ -63,7 +67,7 @@ export class PgTapTestController implements vscode.Disposable {
   private readonly connections: ConnectionManager;
   private readonly output: vscode.OutputChannel;
   private readonly syntaxParser: () => Promise<SyntaxParser>;
-  private readonly indexedDependencies: PgTapRoutineDependencyResolver | undefined;
+  private readonly indexedDependencies: PgTapTestControllerOptions["indexedDependencies"];
   private readonly indexDatabase: (serverId: string, client: Client) => Promise<void>;
   private readonly resolveRoutineSymbolUri: (serverId: string, oid: number) => string | undefined;
   private readonly resolveDocumentUri: (symbolUri: string) => vscode.Uri | undefined;
@@ -186,7 +190,10 @@ export class PgTapTestController implements vscode.Disposable {
     this.coverageProfile?.invalidate();
     this.controller.invalidateTestResults();
     const items = this.connections.servers.map((server) => {
-      const item = this.controller.createTestItem(connectionItemId(server.id), server.name);
+      const item = this.controller.createTestItem(
+        connectionItemId(server.id),
+        getConnectionName(server),
+      );
       item.description = `${server.host}:${server.port}/${server.database}`;
       item.canResolveChildren = true;
       this.data.set(item, { kind: "connection", serverId: server.id });
@@ -206,10 +213,11 @@ export class PgTapTestController implements vscode.Disposable {
       client = await openCoverageClient(this.connections, data.serverId);
       await this.indexDatabase(data.serverId, client);
       const patterns = pgTapTestPatterns();
+      const indexedDependencies = this.indexedDependencies;
       const discovery = await discoverPgTapTests(
         client,
         await this.syntaxParser(),
-        this.indexedDependencies,
+        indexedDependencies ? (routine) => indexedDependencies(data.serverId, routine) : undefined,
         patterns,
       );
       if (generation !== this.generation) return;

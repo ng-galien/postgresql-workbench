@@ -34,7 +34,7 @@ export class WorkbenchGraphTreeSync {
     return this.selected;
   }
 
-  invalidateDatabaseContext(): void {
+  invalidateCockpitContext(): void {
     this.selected = undefined;
   }
 
@@ -65,8 +65,9 @@ export class WorkbenchGraphTreeSync {
 
   private async navigateToObjectNow(object: WorkbenchObjectModel): Promise<boolean> {
     const item = this.provider.itemForObject(object);
-    const result = this.index.state.result;
-    if (this.index.state.status !== "available" || !item || !result) return false;
+    const state = this.index.databaseState(object);
+    const result = state.result;
+    if (state.status !== "available" || !item || !result) return false;
     await this.revealProgrammatically(item, { select: true, focus: true, expand: true });
     if (!this.graph.currentScope) return true;
     return this.graph.syncObjectFromTree(item.object, result);
@@ -75,34 +76,57 @@ export class WorkbenchGraphTreeSync {
   async select(item: PlpgsqlTreeItem): Promise<boolean> {
     this.selected = item;
     if (!this.graph.isOpen || !this.graph.currentScope) return false;
-    const result = this.index.state.result;
-    if (this.index.state.status !== "available" || !result) return false;
     if (item.kind === "databaseSource" || item.kind === "sourcesSnapshot") {
-      if (
-        !item.active ||
-        item.server.id !== result.serverId ||
-        item.server.database !== result.database
-      ) {
-        return false;
-      }
-      return this.graph.openDatabase(
-        { serverId: result.serverId, database: result.database },
-        result,
-      );
+      const identity = { serverId: item.server.id, database: item.server.database };
+      const state = this.index.databaseState(identity);
+      const result = state.result;
+      if (state.status !== "available" || !result) return false;
+      return this.graph.openDatabase(identity, result);
     }
     if (item.kind === "schema") {
+      const identity = { serverId: item.server.id, database: item.server.database };
+      const state = this.index.databaseState(identity);
+      const result = state.result;
+      if (state.status !== "available" || !result) return false;
+      if (
+        this.graph.currentDatabase?.serverId !== identity.serverId ||
+        this.graph.currentDatabase.database !== identity.database
+      ) {
+        return this.graph.openSchema(identity, item.schema, result);
+      }
       return this.graph.syncSchemaFromTree(item.schema, result);
     }
     if (item.kind === "function" || item.kind === "object") {
+      const state = this.index.databaseState(item.object);
+      const result = state.result;
+      if (state.status !== "available" || !result) return false;
       return this.graph.syncObjectFromTree(item.object, result);
     }
     if (item.kind === "tableMember" || item.kind === "relationGroup") {
+      const state = this.index.databaseState(item.object);
+      const result = state.result;
+      if (state.status !== "available" || !result) return false;
       return this.graph.syncObjectFromTree(item.object, result);
     }
     if (item.kind === "extensionGroup") {
+      const owner = item.objects[0];
+      if (!owner) return false;
+      const identity = { serverId: owner.serverId, database: owner.database };
+      const state = this.index.databaseState(identity);
+      const result = state.result;
+      if (state.status !== "available" || !result) return false;
+      if (
+        this.graph.currentDatabase?.serverId !== identity.serverId ||
+        this.graph.currentDatabase.database !== identity.database
+      ) {
+        return this.graph.openSchema(identity, item.schema, result);
+      }
       return this.graph.syncSchemaFromTree(item.schema, result);
     }
     if (item.kind === "relationTarget" && item.target.object) {
+      const state = this.index.databaseState(item.target.object);
+      const result = state.result;
+      if (state.status !== "available" || !result) return false;
       return this.graph.syncObjectFromTree(item.target.object, result);
     }
     return false;

@@ -5,7 +5,7 @@ import {
   type DebugResultSource,
   routineDisplayName,
 } from "../../src/debugger/launch/index.js";
-import type { ServerConfig } from "./serverStore.js";
+import { getConnectionName, type ServerConfig } from "./serverStore.js";
 import type { FunctionDefinition } from "./sqlCodeLensProvider.js";
 
 export interface DebugConfigurationLike {
@@ -27,7 +27,6 @@ export interface DebugConfigurationLike {
   user?: string;
   password?: string;
   ssl?: boolean | "require" | "prefer" | "disable";
-  preserveDatabaseContext?: boolean;
   [key: string]: unknown;
 }
 
@@ -50,11 +49,14 @@ export interface DebugConfigConnectionStore {
 }
 
 export interface DebugConfigConnectionManager {
-  activeServer: ServerConfig | undefined;
   store: DebugConfigConnectionStore;
-  commands: { pickConnection(): Promise<boolean> };
-  isActiveServer(id: string): boolean;
+  connectedServerIds: readonly string[];
+  commands: { pickConnection(): Promise<string | undefined> };
+  isServerConnected(id: string): boolean;
   connectServer(id: string): Promise<boolean>;
+  refreshDebugCapability(
+    serverId: string,
+  ): Promise<{ available: boolean; error: string } | undefined>;
   getPassword(id: string): Promise<string>;
 }
 
@@ -147,7 +149,11 @@ export async function resolveDebugConfiguration(
   }
 
   const serverId = config.server;
-  let server = serverId ? cm.store.get(serverId) : cm.activeServer;
+  let server = serverId
+    ? cm.store.get(serverId)
+    : cm.connectedServerIds.length === 1
+      ? cm.store.get(cm.connectedServerIds[0])
+      : undefined;
 
   if (serverId && !server) {
     await ui.showErrorMessage(
@@ -158,15 +164,24 @@ export async function resolveDebugConfiguration(
   if (!server) {
     const picked = await cm.commands.pickConnection();
     if (!picked) return undefined;
-    server = cm.activeServer;
+    server = cm.store.get(picked);
     if (!server) return undefined;
   }
 
-  if (!cm.isActiveServer(server.id) && !config.preserveDatabaseContext) {
+  if (!cm.isServerConnected(server.id)) {
     const ok = await cm.connectServer(server.id);
     if (!ok) return undefined;
   }
 
+  const capability = await cm.refreshDebugCapability(server.id);
+  if (!capability?.available) {
+    await ui.showErrorMessage(
+      `${getConnectionName(server)}: PL/pgSQL debugging is unavailable. ${capability?.error || "The debugger capability could not be verified."}`,
+    );
+    return undefined;
+  }
+
+  config.server = server.id;
   const password = await cm.getPassword(server.id);
   config.host = server.host;
   config.port = server.port;
@@ -175,6 +190,6 @@ export async function resolveDebugConfiguration(
   config.password = password;
   if (server.ssl) config.ssl = server.ssl;
 
-  out?.appendLine(`resolveDebugConfiguration: ${server.name}`);
+  out?.appendLine(`resolveDebugConfiguration: ${getConnectionName(server)}`);
   return config;
 }

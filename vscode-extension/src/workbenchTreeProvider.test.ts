@@ -92,7 +92,162 @@ const createdTable: WorkbenchObjectModel = {
 };
 
 describe("Workbench tree object navigation", () => {
+  it("scopes a disconnect event to its exact Connexion branch", async () => {
+    const serverA = {
+      id: "server-a",
+      name: "A",
+      host: "localhost",
+      port: 5432,
+      database: "a",
+      user: "postgres",
+    };
+    const serverB = { ...serverA, id: "server-b", name: "B", database: "b" };
+    const connected = new Set([serverA.id, serverB.id]);
+    type ConnectionChange = {
+      serverIds: readonly string[];
+      rootsChanged: boolean;
+    };
+    const listeners = new Set<(change: ConnectionChange) => void>();
+    const changes = {
+      event: (listener: (change: ConnectionChange) => void) => {
+        listeners.add(listener);
+        return { dispose: () => listeners.delete(listener) };
+      },
+      fire: (change: ConnectionChange) => {
+        for (const listener of listeners) listener(change);
+      },
+    };
+    const event = () => ({ dispose: () => undefined });
+    const result = (server: typeof serverA) => ({
+      serverId: server.id,
+      database: server.database,
+      revision: `revision-${server.id}`,
+      documents: 1,
+      symbols: 1,
+      generation: 1,
+      introspectionMs: 1,
+      materializationMs: 1,
+      publicationMs: 1,
+      symbolQueryMs: 1,
+      indexingMs: 1,
+      graphQueryMs: 1,
+    });
+    const schemaSymbol = (server: typeof serverA, schema: string) => ({
+      uri: `code+moniker://${server.id}/${schema}`,
+      file: `postgresql://${server.id}/${server.database}/${schema}/schema.sql`,
+      name: schema,
+      kind: "schema",
+      signature: schema,
+      postgres: {
+        serverId: server.id,
+        database: server.database,
+        schema,
+        documentKind: "schema",
+        oid: 1,
+        name: schema,
+        signature: schema,
+      },
+    });
+    const provider = new WorkbenchTreeProvider(
+      {
+        servers: [serverA, serverB],
+        store: { get: (id: string) => [serverA, serverB].find((server) => server.id === id) },
+        debugCapabilityFor: (serverId: string) => ({
+          serverId,
+          status: "unavailable" as const,
+        }),
+        onChanged: changes.event,
+        isServerConnected: (id: string) => connected.has(id),
+        getClient: () => undefined,
+      } as never,
+      {
+        databaseState: ({ serverId }: { serverId: string }) => {
+          const server = serverId === serverA.id ? serverA : serverB;
+          return { status: "available", serverId, result: result(server) };
+        },
+        databaseSymbols: ({ serverId }: { serverId: string }) =>
+          serverId === serverA.id
+            ? [schemaSymbol(serverA, "alpha")]
+            : [schemaSymbol(serverB, "beta")],
+        onDidChangeState: event,
+      } as never,
+      { list: async () => [], onDidChangeEntries: event } as never,
+      { transaction: () => undefined, onDidChange: event } as never,
+      {
+        state: (serverId: string) => ({
+          serverId,
+          status: "disabled" as const,
+          supportSchema: "workbench",
+        }),
+        onDidChangeState: event,
+      } as never,
+    );
+    const roots = await provider.getChildren();
+    const rootA = roots[0];
+    const rootB = roots[1];
+    const databaseA = (await provider.getChildren(rootA))[0];
+    const databaseB = (await provider.getChildren(rootB))[0];
+    const sourcesA = (await provider.getChildren(databaseA)).find(
+      (item) => item.kind === "sourcesSnapshot",
+    );
+    const sourcesB = (await provider.getChildren(databaseB)).find(
+      (item) => item.kind === "sourcesSnapshot",
+    );
+    expect(sourcesA).toBeDefined();
+    expect(sourcesB).toBeDefined();
+    await expect(provider.getChildren(sourcesA)).resolves.toMatchObject([{ label: "alpha" }]);
+    await expect(provider.getChildren(sourcesB)).resolves.toMatchObject([{ label: "beta" }]);
+    const emitted: Array<{ id?: string } | undefined> = [];
+    provider.onDidChangeTreeData((item) => emitted.push(item));
+
+    connected.delete(serverA.id);
+    changes.fire({
+      serverIds: [serverA.id],
+      rootsChanged: false,
+    });
+
+    expect(emitted.length).toBeGreaterThan(0);
+    expect(emitted).not.toContain(undefined);
+    expect(emitted.every((item) => item?.id?.includes(serverA.id))).toBe(true);
+    // A disconnected Connexion keeps a closed chevron so sibling rows stay aligned.
+    expect(rootA?.collapsibleState).toBe(1);
+    expect(rootB?.collapsibleState).toBe(1);
+    expect(rootA?.iconPath).toMatchObject({ id: "debug-disconnect" });
+    expect(rootB?.iconPath).toMatchObject({
+      id: "plug",
+      color: { id: "testing.iconPassed" },
+    });
+    await expect(provider.getChildren(rootA)).resolves.toMatchObject([
+      { kind: "message", label: "Not connected" },
+    ]);
+    await expect(provider.getChildren(sourcesB)).resolves.toMatchObject([{ label: "beta" }]);
+
+    emitted.length = 0;
+    connected.add(serverA.id);
+    changes.fire({
+      serverIds: [serverA.id],
+      rootsChanged: false,
+    });
+
+    expect(emitted.length).toBeGreaterThan(0);
+    expect(emitted).not.toContain(undefined);
+    expect(emitted.every((item) => item?.id?.includes(serverA.id))).toBe(true);
+    expect(rootA?.collapsibleState).toBe(1);
+    expect(rootB?.collapsibleState).toBe(1);
+    expect(rootA?.iconPath).toMatchObject({
+      id: "plug",
+      color: { id: "testing.iconPassed" },
+    });
+    expect(rootB?.iconPath).toMatchObject({
+      id: "plug",
+      color: { id: "testing.iconPassed" },
+    });
+    await expect(provider.getChildren(rootA)).resolves.toMatchObject([{ kind: "databaseSource" }]);
+    provider.dispose();
+  });
+
   it("separates database roots from filterable Scratchpad roots", async () => {
+    let connected = true;
     const server = {
       id: "server",
       name: "postgres@localhost:5432/testdb",
@@ -104,13 +259,16 @@ describe("Workbench tree object navigation", () => {
     const event = () => ({ dispose: () => undefined });
     const connections = {
       servers: [server],
-      activeServer: server,
-      isConnected: true,
-      pldbgapiAvailable: false,
+      debugCapabilityFor: (serverId: string) => ({ serverId, status: "unavailable" as const }),
       onChanged: event,
-      isActiveServer: () => true,
+      isServerConnected: () => connected,
     };
-    const index = { state: { status: "not-indexed" }, onDidChangeState: event };
+    const index = {
+      state: { status: "not-indexed" },
+      databaseState: () => ({ status: "not-indexed" }),
+      databaseSymbols: () => [],
+      onDidChangeState: event,
+    };
     const notebooks = {
       list: async () => [
         { uri: { toString: () => "scratchpad:first" }, name: "First", metadata: {} },
@@ -137,9 +295,18 @@ describe("Workbench tree object navigation", () => {
       "scratchpads",
     );
 
-    await expect(databaseProvider.getChildren()).resolves.toMatchObject([
-      { kind: "server" },
-      { kind: "add" },
+    const connectedRoots = await databaseProvider.getChildren();
+    expect(connectedRoots).toMatchObject([{ kind: "server" }, { kind: "add" }]);
+    expect(connectedRoots[0]?.collapsibleState).toBe(1);
+    await expect(databaseProvider.getChildren(connectedRoots[0])).resolves.toMatchObject([
+      { kind: "databaseSource" },
+    ]);
+
+    connected = false;
+    const disconnectedRoots = await databaseProvider.getChildren();
+    expect(disconnectedRoots[0]?.collapsibleState).toBe(1);
+    await expect(databaseProvider.getChildren(disconnectedRoots[0])).resolves.toMatchObject([
+      { kind: "message", label: "Not connected" },
     ]);
     await expect(scratchpadProvider.getChildren()).resolves.toMatchObject([
       { kind: "sqlNotebook", label: "First" },
@@ -155,7 +322,7 @@ describe("Workbench tree object navigation", () => {
     scratchpadProvider.dispose();
   });
 
-  it("presents distinct initial indexing and available states on the active database", () => {
+  it("presents distinct initial indexing and available states for one Connexion", () => {
     const server = {
       id: "server",
       name: "postgres@localhost:5432/testdb",
@@ -164,8 +331,8 @@ describe("Workbench tree object navigation", () => {
       database: "testdb",
       user: "postgres",
     };
-    const notIndexed = new SourcesSnapshotItem(server, true, { status: "not-indexed" });
-    const initialIndex = new SourcesSnapshotItem(server, true, {
+    const notIndexed = new SourcesSnapshotItem(server, { status: "not-indexed" });
+    const initialIndex = new SourcesSnapshotItem(server, {
       status: "indexing",
       progress: { phase: "reading-catalog" },
     });
@@ -183,27 +350,24 @@ describe("Workbench tree object navigation", () => {
       indexingMs: 1,
       graphQueryMs: 1,
     };
-    const available = new SourcesSnapshotItem(server, true, {
+    const available = new SourcesSnapshotItem(server, {
       status: "available",
       result: availableResult,
     });
 
     expect(notIndexed.command).toMatchObject({
-      command: "postgresql-workbench.indexActiveDatabase",
+      command: "postgresql-workbench.indexDatabase",
       title: "Index Database",
     });
     expect(initialIndex.description).toBe("indexing · reading catalog");
     expect(initialIndex.contextValue).toBe("postgresql-workbench-sources-indexing");
     expect(initialIndex.accessibilityInformation?.label).toBe(
-      "Sources, testdb, indexing, reading catalog",
+      "Schemas, testdb, indexing, reading catalog",
     );
-    expect(new DatabaseSourceItem(server, { status: "indexing" }, true).description).toBe(
-      "active · indexing",
-    );
+    expect(new DatabaseSourceItem(server, { status: "indexing" }).description).toBe("indexing");
     expect(
-      new DatabaseSourceItem(server, { status: "indexing", result: availableResult }, true)
-        .description,
-    ).toBe("active · refreshing");
+      new DatabaseSourceItem(server, { status: "indexing", result: availableResult }).description,
+    ).toBe("refreshing");
     expect(available.command).toBeUndefined();
   });
 
@@ -284,7 +448,12 @@ describe("Workbench tree object navigation", () => {
     expect(object.accessibilityInformation).toEqual({ label: "shop.orders" });
     expect(constraint.tooltip).toBe("constraint orders_pkey");
     expect(constraint.accessibilityInformation).toBeUndefined();
-    expect(new SchemaItem("shop").tooltip).toBeUndefined();
+    expect(
+      new SchemaItem(
+        { id: "server", host: "localhost", port: 5432, database: "demo", user: "postgres" },
+        "shop",
+      ).tooltip,
+    ).toBeUndefined();
   });
 });
 
@@ -340,7 +509,10 @@ describe("Workbench tree incremental refresh", () => {
       },
     };
     const indexChanges = new Emitter<WorkbenchIndexState>();
-    const connectionChanges = new Emitter<void>();
+    const connectionChanges = new Emitter<{
+      serverIds: readonly string[];
+      rootsChanged: boolean;
+    }>();
     const notebookChanges = new Emitter<void>();
     const ddlChanges = new Emitter<never>();
     let forceStaleRelations = false;
@@ -359,10 +531,31 @@ describe("Workbench tree incremental refresh", () => {
           schema: unchangedTable.schema,
         },
       },
+      {
+        ...symbol,
+        uri: "code+moniker://./lang:sql/function:shop.refresh_inventory",
+        file: "postgresql://server/testdb/shop/routine/refresh_inventory.sql",
+        name: "refresh_inventory",
+        kind: "function",
+        source: {
+          lines: [{ text: "CREATE FUNCTION shop.refresh_inventory() LANGUAGE plpgsql" }],
+        },
+        postgres: {
+          ...symbol.postgres,
+          documentKind: "routine",
+          oid: 15,
+          name: "refresh_inventory",
+          schema: "shop",
+        },
+      },
     ];
     const index = {
       state: { status: "not-indexed", serverId: server.id } as WorkbenchIndexState,
+      focusedServer: server,
       indexedSymbols,
+      databaseState: () => index.state,
+      databaseSymbols: () => indexedSymbols,
+      databaseObjectOrigin: () => undefined,
       objectOrigin: () => undefined,
       relations: async (
         _object: WorkbenchObjectModel,
@@ -380,12 +573,10 @@ describe("Workbench tree incremental refresh", () => {
     };
     const connections = {
       servers: [server],
-      activeServer: server,
-      isConnected: true,
-      pldbgapiAvailable: false,
+      debugCapabilityFor: (serverId: string) => ({ serverId, status: "unavailable" as const }),
       store: { get: () => server },
       onChanged: connectionChanges.event,
-      isActiveServer: (id: string) => id === server.id,
+      isServerConnected: (id: string) => id === server.id,
       getClient: () => undefined,
     };
     const notebooks = {
@@ -412,19 +603,27 @@ describe("Workbench tree incremental refresh", () => {
       transactions as never,
       ddlSync as never,
     );
-    const sources = new SourcesSnapshotItem(server, true, { status: "not-indexed" });
-    const schema = new SchemaItem("shop");
-    const reportingSchema = new SchemaItem("reporting");
+    const sources = new SourcesSnapshotItem(server, { status: "not-indexed" });
+    const schema = new SchemaItem(server, "shop");
+    const reportingSchema = new SchemaItem(server, "reporting");
     const object = new WorkbenchObjectItem(table, snapshot);
     const unchangedObject = new WorkbenchObjectItem(unchangedTable, snapshot);
     const routine = new FunctionItem(
-      { ...table, name: "refresh_inventory", kind: "function", plpgsql: true },
+      {
+        ...table,
+        symbolUri: "code+moniker://./lang:sql/function:shop.refresh_inventory",
+        sourceUri: "postgresql://server/testdb/shop/routine/refresh_inventory.sql",
+        oid: 15,
+        name: "refresh_inventory",
+        kind: "function",
+        plpgsql: true,
+      },
       snapshot,
     );
-    const activeDatabase = new DatabaseSourceItem(server, { status: "not-indexed" }, true);
+    const activeDatabase = new DatabaseSourceItem(server, { status: "not-indexed" });
     provider.getTreeItem(activeDatabase);
     provider.getTreeItem(sources);
-    expect(provider.activeSourcesItem()).toBe(sources);
+    expect(provider.sourcesItem(server.id)).toBe(sources);
     expect(provider.getTreeItem(routine).contextValue).toBe("postgresql-workbench-function");
     provider.setExpanded(sources, false);
     const changes: Array<{ kind?: string } | undefined> = [];
@@ -438,14 +637,14 @@ describe("Workbench tree incremental refresh", () => {
     };
     indexChanges.fire(index.state);
     expect(changes).toEqual([activeDatabase, sources]);
-    expect(activeDatabase.description).toBe("active · refreshing");
+    expect(activeDatabase.description).toBe("refreshing");
     expect(sources.description).toBe("refreshing · reading catalog");
     expect(sources.iconPath).toMatchObject({ id: "loading~spin" });
     expect(sources.tooltip).toBe(
       "Refreshing PostgreSQL sources for testdb: reading catalog\nPrevious snapshot available: 1 source, 1 symbol, 1 millisecond",
     );
     expect(sources.accessibilityInformation?.label).toBe(
-      "Sources, testdb, refreshing, reading catalog, previous snapshot available",
+      "Schemas, testdb, refreshing, reading catalog, previous snapshot available",
     );
     expect(sources.contextValue).toBe("postgresql-workbench-sources-indexing");
     expect(sources.command).toBeUndefined();
@@ -460,7 +659,7 @@ describe("Workbench tree incremental refresh", () => {
     };
     indexChanges.fire(index.state);
     expect(changes).toEqual([activeDatabase, sources, routine]);
-    expect(activeDatabase.description).toBe("active");
+    expect(activeDatabase.description).toBe("ready");
     expect(sources.description).toBe("available · 1 source · 1 symbol");
     expect(sources.iconPath).toMatchObject({ id: "files" });
     expect(sources.tooltip).toBe("Indexed sources for testdb: 1 source, 1 symbol, 1 millisecond");
@@ -481,8 +680,11 @@ describe("Workbench tree incremental refresh", () => {
     expect(provider.getParent(schema)).toBe(sources);
     expect(provider.getParent(sources)).toBe(activeDatabase);
 
-    connectionChanges.fire();
-    expect(changes).toEqual([undefined]);
+    connectionChanges.fire({
+      serverIds: [server.id],
+      rootsChanged: false,
+    });
+    expect(changes).toEqual([activeDatabase, sources]);
 
     changes.length = 0;
     index.state = {
@@ -511,7 +713,7 @@ describe("Workbench tree incremental refresh", () => {
       "PostgreSQL sources for testdb are stale and require reindexing\nPrevious snapshot available: 1 source, 1 symbol, 1 millisecond",
     );
     expect(sources.command).toMatchObject({
-      command: "postgresql-workbench.indexActiveDatabase",
+      command: "postgresql-workbench.indexDatabase",
       title: "Reindex Database",
     });
 
@@ -527,7 +729,7 @@ describe("Workbench tree incremental refresh", () => {
       "PostgreSQL source indexing for testdb was cancelled\nPrevious snapshot available: 1 source, 1 symbol, 1 millisecond",
     );
     expect(sources.command).toMatchObject({
-      command: "postgresql-workbench.indexActiveDatabase",
+      command: "postgresql-workbench.indexDatabase",
       title: "Reindex Database",
     });
 
@@ -543,7 +745,7 @@ describe("Workbench tree incremental refresh", () => {
     );
     expect(sources.description).toBe("failed · previous snapshot available · retry");
     expect(sources.accessibilityInformation?.label).toBe(
-      "Sources, testdb, indexing failed, daemon unavailable, previous snapshot available, select to retry",
+      "Schemas, testdb, indexing failed, daemon unavailable, previous snapshot available, select to retry",
     );
 
     changes.length = 0;
@@ -567,6 +769,7 @@ describe("Workbench tree incremental refresh", () => {
       "schema",
       "object",
       "object",
+      "function",
     ]);
     expect(sources.description).toBe("available · 1 source · 1 symbol");
     expect(changes).toContain(unchangedObject);
@@ -612,6 +815,7 @@ describe("Workbench tree incremental refresh", () => {
       "schema",
       "object",
       "object",
+      "function",
     ]);
 
     forceStaleRelations = true;
@@ -620,7 +824,7 @@ describe("Workbench tree incremental refresh", () => {
       label: "Relations are stale — reindex the database",
       iconPath: { id: "refresh" },
       command: {
-        command: "postgresql-workbench.indexActiveDatabase",
+        command: "postgresql-workbench.indexDatabase",
         title: "Reindex Database",
       },
     });

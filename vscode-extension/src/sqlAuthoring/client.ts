@@ -9,6 +9,7 @@ import {
 import type { SyntaxNode } from "../../../src/analysis/syntaxTree.js";
 import type { ConnectionManager } from "../connectionManager.js";
 import { PlpgsqlSemanticTokensProvider } from "../plpgsqlSemanticTokens.js";
+import { getConnectionName } from "../serverStore.js";
 import {
   resolveScratchpadAssociation,
   SQL_NOTEBOOK_TYPE,
@@ -163,7 +164,7 @@ export async function registerSqlAuthoring(
     if (!document) return;
     const uri = document.uri.toString();
     const context = resolveDocumentContext(uri, connections, index, documentAssociation);
-    const scope = sqlAuthoringScope(uri, documentAssociation);
+    const scope = sqlAuthoringScope(uri);
     const status = sqlAuthoringLanguageStatus({
       context,
       documentUri: uri,
@@ -233,7 +234,7 @@ export async function registerSqlAuthoring(
           const action = sqlAuthoringRejectionAction(
             result.reason,
             documentUri,
-            sqlAuthoringScope(documentUri, documentAssociation),
+            sqlAuthoringScope(documentUri),
           );
           void vscode.window
             .showWarningMessage(result.message, ...(action ? [action.title] : []))
@@ -301,7 +302,7 @@ export async function registerSqlAuthoring(
     async (target: SqlAuthoringNavigationTarget) => {
       if (!navigate || !(await navigate(target))) {
         void vscode.window.showWarningMessage(
-          "This PostgreSQL reference is no longer available in the active Workbench Sources.",
+          "This PostgreSQL reference is no longer available in this Connexion's Workbench Sources.",
         );
       }
     },
@@ -539,7 +540,7 @@ function unchangedDropEdit(title: string): vscode.DocumentDropEdit {
 
 export function resolveDocumentContext(
   uri: string,
-  connections: Pick<ConnectionManager, "activeServer" | "isConnected" | "servers">,
+  connections: Pick<ConnectionManager, "servers">,
   index: Pick<WorkbenchIndexController, "sqlAuthoringSnapshot">,
   documentAssociation?: (uri: string) => string | undefined,
 ): SqlAuthoringDocumentContext {
@@ -595,12 +596,8 @@ export function resolveDocumentContext(
   return { status: "unassociated", message: "This SQL document has no Association." };
 }
 
-function sqlAuthoringScope(
-  uri: string,
-  documentAssociation?: (uri: string) => string | undefined,
-): SqlAuthoringScope {
-  if (vscode.Uri.parse(uri).scheme === "vscode-notebook-cell") return "scratchpad";
-  return documentAssociation ? "document" : "active";
+function sqlAuthoringScope(uri: string): SqlAuthoringScope {
+  return vscode.Uri.parse(uri).scheme === "vscode-notebook-cell" ? "scratchpad" : "document";
 }
 
 function sqlAuthoringConnexionName(
@@ -616,7 +613,10 @@ function sqlAuthoringConnexionName(
         ? undefined
         : documentAssociation?.(uri);
   return serverId
-    ? connections.servers.find((candidate) => candidate.id === serverId)?.name
+    ? (() => {
+        const server = connections.servers.find((candidate) => candidate.id === serverId);
+        return server ? getConnectionName(server) : undefined;
+      })()
     : undefined;
 }
 

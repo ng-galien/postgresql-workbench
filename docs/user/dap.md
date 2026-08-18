@@ -1,6 +1,6 @@
 ---
 title: Standalone DAP server
-description: Use the PL/pgSQL debugger from another editor or DAP client.
+description: Run the standalone PL/pgSQL Debug Adapter Protocol server from editors and DAP clients.
 eyebrow: Editor-independent core
 ---
 

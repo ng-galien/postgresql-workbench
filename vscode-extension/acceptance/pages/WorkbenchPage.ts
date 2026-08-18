@@ -5,6 +5,10 @@ import { currentPage, type PageProvider } from "./PageProvider";
 import { QuickInput } from "./QuickInput";
 import { ScratchpadsView } from "./ScratchpadsView";
 import { WorkbenchTree } from "./WorkbenchTree";
+import { SCHEMAS_TREE_ITEM } from "./WorkbenchTreeLabels";
+
+// A Connexion row reads "connected" or "disconnected"; match the former only.
+const CONNECTED_TEXT = /(?<!dis)connected/u;
 
 export class WorkbenchPage {
   readonly quickInput: QuickInput;
@@ -47,7 +51,7 @@ export class WorkbenchPage {
     await addServer.click();
     await this.quickInput.chooseThenInput(/Add server/i, /postgresql:\/\/user:pass@localhost/i);
     await this.quickInput.submit(connectionUrl, /postgresql:\/\/user:pass@localhost/i);
-    await expect(await this.tree.waitForItem(expectedServer)).toContainText("connected", {
+    await expect(await this.tree.waitForItem(expectedServer)).toContainText(CONNECTED_TEXT, {
       timeout: 5_000,
     });
   }
@@ -55,7 +59,7 @@ export class WorkbenchPage {
   async ensureServer(connectionUrl: string, expectedServer: RegExp): Promise<void> {
     const existing = await this.tree.findItem(expectedServer).catch(() => undefined);
     if (existing !== undefined) {
-      if (!(await existing.innerText()).includes("connected")) {
+      if (!CONNECTED_TEXT.test(await existing.innerText())) {
         await this.tree.hoverItem(existing, expectedServer);
         const connect = this.page.getByRole("button", { name: "Connect", exact: true });
         await expect(connect).toBeVisible({ timeout: 5_000 });
@@ -70,50 +74,41 @@ export class WorkbenchPage {
           await this.quickInput.submitSecret(password, /Password for /i);
         }
       }
-      await expect(existing).toContainText("connected", { timeout: 5_000 });
+      await expect(existing).toContainText(CONNECTED_TEXT, { timeout: 5_000 });
       return;
     }
     await this.addServer(connectionUrl, expectedServer);
   }
 
-  async ensureActiveDatabaseIndexed(server: RegExp, database: RegExp): Promise<void> {
-    let databaseContext = await this.tree.expandPath([server, database]);
-    let sources = await this.tree.findChild(databaseContext, /^Sources/);
-    if ((await sources.innerText()).includes("inactive")) {
-      await databaseContext.click();
-      databaseContext = await this.tree.expandPath([server, database]);
-      sources = await this.tree.findChild(databaseContext, /^Sources/);
-      await expect(sources).not.toContainText("inactive", { timeout: 5_000 });
-    }
-    const state = await this.expectSourcesState(
-      sources,
+  async ensureDatabaseIndexed(server: RegExp, database: RegExp): Promise<void> {
+    const databaseItem = await this.tree.expandPath([server, database]);
+    const schemas = await this.tree.findChild(databaseItem, SCHEMAS_TREE_ITEM);
+    const state = await this.expectSchemasState(
+      schemas,
       /^(?:not indexed|indexing|refreshing|available|stale|cancelled|failed)$/u,
       5_000,
     );
     if (state !== "available") {
-      if (state !== "indexing" && state !== "refreshing") await sources.click();
-      await this.expectSourcesState(sources, /^(?:indexing|refreshing|available)$/u, 5_000);
-      await this.expectSourcesState(sources, /^available$/u, 30_000);
+      if (state !== "indexing" && state !== "refreshing") await schemas.click();
+      await this.expectSchemasState(schemas, /^(?:indexing|refreshing|available)$/u, 5_000);
+      await this.expectSchemasState(schemas, /^available$/u, 30_000);
     }
-    await this.tree.expandItem(sources, /^Sources/);
-    await this.expectFreshIndexRuntime();
+    await this.tree.expandItem(schemas, SCHEMAS_TREE_ITEM);
+    await this.expectFreshIndexRuntime({ database });
   }
 
-  async expectActiveDatabaseIndexed(server: RegExp, database: RegExp): Promise<void> {
-    let databaseContext = await this.tree.expandPath([server, database]);
-    let sources = await this.tree.findChild(databaseContext, /^Sources/);
-    if ((await sources.innerText()).includes("inactive")) {
-      await databaseContext.click();
-      databaseContext = await this.tree.expandPath([server, database]);
-      sources = await this.tree.findChild(databaseContext, /^Sources/);
-    }
-    await this.expectSourcesState(sources, /^(?:indexing|refreshing|available)$/u, 5_000);
-    await this.expectSourcesState(sources, /^available$/u, 30_000);
-    await this.tree.expandItem(sources, /^Sources/);
-    await this.expectFreshIndexRuntime();
+  async expectDatabaseIndexed(server: RegExp, database: RegExp): Promise<void> {
+    const databaseItem = await this.tree.expandPath([server, database]);
+    const schemas = await this.tree.findChild(databaseItem, SCHEMAS_TREE_ITEM);
+    await this.expectSchemasState(schemas, /^(?:indexing|refreshing|available)$/u, 5_000);
+    await this.expectSchemasState(schemas, /^available$/u, 30_000);
+    await this.tree.expandItem(schemas, SCHEMAS_TREE_ITEM);
+    await this.expectFreshIndexRuntime({ database });
   }
 
-  async expectFreshIndexRuntime(expected: { settledRunId?: number } = {}): Promise<{
+  async expectFreshIndexRuntime(
+    expected: { database?: RegExp; serverId?: string; settledRunId?: number } = {},
+  ): Promise<{
     generation: number;
     revision: string;
     serverId: string;
@@ -126,30 +121,46 @@ export class WorkbenchPage {
       .poll(
         async () => {
           observed = await this.inspectWorkbenchState?.();
-          const result = observed?.index.state.result;
+          const candidates = (observed?.index.states ?? []).filter((state) => {
+            const result = state.result;
+            if (!result || state.status !== "available") return false;
+            if (!observed?.connection.connectedServerIds.includes(result.serverId)) return false;
+            if (expected.serverId && result.serverId !== expected.serverId) return false;
+            return !expected.database || regexMatches(expected.database, result.database);
+          });
           const settledRun = observed?.index.lastSettledRun;
+          const serverId = candidates[0]?.result?.serverId;
+          // Quiescence is judged for this exact Connexion: other Connexions may
+          // keep indexing concurrently without affecting this snapshot.
+          const busy =
+            observed?.index.activeRuns.some((run) => run.serverId === serverId) ||
+            observed?.index.pendingRuns.some((run) => run.serverId === serverId);
           return Boolean(
             observed?.connection.connected &&
-              observed.connection.activeServerId &&
-              observed.connection.activeServerId === result?.serverId &&
-              observed.index.state.status === "available" &&
-              typeof result.generation === "number" &&
+              candidates.length === 1 &&
+              typeof candidates[0]?.result?.generation === "number" &&
               (expected.settledRunId === undefined ||
                 (settledRun?.id === expected.settledRunId && settledRun.status === "available")) &&
-              !observed.index.activeRun &&
-              !observed.index.currentRunPending &&
+              !busy &&
               observed.index.sourceMutationsActive === 0 &&
               !observed.index.gate,
           );
         },
         {
           timeout: 30_000,
-          message: "The active DatabaseContext index must be published and quiescent",
+          message: "The exact Connexion index must be published and quiescent",
         },
       )
       .toBe(true);
-    const result = observed?.index.state.result;
-    if (!observed?.connection.activeServerId || !result || typeof result.generation !== "number") {
+    const candidates = (observed?.index.states ?? []).filter((state) => {
+      const result = state.result;
+      if (!result || state.status !== "available") return false;
+      if (!observed?.connection.connectedServerIds.includes(result.serverId)) return false;
+      if (expected.serverId && result.serverId !== expected.serverId) return false;
+      return !expected.database || regexMatches(expected.database, result.database);
+    });
+    const result = candidates[0]?.result;
+    if (!result || candidates.length !== 1 || typeof result.generation !== "number") {
       throw new Error(
         `The fresh index runtime snapshot is incomplete: ${JSON.stringify(observed)}`,
       );
@@ -157,12 +168,12 @@ export class WorkbenchPage {
     return {
       generation: result.generation,
       revision: result.revision,
-      serverId: observed.connection.activeServerId,
+      serverId: result.serverId,
     };
   }
 
-  private async expectSourcesState(
-    sources: import("@playwright/test").Locator,
+  private async expectSchemasState(
+    schemas: import("@playwright/test").Locator,
     expected: RegExp,
     timeout: number,
   ): Promise<string> {
@@ -170,13 +181,13 @@ export class WorkbenchPage {
     await expect
       .poll(
         async () => {
-          const accessibleName = (await sources.getAttribute("aria-label")) ?? "";
-          observed = /^Sources, [^,]+, ([^,]+)/u.exec(accessibleName)?.[1] ?? "missing";
+          const accessibleName = (await schemas.getAttribute("aria-label")) ?? "";
+          observed = /^Schemas, [^,]+, ([^,]+)/u.exec(accessibleName)?.[1] ?? "missing";
           return observed;
         },
         {
           timeout,
-          message: `The exact Sources row must reach state ${expected}`,
+          message: `The exact Schemas row must reach state ${expected}`,
         },
       )
       .toMatch(expected);
@@ -199,8 +210,8 @@ export class WorkbenchPage {
     object: RegExp,
   ): Promise<void> {
     await this.tree.scrollToTop();
-    await this.expectActiveDatabaseIndexed(server, database);
-    const schemaItem = await this.tree.expandPath([server, database, /^Sources/, schema]);
+    await this.expectDatabaseIndexed(server, database);
+    const schemaItem = await this.tree.expandPath([server, database, SCHEMAS_TREE_ITEM, schema]);
     const item = await this.tree.findChild(schemaItem, object);
     await expect(item).toBeVisible({ timeout: 5_000 });
     await item.click();
@@ -219,8 +230,8 @@ export class WorkbenchPage {
     routine: RegExp,
   ): Promise<void> {
     await this.tree.scrollToTop();
-    await this.expectActiveDatabaseIndexed(server, database);
-    const schemaItem = await this.tree.expandPath([server, database, /^Sources/, schema]);
+    await this.expectDatabaseIndexed(server, database);
+    const schemaItem = await this.tree.expandPath([server, database, SCHEMAS_TREE_ITEM, schema]);
     const item = await this.tree.findChild(schemaItem, routine);
     await this.tree.hoverItem(item, routine);
     const debug = this.page.getByRole("button", { name: "Debug", exact: true });
@@ -236,7 +247,7 @@ export class WorkbenchPage {
     let schemaSync = await this.schemaSyncItem(server, database);
     await expect(schemaSync).toContainText("disabled", { timeout: 5_000 });
     await schemaSync.click();
-    await this.quickInput.chooseAndClose(/Enable for this DatabaseContext/i);
+    await this.quickInput.chooseAndClose(/Enable for this Connexion/i);
     schemaSync = await this.schemaSyncItem(server, database);
     await expect(schemaSync).toContainText("provisioning required", { timeout: 5_000 });
 
@@ -246,20 +257,20 @@ export class WorkbenchPage {
     await expect(provision).toBeVisible({ timeout: 5_000 });
     await provision.click();
     schemaSync = await this.schemaSyncItem(server, database);
-    await expect(schemaSync).toContainText("active · listening", { timeout: 10_000 });
+    await expect(schemaSync).toContainText("listening", { timeout: 10_000 });
   }
 
   async restartSchemaSync(server: RegExp, database: RegExp): Promise<void> {
     let schemaSync = await this.schemaSyncItem(server, database);
     await schemaSync.click();
-    await this.quickInput.chooseAndClose(/Disable for this DatabaseContext/i);
+    await this.quickInput.chooseAndClose(/Disable for this Connexion/i);
     schemaSync = await this.schemaSyncItem(server, database);
     await expect(schemaSync).toContainText("disabled", { timeout: 5_000 });
 
     await schemaSync.click();
-    await this.quickInput.chooseAndClose(/Enable for this DatabaseContext/i);
+    await this.quickInput.chooseAndClose(/Enable for this Connexion/i);
     schemaSync = await this.schemaSyncItem(server, database);
-    await expect(schemaSync).toContainText("active · listening", { timeout: 10_000 });
+    await expect(schemaSync).toContainText("listening", { timeout: 10_000 });
   }
 
   async removeAndDisableSchemaSync(server: RegExp, database: RegExp): Promise<void> {
@@ -272,14 +283,14 @@ export class WorkbenchPage {
     schemaSync = await this.schemaSyncItem(server, database);
     await expect(schemaSync).toContainText("provisioning required", { timeout: 10_000 });
     await schemaSync.click();
-    await this.quickInput.chooseAndClose(/Disable for this DatabaseContext/i);
+    await this.quickInput.chooseAndClose(/Disable for this Connexion/i);
     schemaSync = await this.schemaSyncItem(server, database);
     await expect(schemaSync).toContainText("disabled", { timeout: 5_000 });
   }
 
   private async schemaSyncItem(server: RegExp, database: RegExp): Promise<Locator> {
-    const databaseContext = await this.tree.expandPath([server, database]);
-    const schemaSync = await this.tree.findChild(databaseContext, /^Schema synchronization/);
+    const databaseItem = await this.tree.expandPath([server, database]);
+    const schemaSync = await this.tree.findChild(databaseItem, /^Schema synchronization/);
     return this.tree.waitForStableItem(schemaSync, "Schema synchronization");
   }
 
@@ -352,4 +363,8 @@ export class WorkbenchPage {
       })
       .toBe(true);
   }
+}
+
+function regexMatches(pattern: RegExp, value: string): boolean {
+  return new RegExp(pattern.source, pattern.flags.replace("g", "").replace("y", "")).test(value);
 }

@@ -1,5 +1,5 @@
 import type { DebugResult } from "../../src/debugger/launch/index.js";
-import type { ServerConfig } from "./serverStore.js";
+import { getConnectionName, type ServerConfig } from "./serverStore.js";
 
 export const SQL_NOTEBOOK_TYPE = "postgresql-workbench-sql";
 export const SQL_NOTEBOOK_EXTENSION = ".pgsql-notebook";
@@ -172,7 +172,7 @@ export function resolveScratchpadAssociation(
   const server = servers.find((candidate) => candidate.id === serverId);
   const snapshot: ScratchpadAssociationSnapshot = {
     serverId,
-    serverName: metadata.serverName?.trim() || server?.name || serverId,
+    serverName: server ? getConnectionName(server) : metadata.serverName?.trim() || serverId,
     database,
   };
   if (!server || server.database !== database) {
@@ -184,7 +184,7 @@ export function resolveScratchpadAssociation(
 export function associationSnapshot(server: ServerConfig): ScratchpadAssociationSnapshot {
   return {
     serverId: server.id,
-    serverName: server.name,
+    serverName: getConnectionName(server),
     database: server.database,
   };
 }

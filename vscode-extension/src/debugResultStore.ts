@@ -23,6 +23,7 @@ export interface DebugResultSummary {
   durationMs: number;
   timestamp: string;
   message?: string;
+  connection?: string;
 }
 
 export interface DebugResultViewState {
@@ -32,6 +33,7 @@ export interface DebugResultViewState {
 
 export class DebugResultStore {
   private readonly results: DebugResultEntry[] = [];
+  private readonly connections = new Map<string, string>();
   private readonly listeners = new Set<() => void>();
   private selectedId: string | undefined;
 
@@ -45,26 +47,32 @@ export class DebugResultStore {
     return { dispose: () => this.listeners.delete(listener) };
   }
 
-  add(result: DebugResult): void {
-    this.update(result);
+  add(result: DebugResult, connection?: string): void {
+    this.update(result, connection);
   }
 
-  addStatus(status: DebugResultStatus): void {
-    this.update(status);
+  addStatus(status: DebugResultStatus, connection?: string): void {
+    this.update(status, connection);
   }
 
-  update(entry: DebugResultEntry): void {
+  update(entry: DebugResultEntry, connection?: string): void {
     const existing = this.results.findIndex((item) => item.id === entry.id);
     if (existing >= 0) this.results.splice(existing, 1);
     this.results.unshift(entry);
+    if (connection !== undefined) this.connections.set(entry.id, connection);
     this.selectedId = entry.id;
     this.trim();
     this.fire();
   }
 
+  connectionOf(id: string): string | undefined {
+    return this.connections.get(id);
+  }
+
   clear(): void {
     if (this.results.length === 0) return;
     this.results.length = 0;
+    this.connections.clear();
     this.selectedId = undefined;
     this.fire();
   }
@@ -105,6 +113,7 @@ export class DebugResultStore {
         durationMs: "durationMs" in result ? result.durationMs : 0,
         timestamp: result.timestamp,
         ...("message" in result ? { message: result.message } : {}),
+        ...(this.connections.has(result.id) ? { connection: this.connections.get(result.id) } : {}),
       })),
       selected: this.selectedEntry,
     };
@@ -131,6 +140,10 @@ export class DebugResultStore {
     while (total > this.maxBytes && this.results.length > 1) {
       const removed = this.results.pop();
       total -= removed ? retainedBytes(removed) : 0;
+    }
+    const retained = new Set(this.results.map((result) => result.id));
+    for (const id of [...this.connections.keys()]) {
+      if (!retained.has(id)) this.connections.delete(id);
     }
   }
 

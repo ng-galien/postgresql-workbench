@@ -160,7 +160,7 @@ export const DEFAULT_WORKBENCH_GRAPH_APPEARANCE: WorkbenchGraphAppearance = {
 };
 
 export type WorkbenchGraphHostMessage =
-  | { type: "databaseContextInvalidated"; message: string }
+  | { type: "cockpitContextInvalidated"; message: string }
   | { type: "cockpitAppearance"; appearance: WorkbenchGraphAppearance }
   | {
       type: "cockpitSession";

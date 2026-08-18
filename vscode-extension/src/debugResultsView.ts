@@ -590,7 +590,8 @@ const DEBUG_RESULTS_HTML = `<!doctype html>
       const time = new Date(item.timestamp).toLocaleTimeString();
       const state = item.status === 'pending' ? 'running' : item.status === 'error' ? 'failed' : item.rowCount + ' rows';
       const preview = item.truncated ? ' · preview' : '';
-      return time + ' · ' + item.label + ' · ' + state + preview;
+      const connection = item.connection ? ' · ' + item.connection : '';
+      return time + ' · ' + item.label + ' · ' + state + preview + connection;
     }
 
     function statusLabel(value) {

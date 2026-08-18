@@ -1,7 +1,7 @@
 import type { Client } from "pg";
 import { describe, expect, it, vi } from "vitest";
 import type * as vscode from "vscode";
-import type { ConnectionManager } from "./connectionManager.js";
+import type { ConnectionChange, ConnectionManager } from "./connectionManager.js";
 import type { ServerConfig } from "./serverStore.js";
 import type { WorkbenchIndexController } from "./workbenchIndexController.js";
 
@@ -135,6 +135,47 @@ class FailingClient extends FakeClient {
 }
 
 describe("WorkbenchDdlSyncController", () => {
+  it("reconciles only the Connexion named by a connection event", async () => {
+    const serverA = { ...SERVER, id: "server-a", database: "a", schemaSync: { enabled: false } };
+    const serverB = { ...SERVER, id: "server-b", database: "b", schemaSync: { enabled: false } };
+    const listeners = new Set<(change: ConnectionChange) => void>();
+    const connections = {
+      servers: [serverA, serverB],
+      store: {
+        get: (serverId: string) => [serverA, serverB].find((server) => server.id === serverId),
+      },
+      isServerConnected: () => false,
+      onChanged: (listener: (change: ConnectionChange) => void) => {
+        listeners.add(listener);
+        return { dispose: () => listeners.delete(listener) };
+      },
+    };
+    const controller = new WorkbenchDdlSyncController(
+      connections as unknown as ConnectionManager,
+      indexStub().value as unknown as WorkbenchIndexController,
+      { appendLine: vi.fn() } as unknown as vscode.OutputChannel,
+    );
+    await drainMicrotasks();
+    const beforeA = controller.diagnosticState(serverA.id).lifecycle.epoch;
+    const beforeB = controller.diagnosticState(serverB.id).lifecycle.epoch;
+
+    for (const listener of listeners) {
+      listener({ serverIds: [serverA.id], rootsChanged: false });
+    }
+    await drainMicrotasks();
+
+    expect(controller.diagnosticState(serverA.id).lifecycle.epoch).toBeGreaterThan(beforeA);
+    expect(controller.diagnosticState(serverB.id).lifecycle.epoch).toBe(beforeB);
+
+    const afterA = controller.diagnosticState(serverA.id).lifecycle.epoch;
+    for (const listener of listeners) {
+      listener({ serverIds: [serverA.id], rootsChanged: false, debugCapabilityOnly: true });
+    }
+    await drainMicrotasks();
+    expect(controller.diagnosticState(serverA.id).lifecycle.epoch).toBe(afterA);
+    controller.dispose();
+  });
+
   it("buffers a DDL notification delivered while LISTEN is completing", async () => {
     vi.useFakeTimers();
     const listener = new NotifyingListenClient(true);
@@ -155,12 +196,12 @@ describe("WorkbenchDdlSyncController", () => {
         "PostgreSQL schema changed in transaction 100",
       );
       expect(controller.diagnosticState(SERVER.id).listener?.queuedNotifications).toBe(1);
-      expect(index.value.synchronizeActiveDatabaseDdl).not.toHaveBeenCalled();
+      expect(index.value.synchronizeDatabaseDdl).not.toHaveBeenCalled();
 
       await vi.advanceTimersByTimeAsync(100);
       await drainMicrotasks();
-      expect(index.value.synchronizeActiveDatabaseDdl).toHaveBeenCalledOnce();
-      expect(index.value.synchronizeActiveDatabaseDdl.mock.calls[0]?.[2]).toHaveLength(1);
+      expect(index.value.synchronizeDatabaseDdl).toHaveBeenCalledOnce();
+      expect(index.value.synchronizeDatabaseDdl.mock.calls[0]?.[2]).toHaveLength(1);
     } finally {
       vi.useRealTimers();
       controller.dispose();
@@ -190,17 +231,20 @@ describe("WorkbenchDdlSyncController", () => {
   it("listens with a dedicated client and coalesces DDL into an incremental refresh", async () => {
     const listener = new FakeClient(true);
     const refresh = new FakeClient();
-    const connectionListeners = new Set<() => void>();
+    const connectionListeners = new Set<
+      (change: { serverIds: string[]; rootsChanged: boolean }) => void
+    >();
     const clients = [listener, refresh];
     const connections = {
       servers: [SERVER],
       store: { get: (serverId: string) => (serverId === SERVER.id ? SERVER : undefined) },
-      onChanged(callback: () => void): vscode.Disposable {
+      onChanged(
+        callback: (change: { serverIds: string[]; rootsChanged: boolean }) => void,
+      ): vscode.Disposable {
         connectionListeners.add(callback);
         return { dispose: () => connectionListeners.delete(callback) };
       },
       createDedicatedClient: vi.fn(async () => clients.shift() as unknown as Client),
-      isActiveServer: (serverId: string) => serverId === SERVER.id,
     };
     let stale = false;
     const synchronize = vi.fn(
@@ -218,7 +262,7 @@ describe("WorkbenchDdlSyncController", () => {
         stale = true;
       }),
       isDatabaseStale: () => stale,
-      synchronizeActiveDatabaseDdl: synchronize,
+      synchronizeDatabaseDdl: synchronize,
     };
     const appendLine = vi.fn();
     const controller = new WorkbenchDdlSyncController(
@@ -289,18 +333,21 @@ describe("WorkbenchDdlSyncController", () => {
     const refresh = new FakeClient();
     const clients = [firstListener, secondListener, refresh];
     let server: ServerConfig = { ...SERVER, schemaSync: { ...SERVER.schemaSync } };
-    const connectionListeners = new Set<() => void>();
+    const connectionListeners = new Set<
+      (change: { serverIds: string[]; rootsChanged: boolean }) => void
+    >();
     const connections = {
       get servers() {
         return [server];
       },
       store: { get: (serverId: string) => (serverId === server.id ? server : undefined) },
-      onChanged(callback: () => void): vscode.Disposable {
+      onChanged(
+        callback: (change: { serverIds: string[]; rootsChanged: boolean }) => void,
+      ): vscode.Disposable {
         connectionListeners.add(callback);
         return { dispose: () => connectionListeners.delete(callback) };
       },
       createDedicatedClient: vi.fn(async () => clients.shift() as unknown as Client),
-      isActiveServer: () => true,
     };
     const index = indexStub();
     const controller = new WorkbenchDdlSyncController(
@@ -311,19 +358,21 @@ describe("WorkbenchDdlSyncController", () => {
     await vi.waitFor(() => expect(controller.state(SERVER.id).status).toBe("listening"));
 
     server = { ...server, schemaSync: { enabled: false, supportSchema: "workbench" } };
-    for (const changed of connectionListeners) changed();
+    for (const changed of connectionListeners)
+      changed({ serverIds: [SERVER.id], rootsChanged: false });
     await vi.waitFor(() => expect(controller.state(SERVER.id).status).toBe("disabled"));
     expect(firstListener.end).toHaveBeenCalledOnce();
 
     server = { ...server, schemaSync: { enabled: true, supportSchema: "workbench" } };
-    for (const changed of connectionListeners) changed();
+    for (const changed of connectionListeners)
+      changed({ serverIds: [SERVER.id], rootsChanged: false });
     await vi.waitFor(() => expect(controller.state(SERVER.id).status).toBe("listening"));
     expect(secondListener.queries.at(-1)).toBe("LISTEN plpgsql_workbench_ddl");
     expect(secondListener.queries.some((query) => query.includes("CREATE EVENT TRIGGER"))).toBe(
       false,
     );
-    expect(index.value.synchronizeActiveDatabaseDdl).toHaveBeenCalledOnce();
-    expect(index.value.synchronizeActiveDatabaseDdl.mock.calls[0]?.[3]).toBe(
+    expect(index.value.synchronizeDatabaseDdl).toHaveBeenCalledOnce();
+    expect(index.value.synchronizeDatabaseDdl.mock.calls[0]?.[3]).toBe(
       "listener reconnected after a notification gap",
     );
     controller.dispose();
@@ -337,11 +386,14 @@ describe("WorkbenchDdlSyncController", () => {
     const refresh = new FakeClient(false, 1_003);
     const clients = [firstListener, secondListener, refresh];
     let server: ServerConfig = { ...SERVER, schemaSync: { ...SERVER.schemaSync } };
-    const connectionListeners = new Set<() => void>();
+    const connectionListeners = new Set<
+      (change: { serverIds: string[]; rootsChanged: boolean }) => void
+    >();
     const setSchemaSyncOverride = vi.fn(
       async (_serverId: string, schemaSync: ServerConfig["schemaSync"]) => {
         server = { ...server, schemaSync };
-        for (const changed of connectionListeners) changed();
+        for (const changed of connectionListeners)
+          changed({ serverIds: [SERVER.id], rootsChanged: false });
       },
     );
     const connections = {
@@ -349,13 +401,14 @@ describe("WorkbenchDdlSyncController", () => {
         return [server];
       },
       store: { get: (serverId: string) => (serverId === server.id ? server : undefined) },
-      onChanged(callback: () => void): vscode.Disposable {
+      onChanged(
+        callback: (change: { serverIds: string[]; rootsChanged: boolean }) => void,
+      ): vscode.Disposable {
         connectionListeners.add(callback);
         return { dispose: () => connectionListeners.delete(callback) };
       },
       setSchemaSyncOverride,
       createDedicatedClient: vi.fn(async () => clients.shift() as unknown as Client),
-      isActiveServer: () => true,
     };
     const index = indexStub();
     const controller = new WorkbenchDdlSyncController(
@@ -383,7 +436,7 @@ describe("WorkbenchDdlSyncController", () => {
     expect(setSchemaSyncOverride.mock.calls.map((call) => call[1]?.enabled)).toEqual([false, true]);
     expect(firstListener.end).toHaveBeenCalledOnce();
     expect(secondListener.end).not.toHaveBeenCalled();
-    expect(index.value.synchronizeActiveDatabaseDdl).toHaveBeenCalledOnce();
+    expect(index.value.synchronizeDatabaseDdl).toHaveBeenCalledOnce();
     expect(controller.diagnosticState(SERVER.id)).toMatchObject({
       desired: { enabled: true, supportSchema: "workbench" },
       state: { status: "listening" },
@@ -399,11 +452,14 @@ describe("WorkbenchDdlSyncController", () => {
     const refresh = new FakeClient(false, 2_003);
     const clients = [firstListener, secondListener, refresh];
     let server: ServerConfig = { ...SERVER, schemaSync: { ...SERVER.schemaSync } };
-    const connectionListeners = new Set<() => void>();
+    const connectionListeners = new Set<
+      (change: { serverIds: string[]; rootsChanged: boolean }) => void
+    >();
     const setSchemaSyncOverride = vi.fn(
       async (_serverId: string, schemaSync: ServerConfig["schemaSync"]) => {
         server = { ...server, schemaSync };
-        for (const changed of connectionListeners) changed();
+        for (const changed of connectionListeners)
+          changed({ serverIds: [SERVER.id], rootsChanged: false });
       },
     );
     const connections = {
@@ -411,13 +467,14 @@ describe("WorkbenchDdlSyncController", () => {
         return [server];
       },
       store: { get: (serverId: string) => (serverId === server.id ? server : undefined) },
-      onChanged(callback: () => void): vscode.Disposable {
+      onChanged(
+        callback: (change: { serverIds: string[]; rootsChanged: boolean }) => void,
+      ): vscode.Disposable {
         connectionListeners.add(callback);
         return { dispose: () => connectionListeners.delete(callback) };
       },
       setSchemaSyncOverride,
       createDedicatedClient: vi.fn(async () => clients.shift() as unknown as Client),
-      isActiveServer: () => true,
     };
     const index = indexStub();
     const controller = new WorkbenchDdlSyncController(
@@ -442,7 +499,7 @@ describe("WorkbenchDdlSyncController", () => {
     expect(secondListener.queries.at(-1)).toBe("LISTEN plpgsql_workbench_ddl");
     expect(secondListener.end).not.toHaveBeenCalled();
     expect(connections.createDedicatedClient).toHaveBeenCalledTimes(3);
-    expect(index.value.synchronizeActiveDatabaseDdl).toHaveBeenCalledOnce();
+    expect(index.value.synchronizeDatabaseDdl).toHaveBeenCalledOnce();
     expect(controller.diagnosticState(SERVER.id)).toMatchObject({
       desired: { enabled: true, supportSchema: "workbench" },
       state: { status: "listening" },
@@ -473,7 +530,7 @@ describe("WorkbenchDdlSyncController", () => {
         stale = true;
       }),
       isDatabaseStale: () => stale,
-      synchronizeActiveDatabaseDdl: synchronize,
+      synchronizeDatabaseDdl: synchronize,
     };
     const controller = new WorkbenchDdlSyncController(
       connections.value as unknown as ConnectionManager,
@@ -533,7 +590,7 @@ describe("WorkbenchDdlSyncController", () => {
         stale = true;
       }),
       isDatabaseStale: () => stale,
-      synchronizeActiveDatabaseDdl: synchronize,
+      synchronizeDatabaseDdl: synchronize,
     };
     const controller = new WorkbenchDdlSyncController(
       connections.value as unknown as ConnectionManager,
@@ -589,26 +646,15 @@ describe("WorkbenchDdlSyncController", () => {
     }
   });
 
-  it("retries a failed activation refresh before accepting later incremental DDL", async () => {
-    const firstListener = new FakeClient(true, 4_001);
-    const failedRefreshClient = new FakeClient(false, 4_002);
-    const secondListener = new FakeClient(true, 4_003);
-    const successfulRefreshClient = new FakeClient(false, 4_004);
-    const clients = [firstListener, failedRefreshClient, secondListener, successfulRefreshClient];
-    const connectionListeners = new Set<() => void>();
-    let active = false;
+  it("refreshes DDL for its exact Connexion without a global context gate", async () => {
+    const listener = new FakeClient(true, 4_001);
     const connections = {
       servers: [SERVER],
       store: { get: (serverId: string) => (serverId === SERVER.id ? SERVER : undefined) },
-      onChanged(callback: () => void): vscode.Disposable {
-        connectionListeners.add(callback);
-        return { dispose: () => connectionListeners.delete(callback) };
-      },
-      createDedicatedClient: vi.fn(async () => clients.shift() as unknown as Client),
-      isActiveServer: () => active,
+      onChanged: () => ({ dispose: vi.fn() }),
+      createDedicatedClient: vi.fn(async () => listener as unknown as Client),
     };
     let stale = false;
-    let refreshCount = 0;
     const synchronize = vi.fn(
       async (
         _client: unknown,
@@ -616,10 +662,8 @@ describe("WorkbenchDdlSyncController", () => {
         _objects: readonly unknown[],
         _fallbackReason?: string,
       ) => {
-        refreshCount += 1;
-        if (refreshCount === 1) throw new Error("catalog refresh failed");
         stale = false;
-        return { generation: refreshCount + 1 };
+        return { generation: 2 };
       },
     );
     const index = {
@@ -627,7 +671,7 @@ describe("WorkbenchDdlSyncController", () => {
         stale = true;
       }),
       isDatabaseStale: () => stale,
-      synchronizeActiveDatabaseDdl: synchronize,
+      synchronizeDatabaseDdl: synchronize,
     };
     const controller = new WorkbenchDdlSyncController(
       connections as unknown as ConnectionManager,
@@ -636,62 +680,25 @@ describe("WorkbenchDdlSyncController", () => {
     );
     await vi.waitFor(() => expect(controller.state(SERVER.id).status).toBe("listening"));
 
-    vi.useFakeTimers();
-    try {
-      firstListener.emit("notification", {
-        channel: "plpgsql_workbench_ddl",
-        payload: ddlPayload("201"),
-      });
-      await vi.advanceTimersByTimeAsync(100);
-      expect(synchronize).not.toHaveBeenCalled();
-      expect(controller.diagnosticState(SERVER.id)).toMatchObject({
-        fullRefreshDebtEpoch: 1,
-        pendingFullRefreshTransactionId: "201",
-        lastReceivedTransactionId: "201",
-      });
-      expect(controller.diagnosticState(SERVER.id).lastCompletedTransactionId).toBeUndefined();
-
-      active = true;
-      for (const changed of connectionListeners) changed();
-      await drainMicrotasks();
-      expect(synchronize).toHaveBeenCalledOnce();
-      expect(synchronize.mock.calls[0]?.[2]).toEqual([]);
-      expect(synchronize.mock.calls[0]?.[3]).toBe(
-        "DatabaseContext became active after schema changes while inactive",
-      );
-      expect(firstListener.end).toHaveBeenCalledOnce();
-      expect(controller.diagnosticState(SERVER.id)).toMatchObject({
-        state: { status: "desynchronized" },
-        lifecycle: { reconnectScheduled: true },
-        pendingFullRefreshTransactionId: "201",
-      });
-      expect(controller.diagnosticState(SERVER.id).lastCompletedTransactionId).toBeUndefined();
-
-      firstListener.emit("notification", {
-        channel: "plpgsql_workbench_ddl",
-        payload: ddlPayload("202"),
-      });
-      await vi.advanceTimersByTimeAsync(100);
-      expect(synchronize).toHaveBeenCalledOnce();
-      expect(controller.diagnosticState(SERVER.id).lastReceivedTransactionId).toBe("201");
-
-      await vi.advanceTimersByTimeAsync(2_000);
-      await drainMicrotasks();
-      expect(synchronize).toHaveBeenCalledTimes(2);
-      expect(synchronize.mock.calls[1]?.[2]).toEqual([]);
-      expect(synchronize.mock.calls[1]?.[3]).toBe("listener reconnected after a notification gap");
+    listener.emit("notification", {
+      channel: "plpgsql_workbench_ddl",
+      payload: ddlPayload("201"),
+    });
+    await vi.waitFor(() => expect(synchronize).toHaveBeenCalledOnce());
+    expect(synchronize.mock.calls[0]?.[2]).toMatchObject([
+      { commandTag: "ALTER TABLE", objectIdentity: "app.account" },
+    ]);
+    expect(synchronize.mock.calls[0]?.[3]).toBeUndefined();
+    await vi.waitFor(() =>
       expect(controller.diagnosticState(SERVER.id)).toMatchObject({
         state: { status: "listening" },
-        listener: { processId: 4_003 },
+        listener: { processId: 4_001 },
+        lastReceivedTransactionId: "201",
         lastCompletedTransactionId: "201",
-      });
-      expect(controller.diagnosticState(SERVER.id).fullRefreshDebtEpoch).toBeUndefined();
-      expect(controller.diagnosticState(SERVER.id).pendingFullRefreshTransactionId).toBeUndefined();
-      expect(connections.createDedicatedClient).toHaveBeenCalledTimes(4);
-    } finally {
-      vi.useRealTimers();
-      controller.dispose();
-    }
+      }),
+    );
+    expect(stale).toBe(false);
+    controller.dispose();
   });
 
   it("deduplicates concurrent starts and cannot leave a listener after opt-out", async () => {
@@ -701,19 +708,22 @@ describe("WorkbenchDdlSyncController", () => {
       resolveClient = resolve;
     });
     let server: ServerConfig = { ...SERVER, schemaSync: { ...SERVER.schemaSync } };
-    const connectionListeners = new Set<() => void>();
+    const connectionListeners = new Set<
+      (change: { serverIds: string[]; rootsChanged: boolean }) => void
+    >();
     const createDedicatedClient = vi.fn(() => pendingClient);
     const connections = {
       get servers() {
         return [server];
       },
       store: { get: (serverId: string) => (serverId === server.id ? server : undefined) },
-      onChanged(callback: () => void): vscode.Disposable {
+      onChanged(
+        callback: (change: { serverIds: string[]; rootsChanged: boolean }) => void,
+      ): vscode.Disposable {
         connectionListeners.add(callback);
         return { dispose: () => connectionListeners.delete(callback) };
       },
       createDedicatedClient,
-      isActiveServer: () => true,
     };
     const index = indexStub();
     const controller = new WorkbenchDdlSyncController(
@@ -721,12 +731,15 @@ describe("WorkbenchDdlSyncController", () => {
       index.value as unknown as WorkbenchIndexController,
       { appendLine: vi.fn() } as unknown as vscode.OutputChannel,
     );
-    for (const changed of connectionListeners) changed();
-    for (const changed of connectionListeners) changed();
+    for (const changed of connectionListeners)
+      changed({ serverIds: [SERVER.id], rootsChanged: false });
+    for (const changed of connectionListeners)
+      changed({ serverIds: [SERVER.id], rootsChanged: false });
     await vi.waitFor(() => expect(createDedicatedClient).toHaveBeenCalledOnce());
 
     server = { ...server, schemaSync: { enabled: false, supportSchema: "workbench" } };
-    for (const changed of connectionListeners) changed();
+    for (const changed of connectionListeners)
+      changed({ serverIds: [SERVER.id], rootsChanged: false });
     resolveClient!(listener as unknown as Client);
 
     await vi.waitFor(() => expect(listener.end).toHaveBeenCalledOnce());
@@ -761,8 +774,8 @@ describe("WorkbenchDdlSyncController", () => {
     );
     await first.provision(SERVER.id);
     expect(first.state(SERVER.id).status).toBe("listening");
-    expect(firstIndex.value.synchronizeActiveDatabaseDdl).toHaveBeenCalledOnce();
-    expect(firstIndex.value.synchronizeActiveDatabaseDdl.mock.calls[0]?.[3]).toBe(
+    expect(firstIndex.value.synchronizeDatabaseDdl).toHaveBeenCalledOnce();
+    expect(firstIndex.value.synchronizeDatabaseDdl.mock.calls[0]?.[3]).toBe(
       "listener reconnected after a notification gap",
     );
     first.dispose();
@@ -798,19 +811,22 @@ describe("WorkbenchDdlSyncController", () => {
       ...SERVER,
       schemaSync: { ...SERVER.schemaSync },
     };
-    const connectionListeners = new Set<() => void>();
+    const connectionListeners = new Set<
+      (change: { serverIds: string[]; rootsChanged: boolean }) => void
+    >();
     const createDedicatedClient = vi.fn(async () => clients.shift() as unknown as Client);
     const connections = {
       get servers() {
         return server ? [server] : [];
       },
       store: { get: (serverId: string) => (serverId === SERVER.id ? server : undefined) },
-      onChanged(callback: () => void): vscode.Disposable {
+      onChanged(
+        callback: (change: { serverIds: string[]; rootsChanged: boolean }) => void,
+      ): vscode.Disposable {
         connectionListeners.add(callback);
         return { dispose: () => connectionListeners.delete(callback) };
       },
       createDedicatedClient,
-      isActiveServer: (serverId: string) => serverId === SERVER.id,
     };
     const index = indexStub();
     const controller = new WorkbenchDdlSyncController(
@@ -825,7 +841,8 @@ describe("WorkbenchDdlSyncController", () => {
     expect(createDedicatedClient).toHaveBeenCalledOnce();
 
     server = undefined;
-    for (const changed of connectionListeners) changed();
+    for (const changed of connectionListeners)
+      changed({ serverIds: [SERVER.id], rootsChanged: false });
     await vi.waitFor(() =>
       expect(controller.diagnosticState(SERVER.id)).toMatchObject({
         desired: undefined,
@@ -835,13 +852,14 @@ describe("WorkbenchDdlSyncController", () => {
     );
 
     server = { ...SERVER, schemaSync: { ...SERVER.schemaSync } };
-    for (const changed of connectionListeners) changed();
+    for (const changed of connectionListeners)
+      changed({ serverIds: [SERVER.id], rootsChanged: false });
     await vi.waitFor(() => expect(controller.state(SERVER.id).status).toBe("listening"));
 
     expect(createDedicatedClient).toHaveBeenCalledTimes(3);
     expect(recreatedListener.queries.at(-1)).toBe("LISTEN plpgsql_workbench_ddl");
-    expect(index.value.synchronizeActiveDatabaseDdl).toHaveBeenCalledOnce();
-    expect(index.value.synchronizeActiveDatabaseDdl.mock.calls[0]?.[3]).toBe(
+    expect(index.value.synchronizeDatabaseDdl).toHaveBeenCalledOnce();
+    expect(index.value.synchronizeDatabaseDdl.mock.calls[0]?.[3]).toBe(
       "listener connected while index freshness was unknown",
     );
     expect(controller.diagnosticState(SERVER.id)).toMatchObject({
@@ -862,19 +880,22 @@ describe("WorkbenchDdlSyncController", () => {
       ...SERVER,
       schemaSync: { ...SERVER.schemaSync },
     };
-    const connectionListeners = new Set<() => void>();
+    const connectionListeners = new Set<
+      (change: { serverIds: string[]; rootsChanged: boolean }) => void
+    >();
     const createDedicatedClient = vi.fn(async () => clients.shift() as unknown as Client);
     const connections = {
       get servers() {
         return server ? [server] : [];
       },
       store: { get: (serverId: string) => (serverId === SERVER.id ? server : undefined) },
-      onChanged(callback: () => void): vscode.Disposable {
+      onChanged(
+        callback: (change: { serverIds: string[]; rootsChanged: boolean }) => void,
+      ): vscode.Disposable {
         connectionListeners.add(callback);
         return { dispose: () => connectionListeners.delete(callback) };
       },
       createDedicatedClient,
-      isActiveServer: (serverId: string) => serverId === SERVER.id,
     };
     const index = indexStub();
     const controller = new WorkbenchDdlSyncController(
@@ -884,13 +905,15 @@ describe("WorkbenchDdlSyncController", () => {
     );
 
     await vi.waitFor(() => expect(controller.state(SERVER.id).status).toBe("listening"));
-    expect(index.value.synchronizeActiveDatabaseDdl).not.toHaveBeenCalled();
+    expect(index.value.synchronizeDatabaseDdl).not.toHaveBeenCalled();
 
     server = undefined;
-    for (const changed of connectionListeners) changed();
+    for (const changed of connectionListeners)
+      changed({ serverIds: [SERVER.id], rootsChanged: false });
     await vi.waitFor(() => expect(firstListener.end).toHaveBeenCalledOnce());
     server = { ...SERVER, schemaSync: { ...SERVER.schemaSync } };
-    for (const changed of connectionListeners) changed();
+    for (const changed of connectionListeners)
+      changed({ serverIds: [SERVER.id], rootsChanged: false });
     expect(index.markDatabaseStale).toHaveBeenCalledWith(
       SERVER.id,
       SERVER.database,
@@ -906,8 +929,8 @@ describe("WorkbenchDdlSyncController", () => {
     );
 
     expect(recreatedListener.queries.at(-1)).toBe("LISTEN plpgsql_workbench_ddl");
-    expect(index.value.synchronizeActiveDatabaseDdl).toHaveBeenCalledOnce();
-    expect(index.value.synchronizeActiveDatabaseDdl.mock.calls[0]?.[3]).toBe(
+    expect(index.value.synchronizeDatabaseDdl).toHaveBeenCalledOnce();
+    expect(index.value.synchronizeDatabaseDdl.mock.calls[0]?.[3]).toBe(
       "listener connected while index freshness was unknown",
     );
     controller.dispose();
@@ -921,11 +944,14 @@ describe("WorkbenchDdlSyncController", () => {
       ...SERVER,
       schemaSync: { enabled: false, supportSchema: "workbench" },
     };
-    const connectionListeners = new Set<() => void>();
+    const connectionListeners = new Set<
+      (change: { serverIds: string[]; rootsChanged: boolean }) => void
+    >();
     const setSchemaSyncOverride = vi.fn(
       async (_serverId: string, schemaSync: ServerConfig["schemaSync"]) => {
         server = { ...server, schemaSync };
-        for (const changed of connectionListeners) changed();
+        for (const changed of connectionListeners)
+          changed({ serverIds: [SERVER.id], rootsChanged: false });
       },
     );
     const connections = {
@@ -933,13 +959,14 @@ describe("WorkbenchDdlSyncController", () => {
         return [server];
       },
       store: { get: (serverId: string) => (serverId === SERVER.id ? server : undefined) },
-      onChanged(callback: () => void): vscode.Disposable {
+      onChanged(
+        callback: (change: { serverIds: string[]; rootsChanged: boolean }) => void,
+      ): vscode.Disposable {
         connectionListeners.add(callback);
         return { dispose: () => connectionListeners.delete(callback) };
       },
       setSchemaSyncOverride,
       createDedicatedClient: vi.fn(async () => clients.shift() as unknown as Client),
-      isActiveServer: (serverId: string) => serverId === SERVER.id,
     };
     const index = indexStub();
     const controller = new WorkbenchDdlSyncController(
@@ -953,8 +980,8 @@ describe("WorkbenchDdlSyncController", () => {
 
     expect(controller.state(SERVER.id).status).toBe("listening");
     expect(listener.queries.at(-1)).toBe("LISTEN plpgsql_workbench_ddl");
-    expect(index.value.synchronizeActiveDatabaseDdl).toHaveBeenCalledOnce();
-    expect(index.value.synchronizeActiveDatabaseDdl.mock.calls[0]?.[3]).toBe(
+    expect(index.value.synchronizeDatabaseDdl).toHaveBeenCalledOnce();
+    expect(index.value.synchronizeDatabaseDdl.mock.calls[0]?.[3]).toBe(
       "listener reconnected after a notification gap",
     );
     expect(setSchemaSyncOverride).toHaveBeenCalledWith(
@@ -986,17 +1013,20 @@ function ddlPayload(transactionId: string): string {
 }
 
 function connectionsWithClients(clients: FakeClient[]) {
-  const connectionListeners = new Set<() => void>();
+  const connectionListeners = new Set<
+    (change: { serverIds: string[]; rootsChanged: boolean }) => void
+  >();
   return {
     value: {
       servers: [SERVER],
       store: { get: (serverId: string) => (serverId === SERVER.id ? SERVER : undefined) },
-      onChanged(callback: () => void): vscode.Disposable {
+      onChanged(
+        callback: (change: { serverIds: string[]; rootsChanged: boolean }) => void,
+      ): vscode.Disposable {
         connectionListeners.add(callback);
         return { dispose: () => connectionListeners.delete(callback) };
       },
       createDedicatedClient: vi.fn(async () => clients.shift() as unknown as Client),
-      isActiveServer: (serverId: string) => serverId === SERVER.id,
     },
   };
 }
@@ -1006,7 +1036,7 @@ function indexStub() {
   const markDatabaseStale = vi.fn(() => {
     stale = true;
   });
-  const synchronizeActiveDatabaseDdl = vi.fn(
+  const synchronizeDatabaseDdl = vi.fn(
     async (
       _client: unknown,
       _identity: { serverId: string; database: string },
@@ -1022,7 +1052,7 @@ function indexStub() {
     value: {
       markDatabaseStale,
       isDatabaseStale: () => stale,
-      synchronizeActiveDatabaseDdl,
+      synchronizeDatabaseDdl,
     },
   };
 }

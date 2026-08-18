@@ -124,6 +124,33 @@ describe("stale Code Moniker source tabs", () => {
     provider.dispose();
   });
 
+  it("invalidates cached sources only for the changed Connexion", async () => {
+    const sourceUri = uri("code+moniker", "code+moniker://routine");
+    let descriptor = routineDescriptor("SELECT 1");
+    let onServerChanged: ((change: { serverIds: string[] }) => void) | undefined;
+    const provider = new CodeMonikerContentProvider(
+      {
+        onServerChanged: (listener: (change: { serverIds: string[] }) => void) => {
+          onServerChanged = listener;
+          return { dispose() {} };
+        },
+      } as never,
+      {
+        onDidChangeState: () => ({ dispose() {} }),
+        sourceDescriptorForDocumentUri: () => descriptor,
+      } as never,
+    );
+    expect(new TextDecoder().decode(await provider.readFile(sourceUri as never))).toBe("SELECT 1");
+    descriptor = routineDescriptor("SELECT 2");
+
+    onServerChanged?.({ serverIds: ["another-server"] });
+    expect(new TextDecoder().decode(await provider.readFile(sourceUri as never))).toBe("SELECT 1");
+
+    onServerChanged?.({ serverIds: ["demo"] });
+    expect(new TextDecoder().decode(await provider.readFile(sourceUri as never))).toBe("SELECT 2");
+    provider.dispose();
+  });
+
   it("rejects a working copy when the deployed source changed externally", async () => {
     const sourceUri = uri("code+moniker", "code+moniker://routine");
     let descriptor = routineDescriptor("SELECT 1");

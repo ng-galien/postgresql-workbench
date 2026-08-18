@@ -60,7 +60,7 @@ const document = {
 describe("plpgsql_check diagnostics", () => {
   const query = vi.fn();
   const connections = {
-    activeServer: { id: "demo" },
+    isServerConnected: (serverId: string) => serverId === "demo",
     getClient: () => ({ query }),
     onServerChanged: () => ({ dispose() {} }),
   };
@@ -131,6 +131,42 @@ describe("plpgsql_check diagnostics", () => {
     vscodeState.onDidOpen?.(document);
 
     await vi.waitFor(() => expect(vscodeState.collection.set).toHaveBeenCalledTimes(1));
+    provider.dispose();
+  });
+
+  it("clears diagnostics only for documents owned by the changed Connexion", async () => {
+    let onServerChanged: ((change: { serverIds: string[] }) => void) | undefined;
+    const scopedConnections = {
+      isServerConnected: () => true,
+      getClient: () => ({ query }),
+      onServerChanged: (listener: (change: { serverIds: string[] }) => void) => {
+        onServerChanged = listener;
+        return { dispose() {} };
+      },
+    };
+    const uriA = { scheme: "code+moniker", toString: () => "code+moniker://a" };
+    const uriB = { scheme: "code+moniker", toString: () => "code+moniker://b" };
+    const scopedIndex = {
+      sourceDescriptorForDocumentUri: (uri: { toString(): string }) => ({
+        plpgsql: true,
+        serverId: uri.toString().endsWith("a") ? "server-a" : "server-b",
+        oid: uri.toString().endsWith("a") ? 41 : 42,
+      }),
+    };
+    const provider = new PlpgsqlDiagnosticsProvider(
+      scopedConnections as never,
+      vi.fn() as never,
+      scopedIndex as never,
+    );
+    vscodeState.onDidOpen?.({ ...document, uri: uriA });
+    vscodeState.onDidOpen?.({ ...document, uri: uriB });
+    await vi.waitFor(() => expect(vscodeState.collection.set).toHaveBeenCalledTimes(2));
+    vscodeState.collection.delete.mockClear();
+
+    onServerChanged?.({ serverIds: ["server-a"] });
+
+    expect(vscodeState.collection.delete).toHaveBeenCalledWith(uriA);
+    expect(vscodeState.collection.delete).not.toHaveBeenCalledWith(uriB);
     provider.dispose();
   });
 });
