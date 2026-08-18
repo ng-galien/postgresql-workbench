@@ -1,7 +1,8 @@
 services:
   postgres:
     build:
-      context: ../../demo
+      context: ../..
+      dockerfile: demo/Dockerfile
     image: postgresql-workbench-postgres:pg17
     ports:
       - "${PGWB_BENCH_PORT:-55433}:5432"
@@ -9,8 +10,3 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: postgres
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
-      interval: 2s
-      timeout: 5s
-      retries: 15

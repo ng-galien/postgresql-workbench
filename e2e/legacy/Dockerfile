@@ -4,6 +4,8 @@ FROM postgres:${PG_MAJOR}-bookworm
 ARG PG_MAJOR
 ARG PLDEBUGGER_REF=ff0db437fc4e8dc75447e0e2fd792494249b05b4
 
+COPY demo/postgres-final-server-ready.sh /usr/local/bin/postgres-final-server-ready
+
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
       build-essential \
@@ -16,4 +18,7 @@ RUN apt-get update \
     && git checkout "${PLDEBUGGER_REF}" \
     && make USE_PGXS=1 \
     && make USE_PGXS=1 install \
+    && chmod +x /usr/local/bin/postgres-final-server-ready \
     && rm -rf /tmp/pldebugger /var/lib/apt/lists/*
+
+HEALTHCHECK --interval=2s --timeout=5s --retries=15 CMD ["postgres-final-server-ready"]

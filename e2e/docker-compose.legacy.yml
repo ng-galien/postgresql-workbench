@@ -3,7 +3,8 @@ name: postgresql-workbench-legacy
 services:
   postgres:
     build:
-      context: legacy
+      context: ..
+      dockerfile: e2e/legacy/Dockerfile
       args:
         PG_MAJOR: "17"
         PLDEBUGGER_REF: ff0db437fc4e8dc75447e0e2fd792494249b05b4
@@ -18,8 +19,3 @@ services:
       - ./init/01-extension.sql:/docker-entrypoint-initdb.d/01-extension.sql:ro
       - ../demo/init/02-fibonacci.sql:/docker-entrypoint-initdb.d/02-fibonacci.sql:ro
       - ./init/02-test-functions.sql:/docker-entrypoint-initdb.d/03-test-functions.sql:ro
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d legacydb"]
-      interval: 2s
-      timeout: 5s
-      retries: 15

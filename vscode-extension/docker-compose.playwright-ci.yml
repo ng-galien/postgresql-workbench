@@ -20,12 +20,14 @@ services:
   postgres:
     platform: ${PGWB_PLAYWRIGHT_DOCKER_PLATFORM:-linux/amd64}
     build:
-      context: ../demo
+      context: ..
+      dockerfile: demo/Dockerfile
     command: ["postgres", "-p", "5434"]
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: demo
+      PGWB_POSTGRES_READY_PORT: "5434"
     volumes:
       - ../demo/init/01-extension.sql:/docker-entrypoint-initdb.d/90-extension.sql:ro
       - ../demo/init/02-fibonacci.sql:/docker-entrypoint-initdb.d/91-fibonacci.sql:ro
@@ -33,11 +35,6 @@ services:
       - ../demo/init/03-shop.sql:/docker-entrypoint-initdb.d/93-shop.sql:ro
       - ../demo/init/04-pgtap.sql:/docker-entrypoint-initdb.d/94-pgtap.sql:ro
       - ../demo/init/05-commerce.sql:/docker-entrypoint-initdb.d/95-commerce.sql:ro
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d demo -p 5434"]
-      interval: 2s
-      timeout: 5s
-      retries: 10
 
   runner:
     <<: *runner
