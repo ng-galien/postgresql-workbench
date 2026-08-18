@@ -73,8 +73,10 @@ export class ConnectionCommands {
     });
     if (!picked?.target) return undefined;
     switch (picked.target.kind) {
-      case "add":
-        return (await this.addServer())?.id;
+      case "add": {
+        const added = await this.addServer();
+        return added && this.connections.isServerConnected(added.id) ? added.id : undefined;
+      }
       case "docker":
         return (
           (await vscode.commands.executeCommand<string | undefined>(

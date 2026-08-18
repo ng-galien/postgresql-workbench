@@ -610,7 +610,7 @@ export class WorkbenchIndexController implements vscode.Disposable {
       );
       if (
         !isWorkbenchRelationSnapshotCurrent(
-          workspaceGeneration(generationPage.generation),
+          result.generation,
           snapshot.generation,
           generationPage.data.rows.some((symbol) => symbol.uri === routine.symbolUri),
         ) ||
@@ -649,12 +649,8 @@ export class WorkbenchIndexController implements vscode.Disposable {
     const result = this.requireGraphSnapshot(snapshot);
     const session = await this.ensureSession();
     const response = await session.client.graph.children(prefix, {}, { consistency: "stale_ok" });
-    const status = await session.client.workspace.status();
-    if (
-      workspaceGeneration(status.generation ?? null) !== snapshot.generation ||
-      !this.matchesSnapshot(result, snapshot)
-    ) {
-      throw new Error("The Code Moniker generation changed while loading graph children.");
+    if (!this.matchesSnapshot(result, snapshot)) {
+      throw new Error("The PostgreSQL snapshot changed while loading graph children.");
     }
     return response.children.map((child) => ({
       ...child,
@@ -684,9 +680,8 @@ export class WorkbenchIndexController implements vscode.Disposable {
       },
       { consistency: "stale_ok", limit: 200, cursor },
     );
-    const generation = workspaceGeneration(page.generation);
-    if (generation !== snapshot.generation || !this.matchesSnapshot(result, snapshot)) {
-      throw new Error("The Code Moniker generation changed while loading the graph.");
+    if (!this.matchesSnapshot(result, snapshot)) {
+      throw new Error("The PostgreSQL snapshot changed while loading the graph.");
     }
     return {
       ...page,
@@ -699,7 +694,7 @@ export class WorkbenchIndexController implements vscode.Disposable {
             : node.symbol,
         })),
       },
-      generation,
+      generation: snapshot.generation,
     };
   }
 
@@ -715,12 +710,8 @@ export class WorkbenchIndexController implements vscode.Disposable {
       { relation: ["calls", "reads", "writes", "references", "uses_type"] },
       { consistency: "stale_ok", limit },
     );
-    const status = await session.client.workspace.status();
-    if (
-      workspaceGeneration(status.generation ?? null) !== snapshot.generation ||
-      !this.matchesSnapshot(result, snapshot)
-    ) {
-      throw new Error("The Code Moniker generation changed while loading the dependency graph.");
+    if (!this.matchesSnapshot(result, snapshot)) {
+      throw new Error("The PostgreSQL snapshot changed while loading the dependency graph.");
     }
     if (graph.focus.kind !== "symbol" || graph.focus.symbol?.uri !== symbolUri) {
       throw new Error("Code Moniker could not resolve the selected PostgreSQL object.");
@@ -730,12 +721,7 @@ export class WorkbenchIndexController implements vscode.Disposable {
 
   async assertGraphSnapshot(snapshot: WorkbenchIndexSnapshot): Promise<void> {
     const result = this.requireGraphSnapshot(snapshot);
-    const session = await this.ensureSession();
-    const status = await session.client.workspace.status();
-    if (
-      workspaceGeneration(status.generation ?? null) !== snapshot.generation ||
-      !this.matchesSnapshot(result, snapshot)
-    ) {
+    if (!this.matchesSnapshot(result, snapshot)) {
       throw new Error("The PostgreSQL graph snapshot changed while loading the view.");
     }
   }
@@ -751,12 +737,8 @@ export class WorkbenchIndexController implements vscode.Disposable {
       { contextLines: 40 },
       { consistency: "stale_ok" },
     );
-    const status = await session.client.workspace.status();
-    if (
-      workspaceGeneration(status.generation ?? null) !== snapshot.generation ||
-      !this.matchesSnapshot(result, snapshot)
-    ) {
-      throw new Error("The Code Moniker generation changed while loading the source preview.");
+    if (!this.matchesSnapshot(result, snapshot)) {
+      throw new Error("The PostgreSQL snapshot changed while loading the source preview.");
     }
     const source = detail.source ?? detail.symbol.source;
     return source
@@ -823,16 +805,18 @@ export class WorkbenchIndexController implements vscode.Disposable {
         },
         { consistency: "stale_ok", limit: 20 },
       );
+      // Currency is judged against this scope's own registry: the daemon
+      // workspace generation also moves whenever another Connexion publishes.
       if (
         !isWorkbenchRelationSnapshotCurrent(
-          workspaceGeneration(generationPage.generation),
+          result.generation,
           snapshot.generation,
           generationPage.data.rows.some((symbol) => symbol.uri === object.symbolUri),
         )
       ) {
         return {
           status: "stale",
-          message: "The Code Moniker generation changed. Refresh the database index.",
+          message: "The PostgreSQL snapshot changed. Refresh the database index.",
         };
       }
       if (!this.matchesSnapshot(result, exactSnapshot)) {
@@ -1043,8 +1027,13 @@ export class WorkbenchIndexController implements vscode.Disposable {
     this.removeSessionCloseListener?.();
     this.removeSessionCloseListener = undefined;
     this.syntaxParserPromise = undefined;
+    this.cancelDatabaseIndex();
+    const pendingRuns = [...this.scopeRuns.values()].map(({ tail }) => tail.catch(() => undefined));
     if (pendingSession) {
-      void this.sourceMutation
+      void Promise.all(pendingRuns)
+        // Read the mutation chain only once every run has settled: a run still
+        // publishing appends to it after dispose() returned.
+        .then(() => this.sourceMutation)
         .then(async () => {
           const session = await pendingSession;
           for (const source of this.published.values()) {
@@ -1753,7 +1742,9 @@ export class WorkbenchIndexController implements vscode.Disposable {
 
   private clearAcceptancePhaseGate(runId?: number): void {
     const gate = this.acceptancePhaseGate;
-    if (!gate || (runId !== undefined && gate.runId !== undefined && gate.runId !== runId)) return;
+    // A gate not yet bound to a run stays armed: a run of another scope
+    // settling must not disarm the gate meant for a later run.
+    if (!gate || (runId !== undefined && gate.runId !== runId)) return;
     this.acceptancePhaseGate = undefined;
     const release = gate.release;
     gate.release = undefined;
