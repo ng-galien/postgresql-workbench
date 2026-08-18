@@ -7,8 +7,14 @@ import {
   type SqlNotebookRendererResponse,
   type SqlNotebookResultPayload,
   type SqlNotebookResultRequest,
+  type SqlResultDataViewRequest,
 } from "./sqlNotebookModel.js";
 import type { SqlResultSession } from "./sqlResultSession.js";
+
+export type OpenDataViewFromResult = (request: {
+  sql: string;
+  association: ScratchpadAssociationSnapshot;
+}) => Promise<void>;
 
 interface HostedResultSession {
   session: SqlResultSession;
@@ -26,8 +32,12 @@ export class SqlNotebookResultHost implements vscode.Disposable {
   private readonly expiringSessions = new Set<string>();
   private readonly subscription: vscode.Disposable;
 
-  constructor() {
+  constructor(private readonly openDataView: OpenDataViewFromResult = async () => {}) {
     this.subscription = this.messaging.onDidReceiveMessage(({ editor, message }) => {
+      if (isOpenDataViewRequest(message)) {
+        void this.openDataView({ sql: message.sql, association: message.binding });
+        return;
+      }
       if (isOpenSettingsRequest(message)) {
         void vscode.commands.executeCommand(
           "workbench.action.openSettings",
@@ -292,6 +302,19 @@ function isRendererRequest(value: unknown): value is SqlNotebookResultRequest {
       message.action === "next" ||
       message.action === "load-all" ||
       message.action === "cancel")
+  );
+}
+
+function isOpenDataViewRequest(value: unknown): value is SqlResultDataViewRequest {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const message = value as Partial<SqlResultDataViewRequest>;
+  return (
+    message.type === "sql-result/open-data-view" &&
+    typeof message.sql === "string" &&
+    typeof message.binding === "object" &&
+    message.binding !== null &&
+    typeof message.binding.serverId === "string" &&
+    typeof message.binding.database === "string"
   );
 }
 

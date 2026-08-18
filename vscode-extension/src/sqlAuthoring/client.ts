@@ -54,6 +54,7 @@ const SQL_DOCUMENT_SELECTOR = [
   { language: "sql", scheme: "untitled" },
   { language: "plpgsql", scheme: "untitled" },
   { language: "plpgsql", scheme: "vscode-notebook-cell" },
+  { language: "sql", scheme: "postgresql-workbench-data-sql" },
 ] as const;
 const SQL_AUTHORING_LANGUAGE_STATUS_ID = "postgresql-workbench.sqlAuthoring";
 const REVEAL_SQL_REFERENCE_COMMAND = "postgresql-workbench.revealSqlReference";

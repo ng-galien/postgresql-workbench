@@ -15,8 +15,11 @@ export type SqlDebugUnavailableReason =
   | "Not a PL/pgSQL routine"
   | "Call depends on a row value or parameter";
 
+/** Data View query documents carry their own lens (Apply to Data View). */
+const DATA_VIEW_QUERY_URI_SCHEME = "postgresql-workbench-data-sql";
+
 export function shouldProvideSqlCodeLenses(uriScheme: string): boolean {
-  return uriScheme !== "vscode-notebook-cell";
+  return uriScheme !== "vscode-notebook-cell" && uriScheme !== DATA_VIEW_QUERY_URI_SCHEME;
 }
 
 function unavailable(reason: SqlDebugUnavailableReason): SqlDebugAvailability {

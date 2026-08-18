@@ -6,6 +6,7 @@ import {
   splitSqlQualifiedIdentifier,
   sqlAliasAfterRelation,
 } from "./identifiers.js";
+import { type JoinPlan, planJoinPaths, shortestJoinPlans } from "./joinPlanner.js";
 import type {
   SqlAuthoringComposeRequest,
   SqlAuthoringComposeResult,
@@ -476,7 +477,8 @@ function composeColumn(
   };
 }
 
-function originalTopLevelParts(source: string, topLevelSource: string): string[] {
+/** Splits `source` on the commas that are at the top level of `topLevelSource` (same length). */
+export function originalTopLevelParts(source: string, topLevelSource: string): string[] {
   const parts: string[] = [];
   let start = 0;
   for (let index = 0; index < topLevelSource.length; index += 1) {
@@ -525,50 +527,135 @@ function composeJoin(
   if (references.some(({ object }) => object.oid === target.oid)) {
     return { status: "rejected", message: "This relation is already part of the query." };
   }
-  const candidates = references.flatMap((reference) =>
-    snapshot.foreignKeys.flatMap((foreignKey, index) =>
-      isStructurallyReliableForeignKey(foreignKey) &&
-      connects(foreignKey, reference.object.oid, target.oid)
-        ? [{ foreignKey, reference, index }]
-        : [],
+  const plans = shortestJoinPlans(
+    planJoinPaths(
+      snapshot,
+      references.map((reference) => reference.object.oid),
+      target.oid,
     ),
   );
-  if (candidates.length === 0) {
+  if (plans.length === 0) {
     return {
       status: "edit",
       text: appendIndependentProjection(request.text, target, settings),
       title: `Compose ${target.schema}.${target.name} as another SELECT`,
     };
   }
-  if (candidates.length > 1 && request.relationChoice === undefined) {
+  if (plans.length > 1 && request.relationChoice === undefined) {
     return {
       status: "ambiguous",
-      choices: candidates.map((candidate, index) => ({
+      choices: plans.map((plan, index) => ({
         index,
-        label: joinLabel(candidate.foreignKey, candidate.reference, target, snapshot.objects),
-        description: `${automaticJoinKeyword(candidate.foreignKey, candidate.reference)} · ${candidate.reference.object.schema}.${candidate.reference.object.name} ↔ ${target.schema}.${target.name}`,
+        label: joinPlanLabel(plan, references, snapshot.objects),
+        description: joinPlanDescription(plan, references, snapshot.objects),
       })),
     };
   }
-  const candidate = candidates[request.relationChoice ?? 0];
-  if (!candidate)
+  const plan = plans[request.relationChoice ?? 0];
+  if (!plan) {
     return { status: "rejected", message: "The selected foreign key is no longer available." };
-  const targetReference = joinTargetReference(target, references, settings.aliasStyle);
-  const conditions = joinConditions(
-    candidate.foreignKey,
-    candidate.reference,
-    targetReference.correlation,
-  );
-  const joinKeyword = automaticJoinKeyword(candidate.foreignKey, candidate.reference);
-  const join = ` ${joinKeyword} ${targetReference.relation} ON ${conditions.join(" AND ")}`;
-  const projected = appendJoinedTableProjection(request.text, target, targetReference.correlation);
-  const insertion = joinInsertionOffset(projected);
-  const updated = `${projected.slice(0, insertion).trimEnd()}${join}${projected.slice(insertion)}`;
+  }
+  const applied = applyJoinPlan(request.text, plan, references, snapshot.objects, settings);
+  if (!applied) {
+    return { status: "rejected", message: "A relation of the JOIN path is no longer indexed." };
+  }
   return {
     status: "edit",
-    text: formatPostgresSql(updated, settings.tabSize),
-    title: `Join ${target.schema}.${target.name}`,
+    text: formatPostgresSql(applied, settings.tabSize),
+    title:
+      plan.viaOids.length === 0
+        ? `Join ${target.schema}.${target.name}`
+        : `Join ${target.schema}.${target.name} via ${plan.viaOids
+            .map((oid) => snapshot.objects.find((object) => object.oid === oid)?.name ?? "?")
+            .join(" → ")}`,
   };
+}
+
+/**
+ * Appends one JOIN per hop of the plan (mapping tables included), aliasing each joined relation
+ * so it never collides with the query, and projects the columns of the final target only.
+ */
+export function applyJoinPlan(
+  text: string,
+  plan: JoinPlan,
+  references: readonly TableReference[],
+  objects: readonly SqlAuthoringObject[],
+  settings: SqlAuthoringSettings,
+): string | undefined {
+  const known: TableReference[] = [...references];
+  let joins = "";
+  let finalReference: TableReference | undefined;
+  for (const hop of plan.hops) {
+    // The first hop starts from the exact query reference the plan was computed for (a table
+    // may appear several times, e.g. a self-join); later hops start from the relation just joined.
+    const current = finalReference ?? references[plan.startIndex];
+    const target = objects.find((object) => object.oid === hop.toOid);
+    if (!current || !target) return undefined;
+    const targetReference = joinTargetReference(target, known, settings.aliasStyle);
+    const keyword = automaticJoinKeyword(hop.foreignKey, current);
+    const conditions = joinConditions(hop.foreignKey, current, targetReference.correlation);
+    joins += ` ${keyword} ${targetReference.relation} ON ${conditions.join(" AND ")}`;
+    finalReference = {
+      correlationName: canonicalSqlIdentifier(targetReference.correlation),
+      nullExtended: current.nullExtended || keyword === "LEFT JOIN",
+      object: target,
+      reference: targetReference.correlation,
+    };
+    known.push(finalReference);
+  }
+  if (!finalReference) return undefined;
+  const projected = appendJoinedTableProjection(
+    text,
+    finalReference.object,
+    finalReference.reference,
+  );
+  const insertion = joinInsertionOffset(projected);
+  const rest = projected.slice(insertion);
+  // Keep a separator before a following clause (WHERE, ORDER BY…): "brand.idWHERE" is not SQL.
+  const separator = rest.length > 0 && !/^\s/u.test(rest) ? "\n" : "";
+  return `${projected.slice(0, insertion).trimEnd()}${joins}${separator}${rest}`;
+}
+
+/** `p.brand_id → brand.id`, or `p → product_category → category` for a path through mapping tables. */
+export function joinPlanLabel(
+  plan: JoinPlan,
+  references: readonly TableReference[],
+  objects: readonly SqlAuthoringObject[],
+): string {
+  const start = references[plan.startIndex];
+  const name = (oid: number) => objects.find((object) => object.oid === oid)?.name ?? "?";
+  const [first] = plan.hops;
+  if (plan.hops.length === 1 && first && start) {
+    const currentIsSource = first.foreignKey.sourceTableOid === start.object.oid;
+    const currentColumns = currentIsSource
+      ? first.foreignKey.sourceColumns
+      : first.foreignKey.targetColumns;
+    const targetColumns = currentIsSource
+      ? first.foreignKey.targetColumns
+      : first.foreignKey.sourceColumns;
+    return `${start.reference}.${currentColumns.join(", ")} ${currentIsSource ? "→" : "←"} ${name(plan.targetOid)}.${targetColumns.join(", ")}`;
+  }
+  return [
+    start?.reference ?? name(plan.startOid),
+    ...plan.viaOids.map(name),
+    name(plan.targetOid),
+  ].join(" → ");
+}
+
+export function joinPlanDescription(
+  plan: JoinPlan,
+  references: readonly TableReference[],
+  objects: readonly SqlAuthoringObject[],
+): string {
+  const start = references[plan.startIndex];
+  const [first] = plan.hops;
+  const keyword = first && start ? automaticJoinKeyword(first.foreignKey, start) : "JOIN";
+  const label = (oid: number) => {
+    const object = objects.find((candidate) => candidate.oid === oid);
+    return object ? `${object.schema}.${object.name}` : "?";
+  };
+  const via = plan.viaOids.length > 0 ? ` via ${plan.viaOids.map(label).join(", ")}` : "";
+  return `${keyword} · ${label(plan.startOid)} ↔ ${label(plan.targetOid)}${via}`;
 }
 
 function appendJoinedTableProjection(
@@ -596,7 +683,11 @@ function appendJoinedTableProjection(
   return `${existing}, ${additions} ${source.slice(fromOffset)}`;
 }
 
-function tableProjection(object: SqlAuthoringObject, settings: SqlAuthoringSettings): string {
+/** Explicit projection of every column of a relation, aliased per the authoring settings. */
+export function tableProjection(
+  object: SqlAuthoringObject,
+  settings: SqlAuthoringSettings,
+): string {
   const alias = generatedRelationAlias(object.name, settings.aliasStyle);
   const columns = object.columns.map((column) => `${alias}.${quoteIdentifier(column.name)}`);
   const projection = columns.length > 0 ? columns.join(", ") : "*";
@@ -617,14 +708,17 @@ function appendIndependentProjection(
   return `${statement}${separator}\n\n${tableProjection(object, settings)}`;
 }
 
-interface TableReference {
+export interface TableReference {
   correlationName: string;
   nullExtended: boolean;
   object: SqlAuthoringObject;
   reference: string;
 }
 
-function tableReferences(source: string, objects: readonly SqlAuthoringObject[]): TableReference[] {
+export function tableReferences(
+  source: string,
+  objects: readonly SqlAuthoringObject[],
+): TableReference[] {
   const references: TableReference[] = [];
   const topLevelSource = scanPostgresSql(source).topLevelSource;
   const pattern =
@@ -695,27 +789,6 @@ function generatedRelationAlias(
   return quoteIdentifier(`${base}${suffix}`);
 }
 
-function connects(foreignKey: SqlAuthoringForeignKey, leftOid: number, rightOid: number): boolean {
-  return (
-    (foreignKey.sourceTableOid === leftOid && foreignKey.targetTableOid === rightOid) ||
-    (foreignKey.sourceTableOid === rightOid && foreignKey.targetTableOid === leftOid)
-  );
-}
-
-function isStructurallyReliableForeignKey(foreignKey: SqlAuthoringForeignKey): boolean {
-  const sourceColumns = foreignKey.sourceColumns;
-  const targetColumns = foreignKey.targetColumns;
-  return (
-    foreignKey.validated === true &&
-    Array.isArray(sourceColumns) &&
-    Array.isArray(targetColumns) &&
-    sourceColumns.length > 0 &&
-    sourceColumns.length === targetColumns.length &&
-    sourceColumns.every((column) => typeof column === "string" && column.length > 0) &&
-    targetColumns.every((column) => typeof column === "string" && column.length > 0)
-  );
-}
-
 function joinConditions(
   foreignKey: SqlAuthoringForeignKey,
   current: TableReference,
@@ -744,19 +817,6 @@ function automaticJoinKeyword(
     return "LEFT JOIN";
   }
   return "JOIN";
-}
-
-function joinLabel(
-  foreignKey: SqlAuthoringForeignKey,
-  current: TableReference,
-  target: SqlAuthoringObject,
-  _objects: readonly SqlAuthoringObject[],
-): string {
-  const currentIsSource = foreignKey.sourceTableOid === current.object.oid;
-  const currentColumns = currentIsSource ? foreignKey.sourceColumns : foreignKey.targetColumns;
-  const targetColumns = currentIsSource ? foreignKey.targetColumns : foreignKey.sourceColumns;
-  const arrow = currentIsSource ? "→" : "←";
-  return `${current.reference}.${currentColumns.join(", ")} ${arrow} ${target.name}.${targetColumns.join(", ")}`;
 }
 
 function joinInsertionOffset(source: string): number {

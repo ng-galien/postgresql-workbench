@@ -115,6 +115,7 @@ export function registerSqlNotebook(
   planResult: ResultPlanner,
   debug: ScratchpadDebugger,
   canDebug: ScratchpadDebugEligibility = async () => false,
+  openDataView: (request: ScratchpadDataViewRequest) => Promise<void> = async () => {},
 ): ScratchpadFeature {
   const serializer = new SqlNotebookSerializer();
   const transactions = new ScratchpadTransactionManager(connections);
@@ -124,6 +125,7 @@ export function registerSqlNotebook(
     transactions,
     debug,
     canDebug,
+    openDataView,
   );
   const statusProvider = new SqlNotebookStatusProvider(connections, canDebug);
   const fileSystem = new SqlNotebookFileSystemProvider(context.globalStorageUri);
@@ -382,6 +384,15 @@ export function registerSqlNotebook(
     transactions,
     shutdown: () => transactions.shutdown(),
     refreshCellStatus: () => statusProvider.invalidateDebuggable(),
+    async openWithSql(sql, association) {
+      const file = emptySqlNotebook(association ? associationSnapshot(association) : {});
+      file.cells = [{ kind: "code", language: "plpgsql", source: sql }];
+      const uri = await workspace.create(new TextEncoder().encode(serializeSqlNotebookFile(file)));
+      const notebook = await vscode.workspace.openNotebookDocument(uri);
+      controller.prefer(notebook);
+      await vscode.window.showNotebookDocument(notebook, { preview: false });
+      return uri;
+    },
   };
 }
 
@@ -391,6 +402,14 @@ export interface ScratchpadFeature {
   shutdown(): Promise<void>;
   /** Re-evaluates cell status items (Debug eligibility) after the Workbench Index changed. */
   refreshCellStatus(): void;
+  /** Creates and shows a Scratchpad holding one SQL cell, associated with the given Connexion. */
+  openWithSql(sql: string, association: ServerConfig | undefined): Promise<vscode.Uri>;
+}
+
+/** A result renderer asked to open its Statement in a Data View. */
+export interface ScratchpadDataViewRequest {
+  sql: string;
+  association: ScratchpadAssociationSnapshot;
 }
 
 interface SqlNotebookPick extends vscode.QuickPickItem {
@@ -765,7 +784,7 @@ export class SqlNotebookSerializer implements vscode.NotebookSerializer {
 class SqlNotebookController implements vscode.Disposable {
   private executionOrder = 0;
   private readonly controller: vscode.NotebookController;
-  private readonly resultHost = new SqlNotebookResultHost();
+  private readonly resultHost: SqlNotebookResultHost;
   private readonly subscriptions: vscode.Disposable[];
   private readonly scratchpadAssociations = new Map<string, string>();
 
@@ -775,7 +794,9 @@ class SqlNotebookController implements vscode.Disposable {
     private readonly transactions: ScratchpadTransactionManager,
     private readonly debug: ScratchpadDebugger,
     private readonly canDebug: ScratchpadDebugEligibility,
+    openDataView: (request: ScratchpadDataViewRequest) => Promise<void>,
   ) {
+    this.resultHost = new SqlNotebookResultHost(openDataView);
     this.controller = vscode.notebooks.createNotebookController(
       "postgresql-workbench.sql",
       SQL_NOTEBOOK_TYPE,
@@ -1153,7 +1174,15 @@ class SqlNotebookController implements vscode.Disposable {
             this.transactions.record(cell.notebook.uri.toString(), statement.sql, true);
           }
           if (result.columns.length > 0) {
-            outputs.push(resultOutput(sqlNotebookResultPayload(result, association.snapshot)));
+            outputs.push(
+              resultOutput(
+                sqlNotebookResultPayload(
+                  result,
+                  association.snapshot,
+                  statement.resultKind === "paged-query" ? statement.sql : undefined,
+                ),
+              ),
+            );
           }
         } catch (error) {
           if (mode === "manual") {
@@ -1200,6 +1229,7 @@ class SqlNotebookController implements vscode.Disposable {
         pageSize: settings.pageSize,
         maxCachedRows: settings.maxCachedRows,
         binding: association,
+        statement: sql,
       });
       cancellation.throwIfCancellationRequested();
       return this.resultHost.register(session, cell, resultIdleTimeoutMs, association, () =>
@@ -1692,14 +1722,14 @@ function stringErrorField(source: Record<string, unknown>, key: string): string 
   return typeof value === "string" && value.trim() ? value : undefined;
 }
 
-interface SqlResultSettings {
+export interface SqlResultSettings {
   pageSize: number;
   maxCachedRows: number;
   cursorIdleTimeoutSeconds: number;
   nonPagedMaxRows: number;
 }
 
-function sqlResultSettings(): SqlResultSettings {
+export function sqlResultSettings(): SqlResultSettings {
   const configuration = vscode.workspace.getConfiguration("postgresql-workbench.results");
   const pageSizeInspection = configuration.inspect<number>("pageSize");
   const pageSizeExplicit =

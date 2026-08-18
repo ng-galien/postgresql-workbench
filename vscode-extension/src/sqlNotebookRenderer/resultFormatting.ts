@@ -13,6 +13,40 @@ const RESULT_COLLATOR = new Intl.Collator("en", {
   sensitivity: "base",
 });
 
+const MIN_COLUMN_CH = 6;
+const MAX_COLUMN_CH = 48;
+const WIDTH_SAMPLE_ROWS = 200;
+/** Cell padding plus the sort indicator, in characters. */
+const COLUMN_CHROME_CH = 4;
+
+/**
+ * Column widths in `ch`, sized to the header and a sample of the values so narrow columns stay
+ * narrow and wide values are capped instead of stretching the whole grid.
+ */
+export function columnWidthsCh(
+  columns: readonly { name: string; typeName?: string }[],
+  rows: readonly (readonly DebugResultCell[])[],
+): number[] {
+  const widths = columns.map((column) =>
+    Math.max(column.name.length, (column.typeName ?? "").length),
+  );
+  const sample = rows.length > WIDTH_SAMPLE_ROWS ? rows.slice(0, WIDTH_SAMPLE_ROWS) : rows;
+  for (const row of sample) {
+    row.forEach((cell, index) => {
+      const length = cell.value === null ? 4 : firstLineLength(cell.value);
+      if (length > (widths[index] ?? 0)) widths[index] = length;
+    });
+  }
+  return widths.map((width) =>
+    Math.min(MAX_COLUMN_CH, Math.max(MIN_COLUMN_CH, width + COLUMN_CHROME_CH)),
+  );
+}
+
+function firstLineLength(value: string): number {
+  const newline = value.indexOf("\n");
+  return newline === -1 ? value.length : newline + 1;
+}
+
 export function formattedCellValue(cell: DebugResultCell): string {
   if (cell.value === null) return "NULL";
   if (cell.kind !== "json") return cell.value;

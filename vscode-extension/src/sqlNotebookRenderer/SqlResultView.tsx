@@ -151,6 +151,22 @@ export function SqlResultView({ payload, messaging }: SqlResultViewProps) {
                 ) : null}
               </fieldset>
             ) : null}
+            {current.statement && messaging ? (
+              <button
+                className="result-button"
+                type="button"
+                title="Open this Statement in a Data View: sort and filter in PostgreSQL, edit identified rows."
+                onClick={() =>
+                  messaging.postMessage({
+                    type: "sql-result/open-data-view",
+                    sql: current.statement ?? "",
+                    binding: current.binding,
+                  })
+                }
+              >
+                Open in Data View
+              </button>
+            ) : null}
             <div className="copy-action">
               <button className="copy-button" type="button" onClick={copyResult}>
                 {copyState === "copied"
@@ -189,7 +205,7 @@ export function SqlResultView({ payload, messaging }: SqlResultViewProps) {
   );
 }
 
-function resultRowSummary(payload: SqlNotebookResultPayload): string {
+export function resultRowSummary(payload: SqlNotebookResultPayload): string {
   const navigation = payload.navigation;
   if (!navigation) {
     const count = payload.rowCount ?? payload.capturedRowCount;

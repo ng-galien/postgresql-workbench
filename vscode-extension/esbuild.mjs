@@ -111,6 +111,22 @@ const sqlNotebookRendererConfig = {
   metafile: true,
 };
 
+/** @type {import('esbuild').BuildOptions} */
+const dataViewWebviewConfig = {
+  entryPoints: ["src/dataView/webview/index.tsx"],
+  bundle: true,
+  outfile: "dist/data-view.js",
+  format: "iife",
+  platform: "browser",
+  target: "es2022",
+  jsx: "automatic",
+  loader: { ".css": "text", ".ttf": "dataurl" },
+  define: { "process.env.NODE_ENV": '"production"' },
+  sourcemap: !production,
+  minify: production,
+  metafile: true,
+};
+
 function packageRootForInput(input) {
   let current = dirname(resolve(input));
   const nodeModulesSegment = `${sep}node_modules${sep}`;
@@ -208,12 +224,14 @@ async function main() {
     const sqlAuthoringCtx = await esbuild.context(sqlAuthoringServerConfig);
     const graphCtx = await esbuild.context(graphWebviewConfig);
     const notebookRendererCtx = await esbuild.context(sqlNotebookRendererConfig);
+    const dataViewCtx = await esbuild.context(dataViewWebviewConfig);
     await Promise.all([
       extCtx.watch(),
       dapCtx.watch(),
       sqlAuthoringCtx.watch(),
       graphCtx.watch(),
       notebookRendererCtx.watch(),
+      dataViewCtx.watch(),
     ]);
     console.log("Watching for changes...");
   } else {
@@ -224,6 +242,7 @@ async function main() {
       esbuild.build(sqlAuthoringServerConfig),
       esbuild.build(graphWebviewConfig),
       esbuild.build(sqlNotebookRendererConfig),
+      esbuild.build(dataViewWebviewConfig),
     ]);
     generateThirdPartyNotices(results.map((result) => result.metafile));
     console.log("Build complete.");

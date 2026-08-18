@@ -34,6 +34,7 @@ const required = [
   "extension/dist/dap-server.js",
   "extension/dist/sql-authoring-server.js",
   "extension/dist/sql-notebook-renderer.js",
+  "extension/dist/data-view.js",
   "extension/SECURITY.md",
   "extension/SUPPORT.md",
   "extension/THIRD_PARTY_NOTICES.md",

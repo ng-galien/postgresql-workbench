@@ -11,7 +11,9 @@ import {
 } from "react";
 import type { DebugResultCell } from "../../../src/debugger/launch/index.js";
 import type { SqlNotebookResultPayload } from "../sqlNotebookModel.js";
+import { CellEditor, type GridEditing } from "./CellEditor.js";
 import {
+  columnWidthsCh,
   formattedCellValue,
   nextResultSort,
   type ResultSort,
@@ -38,11 +40,52 @@ interface ScrollbarGeometry {
 
 export interface ResultGridProps {
   payload: SqlNotebookResultPayload;
+  /** When set, sorting is delegated to the host (server-side) instead of sorting loaded rows. */
+  serverSort?: {
+    /** Active server-side sorts in priority order. */
+    sorts: ResultSort[];
+    /** `additive` (Shift+click) keeps the other sorts and toggles this column. */
+    onSort(columnIndex: number, additive: boolean): void;
+  };
+  /** When set, cells become editable according to the column policies. */
+  editing?: GridEditing;
+  /** Column layout controls: hidden ordinals, drag reorder, and a per-column menu. */
+  layout?: GridLayout;
 }
 
-export function ResultGrid({ payload }: ResultGridProps) {
+export interface GridLayout {
+  hidden: ReadonlySet<number>;
+  onReorder(from: number, to: number): void;
+  menuItems(ordinal: number): { label: string; action: () => void }[];
+  /** Accent color (CSS value) of the table a column comes from; undefined for computed values. */
+  columnAccent?(ordinal: number): string | undefined;
+}
+
+export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridProps) {
   const [detail, setDetail] = useState<string>();
-  const [sort, setSort] = useState<ResultSort>();
+  const [localSort, setLocalSort] = useState<ResultSort>();
+  const [activeCell, setActiveCell] = useState<{ row: number; ordinal: number }>();
+  const [menu, setMenu] = useState<{ ordinal: number; x: number; y: number }>();
+  const [dragOver, setDragOver] = useState<number>();
+  const dragSource = useRef<number | undefined>(undefined);
+  const isVisible = (ordinal: number) => !layout?.hidden.has(ordinal);
+  const sort = serverSort ? serverSort.sorts[0] : localSort;
+  const sortRank = (
+    ordinal: number,
+  ): { direction: ResultSort["direction"]; rank: number } | undefined => {
+    if (serverSort) {
+      const index = serverSort.sorts.findIndex((candidate) => candidate.columnIndex === ordinal);
+      const item = serverSort.sorts[index];
+      return item ? { direction: item.direction, rank: index + 1 } : undefined;
+    }
+    return localSort?.columnIndex === ordinal
+      ? { direction: localSort.direction, rank: 1 }
+      : undefined;
+  };
+  const requestSort = (ordinal: number, additive = false) => {
+    if (serverSort) serverSort.onSort(ordinal, additive);
+    else setLocalSort((current) => nextResultSort(current, ordinal));
+  };
   const [scrollTop, setScrollTop] = useState(0);
   const [scrollMetrics, setScrollMetrics] = useState<ScrollMetrics>({
     clientHeight: RESULT_VIEWPORT_HEIGHT,
@@ -59,12 +102,26 @@ export function ResultGrid({ payload }: ResultGridProps) {
   const columns = keyedValues(
     payload.columns,
     (column) => `${column.name}:${column.dataTypeId}:${column.typeName ?? ""}`,
+  ).filter(({ ordinal }) => isVisible(ordinal));
+  const rows = useMemo(
+    () => (serverSort ? payload.rows : sortedResultRows(payload.rows, sort)),
+    [payload.rows, sort, serverSort],
   );
-  const rows = useMemo(() => sortedResultRows(payload.rows, sort), [payload.rows, sort]);
+  // Widths stay stable across reloads of the same projection so refresh, sort, and filter do not jump.
+  const widthKey = payload.columns.map((column) => `${column.name}:${column.dataTypeId}`).join("|");
+  const previousWidths = useRef<{ key: string; widths: number[] }>({ key: "", widths: [] });
+  const widths = useMemo(() => {
+    const measured = columnWidthsCh(payload.columns, payload.rows);
+    const previous = previousWidths.current.key === widthKey ? previousWidths.current.widths : [];
+    const merged = measured.map((width, index) => Math.max(width, previous[index] ?? 0));
+    previousWidths.current = { key: widthKey, widths: merged };
+    return merged;
+  }, [payload.columns, payload.rows, widthKey]);
   const start = Math.max(0, Math.floor(scrollTop / RESULT_ROW_HEIGHT) - RESULT_OVERSCAN);
+  const viewportHeight = scrollMetrics.clientHeight || RESULT_VIEWPORT_HEIGHT;
   const end = Math.min(
     rows.length,
-    start + Math.ceil(RESULT_VIEWPORT_HEIGHT / RESULT_ROW_HEIGHT) + RESULT_OVERSCAN * 2,
+    start + Math.ceil(viewportHeight / RESULT_ROW_HEIGHT) + RESULT_OVERSCAN * 2,
   );
   const visibleRows = rows.slice(start, end);
   const topSpacer = start * RESULT_ROW_HEIGHT;
@@ -75,6 +132,7 @@ export function ResultGrid({ payload }: ResultGridProps) {
   useEffect(() => {
     if (!scrollResetKey) return;
     setDetail(undefined);
+    setActiveCell(undefined);
     setScrollTop(0);
     const element = scroller.current;
     element?.scrollTo({ top: 0 });
@@ -169,32 +227,109 @@ export function ResultGrid({ payload }: ResultGridProps) {
           aria-label="Scrollable query results"
           onScroll={handleScroll}
         >
-          <table aria-rowcount={rows.length + 1}>
+          <table
+            aria-rowcount={rows.length + 1}
+            className={editing ? "editable" : undefined}
+            style={{
+              width: `${columns.reduce((total, { ordinal }) => total + (widths[ordinal] ?? 12), 0)}ch`,
+            }}
+          >
+            <colgroup>
+              {columns.map(({ key, ordinal }) => (
+                <col key={key} style={{ width: `${widths[ordinal] ?? 12}ch` }} />
+              ))}
+            </colgroup>
             <thead>
               <tr>
                 {columns.map(({ key, ordinal, value: column }) => (
                   <th
                     key={key}
-                    aria-sort={sort?.columnIndex === ordinal ? sort.direction : undefined}
+                    aria-sort={sortRank(ordinal)?.direction}
+                    className={[
+                      editing?.policies[ordinal]?.editable === false ? "read-only" : "",
+                      dragOver === ordinal ? "drag-over" : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                    style={
+                      layout?.columnAccent?.(ordinal)
+                        ? ({ "--column-accent": layout.columnAccent(ordinal) } as CSSProperties)
+                        : undefined
+                    }
+                    draggable={layout ? true : undefined}
+                    onDragStart={(event) => {
+                      dragSource.current = ordinal;
+                      event.dataTransfer.effectAllowed = "move";
+                      event.dataTransfer.setData("text/plain", column.name);
+                    }}
+                    onDragOver={(event) => {
+                      if (dragSource.current === undefined) return;
+                      event.preventDefault();
+                      event.dataTransfer.dropEffect = "move";
+                      if (dragOver !== ordinal) setDragOver(ordinal);
+                    }}
+                    onDragLeave={() =>
+                      setDragOver((current) => (current === ordinal ? undefined : current))
+                    }
+                    onDrop={(event) => {
+                      event.preventDefault();
+                      const from = dragSource.current;
+                      dragSource.current = undefined;
+                      setDragOver(undefined);
+                      if (from !== undefined && from !== ordinal) layout?.onReorder(from, ordinal);
+                    }}
+                    onDragEnd={() => {
+                      dragSource.current = undefined;
+                      setDragOver(undefined);
+                    }}
+                    onContextMenu={(event) => {
+                      if (!layout) return;
+                      event.preventDefault();
+                      setMenu({ ordinal, x: event.clientX, y: event.clientY });
+                    }}
                   >
                     <button
                       className="column-sort"
                       type="button"
-                      title={`Sort loaded rows by ${column.name}`}
-                      onClick={() => setSort((current) => nextResultSort(current, ordinal))}
+                      title={
+                        editing?.policies[ordinal]?.editable === false
+                          ? `${editing.policies[ordinal]?.reason} Click to sort by ${column.name}.`
+                          : serverSort
+                            ? `Sort by ${column.name} in PostgreSQL (Shift+click adds a secondary sort)`
+                            : `Sort loaded rows by ${column.name}`
+                      }
+                      onClick={(event) => requestSort(ordinal, event.shiftKey)}
                     >
                       <span className="column-heading">
                         <span className="column-title">{column.name}</span>
                         <span className="sort-indicator" aria-hidden="true">
-                          {sort?.columnIndex === ordinal
-                            ? sort.direction === "ascending"
-                              ? "↑"
-                              : "↓"
-                            : "↕"}
+                          {(() => {
+                            const active = sortRank(ordinal);
+                            if (!active) return "↕";
+                            const arrow = active.direction === "ascending" ? "↑" : "↓";
+                            return serverSort && serverSort.sorts.length > 1
+                              ? `${arrow}${active.rank}`
+                              : arrow;
+                          })()}
                         </span>
                       </span>
                       <small>{column.typeName ?? `oid ${column.dataTypeId}`}</small>
                     </button>
+                    {layout ? (
+                      <button
+                        className="column-menu-button"
+                        type="button"
+                        title={`Column actions for ${column.name}`}
+                        aria-haspopup="menu"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          const bounds = event.currentTarget.getBoundingClientRect();
+                          setMenu({ ordinal, x: bounds.left, y: bounds.bottom });
+                        }}
+                      >
+                        ▾
+                      </button>
+                    ) : null}
                   </th>
                 ))}
               </tr>
@@ -205,19 +340,56 @@ export function ResultGrid({ payload }: ResultGridProps) {
                 const rowIndex = start + visibleIndex;
                 return (
                   <tr key={rowIndex} aria-rowindex={rowIndex + 2}>
-                    {keyedValues(row, (cell) => `${cell.kind}:${cell.value ?? "NULL"}`).map(
-                      ({ key: cellKey, ordinal, value: cell }) => {
-                        const value = cell.value === null ? "NULL" : cell.value;
+                    {keyedValues(row, (cell) => `${cell.kind}:${cell.value ?? "NULL"}`)
+                      .filter(({ ordinal }) => isVisible(ordinal))
+                      .map(({ key: cellKey, ordinal, value: cell }) => {
+                        const edit = editing?.editFor(row, rowIndex, ordinal);
+                        const shown = edit ? edit.value : cell.value;
+                        const value = shown === null ? "NULL" : shown;
                         const inspectable =
-                          cell.kind === "json" || cell.kind === "binary" || cell.truncated;
+                          !editing &&
+                          (cell.kind === "json" || cell.kind === "binary" || cell.truncated);
+                        const policy = editing?.policies[ordinal];
+                        const isActive =
+                          activeCell?.row === rowIndex && activeCell.ordinal === ordinal;
                         return (
                           <td
                             key={cellKey}
-                            className={[cell.kind, cell.truncated ? "truncated" : ""]
+                            className={[
+                              shown === null ? "null" : cell.kind === "null" ? "text" : cell.kind,
+                              cell.truncated ? "truncated" : "",
+                              edit ? "edited" : "",
+                              policy && !policy.editable ? "read-only" : "",
+                              isActive ? "editing" : "",
+                            ]
                               .filter(Boolean)
                               .join(" ")}
+                            title={
+                              edit
+                                ? `Original: ${edit.original ?? "NULL"}`
+                                : policy && !policy.editable
+                                  ? policy.reason
+                                  : undefined
+                            }
+                            onDoubleClick={() => {
+                              if (policy?.editable && !cell.truncated) {
+                                setActiveCell({ row: rowIndex, ordinal });
+                              } else if (editing) {
+                                inspect(cell);
+                              }
+                            }}
                           >
-                            {inspectable ? (
+                            {isActive && policy?.editable && editing ? (
+                              <CellEditor
+                                editor={policy.editor}
+                                value={shown}
+                                onCommit={(next) => {
+                                  setActiveCell(undefined);
+                                  editing.onEdit(row, rowIndex, ordinal, next, cell.value);
+                                }}
+                                onCancel={() => setActiveCell(undefined)}
+                              />
+                            ) : inspectable ? (
                               <button
                                 className="cell-value inspectable"
                                 type="button"
@@ -232,8 +404,7 @@ export function ResultGrid({ payload }: ResultGridProps) {
                             )}
                           </td>
                         );
-                      },
-                    )}
+                      })}
                   </tr>
                 );
               })}
@@ -270,8 +441,42 @@ export function ResultGrid({ payload }: ResultGridProps) {
           />
         </div>
       </div>
-      {sort && resultSortNotice(payload) ? (
+      {sort && !serverSort && resultSortNotice(payload) ? (
         <p className="sort-notice">{resultSortNotice(payload)}</p>
+      ) : null}
+      {menu && layout ? (
+        <>
+          <button
+            type="button"
+            className="column-menu-backdrop"
+            aria-label="Close column menu"
+            onClick={() => setMenu(undefined)}
+          />
+          <div
+            className="column-menu"
+            role="menu"
+            style={{ left: menu.x, top: menu.y }}
+            aria-label={`Actions for ${payload.columns[menu.ordinal]?.name ?? "column"}`}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") setMenu(undefined);
+            }}
+          >
+            {layout.menuItems(menu.ordinal).map((item) => (
+              <button
+                key={item.label}
+                type="button"
+                role="menuitem"
+                className="column-menu-item"
+                onClick={() => {
+                  setMenu(undefined);
+                  item.action();
+                }}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        </>
       ) : null}
       {detail === undefined ? null : (
         <pre

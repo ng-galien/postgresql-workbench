@@ -33,11 +33,18 @@ export interface SqlResultSessionOptions {
   now?: () => number;
   maxCellBytes?: number;
   maxPayloadBytes?: number;
+  /** SQL text reported with every snapshot so consumers can reopen the same query elsewhere. */
+  statement?: string;
 }
 
 interface ResultPage {
   start: number;
   rows: DebugResultCell[][];
+}
+
+/** Custom pg type parsers for one cursor, e.g. to keep temporal values as PostgreSQL text. */
+export interface SqlCursorTypes {
+  getTypeParser(oid: number, format?: "text" | "binary"): (value: string) => unknown;
 }
 
 export class PostgresCursorReader implements SqlCursorReader {
@@ -47,8 +54,12 @@ export class PostgresCursorReader implements SqlCursorReader {
   constructor(
     private readonly client: Client,
     sql: string,
+    options: { types?: SqlCursorTypes } = {},
   ) {
-    this.cursor = new Cursor<unknown[]>(sql, [], { rowMode: "array" });
+    this.cursor = new Cursor<unknown[]>(sql, [], {
+      rowMode: "array",
+      ...(options.types ? { types: options.types as never } : {}),
+    });
     client.query(this.cursor as never);
   }
 
@@ -89,6 +100,7 @@ export class SqlResultSession {
   private readonly maxCellBytes: number;
   private readonly maxPayloadBytes: number;
   private readonly binding: NotebookBindingSnapshot;
+  private readonly statement: string | undefined;
   private readonly truncationReasons = new Set<DebugResultTruncationReason>();
   private pages: ResultPage[] = [];
   private pendingRows: DebugResultCell[][] = [];
@@ -109,6 +121,7 @@ export class SqlResultSession {
   ) {
     this.id = options.id ?? `sql-session-${randomUUID()}`;
     this.binding = { ...options.binding };
+    this.statement = options.statement;
     this.now = options.now ?? Date.now;
     this.pageSize = clamp(
       options.pageSize,
@@ -140,6 +153,11 @@ export class SqlResultSession {
     return session;
   }
 
+  /** PostgreSQL row description of the result, available after the first page. */
+  get fieldDefinitions(): readonly FieldDef[] {
+    return this.fields;
+  }
+
   snapshot(): SqlNotebookResultPayload {
     const page = this.pages[this.pageIndex] ?? { start: 0, rows: [] };
     const pageEnd = page.rows.length === 0 ? 0 : page.start + page.rows.length - 1;
@@ -149,6 +167,7 @@ export class SqlResultSession {
     return {
       version: 2,
       binding: this.binding,
+      ...(this.statement !== undefined ? { statement: this.statement } : {}),
       command: this.command,
       columns: queryResultColumns(this.fields),
       rows: page.rows,

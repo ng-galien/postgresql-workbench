@@ -5,6 +5,11 @@ export const WORKBENCH_GRAPH_UNSUPPORTED_MIME =
   "application/vnd.postgresql-workbench.graph-unsupported";
 export const WORKBENCH_TREE_MIME = "application/vnd.code.tree.postgresql-workbench-connections";
 
+/** True when a native VS Code drag from the Workbench tree is over a webview. */
+export function hasWorkbenchTreeDrag(dataTransfer: DataTransfer): boolean {
+  return [...dataTransfer.types].some((type) => type.toLocaleLowerCase() === WORKBENCH_TREE_MIME);
+}
+
 export interface WorkbenchGraphObjectDragPayload {
   version: 1;
   availability: "accepted";

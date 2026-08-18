@@ -97,6 +97,18 @@
         ]
       }
     ],
+    "customEditors": [
+      {
+        "viewType": "postgresql-workbench.dataView",
+        "displayName": "PostgreSQL Workbench Data View",
+        "selector": [
+          {
+            "filenamePattern": "postgresql-workbench-data:/**"
+          }
+        ],
+        "priority": "default"
+      }
+    ],
     "resourceLabelFormatters": [
       {
         "scheme": "code+moniker",
@@ -142,7 +154,9 @@
       },
       {
         "id": "postgresql-table",
-        "aliases": ["PostgreSQL Table"],
+        "aliases": [
+          "PostgreSQL Table"
+        ],
         "configuration": "./language-configuration.json",
         "icon": {
           "light": "./icons/postgresql-table-light.svg",
@@ -151,7 +165,9 @@
       },
       {
         "id": "postgresql-view",
-        "aliases": ["PostgreSQL View"],
+        "aliases": [
+          "PostgreSQL View"
+        ],
         "configuration": "./language-configuration.json",
         "icon": {
           "light": "./icons/postgresql-view-light.svg",
@@ -160,7 +176,9 @@
       },
       {
         "id": "postgresql-function",
-        "aliases": ["PostgreSQL Function"],
+        "aliases": [
+          "PostgreSQL Function"
+        ],
         "configuration": "./language-configuration.json",
         "icon": {
           "light": "./icons/postgresql-function-light.svg",
@@ -169,7 +187,9 @@
       },
       {
         "id": "postgresql-procedure",
-        "aliases": ["PostgreSQL Procedure"],
+        "aliases": [
+          "PostgreSQL Procedure"
+        ],
         "configuration": "./language-configuration.json",
         "icon": {
           "light": "./icons/postgresql-procedure-light.svg",
@@ -178,7 +198,9 @@
       },
       {
         "id": "postgresql-trigger",
-        "aliases": ["PostgreSQL Trigger"],
+        "aliases": [
+          "PostgreSQL Trigger"
+        ],
         "configuration": "./language-configuration.json",
         "icon": {
           "light": "./icons/postgresql-trigger-light.svg",
@@ -473,6 +495,14 @@
           "when": "false"
         },
         {
+          "command": "postgresql-workbench.openDataView",
+          "when": "false"
+        },
+        {
+          "command": "postgresql-workbench.openDataViewForStatement",
+          "when": "editorLangId == sql || editorLangId == plpgsql"
+        },
+        {
           "command": "postgresql-workbench.revealDatabaseObjectInTree",
           "when": "false"
         },
@@ -709,6 +739,16 @@
           "group": "inline@2"
         },
         {
+          "command": "postgresql-workbench.openDataView",
+          "when": "view == postgresql-workbench-connections && (viewItem == postgresql-workbench-table || viewItem == postgresql-workbench-view)",
+          "group": "inline@3"
+        },
+        {
+          "command": "postgresql-workbench.openDataView",
+          "when": "view == postgresql-workbench-connections && (viewItem == postgresql-workbench-table || viewItem == postgresql-workbench-view)",
+          "group": "navigation@3"
+        },
+        {
           "command": "postgresql-workbench.openSqlNotebook",
           "when": "view == postgresql-workbench-scratchpads && (viewItem == postgresql-workbench-scratchpad-auto || viewItem == postgresql-workbench-scratchpad-manual)",
           "group": "inline@1"
@@ -799,6 +839,11 @@
           "command": "postgresql-workbench.executeSqlSelection",
           "when": "editorHasSelection && resourceScheme != code+moniker && (editorLangId == sql || editorLangId == plpgsql)",
           "group": "navigation@1"
+        },
+        {
+          "command": "postgresql-workbench.openDataViewForStatement",
+          "when": "resourceScheme != code+moniker && resourceScheme != postgresql-workbench-data-sql && (editorLangId == sql || editorLangId == plpgsql)",
+          "group": "navigation@2"
         }
       ]
     },
@@ -892,6 +937,16 @@
         "command": "postgresql-workbench.openDatabaseObject",
         "title": "Open PostgreSQL Definition",
         "icon": "$(go-to-file)"
+      },
+      {
+        "command": "postgresql-workbench.openDataView",
+        "title": "Open Data View",
+        "icon": "$(table)"
+      },
+      {
+        "command": "postgresql-workbench.openDataViewForStatement",
+        "title": "PostgreSQL Workbench: Open Data View for Statement",
+        "icon": "$(table)"
       },
       {
         "command": "postgresql-workbench.revealDatabaseObjectInTree",
@@ -1501,6 +1556,7 @@
     "@shikijs/engine-javascript": "^4.4.1",
     "@shikijs/langs": "^4.4.1",
     "@shikijs/themes": "^4.4.1",
+    "@vscode/codicons": "^0.0.46-24",
     "@xyflow/react": "^12.11.2",
     "pg": "^8.20.0",
     "pg-cursor": "^2.21.0",

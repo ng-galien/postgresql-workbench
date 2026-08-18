@@ -1,6 +1,8 @@
 import { Buffer } from "node:buffer";
 import {
   type DebugResult,
+  type DebugResultCell,
+  type DebugResultColumn,
   type DebugResultEntry,
   type DebugResultStatus,
   debugResultEntryStatus,
@@ -110,52 +112,17 @@ export class DebugResultStore {
 
   selectedAsTsv(): string | undefined {
     const result = this.selected;
-    if (!result) return undefined;
-    const lines = [result.columns.map((column) => escapeDelimited(column.name, "\t")).join("\t")];
-    for (const row of result.rows) {
-      lines.push(
-        row.map((cell) => escapeDelimited(cell.value ?? DEBUG_RESULT_NULL_EXPORT, "\t")).join("\t"),
-      );
-    }
-    return lines.join("\n");
+    return result ? resultAsDelimited(result, "\t") : undefined;
   }
 
   selectedAsCsv(): string | undefined {
     const result = this.selected;
-    if (!result) return undefined;
-    const lines = [result.columns.map((column) => escapeDelimited(column.name, ",")).join(",")];
-    for (const row of result.rows) {
-      lines.push(
-        row.map((cell) => escapeDelimited(cell.value ?? DEBUG_RESULT_NULL_EXPORT, ",")).join(","),
-      );
-    }
-    return lines.join("\n");
+    return result ? resultAsDelimited(result, ",") : undefined;
   }
 
   selectedAsJson(): string | undefined {
     const result = this.selected;
-    if (!result) return undefined;
-    return JSON.stringify(
-      {
-        label: result.label ?? result.command,
-        query: result.query ?? "",
-        source: result.source,
-        command: result.command,
-        columns: result.columns,
-        rows: result.rows.map((row) => row.map((cell) => cell.value)),
-        rowCount: result.rowCount,
-        capturedRowCount: result.capturedRowCount,
-        truncated: result.truncated,
-        truncationReasons: result.truncationReasons,
-        cellTruncations: result.rows.flatMap((row, rowIndex) =>
-          row.flatMap((cell, columnIndex) =>
-            cell.truncated ? [{ row: rowIndex, column: columnIndex }] : [],
-          ),
-        ),
-      },
-      null,
-      2,
-    );
+    return result ? resultAsJson(result) : undefined;
   }
 
   private trim(): void {
@@ -176,6 +143,51 @@ function retainedBytes(entry: DebugResultEntry): number {
   return "payloadBytes" in entry
     ? entry.payloadBytes
     : Buffer.byteLength(JSON.stringify(entry), "utf8");
+}
+
+/** Rows for one export line: PostgreSQL NULL becomes `\N`, spreadsheet formulas are neutralized. */
+export function delimitedRow(cells: readonly DebugResultCell[], delimiter: string): string {
+  return cells
+    .map((cell) => escapeDelimited(cell.value ?? DEBUG_RESULT_NULL_EXPORT, delimiter))
+    .join(delimiter);
+}
+
+export function delimitedHeader(columns: readonly DebugResultColumn[], delimiter: string): string {
+  return columns.map((column) => escapeDelimited(column.name, delimiter)).join(delimiter);
+}
+
+export function resultAsDelimited(
+  result: Pick<DebugResult, "columns" | "rows">,
+  delimiter: string,
+): string {
+  return [
+    delimitedHeader(result.columns, delimiter),
+    ...result.rows.map((row) => delimitedRow(row, delimiter)),
+  ].join("\n");
+}
+
+export function resultAsJson(result: DebugResult): string {
+  return JSON.stringify(
+    {
+      label: result.label ?? result.command,
+      query: result.query ?? "",
+      source: result.source,
+      command: result.command,
+      columns: result.columns,
+      rows: result.rows.map((row) => row.map((cell) => cell.value)),
+      rowCount: result.rowCount,
+      capturedRowCount: result.capturedRowCount,
+      truncated: result.truncated,
+      truncationReasons: result.truncationReasons,
+      cellTruncations: result.rows.flatMap((row, rowIndex) =>
+        row.flatMap((cell, columnIndex) =>
+          cell.truncated ? [{ row: rowIndex, column: columnIndex }] : [],
+        ),
+      ),
+    },
+    null,
+    2,
+  );
 }
 
 function escapeDelimited(value: string, delimiter: string): string {

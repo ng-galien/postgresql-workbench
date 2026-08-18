@@ -18,6 +18,7 @@ export class WorkbenchTreeDragAndDropController
   implements vscode.TreeDragAndDropController<PlpgsqlTreeItem>, vscode.Disposable
 {
   private active?: { payload: WorkbenchGraphDragPayload; expiresAt: number };
+  private activeAuthoring?: { payload: SqlAuthoringDragPayload; expiresAt: number };
   private expiry?: ReturnType<typeof setTimeout>;
   readonly dropMimeTypes: readonly string[] = [];
   readonly dragMimeTypes = [
@@ -37,6 +38,9 @@ export class WorkbenchTreeDragAndDropController
     const authoringPayload = sqlAuthoringDragPayload(source);
     if (this.expiry) clearTimeout(this.expiry);
     this.active = payload ? { payload, expiresAt: Date.now() + 30_000 } : undefined;
+    this.activeAuthoring = authoringPayload
+      ? { payload: authoringPayload, expiresAt: Date.now() + 30_000 }
+      : undefined;
     this.announce(payload ?? null);
     if (authoringPayload) {
       dataTransfer.set(
@@ -72,6 +76,17 @@ export class WorkbenchTreeDragAndDropController
       this.expiry = undefined;
       this.announce(null);
     }
+    return current.payload;
+  }
+
+  /** SQL authoring payload of the ongoing tree drag, for webviews that compose SQL on drop. */
+  activeAuthoringPayload(consume = false): SqlAuthoringDragPayload | undefined {
+    const current = this.activeAuthoring;
+    if (!current || current.expiresAt < Date.now()) {
+      this.activeAuthoring = undefined;
+      return undefined;
+    }
+    if (consume) this.activeAuthoring = undefined;
     return current.payload;
   }
 

@@ -62,6 +62,8 @@ export interface SqlNotebookFile {
 export interface SqlNotebookResultPayload {
   version: 2;
   binding: NotebookBindingSnapshot;
+  /** SQL Statement that produced the result, when the producer knows it. */
+  statement?: string;
   command: string;
   columns: DebugResult["columns"];
   rows: DebugResult["rows"];
@@ -121,7 +123,17 @@ export type SqlNotebookSettingsRequest =
   | { type: "sql-error/open-analysis-settings" }
   | { type: "sql-error/increase-scratchpad-timeout" };
 
-export type SqlNotebookRendererRequest = SqlNotebookResultRequest | SqlNotebookSettingsRequest;
+/** Asks the Extension Host to open the Statement of a result in a Data View. */
+export interface SqlResultDataViewRequest {
+  type: "sql-result/open-data-view";
+  sql: string;
+  binding: NotebookBindingSnapshot;
+}
+
+export type SqlNotebookRendererRequest =
+  | SqlNotebookResultRequest
+  | SqlNotebookSettingsRequest
+  | SqlResultDataViewRequest;
 
 export type SqlNotebookRendererResponse =
   | {
@@ -305,10 +317,12 @@ export function serializeSqlNotebookFile(file: SqlNotebookFile): string {
 export function sqlNotebookResultPayload(
   result: DebugResult,
   binding: ScratchpadAssociationSnapshot,
+  statement?: string,
 ): SqlNotebookResultPayload {
   return {
     version: 2,
     binding,
+    ...(statement !== undefined ? { statement } : {}),
     command: result.command,
     columns: result.columns,
     rows: result.rows,

@@ -2,6 +2,7 @@ import type { WorkbenchObjectModel } from "./workbenchTreeModel.js";
 
 export type WorkbenchObjectActionId =
   | "open-definition"
+  | "open-data"
   | "open-deployed-source"
   | "open-graph"
   | "debug"
@@ -28,6 +29,12 @@ const ACTIONS: Record<WorkbenchObjectActionId, WorkbenchObjectAction> = {
     label: "Open Indexed Definition",
     description: "Open the definition from the current Code Moniker snapshot",
     icon: "go-to-file",
+  },
+  "open-data": {
+    id: "open-data",
+    label: "Open Data View",
+    description: "Browse the rows in a bounded, sortable, filterable Data View",
+    icon: "table",
   },
   "open-deployed-source": {
     id: "open-deployed-source",
@@ -72,6 +79,7 @@ export function buildWorkbenchObjectActions(
   capabilities: WorkbenchObjectActionCapabilities = {},
 ): WorkbenchObjectAction[] {
   const actions: WorkbenchObjectActionId[] = ["open-definition"];
+  if (object.kind === "table" || object.kind === "view") actions.push("open-data");
   const isPlpgsqlRoutine =
     object.plpgsql && (object.kind === "function" || object.kind === "procedure");
   if (isPlpgsqlRoutine) {

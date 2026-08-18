@@ -10,12 +10,15 @@ import {
 } from "@xyflow/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  hasWorkbenchTreeDrag,
   parseWorkbenchGraphDrag,
   WORKBENCH_GRAPH_OBJECT_MIME,
   WORKBENCH_GRAPH_UNSUPPORTED_MIME,
-  WORKBENCH_TREE_MIME,
   type WorkbenchGraphDragPayload,
 } from "../../dragAndDrop.js";
+
+export { hasWorkbenchTreeDrag };
+
 import { relationColor } from "../graph/relationPresentation.js";
 import { vscode } from "../vscodeApi.js";
 import { CockpitEdge, type CockpitEdgeData } from "./CockpitEdge.js";
@@ -343,10 +346,6 @@ export function CockpitCanvas({ frameRequest }: { frameRequest: string }) {
       )}
     </section>
   );
-}
-
-export function hasWorkbenchTreeDrag(dataTransfer: DataTransfer): boolean {
-  return [...dataTransfer.types].some((type) => type.toLocaleLowerCase() === WORKBENCH_TREE_MIME);
 }
 
 export function graphDragPayload(

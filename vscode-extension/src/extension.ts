@@ -27,6 +27,10 @@ import { CodeMonikerContentProvider } from "./codeMonikerContentProvider.js";
 import { ConnectionManager } from "./connectionManager.js";
 import { openCoverageClient } from "./coverageConnection.js";
 import { PgTapTestController } from "./coverageTestController.js";
+import { DataViewEditorProvider } from "./dataView/dataViewEditorProvider.js";
+import { dataViewSqlLabel } from "./dataView/dataViewUri.js";
+import { DataViewQueryFileSystem } from "./dataView/queryFileSystem.js";
+import { registerDataViewQueryLens } from "./dataView/queryLens.js";
 import {
   buildRoutineArgs,
   buildRoutineTarget,
@@ -61,6 +65,7 @@ import {
   type SqlAuthoringNavigationTarget,
 } from "./sqlAuthoring/client.js";
 import type { SqlAuthoringObject, SqlAuthoringSnapshot } from "./sqlAuthoring/protocol.js";
+import { sqlStatementSlices } from "./sqlAuthoring/sqlLexing.js";
 import { debuggableSqlCall, debuggableSqlDefinition } from "./sqlCodeLensPolicy.js";
 import {
   type CommandCallSite,
@@ -75,6 +80,8 @@ import {
   type ScratchpadDebugEligibility,
   type ScratchpadDebugger,
   type ScratchpadDebugOutcome,
+  type ScratchpadFeature,
+  sqlResultSettings,
 } from "./sqlNotebook.js";
 import type { SqlNotebookWorkspace } from "./sqlNotebookWorkspace.js";
 import { executeSqlSelection, prepareSqlSelection } from "./sqlSelectionExecution.js";
@@ -531,6 +538,7 @@ interface WorkbenchCommandOptions {
 
 interface SqlWorkbenchCommandOptions extends WorkbenchCommandOptions {
   codeLens: SqlCodeLensProvider;
+  dataViews: DataViewEditorProvider;
   documentConnections: CallSiteConnectionStore;
   revealSources(): Thenable<void>;
   selectedTreeItems(): readonly PlpgsqlTreeItem[];
@@ -722,6 +730,80 @@ function registerSqlWorkbenchCommands(options: SqlWorkbenchCommandOptions): void
         }
       },
     ),
+    vscode.commands.registerCommand(
+      "postgresql-workbench.openDataView",
+      async (input?: WorkbenchObjectModel | WorkbenchObjectItem | WorkbenchRelationTargetItem) => {
+        const selected = input ?? options.selectedTreeItems()[0];
+        if (!selected) return false;
+        const object =
+          "target" in selected
+            ? selected.target.object
+            : "object" in selected
+              ? selected.object
+              : "symbolUri" in selected
+                ? selected
+                : undefined;
+        if (!object || (object.kind !== "table" && object.kind !== "view")) {
+          void vscode.window.showInformationMessage(
+            "Data Views open tables and views. Select one in the Workbench tree.",
+          );
+          return false;
+        }
+        await options.dataViews.open({
+          kind: "relation",
+          serverId: object.serverId,
+          database: object.database,
+          schema: object.schema,
+          name: object.name,
+          relationKind: object.kind,
+        });
+        return true;
+      },
+    ),
+    vscode.commands.registerCommand("postgresql-workbench.openDataViewForStatement", async () => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) {
+        void vscode.window.showInformationMessage("Open a SQL editor first.");
+        return false;
+      }
+      const document = editor.document;
+      const documentUri = document.uri.toString();
+      const offset = document.offsetAt(editor.selection.active);
+      const selectedText = document.getText(editor.selection).trim();
+      const statement =
+        selectedText ||
+        sqlStatementSlices(document.getText()).find(
+          (slice) => offset >= slice.start && offset <= slice.end,
+        )?.text;
+      if (!statement?.trim()) {
+        void vscode.window.showInformationMessage("Place the cursor in a SQL Statement first.");
+        return false;
+      }
+      let serverId = documentConnections.getDocument(documentUri);
+      if (!serverId) {
+        const assigned = await assignDocumentConnection(
+          connections,
+          documentConnections,
+          options.codeLens,
+          { documentUri },
+        );
+        if (!assigned) return false;
+        serverId = documentConnections.getDocument(documentUri);
+      }
+      const server = serverId ? connections.store.get(serverId) : undefined;
+      if (!server) {
+        void vscode.window.showInformationMessage("Choose an available Document Association.");
+        return false;
+      }
+      await options.dataViews.open({
+        kind: "sql",
+        serverId: server.id,
+        database: server.database,
+        sql: statement,
+        label: dataViewSqlLabel(statement),
+      });
+      return true;
+    }),
     vscode.commands.registerCommand("postgresql-workbench.indexActiveDatabase", async () => {
       await options.revealSources();
       try {
@@ -1753,6 +1835,38 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
     message: "The PL/pgSQL debugger is still starting.",
   });
   let canDebugScratchpadSql: ScratchpadDebugEligibility = async () => false;
+  let openScratchpadWithSql: ScratchpadFeature["openWithSql"] = async () => {
+    throw new Error("Scratchpads are still starting.");
+  };
+  const dataViewQueryFiles = new DataViewQueryFileSystem();
+  context.subscriptions.push(dataViewQueryFiles);
+  const dataViews = new DataViewEditorProvider({
+    parser: () => workbenchIndex.syntaxParser(),
+    authoringSnapshot: (serverId, database) =>
+      workbenchIndex.sqlAuthoringSnapshot({ serverId, database }),
+    authoringSettings: (uri) => resolveSqlAuthoringSettings(uri),
+    queryFiles: dataViewQueryFiles,
+    treeDragPayload: (consume) => workbenchTreeDragAndDrop.activeAuthoringPayload(consume),
+    associate: (documentUri, serverId) => callSiteConnections.assignDocument(documentUri, serverId),
+    dissociate: (documentUri) => callSiteConnections.clearDocument(documentUri),
+    openClient: (serverId) => {
+      const timeoutMs = vscode.workspace
+        .getConfiguration("postgresql-workbench.sql")
+        .get<number>("statementTimeoutMs", 60_000);
+      return openCoverageClient(cm, serverId, {
+        applicationName: "postgresql-workbench:data-view",
+        statementTimeoutMs: Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 60_000,
+      });
+    },
+    serverName: (serverId) => cm.store.get(serverId)?.name,
+    resultSettings: () => sqlResultSettings(),
+    openSql: async (source, sql) => {
+      await openScratchpadWithSql(`${sql};\n`, cm.store.get(source.serverId));
+    },
+    output: out,
+    extensionUri: context.extensionUri,
+  });
+  context.subscriptions.push(dataViews, dataViews.register(), registerDataViewQueryLens());
   const scratchpads = registerSqlNotebook(
     context,
     cm,
@@ -1760,7 +1874,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
       planSqlResultExecution(sql, await workbenchIndex.syntaxParser(), sqlSyntaxAnalysisBudget()),
     (request) => debugScratchpadSql(request),
     (request) => canDebugScratchpadSql(request),
+    (request) =>
+      dataViews.open({
+        kind: "sql",
+        serverId: request.association.serverId,
+        database: request.association.database,
+        sql: request.sql,
+        label: dataViewSqlLabel(request.sql),
+      }),
   );
+  openScratchpadWithSql = (sql, association) => scratchpads.openWithSql(sql, association);
   context.subscriptions.push(
     workbenchIndex.onDidChangeState(() => scratchpads.refreshCellStatus()),
   );
@@ -1912,6 +2035,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
           object,
           snapshot,
         );
+      case "open-data":
+        return vscode.commands.executeCommand("postgresql-workbench.openDataView", object);
       case "debug":
         return vscode.commands.executeCommand(
           "postgresql-workbench.debugFromTree",
@@ -2403,6 +2528,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
     context,
     connections: cm,
     codeLens,
+    dataViews,
     documentConnections: callSiteConnections,
     index: workbenchIndex,
     tree: treeProvider,
