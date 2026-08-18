@@ -1,3 +1,4 @@
+import { DEBUG_PLAYWRIGHT_TEST_TIMEOUT_MS } from "../../../../e2e/debugTestTiming.js";
 import {
   demoConnexionQuickPickItem as connectionChoice,
   demoDatabaseTreeItem as database,
@@ -7,12 +8,13 @@ import {
 import { test } from "../../fixtures/test";
 
 test.describe("PL/pgSQL debugger call sites", () => {
+  test.describe.configure({ timeout: DEBUG_PLAYWRIGHT_TEST_TIMEOUT_MS });
+
   test.afterEach(async ({ debuggerPage }) => {
     await debuggerPage.expectNoActiveSession();
   });
 
   test("stops on every recursive Fibonacci result", async ({ workbench, debuggerPage }) => {
-    test.setTimeout(90_000);
     const sql = "SELECT playground.fib(5);";
     const breakpoint = "RETURN result;";
     const recursiveReturns = [

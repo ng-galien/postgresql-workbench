@@ -9,6 +9,11 @@ import { DebugClient } from "@vscode/debugadapter-testsupport";
 import { Client } from "pg";
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { DEBUG_RESULT_EVENT, DEBUG_RESULT_STATUS_EVENT } from "../src/debugger/launch/index.js";
+import {
+  DEBUG_DAP_EVENT_TIMEOUT_MS,
+  DEBUG_INTEGRATION_TEST_TIMEOUT_MS,
+  runPacedDebugAction,
+} from "./debugTestTiming.js";
 
 const DAP_SERVER = process.env.POSTGRESQL_DAP_SERVER
   ? path.resolve(process.env.POSTGRESQL_DAP_SERVER)
@@ -100,7 +105,11 @@ async function waitForDebuggerBackendsToClose(client: Client): Promise<number> {
   return count;
 }
 
-async function launchAndWaitForStop(dc: DebugClient, args: unknown, timeout = 15_000) {
+async function launchAndWaitForStop(
+  dc: DebugClient,
+  args: unknown,
+  timeout = DEBUG_DAP_EVENT_TIMEOUT_MS,
+) {
   const stopped = dc.waitForEvent("stopped", timeout);
   const [, , event] = await Promise.all([dc.launch(args), dc.configurationSequence(), stopped]);
   return event;
@@ -109,14 +118,14 @@ async function launchAndWaitForStop(dc: DebugClient, args: unknown, timeout = 15
 async function runAndWaitForStop(
   dc: DebugClient,
   action: () => Promise<unknown>,
-  timeout = 15_000,
+  timeout = DEBUG_DAP_EVENT_TIMEOUT_MS,
 ) {
   const stopped = dc.waitForEvent("stopped", timeout);
-  await action();
+  await runPacedDebugAction(dc, action);
   return stopped;
 }
 
-describe("DAP client e2e", () => {
+describe("DAP client e2e", { timeout: DEBUG_INTEGRATION_TEST_TIMEOUT_MS }, () => {
   let dc: DebugClient;
 
   beforeAll(async () => {
@@ -125,7 +134,7 @@ describe("DAP client e2e", () => {
 
   beforeEach(async () => {
     dc = new DebugClient("node", DAP_SERVER, "plpgsql");
-    dc.defaultTimeout = 15_000;
+    dc.defaultTimeout = DEBUG_DAP_EVENT_TIMEOUT_MS;
     await dc.start();
   });
 
@@ -138,7 +147,7 @@ describe("DAP client e2e", () => {
     } finally {
       await observer.end();
     }
-  }, 15_000);
+  }, DEBUG_INTEGRATION_TEST_TIMEOUT_MS);
 
   // ----- Launch & terminate -----
 
@@ -158,10 +167,10 @@ describe("DAP client e2e", () => {
   it("reports the target SQL result in the Debug Console before termination", async () => {
     await launchAndWaitForStop(dc, launchConfig("SELECT test_simple(7, 'lens')"));
     const threadId = (await dc.threadsRequest()).body.threads[0].id;
-    const output = dc.waitForEvent("output", 15_000);
-    const terminated = dc.waitForEvent("terminated", 15_000);
+    const output = dc.waitForEvent("output", DEBUG_DAP_EVENT_TIMEOUT_MS);
+    const terminated = dc.waitForEvent("terminated", DEBUG_DAP_EVENT_TIMEOUT_MS);
 
-    await dc.continueRequest({ threadId });
+    await runPacedDebugAction(dc, () => dc.continueRequest({ threadId }));
 
     expect((await output).body).toMatchObject({
       category: "console",
@@ -170,17 +179,24 @@ describe("DAP client e2e", () => {
     await terminated;
   });
 
-  it("does not publish recursive technical entry stops after Continue", async () => {
-    const stopped = await launchAndWaitForStop(dc, launchConfig("SELECT test_recursive_entry(8)"));
-    let repeatedStops = 0;
-    dc.on("stopped", () => repeatedStops++);
-    const terminated = dc.waitForEvent("terminated", 15_000);
+  it(
+    "does not publish recursive technical entry stops after Continue",
+    async () => {
+      const stopped = await launchAndWaitForStop(
+        dc,
+        launchConfig("SELECT test_recursive_entry(8)"),
+      );
+      let repeatedStops = 0;
+      dc.on("stopped", () => repeatedStops++);
+      const terminated = dc.waitForEvent("terminated", DEBUG_DAP_EVENT_TIMEOUT_MS);
 
-    await dc.continueRequest({ threadId: stopped.body.threadId });
+      await runPacedDebugAction(dc, () => dc.continueRequest({ threadId: stopped.body.threadId }));
 
-    await terminated;
-    expect(repeatedStops).toBe(0);
-  }, 20_000);
+      await terminated;
+      expect(repeatedStops).toBe(0);
+    },
+    DEBUG_INTEGRATION_TEST_TIMEOUT_MS,
+  );
 
   it("returns Fibonacci variables from the recursive stack frame requested by the client", async () => {
     const entry = await launchAndWaitForStop(dc, launchConfig("SELECT playground.fib(5)"));
@@ -221,7 +237,7 @@ describe("DAP client e2e", () => {
   });
 
   it("streams a large target result into a bounded structured preview", async () => {
-    const pending = dc.waitForEvent(DEBUG_RESULT_STATUS_EVENT, 15_000);
+    const pending = dc.waitForEvent(DEBUG_RESULT_STATUS_EVENT, DEBUG_DAP_EVENT_TIMEOUT_MS);
     await launchAndWaitForStop(dc, {
       ...launchConfig("SELECT * FROM test_many_rows(250)"),
       resultMaxRows: 20,
@@ -231,10 +247,10 @@ describe("DAP client e2e", () => {
       status: "pending",
       query: "SELECT * FROM test_many_rows(250)",
     });
-    const structured = dc.waitForEvent(DEBUG_RESULT_EVENT, 15_000);
-    const terminated = dc.waitForEvent("terminated", 15_000);
+    const structured = dc.waitForEvent(DEBUG_RESULT_EVENT, DEBUG_DAP_EVENT_TIMEOUT_MS);
+    const terminated = dc.waitForEvent("terminated", DEBUG_DAP_EVENT_TIMEOUT_MS);
 
-    await dc.continueRequest({ threadId });
+    await runPacedDebugAction(dc, () => dc.continueRequest({ threadId }));
 
     const body = (await structured).body;
     expect(body).toMatchObject({
@@ -253,86 +269,94 @@ describe("DAP client e2e", () => {
     await terminated;
   });
 
-  it("reports SETOF named composite rows as a typed structured result", async () => {
-    await launchAndWaitForStop(dc, launchConfig("SELECT * FROM test_setof_record_rows()"));
-    const threadId = (await dc.threadsRequest()).body.threads[0].id;
-    const structured = dc.waitForEvent(DEBUG_RESULT_EVENT, 15_000);
-    const terminated = dc.waitForEvent("terminated", 15_000);
+  it(
+    "reports SETOF named composite rows as a typed structured result",
+    async () => {
+      await launchAndWaitForStop(dc, launchConfig("SELECT * FROM test_setof_record_rows()"));
+      const threadId = (await dc.threadsRequest()).body.threads[0].id;
+      const structured = dc.waitForEvent(DEBUG_RESULT_EVENT, DEBUG_DAP_EVENT_TIMEOUT_MS);
+      const terminated = dc.waitForEvent("terminated", DEBUG_DAP_EVENT_TIMEOUT_MS);
 
-    await dc.continueRequest({ threadId });
+      await runPacedDebugAction(dc, () => dc.continueRequest({ threadId }));
 
-    const body = (await structured).body;
-    expect(body).toMatchObject({
-      command: "SELECT",
-      rowCount: 3,
-      capturedRowCount: 3,
-      truncated: false,
-    });
-    expect(body.columns).toEqual([
-      { name: "id", dataTypeId: 23, typeName: "integer" },
-      { name: "name", dataTypeId: 25, typeName: "text" },
-      { name: "active", dataTypeId: 16, typeName: "boolean" },
-    ]);
-    expect(body.rows).toEqual([
-      [
-        { kind: "number", value: "1" },
-        { kind: "text", value: "first" },
-        { kind: "boolean", value: "true" },
-      ],
-      [
-        { kind: "number", value: "2" },
-        { kind: "text", value: "" },
-        { kind: "boolean", value: "false" },
-      ],
-      [
-        { kind: "number", value: "3" },
-        { kind: "null", value: null },
-        { kind: "null", value: null },
-      ],
-    ]);
-    await terminated;
-  }, 20_000);
+      const body = (await structured).body;
+      expect(body).toMatchObject({
+        command: "SELECT",
+        rowCount: 3,
+        capturedRowCount: 3,
+        truncated: false,
+      });
+      expect(body.columns).toEqual([
+        { name: "id", dataTypeId: 23, typeName: "integer" },
+        { name: "name", dataTypeId: 25, typeName: "text" },
+        { name: "active", dataTypeId: 16, typeName: "boolean" },
+      ]);
+      expect(body.rows).toEqual([
+        [
+          { kind: "number", value: "1" },
+          { kind: "text", value: "first" },
+          { kind: "boolean", value: "true" },
+        ],
+        [
+          { kind: "number", value: "2" },
+          { kind: "text", value: "" },
+          { kind: "boolean", value: "false" },
+        ],
+        [
+          { kind: "number", value: "3" },
+          { kind: "null", value: null },
+          { kind: "null", value: null },
+        ],
+      ]);
+      await terminated;
+    },
+    DEBUG_INTEGRATION_TEST_TIMEOUT_MS,
+  );
 
-  it("reports SETOF anonymous record rows using the callsite descriptor", async () => {
-    const sql = `SELECT *
+  it(
+    "reports SETOF anonymous record rows using the callsite descriptor",
+    async () => {
+      const sql = `SELECT *
       FROM test_setof_anonymous_rows()
         AS row_result(id integer, name text, amount numeric, note text)`;
-    await launchAndWaitForStop(dc, launchConfig(sql));
-    const threadId = (await dc.threadsRequest()).body.threads[0].id;
-    const structured = dc.waitForEvent(DEBUG_RESULT_EVENT, 15_000);
-    const terminated = dc.waitForEvent("terminated", 15_000);
+      await launchAndWaitForStop(dc, launchConfig(sql));
+      const threadId = (await dc.threadsRequest()).body.threads[0].id;
+      const structured = dc.waitForEvent(DEBUG_RESULT_EVENT, DEBUG_DAP_EVENT_TIMEOUT_MS);
+      const terminated = dc.waitForEvent("terminated", DEBUG_DAP_EVENT_TIMEOUT_MS);
 
-    await dc.continueRequest({ threadId });
+      await runPacedDebugAction(dc, () => dc.continueRequest({ threadId }));
 
-    const body = (await structured).body;
-    expect(body).toMatchObject({
-      command: "SELECT",
-      rowCount: 2,
-      capturedRowCount: 2,
-      truncated: false,
-    });
-    expect(body.columns).toEqual([
-      { name: "id", dataTypeId: 23, typeName: "integer" },
-      { name: "name", dataTypeId: 25, typeName: "text" },
-      { name: "amount", dataTypeId: 1700, typeName: "numeric" },
-      { name: "note", dataTypeId: 25, typeName: "text" },
-    ]);
-    expect(body.rows).toEqual([
-      [
-        { kind: "number", value: "10" },
-        { kind: "text", value: "alpha" },
-        { kind: "number", value: "1.50" },
-        { kind: "null", value: null },
-      ],
-      [
-        { kind: "number", value: "11" },
-        { kind: "text", value: "" },
-        { kind: "number", value: "2.25" },
-        { kind: "text", value: "note" },
-      ],
-    ]);
-    await terminated;
-  }, 20_000);
+      const body = (await structured).body;
+      expect(body).toMatchObject({
+        command: "SELECT",
+        rowCount: 2,
+        capturedRowCount: 2,
+        truncated: false,
+      });
+      expect(body.columns).toEqual([
+        { name: "id", dataTypeId: 23, typeName: "integer" },
+        { name: "name", dataTypeId: 25, typeName: "text" },
+        { name: "amount", dataTypeId: 1700, typeName: "numeric" },
+        { name: "note", dataTypeId: 25, typeName: "text" },
+      ]);
+      expect(body.rows).toEqual([
+        [
+          { kind: "number", value: "10" },
+          { kind: "text", value: "alpha" },
+          { kind: "number", value: "1.50" },
+          { kind: "null", value: null },
+        ],
+        [
+          { kind: "number", value: "11" },
+          { kind: "text", value: "" },
+          { kind: "number", value: "2.25" },
+          { kind: "text", value: "note" },
+        ],
+      ]);
+      await terminated;
+    },
+    DEBUG_INTEGRATION_TEST_TIMEOUT_MS,
+  );
 
   it("launches from a structured routine target", async () => {
     const stopped = await launchAndWaitForStop(dc, {
@@ -516,7 +540,7 @@ describe("DAP client e2e", () => {
     await second.start();
 
     try {
-      const firstStopped = dc.waitForEvent("stopped", 15_000);
+      const firstStopped = dc.waitForEvent("stopped", DEBUG_DAP_EVENT_TIMEOUT_MS);
       await Promise.all([
         dc.launch(launchConfig("SELECT test_simple(1, 'first')")),
         dc.configurationSequence(),
@@ -545,8 +569,8 @@ describe("DAP client e2e", () => {
     });
     expect(configured.body.breakpoints[0]?.verified).toBe(false);
 
-    const changed = dc.waitForEvent("breakpoint", 15_000);
-    const stopped = dc.waitForEvent("stopped", 15_000);
+    const changed = dc.waitForEvent("breakpoint", DEBUG_DAP_EVENT_TIMEOUT_MS);
+    const stopped = dc.waitForEvent("stopped", DEBUG_DAP_EVENT_TIMEOUT_MS);
     await dc.launchRequest({
       ...launchConfig("SELECT test_step_into(5)"),
       stopOnEntry: false,
@@ -563,33 +587,37 @@ describe("DAP client e2e", () => {
     await dc.disconnectRequest();
   });
 
-  it("stops at a function breakpoint on the launch routine itself", async () => {
-    const initialized = dc.waitForEvent("initialized", 5_000);
-    await dc.initializeRequest();
-    await initialized;
+  it(
+    "stops at a function breakpoint on the launch routine itself",
+    async () => {
+      const initialized = dc.waitForEvent("initialized", 5_000);
+      await dc.initializeRequest();
+      await initialized;
 
-    const configured = await dc.setFunctionBreakpointsRequest({
-      breakpoints: [{ name: "public.test_simple" }],
-    });
-    expect(configured.body.breakpoints[0]?.verified).toBe(false);
+      const configured = await dc.setFunctionBreakpointsRequest({
+        breakpoints: [{ name: "public.test_simple" }],
+      });
+      expect(configured.body.breakpoints[0]?.verified).toBe(false);
 
-    const changed = dc.waitForEvent("breakpoint", 15_000);
-    const stopped = dc.waitForEvent("stopped", 15_000);
-    await dc.launchRequest({
-      ...launchConfig("SELECT test_simple(5, 'entry-function-breakpoint')"),
-      stopOnEntry: false,
-    });
-    await dc.configurationDoneRequest();
+      const changed = dc.waitForEvent("breakpoint", DEBUG_DAP_EVENT_TIMEOUT_MS);
+      const stopped = dc.waitForEvent("stopped", DEBUG_DAP_EVENT_TIMEOUT_MS);
+      await dc.launchRequest({
+        ...launchConfig("SELECT test_simple(5, 'entry-function-breakpoint')"),
+        stopOnEntry: false,
+      });
+      await dc.configurationDoneRequest();
 
-    expect((await changed).body.breakpoint.verified).toBe(true);
-    const stop = await stopped;
-    expect(stop.body.reason).toBe("function breakpoint");
+      expect((await changed).body.breakpoint.verified).toBe(true);
+      const stop = await stopped;
+      expect(stop.body.reason).toBe("function breakpoint");
 
-    const stack = await dc.stackTraceRequest({ threadId: stop.body.threadId });
-    expect(stack.body.stackFrames[0]?.name).toContain("test_simple");
+      const stack = await dc.stackTraceRequest({ threadId: stop.body.threadId });
+      expect(stack.body.stackFrames[0]?.name).toContain("test_simple");
 
-    await dc.disconnectRequest();
-  }, 20_000);
+      await dc.disconnectRequest();
+    },
+    DEBUG_INTEGRATION_TEST_TIMEOUT_MS,
+  );
 
   // ----- Stack trace -----
 
@@ -638,7 +666,7 @@ describe("DAP client e2e", () => {
     const line1 = stack1.body.stackFrames[0].line;
 
     // Step over
-    const stopped2 = await runAndWaitForStop(dc, () => dc.nextRequest({ threadId: tid }), 10_000);
+    const stopped2 = await runAndWaitForStop(dc, () => dc.nextRequest({ threadId: tid }));
     expect(stopped2.body.reason).toBe("step");
 
     const stack2 = await dc.stackTraceRequest({ threadId: tid });
@@ -921,68 +949,76 @@ describe("DAP client e2e", () => {
     return { line: frame.line, i };
   }
 
-  it("stepping contract: exact full trajectory from entry to termination", async () => {
-    await launchAndWaitForStop(dc, launchConfig("SELECT test_increments()"));
-    const tid = (await dc.threadsRequest()).body.threads[0].id;
+  it(
+    "stepping contract: exact full trajectory from entry to termination",
+    async () => {
+      await launchAndWaitForStop(dc, launchConfig("SELECT test_increments()"));
+      const tid = (await dc.threadsRequest()).body.threads[0].id;
 
-    // Every stop of the function's life, in order — through RETURN included.
-    expect(await readLineAndI(dc)).toEqual({ line: 8, i: "0" });
-    const trajectory = [
-      { line: 9, i: "1" },
-      { line: 10, i: "2" },
-      { line: 11, i: "3" },
-      { line: 12, i: "4" },
-      { line: 13, i: "5" }, // RETURN i — all five increments visible
-    ];
-    for (const step of trajectory) {
-      await runAndWaitForStop(dc, () => dc.nextRequest({ threadId: tid }));
-      expect(await readLineAndI(dc)).toEqual(step);
-    }
-
-    // Stepping the RETURN line ends the function: clean termination, no hang.
-    const terminated = dc.waitForEvent("terminated", 15_000);
-    await dc.nextRequest({ threadId: tid });
-    await terminated;
-  }, 45_000);
-
-  it("loop contract: exact per-iteration trajectory of a FOR loop", async () => {
-    // test_loop(3): line 9 FOR header, line 10 loop body, line 12 RETURN.
-    // END LOOP (line 11) is not steppable and must never appear as a stop.
-    await launchAndWaitForStop(dc, launchConfig("SELECT test_loop(3)"));
-    const tid = (await dc.threadsRequest()).body.threads[0].id;
-
-    async function readState(): Promise<{ line: number; total: string; i: string }> {
-      const stack = await dc.stackTraceRequest({ threadId: tid });
-      const scopes = await dc.scopesRequest({ frameId: stack.body.stackFrames[0].id });
-      const state = { line: stack.body.stackFrames[0].line, total: "<none>", i: "<none>" };
-      for (const scope of scopes.body.scopes) {
-        const vars = await dc.variablesRequest({
-          variablesReference: scope.variablesReference,
-        });
-        for (const v of vars.body.variables) {
-          if (v.name === "total") state.total = v.value;
-          if (v.name === "i") state.i = v.value;
-        }
+      // Every stop of the function's life, in order — through RETURN included.
+      expect(await readLineAndI(dc)).toEqual({ line: 8, i: "0" });
+      const trajectory = [
+        { line: 9, i: "1" },
+        { line: 10, i: "2" },
+        { line: 11, i: "3" },
+        { line: 12, i: "4" },
+        { line: 13, i: "5" }, // RETURN i — all five increments visible
+      ];
+      for (const step of trajectory) {
+        await runAndWaitForStop(dc, () => dc.nextRequest({ threadId: tid }));
+        expect(await readLineAndI(dc)).toEqual(step);
       }
-      return state;
-    }
 
-    expect(await readState()).toEqual({ line: 9, total: "0", i: "NULL" });
-    const trajectory = [
-      { line: 10, total: "0", i: "1" }, // FOR assigned i, body not yet run
-      { line: 10, total: "1", i: "2" }, // iteration 1 done
-      { line: 10, total: "3", i: "3" }, // iteration 2 done
-      { line: 12, total: "6", i: "3" }, // loop finished → RETURN total
-    ];
-    for (const step of trajectory) {
-      await runAndWaitForStop(dc, () => dc.nextRequest({ threadId: tid }));
-      expect(await readState()).toEqual(step);
-    }
+      // Stepping the RETURN line ends the function: clean termination, no hang.
+      const terminated = dc.waitForEvent("terminated", DEBUG_DAP_EVENT_TIMEOUT_MS);
+      await runPacedDebugAction(dc, () => dc.nextRequest({ threadId: tid }));
+      await terminated;
+    },
+    DEBUG_INTEGRATION_TEST_TIMEOUT_MS,
+  );
 
-    const terminated = dc.waitForEvent("terminated", 15_000);
-    await dc.nextRequest({ threadId: tid });
-    await terminated;
-  }, 45_000);
+  it(
+    "loop contract: exact per-iteration trajectory of a FOR loop",
+    async () => {
+      // test_loop(3): line 9 FOR header, line 10 loop body, line 12 RETURN.
+      // END LOOP (line 11) is not steppable and must never appear as a stop.
+      await launchAndWaitForStop(dc, launchConfig("SELECT test_loop(3)"));
+      const tid = (await dc.threadsRequest()).body.threads[0].id;
+
+      async function readState(): Promise<{ line: number; total: string; i: string }> {
+        const stack = await dc.stackTraceRequest({ threadId: tid });
+        const scopes = await dc.scopesRequest({ frameId: stack.body.stackFrames[0].id });
+        const state = { line: stack.body.stackFrames[0].line, total: "<none>", i: "<none>" };
+        for (const scope of scopes.body.scopes) {
+          const vars = await dc.variablesRequest({
+            variablesReference: scope.variablesReference,
+          });
+          for (const v of vars.body.variables) {
+            if (v.name === "total") state.total = v.value;
+            if (v.name === "i") state.i = v.value;
+          }
+        }
+        return state;
+      }
+
+      expect(await readState()).toEqual({ line: 9, total: "0", i: "NULL" });
+      const trajectory = [
+        { line: 10, total: "0", i: "1" }, // FOR assigned i, body not yet run
+        { line: 10, total: "1", i: "2" }, // iteration 1 done
+        { line: 10, total: "3", i: "3" }, // iteration 2 done
+        { line: 12, total: "6", i: "3" }, // loop finished → RETURN total
+      ];
+      for (const step of trajectory) {
+        await runAndWaitForStop(dc, () => dc.nextRequest({ threadId: tid }));
+        expect(await readState()).toEqual(step);
+      }
+
+      const terminated = dc.waitForEvent("terminated", DEBUG_DAP_EVENT_TIMEOUT_MS);
+      await runPacedDebugAction(dc, () => dc.nextRequest({ threadId: tid }));
+      await terminated;
+    },
+    DEBUG_INTEGRATION_TEST_TIMEOUT_MS,
+  );
 
   it("breakpoint contract: stops exactly on the requested line with all prior lines evaluated", async () => {
     await launchAndWaitForStop(dc, launchConfig("SELECT test_increments()"));
@@ -1081,8 +1117,8 @@ describe("DAP client e2e", () => {
     const total = args.body.variables.find((v) => v.name === "total");
     expect(total?.value).toBe("5");
 
-    const terminated = dc.waitForEvent("terminated", 15_000);
-    await dc.continueRequest({ threadId });
+    const terminated = dc.waitForEvent("terminated", DEBUG_DAP_EVENT_TIMEOUT_MS);
+    await runPacedDebugAction(dc, () => dc.continueRequest({ threadId }));
     await terminated;
   });
 
