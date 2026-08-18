@@ -16,7 +16,7 @@ Built for your **development database**: local PostgreSQL, Docker, or self-hoste
 Open the [documentation site](https://ng-galien.github.io/postgresql-workbench/)
 for focused guides to the Cockpit, SQL scratchpads, pgTAP coverage, the debugger,
 the standalone DAP server, and the complete command and settings reference.
-The complete Sources-to-editor drag-and-drop contract is maintained in the
+The complete Schemas-to-editor drag-and-drop contract is maintained in the
 [SQL authoring guide](https://ng-galien.github.io/postgresql-workbench/docs/sql-authoring.html#compose-sql-by-drag-and-drop).
 
 ## See the Workbench in action
@@ -62,8 +62,9 @@ variables, and keep PostgreSQL notices and query results close at hand.
   statement and branch coverage in the editor.
 - **PL/pgSQL debugger** — use breakpoints, step controls, inline values, the
   Variables panel, Debug Console, and structured PostgreSQL values.
-- **Connection-aware navigation** — keep Sources, Graph, notebooks, results,
-  tests, and debugging attached to an explicit database context.
+- **Connection-aware navigation** — open several PostgreSQL Connexions at once
+  and keep Schemas, Graph, notebooks, results, tests, and debugging attached to
+  the exact Connexion they belong to.
 
 ## Start a debug-ready PostgreSQL from VS Code
 
@@ -136,7 +137,7 @@ running `CREATE EXTENSION pldbgapi` for you when possible.
 
 Notes:
 - `Debug call` is intentionally shown only for standalone SQL calls that can be replayed safely.
-- One Document Association is shared by every Run and Debug action in the same free SQL file. Changing it never changes the active Workbench DatabaseContext.
+- One Document Association is shared by every Run and Debug action in the same free SQL file. Changing it never affects any other open Connexion.
 - Virtual source documents use the exact canonical Code Moniker symbol URI
   (`code+moniker://...`) and expose routine-definition debugging, not call-site replay.
 
@@ -146,7 +147,7 @@ The Workbench index describes PostgreSQL structure, not table data. Automatic
 synchronization is disabled by default and never reacts to `INSERT`, `UPDATE`,
 or `DELETE`. Enable it globally or for the current workspace with
 `postgresql-workbench.workbench.schemaSync.enabled`, or use **Configure Schema
-Synchronization** on one DatabaseContext to store an explicit connection
+Synchronization** on one Connexion to store an explicit connection
 override.
 
 Enabling the option does not alter the database. Select **Provision Schema

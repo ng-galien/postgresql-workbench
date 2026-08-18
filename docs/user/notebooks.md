@@ -10,7 +10,7 @@ mediaAlt: SQL scratchpad executing a query and showing a PostgreSQL result grid
 
 A Scratchpad is a persistent PostgreSQL SQL workspace in VS Code. Its
 Association points to a saved Connexion, never to a live PostgreSQL session,
-and never silently follows the active DatabaseContext.
+and never silently switches to another open Connexion.
 
 Run and Debug are separate execution intents but use that same Association.
 A code cell whose SQL resolves to one replayable PL/pgSQL entry point shows its

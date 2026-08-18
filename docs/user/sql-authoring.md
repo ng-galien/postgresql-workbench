@@ -20,11 +20,10 @@ contract for each editor context and analyzed SQL shape.
 
 Ordinary `.sql` and `.pgsql` documents use their persistent Document
 Association. Choosing it once governs completion, navigation, composition,
-Run, and Debug without changing the active DatabaseContext. A Scratchpad cell
-uses its persistent Association, even when another
-DatabaseContext becomes active. If that context is unavailable, not indexed, or
-stale, completion and query composition stop instead of switching to another
-Connexion silently. Formatting remains available because it depends on syntax,
+Run, and Debug for that document only. A Scratchpad cell uses its persistent
+Association, even when other Connexions are open and indexed. If that
+Connexion is unavailable, not indexed, or stale, completion and query
+composition stop instead of switching to another Connexion silently. Formatting remains available because it depends on syntax,
 not on a database context.
 
 Reindexing and synchronized DDL updates replace the snapshot used by subsequent
@@ -57,17 +56,17 @@ result set. Completion inserts quoted PostgreSQL identifiers when required and
 routine snippets expose their indexed parameters.
 
 Completion is bounded to keep large schemas responsive. An unavailable or stale
-snapshot produces no speculative suggestions from another DatabaseContext.
+snapshot produces no speculative suggestions from another Connexion.
 
 ## Compose SQL by drag and drop
 
 The following behavior is the complete contract for dragging indexed objects
-from **Sources** into SQL. It applies to saved `.sql` and `.pgsql` files and to
+from **Schemas** into SQL. It applies to saved `.sql` and `.pgsql` files and to
 Scratchpad code cells.
 
 1. Drag exactly one object and hold <kbd>Shift</kbd> while dropping it in the editor.
 2. In a Scratchpad, composition uses the Scratchpad Association shown below the
-   cell. It never uses the active DatabaseContext as a fallback and does not add
+   cell. It never uses another open Connexion as a fallback and does not add
    a second connection selector inside the cell.
 3. In a saved SQL file, composition uses its Document Association.
 4. Inspect and edit the generated SQL, then run it explicitly. A drop never
@@ -272,7 +271,7 @@ comments do not create phantom relations or clause boundaries.
 
 The snapshot and document are checked again immediately before applying the
 edit, and again after an ambiguity picker. An unavailable Association or
-Connexion, a missing index, a stale snapshot, a cross-DatabaseContext object, a
+Connexion, a missing index, a stale snapshot, an object from another Connexion, a
 concurrent document edit, or a concurrent index generation leaves the document
 unchanged and shows a warning. Workbench never retries against another context
 silently.
