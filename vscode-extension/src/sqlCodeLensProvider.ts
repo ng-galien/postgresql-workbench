@@ -65,6 +65,8 @@ const NO_CONNECTIONS: CodeLensConnections = {
 
 /** Statement-level causes worth a lens; index state is reported once on the connection lens. */
 const STATEMENT_UNAVAILABLE_REASONS = new Set<SqlDebugUnavailableReason>([
+  "Checking debugger capability",
+  "Debugger extension unavailable",
   "Several overloads match",
   "Not a PL/pgSQL routine",
   "Call depends on a row value or parameter",

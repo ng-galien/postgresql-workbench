@@ -21,13 +21,15 @@ describe("PostgreSQL SourceSet provider", () => {
       symbol(ordersView, "view", "code+moniker://sql/view/orders_view"),
       symbol(unrelated, "view", "code+moniker://sql/view/unrelated_view"),
     ];
+    const otherConnexionUsage =
+      "postgresql://other%3A5432%2Fapp%3Apostgres/app/app/view/orders_view.sql";
     const usages = vi
       .fn()
       .mockResolvedValueOnce({
         data: {
           rows: [
             { direction: "incoming", file: ordersView.uri },
-            { direction: "incoming", file: "file:///consumer-outside-this-source-set.sql" },
+            { direction: "incoming", file: otherConnexionUsage },
           ],
           total: 3,
         },
@@ -51,6 +53,7 @@ describe("PostgreSQL SourceSet provider", () => {
     );
 
     expect([...selected.documentUris]).toEqual([orders.uri, ordersView.uri]);
+    expect(selected.documentUris.has(otherConnexionUsage)).toBe(false);
     expect(selected.newResources).toEqual([{ kind: "constraint", oid: 12 }]);
     expect(usages).toHaveBeenNthCalledWith(
       1,

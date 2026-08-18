@@ -9,7 +9,7 @@ import { expect, test } from "../../fixtures/test";
 test.describe("Workbench search", () => {
   test("opens an indexed PostgreSQL definition from the TreeView header", async ({ workbench }) => {
     await workbench.ensureServer(demoConnectionUrl, server);
-    await workbench.expectActiveDatabaseIndexed(server, database);
+    await workbench.expectDatabaseIndexed(server, database);
     await workbench.tree.clickHeaderAction(/Search Database Objects/i);
     await workbench.quickInput.fill("shop product table");
     await workbench.quickInput.chooseAndClose(demoProductSearchQuickPickItem);

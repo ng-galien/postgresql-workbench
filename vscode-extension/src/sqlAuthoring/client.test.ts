@@ -55,11 +55,7 @@ const snapshot: SqlAuthoringSnapshot = {
   foreignKeys: [],
 };
 
-const connections = {
-  activeServer: server,
-  isConnected: true,
-  servers: [server],
-};
+const connections = { servers: [server] };
 const index = { sqlAuthoringSnapshot: () => snapshot };
 
 describe("SQL authoring document context", () => {
@@ -82,7 +78,7 @@ describe("SQL authoring document context", () => {
     });
   });
 
-  it("does not fall back to the active DatabaseContext for an unattached notebook cell", () => {
+  it("does not infer a Connexion for an unattached notebook cell", () => {
     expect(
       resolveDocumentContext(
         "vscode-notebook-cell:/scratchpad/reloading#cell-1",
@@ -92,7 +88,7 @@ describe("SQL authoring document context", () => {
     ).toMatchObject({ status: "unavailable" });
   });
 
-  it("uses one SQL Document Association instead of the active DatabaseContext", () => {
+  it("uses the SQL Document Association", () => {
     const associated = { ...server, id: "reporting-server", database: "reporting" };
     const lookup = vi.fn(() => ({
       ...snapshot,

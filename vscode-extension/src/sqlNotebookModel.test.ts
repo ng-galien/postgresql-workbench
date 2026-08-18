@@ -92,7 +92,7 @@ describe("SQL notebook model", () => {
     ).toEqual({});
   });
 
-  it("uses the domain Association states without inferring the active database context", () => {
+  it("uses the domain Association states without inferring a Connexion", () => {
     expect(resolveScratchpadAssociation({}, [TEST_SERVER])).toEqual({ status: "unassociated" });
     expect(resolveScratchpadAssociation(TEST_BINDING, [TEST_SERVER])).toEqual({
       status: "associated",

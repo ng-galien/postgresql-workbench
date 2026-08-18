@@ -94,7 +94,7 @@ describe("Workbench tree model", () => {
       "postgresql-workbench.pickConnection": "navigation",
       "postgresql-workbench.openDatabaseGraph": "navigation@1",
       "postgresql-workbench.searchDatabaseObjects": "navigation@2",
-      "postgresql-workbench.indexActiveDatabase": "navigation@3",
+      "postgresql-workbench.indexDatabase": "navigation@3",
     });
     expect(
       manifest.contributes.commands.find(
@@ -108,7 +108,7 @@ describe("Workbench tree model", () => {
     ).toMatchObject({ icon: "$(list-tree)" });
     expect(
       manifest.contributes.commands.find(
-        ({ command }) => command === "postgresql-workbench.indexActiveDatabase",
+        ({ command }) => command === "postgresql-workbench.indexDatabase",
       ),
     ).toMatchObject({ icon: "$(refresh)" });
     expect(
@@ -119,9 +119,9 @@ describe("Workbench tree model", () => {
     expect(
       manifest.contributes.menus["view/item/context"].find(
         ({ command, when }) =>
-          command === "postgresql-workbench.indexActiveDatabase" &&
+          command === "postgresql-workbench.indexDatabase" &&
           when ===
-            "view == postgresql-workbench-connections && viewItem == postgresql-workbench-sources-active",
+            "view == postgresql-workbench-connections && viewItem == postgresql-workbench-sources",
       ),
     ).toMatchObject({ group: "inline@1" });
     expect(

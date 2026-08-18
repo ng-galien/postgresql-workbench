@@ -137,29 +137,23 @@ describe("ScratchpadTransactionManager", () => {
     expect(client.end).toHaveBeenCalledTimes(1);
   });
 
-  it("blocks new Scratchpad work until a Connexion change lease is released", async () => {
-    const { transactions } = fixture();
+  it("rolls back safely and blocks new Scratchpad work until a Connexion change lease is released", async () => {
+    const { queries, transactions } = fixture();
     await transactions.execute("scratchpad:1", "Scratch 1", association, async () => "done");
-    const choice = deferred<string | undefined>();
-    vi.mocked(vscode.window.showWarningMessage).mockReturnValue(choice.promise as never);
 
-    const acquisition = transactions.acquireConnectionChange(
+    const lease = await transactions.acquireConnectionChange(
       association.serverId,
       "disconnecting the Connexion",
     );
-    await vi.waitFor(() => expect(vscode.window.showWarningMessage).toHaveBeenCalledOnce());
+    expect(vscode.window.showWarningMessage).not.toHaveBeenCalled();
+    expect(queries).toEqual(["BEGIN", "ROLLBACK"]);
+    expect(transactions.transaction("scratchpad:1")).toBeUndefined();
 
     await expect(
       transactions.execute("scratchpad:2", "Scratch 2", association, async () => "late"),
     ).rejects.toThrow("Connexion is changing");
 
-    choice.resolve("Rollback");
-    const lease = await acquisition;
     expect(lease).toBeDefined();
-    await expect(
-      transactions.execute("scratchpad:2", "Scratch 2", association, async () => "late"),
-    ).rejects.toThrow("Connexion is changing");
-
     lease?.dispose();
     await expect(
       transactions.execute("scratchpad:2", "Scratch 2", association, async () => "after"),

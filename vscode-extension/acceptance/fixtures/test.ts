@@ -83,7 +83,7 @@ export const test = base.extend<AcceptanceFixtures, AcceptanceWorkerFixtures>({
       await workbench.reset();
       await workbench.scratchpads.collapseAll();
       await workbench.ensureServer(demoConnectionUrl, demoConnexion);
-      await workbench.ensureActiveDatabaseIndexed(demoConnexion, demoDatabase);
+      await workbench.ensureDatabaseIndexed(demoConnexion, demoDatabase);
       await use(undefined);
     },
     { scope: "worker", auto: true, timeout: 60_000 },

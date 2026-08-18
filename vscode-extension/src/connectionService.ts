@@ -17,27 +17,12 @@ export interface ConnectParams {
   ssl?: SslMode;
 }
 
-export interface ConnectResult {
-  client: Client;
-  pldbgapiAvailable: boolean;
-  /** Non-empty if pldbgapi check failed — explains why */
-  pldbgapiError: string;
-}
-
 /**
  * Handles pg.Client lifecycle and pldbgapi validation.
  * Stateless — does not store anything, just connects/checks/disconnects.
  */
 export class ConnectionService {
   constructor(private readonly out: vscode.OutputChannel) {}
-
-  async connect(params: ConnectParams): Promise<ConnectResult> {
-    const client = await this.connectClient(params);
-
-    const { available, error } = await this.checkRequirements(client, params.database);
-
-    return { client, pldbgapiAvailable: available, pldbgapiError: error };
-  }
 
   async connectClient(params: ConnectParams): Promise<Client> {
     const client = new Client({

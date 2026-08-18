@@ -53,7 +53,7 @@ import {
 import { closePostgresqlDapTabs } from "./postgresqlDapSource.js";
 import { showRequirementsGuide } from "./requirementsGuide.js";
 import { createRoutineComparisonHandler } from "./routineComparisonCommand.js";
-import { type ServerConfig, ServerStore } from "./serverStore.js";
+import { getConnectionName, type ServerConfig, ServerStore } from "./serverStore.js";
 import {
   REFRESH_SQL_AUTHORING_CONTEXT_COMMAND,
   registerSqlAuthoring,
@@ -61,7 +61,11 @@ import {
   type SqlAuthoringNavigationTarget,
 } from "./sqlAuthoring/client.js";
 import type { SqlAuthoringObject, SqlAuthoringSnapshot } from "./sqlAuthoring/protocol.js";
-import { debuggableSqlCall, debuggableSqlDefinition } from "./sqlCodeLensPolicy.js";
+import {
+  debuggableSqlCall,
+  debuggableSqlDefinition,
+  type SqlDebugAvailability,
+} from "./sqlCodeLensPolicy.js";
 import {
   type CommandCallSite,
   type CommandFunctionDefinition,
@@ -145,7 +149,6 @@ interface LaunchDebugConfig {
   resultLabel?: string;
   resultSource?: DebugResultSource;
   serverId?: string;
-  preserveDatabaseContext?: boolean;
   stopOnEntry?: boolean;
 }
 
@@ -241,7 +244,8 @@ async function launchDebug(
   }
 
   const folder = vscode.workspace.workspaceFolders?.[0];
-  const serverId = config.serverId ?? cm.activeServer?.id;
+  const serverId =
+    config.serverId ?? (cm.connectedServerIds.length === 1 ? cm.connectedServerIds[0] : undefined);
   const name =
     config.name ??
     (config.routine
@@ -327,7 +331,6 @@ async function persistLaunchConfig(
   if (debugConfig.routine) persisted.routine = debugConfig.routine;
   if (debugConfig.routineArgs) persisted.routineArgs = debugConfig.routineArgs;
   persisted.stopOnEntry = debugConfig.stopOnEntry ?? true;
-  if (debugConfig.preserveDatabaseContext) persisted.preserveDatabaseContext = true;
 
   const launch = vscode.workspace.getConfiguration("launch", folder.uri);
   const configs = [...(launch.get<vscode.DebugConfiguration[]>("configurations") ?? [])];
@@ -381,16 +384,16 @@ async function assignDocumentConnection(
     server = cm.servers[0];
     if (server && current === server.id) {
       void vscode.window.showInformationMessage(
-        `${server.name} is the only saved Connexion; add another server to change the Document Association.`,
+        `${getConnectionName(server)} is the only saved Connexion; add another server to change the Document Association.`,
       );
     }
   } else {
     const picked = await vscode.window.showQuickPick(
       cm.servers.map((candidate) => ({
-        label: candidate.name,
+        label: getConnectionName(candidate),
         description: [
           current === candidate.id ? "Current Association" : undefined,
-          cm.isActiveServer(candidate.id) ? "Active DatabaseContext" : undefined,
+          cm.isServerConnected(candidate.id) ? "Connected" : undefined,
         ]
           .filter(Boolean)
           .join(" · "),
@@ -532,7 +535,7 @@ interface WorkbenchCommandOptions {
 interface SqlWorkbenchCommandOptions extends WorkbenchCommandOptions {
   codeLens: SqlCodeLensProvider;
   documentConnections: CallSiteConnectionStore;
-  revealSources(): Thenable<void>;
+  revealSources(serverId: string): Thenable<void>;
   selectedTreeItems(): readonly PlpgsqlTreeItem[];
 }
 
@@ -553,17 +556,19 @@ async function openDocumentSqlClient(
     });
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
-    out.appendLine(`SQL execution connection failed (${server.name}, ${documentUri}): ${detail}`);
+    out.appendLine(
+      `SQL execution connection failed (${getConnectionName(server)}, ${documentUri}): ${detail}`,
+    );
     const password = await connections.store.getPassword(server.id);
     const choice =
       password === undefined
         ? await vscode.window.showErrorMessage(
-            `Connexion ${server.name} has no saved password.`,
+            `Connexion ${getConnectionName(server)} has no saved password.`,
             "Change Password",
             "Change Association",
           )
         : await vscode.window.showErrorMessage(
-            `Cannot connect to ${server.name}. See the PostgreSQL Workbench output for details.`,
+            `Cannot connect to ${getConnectionName(server)}. See the PostgreSQL Workbench output for details.`,
             "Show Output",
             "Change Association",
           );
@@ -722,19 +727,39 @@ function registerSqlWorkbenchCommands(options: SqlWorkbenchCommandOptions): void
         }
       },
     ),
-    vscode.commands.registerCommand("postgresql-workbench.indexActiveDatabase", async () => {
-      await options.revealSources();
-      try {
-        return await index.indexActiveDatabase();
-      } catch (error) {
-        if (index.state.status === "cancelled") return undefined;
-        const message = error instanceof Error ? error.message : String(error);
-        if (index.state.status !== "error" && index.state.status !== "stale") {
-          void vscode.window.showErrorMessage(`PostgreSQL indexing failed: ${message}`);
+    vscode.commands.registerCommand(
+      "postgresql-workbench.indexDatabase",
+      async (target?: string | { server?: { id?: string } }) => {
+        const requestedServerId =
+          typeof target === "string"
+            ? target
+            : typeof target?.server?.id === "string"
+              ? target.server.id
+              : undefined;
+        const serverId =
+          requestedServerId ??
+          (connections.connectedServerIds.length === 1
+            ? connections.connectedServerIds[0]
+            : await pickConnectedServerId(connections));
+        if (!serverId) {
+          return undefined;
         }
-        return undefined;
-      }
-    }),
+        const server = connections.store.get(serverId);
+        if (!server) return undefined;
+        await options.revealSources(serverId);
+        try {
+          return await index.indexDatabase(serverId);
+        } catch (error) {
+          const state = index.databaseState({ serverId, database: server.database });
+          if (state.status === "cancelled") return undefined;
+          const message = error instanceof Error ? error.message : String(error);
+          if (state.status !== "error" && state.status !== "stale") {
+            void vscode.window.showErrorMessage(`PostgreSQL indexing failed: ${message}`);
+          }
+          return undefined;
+        }
+      },
+    ),
     vscode.commands.registerCommand(
       "postgresql-workbench.indexAssociation",
       async (target?: { serverId?: string }) => {
@@ -742,10 +767,6 @@ function registerSqlWorkbenchCommands(options: SqlWorkbenchCommandOptions): void
         if (!server) {
           void vscode.window.showInformationMessage("Choose an available Association first.");
           return false;
-        }
-        if (connections.activeServer?.id === server.id) {
-          await vscode.commands.executeCommand("postgresql-workbench.indexActiveDatabase");
-          return true;
         }
         const client = await openDocumentSqlClient(
           connections,
@@ -758,7 +779,7 @@ function registerSqlWorkbenchCommands(options: SqlWorkbenchCommandOptions): void
           await vscode.window.withProgress(
             {
               location: vscode.ProgressLocation.Notification,
-              title: `Indexing ${server.name}`,
+              title: `Indexing ${getConnectionName(server)}`,
             },
             () =>
               index.indexPostgresDatabase(client, {
@@ -770,9 +791,9 @@ function registerSqlWorkbenchCommands(options: SqlWorkbenchCommandOptions): void
           return true;
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
-          out.appendLine(`Association indexing failed (${server.name}): ${message}`);
+          out.appendLine(`Association indexing failed (${getConnectionName(server)}): ${message}`);
           void vscode.window.showErrorMessage(
-            `Indexing ${server.name} failed. See the PostgreSQL Workbench output.`,
+            `Indexing ${getConnectionName(server)} failed. See the PostgreSQL Workbench output.`,
           );
           return false;
         } finally {
@@ -780,8 +801,17 @@ function registerSqlWorkbenchCommands(options: SqlWorkbenchCommandOptions): void
         }
       },
     ),
-    vscode.commands.registerCommand("postgresql-workbench.cancelDatabaseIndex", () =>
-      index.cancelActiveDatabaseIndex(),
+    vscode.commands.registerCommand(
+      "postgresql-workbench.cancelDatabaseIndex",
+      (target?: string | { server?: { id?: string } }) => {
+        const serverId =
+          typeof target === "string"
+            ? target
+            : typeof target?.server?.id === "string"
+              ? target.server.id
+              : undefined;
+        return index.cancelDatabaseIndex(serverId);
+      },
     ),
     vscode.commands.registerCommand(
       "postgresql-workbench.openDatabaseObject",
@@ -806,7 +836,11 @@ function registerSqlWorkbenchCommands(options: SqlWorkbenchCommandOptions): void
         if (!object) return undefined;
         const itemSnapshot = "snapshot" in selected ? selected.snapshot : undefined;
         const snapshot = requestedSnapshot ?? itemSnapshot;
-        const result = index.state.result;
+        const state = index.databaseState({
+          serverId: object.serverId,
+          database: object.database,
+        });
+        const result = state.result;
         if (
           !result ||
           (snapshot &&
@@ -845,14 +879,32 @@ function registerGraphWorkbenchCommands(options: WorkbenchCommandOptions): void 
   } = options;
   context.subscriptions.push(
     vscode.commands.registerCommand("postgresql-workbench.openDatabaseGraph", async () => {
-      const result = index.state.result;
-      if (index.state.status === "indexing" || !result) {
+      const candidate = graphSync.currentSelection;
+      const selectedObject =
+        candidate?.kind === "function" || candidate?.kind === "object"
+          ? candidate.object
+          : candidate?.kind === "tableMember" || candidate?.kind === "relationGroup"
+            ? candidate.object
+            : candidate?.kind === "relationTarget"
+              ? candidate.target.object
+              : undefined;
+      const focused = selectedObject
+        ? { serverId: selectedObject.serverId, database: selectedObject.database }
+        : graph.currentDatabase;
+      if (!focused) {
         void vscode.window.showInformationMessage(
-          "Index the active PostgreSQL database before opening its graph.",
+          "Select an indexed PostgreSQL object before opening its graph.",
         );
         return false;
       }
-      const candidate = graphSync.currentSelection;
+      const state = index.databaseState(focused);
+      const result = state.result;
+      if (state.status === "indexing" || !result) {
+        void vscode.window.showInformationMessage(
+          "Select an indexed PostgreSQL object before opening its graph.",
+        );
+        return false;
+      }
       const selected = selectionMatchesDatabase(candidate, result.serverId, result.database)
         ? candidate
         : undefined;
@@ -877,7 +929,6 @@ function registerGraphWorkbenchCommands(options: WorkbenchCommandOptions): void 
         input: WorkbenchObjectModel | FunctionItem | WorkbenchObjectItem | undefined,
         requestedSnapshot?: { revision: string; generation: number | null },
       ) => {
-        const result = index.state.result;
         if (!input) {
           void vscode.window.showInformationMessage(
             "Choose a PostgreSQL object from the Workbench tree or search first.",
@@ -885,10 +936,12 @@ function registerGraphWorkbenchCommands(options: WorkbenchCommandOptions): void 
           return false;
         }
         const object = "object" in input ? input.object : input;
+        const state = index.databaseState(object);
+        const result = state.result;
         const itemSnapshot = "snapshot" in input ? input.snapshot : undefined;
         const snapshot = requestedSnapshot ?? itemSnapshot ?? result;
         if (
-          index.state.status === "indexing" ||
+          state.status === "indexing" ||
           !result ||
           !snapshot ||
           snapshot.revision !== result.revision ||
@@ -899,17 +952,23 @@ function registerGraphWorkbenchCommands(options: WorkbenchCommandOptions): void 
           );
           return false;
         }
-        return graph.open(object, snapshot);
+        return graph.open(object, {
+          serverId: result.serverId,
+          database: result.database,
+          revision: snapshot.revision,
+          generation: snapshot.generation,
+        });
       },
     ),
     vscode.commands.registerCommand(
       "postgresql-workbench.revealDatabaseObjectInTree",
       async (item: WorkbenchRelationTargetItem) => {
         const object = item?.target.object;
-        const result = index.state.result;
+        const state = object ? index.databaseState(object) : undefined;
+        const result = state?.result;
         if (
           !object ||
-          index.state.status === "indexing" ||
+          state?.status === "indexing" ||
           !result ||
           item.snapshot.revision !== result.revision ||
           item.snapshot.generation !== result.generation
@@ -929,9 +988,11 @@ function registerGraphWorkbenchCommands(options: WorkbenchCommandOptions): void 
         requestedSnapshot?: { revision: string; generation: number | null },
         surface: WorkbenchObjectActionSurface = "default",
       ) => {
-        const result = index.state.result;
-        if (!input || !result) return false;
+        if (!input) return false;
         const object = "object" in input ? input.object : input;
+        const state = index.databaseState(object);
+        const result = state.result;
+        if (!result) return false;
         const itemSnapshot = "snapshot" in input ? input.snapshot : undefined;
         const snapshot = requestedSnapshot ?? itemSnapshot ?? result;
         if (
@@ -947,7 +1008,7 @@ function registerGraphWorkbenchCommands(options: WorkbenchCommandOptions): void 
         }
         const actions = actionsForWorkbenchSurface(await objectActions(object), surface).filter(
           (action) =>
-            index.state.status !== "indexing" ||
+            state.status !== "indexing" ||
             action.id === "open-definition" ||
             action.id === "open-deployed-source",
         );
@@ -972,17 +1033,6 @@ function registerGraphWorkbenchCommands(options: WorkbenchCommandOptions): void 
       async (context?: unknown) => {
         const query = typeof context === "string" ? context : undefined;
         if (query !== undefined) search.query = query;
-        const result = index.state.result;
-        if (!result) {
-          const action = await vscode.window.showInformationMessage(
-            "Index the active PostgreSQL database before searching its objects.",
-            "Index Database",
-          );
-          if (action === "Index Database") {
-            await vscode.commands.executeCommand("postgresql-workbench.indexActiveDatabase");
-          }
-          return undefined;
-        }
         const objects = query ? tree.searchObjects(query, 500) : [];
         const updateQuery = (value: string) => {
           search.query = value;
@@ -999,6 +1049,14 @@ function registerGraphWorkbenchCommands(options: WorkbenchCommandOptions): void 
           return undefined;
         }
         if (!selection) return undefined;
+        const selectedState = index.databaseState(selection.object);
+        const result = selectedState.result;
+        if (!result || selectedState.status === "indexing") {
+          void vscode.window.showInformationMessage(
+            "The selected Connexion index is not ready yet.",
+          );
+          return undefined;
+        }
         const command =
           selection.action === "graph"
             ? "postgresql-workbench.openObjectGraph"
@@ -1068,26 +1126,28 @@ function registerConnectionCommands(options: ConnectionCommandOptions): void {
       (target: string | ServerItem) =>
         connections.connectServer(typeof target === "string" ? target : target.server.id),
     ),
-    vscode.commands.registerCommand(
-      "postgresql-workbench.useDatabaseContextAsActive",
-      (target: string | ServerItem | { server: ServerItem["server"] }) =>
-        connections.connectServer(typeof target === "string" ? target : target.server.id),
-    ),
     vscode.commands.registerCommand("postgresql-workbench.removeServer", (item: ServerItem) => {
       connections.commands.removeServer(item.server.id);
     }),
     vscode.commands.registerCommand("postgresql-workbench.editServer", (item: ServerItem) =>
       connections.commands.editServer(item.server.id),
     ),
+    vscode.commands.registerCommand("postgresql-workbench.renameServer", (item: ServerItem) =>
+      connections.commands.renameServer(item.server.id),
+    ),
     vscode.commands.registerCommand("postgresql-workbench.changePassword", (item: ServerItem) =>
       connections.commands.changePassword(item.server.id),
     ),
-    vscode.commands.registerCommand("postgresql-workbench.disconnectServer", () =>
-      connections.disconnect(),
+    vscode.commands.registerCommand(
+      "postgresql-workbench.disconnectServer",
+      (target?: string | ServerItem) => {
+        const id = typeof target === "string" ? target : target?.server.id;
+        return id ? connections.disconnect(id) : false;
+      },
     ),
     vscode.commands.registerCommand("postgresql-workbench.pickConnection", async () => {
-      const ok = await connections.commands.pickConnection();
-      if (ok) codeLens.refresh();
+      const picked = await connections.commands.pickConnection();
+      if (picked) codeLens.refresh();
     }),
     vscode.commands.registerCommand(
       "postgresql-workbench.configureWorkbenchSchemaSync",
@@ -1096,11 +1156,11 @@ function registerConnectionCommands(options: ConnectionCommandOptions): void {
         if (!server) {
           const pickedServer = await vscode.window.showQuickPick(
             connections.servers.map((candidate) => ({
-              label: candidate.name,
+              label: getConnectionName(candidate),
               description: candidate.id,
               server: candidate,
             })),
-            { placeHolder: "Select a PostgreSQL DatabaseContext" },
+            { placeHolder: "Select a PostgreSQL Connexion" },
           );
           server = pickedServer?.server;
         }
@@ -1111,8 +1171,8 @@ function registerConnectionCommands(options: ConnectionCommandOptions): void {
           [
             {
               label: configuration.enabled
-                ? "$(circle-slash) Disable for this DatabaseContext"
-                : "$(radio-tower) Enable for this DatabaseContext",
+                ? "$(circle-slash) Disable for this Connexion"
+                : "$(radio-tower) Enable for this Connexion",
               detail: configuration.enabled ? "disable" : "enable",
             },
             {
@@ -1148,7 +1208,7 @@ function registerConnectionCommands(options: ConnectionCommandOptions): void {
                 ]
               : []),
           ],
-          { placeHolder: `Schema synchronization · ${server.name}` },
+          { placeHolder: `Schema synchronization · ${getConnectionName(server)}` },
         );
         switch (picked?.detail) {
           case "enable":
@@ -1209,7 +1269,7 @@ function registerConnectionCommands(options: ConnectionCommandOptions): void {
       async (item: Pick<WorkbenchDdlSyncItem, "server">) => {
         const configuration = ddlSync.configuration(item.server);
         const confirm = await vscode.window.showWarningMessage(
-          `Provision schema synchronization on ${item.server.name}? This creates two database-level EVENT TRIGGER objects and notification functions in schema ${configuration.supportSchema}. PostgreSQL superuser privileges are required.`,
+          `Provision schema synchronization on ${getConnectionName(item.server)}? This creates two database-level EVENT TRIGGER objects and notification functions in schema ${configuration.supportSchema}. PostgreSQL superuser privileges are required.`,
           { modal: true },
           "Provision",
         );
@@ -1217,7 +1277,7 @@ function registerConnectionCommands(options: ConnectionCommandOptions): void {
         try {
           await ddlSync.provision(item.server.id);
           void vscode.window.showInformationMessage(
-            `Schema synchronization is listening on ${item.server.name}.`,
+            `Schema synchronization is listening on ${getConnectionName(item.server)}.`,
           );
           return true;
         } catch (error) {
@@ -1232,7 +1292,7 @@ function registerConnectionCommands(options: ConnectionCommandOptions): void {
       "postgresql-workbench.removeWorkbenchSchemaSyncProvisioning",
       async (item: Pick<WorkbenchDdlSyncItem, "server">) => {
         const confirm = await vscode.window.showWarningMessage(
-          `Remove Workbench schema synchronization from ${item.server.name}? The database-level event triggers and Workbench notification functions will be removed without CASCADE.`,
+          `Remove Workbench schema synchronization from ${getConnectionName(item.server)}? The database-level event triggers and Workbench notification functions will be removed without CASCADE.`,
           { modal: true },
           "Remove Provisioning",
         );
@@ -1250,28 +1310,35 @@ function registerDebugCommands(options: DebugCommandOptions): void {
     vscode.commands.registerCommand("postgresql-workbench.manageDebugSessions", () =>
       manageDebugSessions(connections, tree, output, () => sessions.statuses),
     ),
-    vscode.commands.registerCommand("postgresql-workbench.checkRequirements", async () => {
-      if (!connections.isConnected || !connections.activeServer) {
-        const action = await vscode.window.showInformationMessage(
-          "Not connected to a PostgreSQL server.",
-          "Pick Connection",
-          "Setup Guide",
-        );
-        if (action === "Pick Connection") await connections.commands.pickConnection();
-        if (action === "Setup Guide") await showRequirementsGuide();
-        return;
-      }
-      const check = await connections.checkRequirements();
-      if (!check) return;
-      if (check.available) {
-        vscode.window.showInformationMessage(
-          `${connections.activeServer.name}: pldbgapi ready — debugging available.`,
-        );
-      } else {
-        const action = await vscode.window.showWarningMessage(check.error, "Setup Guide");
-        if (action === "Setup Guide") await showRequirementsGuide();
-      }
-    }),
+    vscode.commands.registerCommand(
+      "postgresql-workbench.checkRequirements",
+      async (item?: ServerItem) => {
+        let server = item?.server;
+        if (!server && connections.connectedServerIds.length === 1) {
+          server = connections.store.get(connections.connectedServerIds[0]);
+        }
+        if (!server) {
+          const action = await vscode.window.showInformationMessage(
+            "Choose a connected PostgreSQL Connexion.",
+            "Pick Connection",
+            "Setup Guide",
+          );
+          if (action === "Pick Connection") await connections.commands.pickConnection();
+          if (action === "Setup Guide") await showRequirementsGuide();
+          return;
+        }
+        const check = await connections.checkRequirements(server.id);
+        if (!check) return;
+        if (check.available) {
+          vscode.window.showInformationMessage(
+            `${getConnectionName(server)}: pldbgapi ready — debugging available.`,
+          );
+        } else {
+          const action = await vscode.window.showWarningMessage(check.error, "Setup Guide");
+          if (action === "Setup Guide") await showRequirementsGuide();
+        }
+      },
+    ),
     vscode.commands.registerCommand(
       "postgresql-workbench.debugFromTree",
       async (item: FunctionItem) => {
@@ -1350,7 +1417,6 @@ function registerDebugCommands(options: DebugCommandOptions): void {
           {
             name: configNameFromRoutine(routine),
             serverId,
-            preserveDatabaseContext: true,
             routine,
             routineArgs: buildRoutineArgs(args),
           },
@@ -1384,7 +1450,6 @@ function registerDebugCommands(options: DebugCommandOptions): void {
           {
             sql: call.sql,
             serverId,
-            preserveDatabaseContext: true,
             resultLabel: source
               ? `${(await configNameFromSql(call.sql, async (sql) => parseCall(sql, await index.syntaxParser()))).replace(/^Debug\s+/i, "")} · ${source.name}${source.line ? `:${source.line}` : ""}`
               : undefined,
@@ -1411,6 +1476,22 @@ interface DebugInfrastructure {
   resultStore: DebugResultStore;
   resultsView: DebugResultsViewProvider;
   contentProvider: CodeMonikerContentProvider;
+}
+
+function debugSessionConnectionName(
+  connections: ConnectionManager,
+  configuration: vscode.DebugConfiguration,
+): string | undefined {
+  const server =
+    typeof configuration.server === "string"
+      ? connections.store.get(configuration.server)
+      : undefined;
+  if (server) return getConnectionName(server);
+  const { host, port, database, user } = configuration;
+  if (typeof host !== "string" || typeof database !== "string") return undefined;
+  const userPrefix = typeof user === "string" ? `${user}@` : "";
+  const portSuffix = typeof port === "number" ? `:${port}` : "";
+  return `${userPrefix}${host}${portSuffix}/${database}`;
 }
 
 function registerDebugInfrastructure(options: DebugInfrastructureOptions): DebugInfrastructure {
@@ -1445,11 +1526,12 @@ function registerDebugInfrastructure(options: DebugInfrastructureOptions): Debug
         return;
       }
       let shouldRevealResults = false;
+      const resultConnection = debugSessionConnectionName(connections, event.session.configuration);
       if (event.event === DEBUG_RESULT_EVENT && isDebugResult(event.body)) {
-        resultStore.add(event.body);
+        resultStore.add(event.body, resultConnection);
         shouldRevealResults = true;
       } else if (event.event === DEBUG_RESULT_STATUS_EVENT && isDebugResultStatus(event.body)) {
-        resultStore.addStatus(event.body);
+        resultStore.addStatus(event.body, resultConnection);
         shouldRevealResults = event.body.status === "error";
       } else {
         return;
@@ -1656,7 +1738,7 @@ function registerDebugInfrastructure(options: DebugInfrastructureOptions): Debug
           return connections.servers.map((server) => ({
             type: "postgresql-workbench",
             request: "launch",
-            name: `PL/pgSQL on ${server.name}`,
+            name: `PL/pgSQL on ${getConnectionName(server)}`,
             server: server.id,
           }));
         },
@@ -1730,7 +1812,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
 
   const cm = new ConnectionManager(context, out);
   removeAcceptanceServer = async (id) => {
-    await cm.removeDatabaseContextConfiguration(id);
+    await cm.removeConnectionConfiguration(id);
   };
   context.subscriptions.push(cm);
   const workbenchIndex = new WorkbenchIndexController(context, cm, out);
@@ -1742,8 +1824,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
     workbenchIndex.releaseAcceptancePhaseGate(runId, phase);
   inspectAcceptanceWorkbenchState = () => ({
     connection: {
-      activeServerId: cm.activeServer?.id,
-      connected: cm.isConnected,
+      connectedServerIds: [...cm.connectedServerIds],
+      connected: cm.connectedServerIds.length > 0,
     },
     schemaSync: workbenchDdlSync.diagnosticStates(),
     index: workbenchIndex.acceptanceSnapshot(),
@@ -1760,6 +1842,29 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
       planSqlResultExecution(sql, await workbenchIndex.syntaxParser(), sqlSyntaxAnalysisBudget()),
     (request) => debugScratchpadSql(request),
     (request) => canDebugScratchpadSql(request),
+    (association) => {
+      void cm.refreshDebugCapability(association.serverId);
+      // A listening Schema Sync already refreshes this Connexion incrementally
+      // from the committed DDL; a second full rebuild would only race it.
+      if (workbenchDdlSync.state(association.serverId).status === "listening") return;
+      workbenchIndex.markDatabaseStale(
+        association.serverId,
+        association.database,
+        "Schema changed from a Scratchpad",
+      );
+      const client = cm.getClient(association.serverId);
+      if (!client) return;
+      void workbenchIndex
+        .indexPostgresDatabase(client, {
+          serverId: association.serverId,
+          database: association.database,
+        })
+        .catch((error) =>
+          out.appendLine(
+            `Automatic Workbench refresh after Scratchpad DDL failed: ${error instanceof Error ? error.message : String(error)}`,
+          ),
+        );
+    },
   );
   context.subscriptions.push(
     workbenchIndex.onDidChangeState(() => scratchpads.refreshCellStatus()),
@@ -1791,16 +1896,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
     connections: cm,
     output: out,
     syntaxParser: () => workbenchIndex.syntaxParser(),
-    indexedDependencies: (routine) => workbenchIndex.routineDependencies(routine.oid),
+    indexedDependencies: (serverId, routine) =>
+      workbenchIndex.routineDependencies(routine.oid, serverId),
     indexDatabase: async (serverId, client) => {
       const server = cm.store.get(serverId);
       if (!server) throw new Error(`Unknown PostgreSQL connection: ${serverId}`);
-      const indexed = workbenchIndex.state.result;
-      if (
-        workbenchIndex.state.status !== "indexing" &&
-        indexed?.serverId === serverId &&
-        indexed.database === server.database
-      ) {
+      const state = workbenchIndex.databaseState({ serverId, database: server.database });
+      if (state.status !== "indexing" && state.result) {
         return;
       }
       await workbenchIndex.indexPostgresDatabase(client, {
@@ -1848,17 +1950,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
       };
     }),
   );
-  inspectAcceptanceTestingState = () => ({
-    coverage: acceptanceCoverage,
-    index: {
-      database: workbenchIndex.state.result?.database,
-      generation: workbenchIndex.state.result?.generation,
-      revision: workbenchIndex.state.result?.revision,
-      serverId: workbenchIndex.state.result?.serverId,
-      status: workbenchIndex.state.status,
-    },
-    run: acceptanceTestRun,
-  });
+  inspectAcceptanceTestingState = () => {
+    const serverId = cm.connectedServerIds.length === 1 ? cm.connectedServerIds[0] : undefined;
+    const server = serverId ? cm.store.get(serverId) : undefined;
+    const state = server
+      ? workbenchIndex.databaseState({ serverId: server.id, database: server.database })
+      : { status: "not-indexed" as const };
+    return {
+      coverage: acceptanceCoverage,
+      index: {
+        database: state.result?.database,
+        generation: state.result?.generation,
+        revision: state.result?.revision,
+        serverId: state.result?.serverId,
+        status: state.status,
+      },
+      run: acceptanceTestRun,
+    };
+  };
   context.subscriptions.push(coverageTests);
   const workbenchObjectActions = async (
     object: WorkbenchObjectModel,
@@ -1874,9 +1983,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
     object: WorkbenchObjectModel,
     snapshot: { revision: string; generation: number | null },
   ): Promise<unknown> => {
-    const result = workbenchIndex.state.result;
+    const state = workbenchIndex.databaseState(object);
+    const result = state.result;
     if (
-      (workbenchIndex.state.status === "indexing" &&
+      (state.status === "indexing" &&
         action !== "open-definition" &&
         action !== "open-deployed-source") ||
       !result ||
@@ -1927,7 +2037,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
   };
   const callSiteConnections = new CallSiteConnectionStore(context.workspaceState);
   const workbenchSearch = { query: "" };
-  const debugSessions = new DebugSessionController(() => connectionTreeProvider?.refresh());
+  const debugSessions = new DebugSessionController(() =>
+    connectionTreeProvider?.refreshServer(debugSessions.active?.serverId),
+  );
   /** Resolves with the SQL result of the next PL/pgSQL debug session, or undefined when it ends without one. */
   const awaitDebugResult = (): {
     completion: Promise<DebugResultEntry | undefined>;
@@ -2036,6 +2148,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
     return { picks };
   };
   canDebugScratchpadSql = async ({ sql, association }) => {
+    if (cm.debugCapabilityFor(association.serverId).status !== "available") return false;
     const snapshot = workbenchIndex.sqlAuthoringSnapshot(association);
     if (snapshot?.status !== "available" || !sql.trim()) return false;
     try {
@@ -2081,7 +2194,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
               argTypes: [],
             },
             serverId: association.serverId,
-            preserveDatabaseContext: true,
             resultLabel: `${triggerRoutine.schema}.${triggerRoutine.name} · ${source.name}`,
             resultSource: source,
           },
@@ -2113,7 +2225,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
       {
         sql: selected.call.sql,
         serverId: association.serverId,
-        preserveDatabaseContext: true,
         resultLabel: `${selected.label.replace(/^(?:CALL|SELECT)\s+/u, "")} · ${source.name}:${selected.call.line}`,
         resultSource: { ...source, line: selected.call.line },
       },
@@ -2156,7 +2267,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
     index: workbenchIndex,
     sessions: debugSessions,
     output: out,
-    refreshTree: () => connectionTreeProvider?.refresh(),
+    refreshTree: () => connectionTreeProvider?.refreshServer(debugSessions.active?.serverId),
     revealStoppedSource: queueStoppedSource,
   });
   treeProvider = new WorkbenchTreeProvider(
@@ -2264,12 +2375,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
     await callSiteConnections.clearAll();
     await vscode.commands.executeCommand("workbench.action.closePanel");
     await workbenchGraph.close();
-    graphTreeSync.invalidateDatabaseContext();
+    graphTreeSync.invalidateCockpitContext();
   };
   const syncGraphFromTree = graphTreeSync.bind();
-  const scheduleDebugSessionRefresh = () => {
+  const scheduleDebugSessionRefresh = (serverId: string | undefined) => {
     for (const delay of [100, 500, 2_000, 5_000]) {
-      setTimeout(() => connectionTreeProvider.refresh(), delay);
+      setTimeout(() => connectionTreeProvider.refreshServer(serverId), delay);
     }
   };
   context.subscriptions.push(
@@ -2287,12 +2398,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
     scratchpadsTree.onDidCollapseElement(({ element }) =>
       scratchpadTreeProvider.setExpanded(element, false),
     ),
-    cm.onServerChanged(() => {
-      graphTreeSync.invalidateDatabaseContext();
-      workbenchGraph.invalidateDatabaseContext();
+    cm.onServerChanged((change) => {
+      const database = workbenchGraph.currentDatabase;
+      if (!database || !change.serverIds.includes(database.serverId)) return;
+      graphTreeSync.invalidateCockpitContext();
+      workbenchGraph.invalidateCockpitContext();
     }),
     workbenchIndex.onDidChangeState((state) => {
-      if (state.status === "available" && state.result) {
+      const database = workbenchGraph.currentDatabase;
+      if (
+        database &&
+        state.status === "available" &&
+        state.result?.serverId === database.serverId &&
+        state.result.database === database.database
+      ) {
         void workbenchGraph.refreshSnapshot(state.result);
       }
     }),
@@ -2307,20 +2426,30 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
           void vscode.debug.stopDebugging(session);
           return;
         }
-        scheduleDebugSessionRefresh();
+        scheduleDebugSessionRefresh(debugSessions.active?.serverId);
       }
     }),
     vscode.debug.onDidTerminateDebugSession((session) => {
-      if (session.type === "postgresql-workbench") scheduleDebugSessionRefresh();
+      if (session.type === "postgresql-workbench") {
+        const serverId =
+          typeof session.configuration.server === "string"
+            ? session.configuration.server
+            : debugSessions.active?.serverId;
+        scheduleDebugSessionRefresh(serverId);
+      }
     }),
   );
   void closePostgresqlDapTabs();
 
   context.subscriptions.push(
     contentProvider.onDidChangeFile((events) => {
-      if (events.some((e) => e.uri.scheme === CodeMonikerContentProvider.SCHEME)) {
-        treeProvider.refresh();
+      const serverIds = new Set<string>();
+      for (const event of events) {
+        if (event.uri.scheme !== CodeMonikerContentProvider.SCHEME) continue;
+        const descriptor = workbenchIndex.sourceDescriptorForDocumentUri(event.uri);
+        if (descriptor) serverIds.add(descriptor.serverId);
       }
+      for (const serverId of serverIds) treeProvider.refreshServer(serverId);
     }),
   );
 
@@ -2329,6 +2458,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
     return server
       ? workbenchIndex.sqlAuthoringSnapshot({ serverId: server.id, database: server.database })
       : undefined;
+  };
+  const debuggerCapabilityAvailability = (serverId: string): SqlDebugAvailability | undefined => {
+    const capability = cm.debugCapabilityFor(serverId);
+    if (capability.status === "available") return undefined;
+    return {
+      status: "unavailable",
+      reason:
+        capability.status === "checking"
+          ? "Checking debugger capability"
+          : "Debugger extension unavailable",
+    };
   };
   const codeLens = new SqlCodeLensProvider(() => workbenchIndex.syntaxParser(), {
     forDocument: (documentUri) => {
@@ -2339,15 +2479,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
           : undefined;
       const serverId = binding?.serverId ?? callSiteConnections.getDocument(documentUri);
       const server = serverId ? cm.store.get(serverId) : undefined;
-      return server ? { id: server.id, name: server.name } : undefined;
+      return server ? { id: server.id, name: getConnectionName(server) } : undefined;
     },
     indexState: (connection) => {
       const snapshot = connectionSnapshot(connection.id);
       return snapshot ? (snapshot.status === "available" ? "available" : "stale") : "missing";
     },
     debugCallAvailability: (connection, call) =>
+      debuggerCapabilityAvailability(connection.id) ??
       debuggableSqlCall(connectionSnapshot(connection.id), call),
     debugDefinitionAvailability: (connection, definition) =>
+      debuggerCapabilityAvailability(connection.id) ??
       debuggableSqlDefinition(connectionSnapshot(connection.id), definition),
     canDeployManagedRoutine: (documentUri) => {
       const uri = vscode.Uri.parse(documentUri);
@@ -2414,7 +2556,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
     objectActions: workbenchObjectActions,
     runObjectAction: runWorkbenchObjectAction,
     search: workbenchSearch,
-    revealSources: () => revealActiveSources(workbenchTree, treeProvider),
+    revealSources: (serverId) => revealSources(workbenchTree, treeProvider, serverId),
     selectedTreeItems: () => workbenchTree.selection,
   });
   registerGraphWorkbenchCommands({
@@ -2478,11 +2620,12 @@ export async function deactivate(): Promise<void> {
   shutdownScratchpads = undefined;
 }
 
-async function revealActiveSources(
+async function revealSources(
   tree: vscode.TreeView<PlpgsqlTreeItem>,
   provider: WorkbenchTreeProvider,
+  serverId: string,
 ): Promise<void> {
-  const sources = provider.activeSourcesItem();
+  const sources = provider.sourcesItem(serverId);
   if (sources) await tree.reveal(sources, { expand: true, focus: false });
 }
 
@@ -2493,16 +2636,19 @@ async function revealSqlAuthoringReference(
   tree: vscode.TreeView<PlpgsqlTreeItem>,
   graphSync: WorkbenchGraphTreeSync,
 ): Promise<boolean> {
-  const result = index.state.result;
+  const identity = { serverId: target.serverId, database: target.database };
+  const state = index.databaseState(identity);
+  const result = state.result;
   if (
-    index.state.status !== "available" ||
+    state.status !== "available" ||
     !result ||
     result.serverId !== target.serverId ||
     result.database !== target.database
   ) {
     return false;
   }
-  const object = buildWorkbenchObjects(index.indexedSymbols, target).find(
+  const symbols = index.databaseSymbols(identity);
+  const object = buildWorkbenchObjects(symbols, target).find(
     (candidate) => candidate.oid === target.oid,
   );
   if (!object) return false;
@@ -2511,7 +2657,7 @@ async function revealSqlAuthoringReference(
   const parent = provider.itemForObject(object);
   if (!parent) return false;
   await tree.reveal(parent, { select: false, focus: false, expand: true });
-  const members = buildWorkbenchTableMembers(index.indexedSymbols, object);
+  const members = buildWorkbenchTableMembers(symbols, object);
   const member = members.find(
     (candidate) => candidate.kind === "column" && candidate.name === target.column,
   );
@@ -2570,6 +2716,7 @@ function debugDescriptor(
 ): DebugLaunchDescriptor {
   return {
     name: String(config.name ?? "Debug PL/pgSQL"),
+    ...(typeof config.server === "string" ? { serverId: config.server } : {}),
     ...(typeof config.sql === "string" ? { sql: config.sql } : {}),
     ...(config.routine || config.entryRoutine
       ? { routine: (config.routine ?? config.entryRoutine) as DebugLaunchRoutineTarget }
@@ -2585,6 +2732,23 @@ function debugLaunchToken(config: vscode.DebugConfiguration): string | undefined
 
 function routineName(routine: { schema: string | null; name: string }): string {
   return routine.schema ? `${routine.schema}.${routine.name}` : routine.name;
+}
+
+async function pickConnectedServerId(connections: ConnectionManager): Promise<string | undefined> {
+  const items = connections.connectedServerIds.flatMap((serverId) => {
+    const server = connections.store.get(serverId);
+    return server ? [{ label: getConnectionName(server), serverId }] : [];
+  });
+  if (items.length === 0) {
+    void vscode.window.showInformationMessage("Connect a PostgreSQL Connexion before indexing.");
+    return undefined;
+  }
+  return (
+    await vscode.window.showQuickPick(items, {
+      title: "Choose the Connexion to index",
+      placeHolder: "Each Connexion owns an independent database index",
+    })
+  )?.serverId;
 }
 
 async function revealStoppedSource(

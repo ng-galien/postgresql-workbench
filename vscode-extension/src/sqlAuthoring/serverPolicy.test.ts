@@ -83,7 +83,7 @@ describe("SQL authoring server policy", () => {
       { command: "workbench.action.openSettings" },
     );
     expect(sqlAuthoringRejectionAction("stale", "file:///q.sql", "document")).toMatchObject({
-      command: "postgresql-workbench.indexActiveDatabase",
+      command: "postgresql-workbench.indexDatabase",
     });
     expect(sqlAuthoringRejectionAction("unassociated", "file:///q.sql", "document")).toMatchObject({
       command: "postgresql-workbench.assignDocumentConnection",

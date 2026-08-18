@@ -200,7 +200,6 @@ suite("Virtual source editing", () => {
       true,
     );
     const fakeConnections = {
-      activeServer: { id: "srv-1" },
       getClient: () => fakeClient,
       onServerChanged: () => new vscode.Disposable(() => {}),
     };

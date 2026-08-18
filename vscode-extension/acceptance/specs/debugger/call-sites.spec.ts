@@ -107,7 +107,7 @@ test.describe("PL/pgSQL debugger call sites", () => {
     ];
 
     await workbench.ensureServer(demoConnectionUrl, server);
-    await workbench.expectActiveDatabaseIndexed(server, database);
+    await workbench.expectDatabaseIndexed(server, database);
     await debuggerPage.openCallSite("debug-successive.sql");
     for (const session of sessions) {
       await debuggerPage.assignConnection(session.sql, connectionChoice);

@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+## [1.3.0] - 2026-08-18
+
+PostgreSQL Workbench 1.3.0 makes every Workbench operation exact to its
+Connexion. Several PostgreSQL servers can be open at once, each with its own
+index, Schema Sync listener, Scratchpad Associations, coverage and debugging
+state, replacing the previous single active connection.
+
+- Kept every open Connexion connected and indexed independently: the TreeView,
+  search, Cockpit, Scratchpads, SQL authoring, pgTAP coverage and the debugger
+  resolve their Connexion explicitly instead of a global active server
+- Queued index runs per Connexion and database so one server never waits
+  behind another; automatic refreshes now report their phases and can be
+  cancelled for their exact Connexion
+- Fixed the PL/pgSQL debug launch that aborted when several Connexions were
+  open and no Association was recorded
+- Stopped Schema Sync from falling back to a full rebuild after debugger
+  capability probes, and skipped the duplicate full re-index after Scratchpad
+  DDL when Schema Sync already listens on that Connexion
+- Judged Cockpit, relation and source-preview snapshot currency per Connexion,
+  so indexing another server no longer invalidates an unrelated graph
+- Attributed each debug result to the Connexion that produced it
+- Renamed the command `postgresql-workbench.useSqlNotebookBindingAsActive` to
+  `postgresql-workbench.connectSqlNotebookAssociation` ("Connect Scratchpad
+  Association"); update custom keybindings that referenced the old identifier
+
 ## [1.2.1] - 2026-08-18
 
 PostgreSQL Workbench 1.2.1 adopts the published Code Moniker 0.7.1 runtime and

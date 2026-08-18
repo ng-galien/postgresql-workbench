@@ -19,7 +19,8 @@ export interface ManagedRoutineDivergence {
 export class PlpgsqlDiagnosticsProvider implements vscode.Disposable {
   private readonly diagnostics: vscode.DiagnosticCollection;
   private readonly disposables: vscode.Disposable[] = [];
-  private plpgsqlCheckAvailable: boolean | undefined;
+  private readonly plpgsqlCheckAvailable = new Map<string, boolean>();
+  private readonly trackedDocuments = new Map<string, { uri: vscode.Uri; serverId: string }>();
 
   constructor(
     private readonly cm: ConnectionManager,
@@ -40,33 +41,42 @@ export class PlpgsqlDiagnosticsProvider implements vscode.Disposable {
       }),
     );
 
-    cm.onServerChanged(() => {
-      this.diagnostics.clear();
-      this.plpgsqlCheckAvailable = undefined;
+    cm.onServerChanged((change) => {
+      const changed = new Set(change.serverIds);
+      for (const serverId of changed) this.plpgsqlCheckAvailable.delete(serverId);
+      for (const [key, tracked] of this.trackedDocuments) {
+        if (!changed.has(tracked.serverId)) continue;
+        this.diagnostics.delete(tracked.uri);
+        this.trackedDocuments.delete(key);
+      }
     });
   }
 
   private async check(document: vscode.TextDocument): Promise<void> {
     const source = this.index.sourceDescriptorForDocumentUri(document.uri);
-    if (!source?.plpgsql || source.serverId !== this.cm.activeServer?.id) return;
+    if (!source?.plpgsql || !this.cm.isServerConnected(source.serverId)) return;
+    this.trackedDocuments.set(document.uri.toString(), {
+      uri: document.uri,
+      serverId: source.serverId,
+    });
     if (this.divergence?.workingCopyDiffersFromDeployed(document.uri)) {
       this.diagnostics.delete(document.uri);
       return;
     }
-    const client = this.cm.getClient();
+    const client = this.cm.getClient(source.serverId);
     if (!client) return;
 
-    if (this.plpgsqlCheckAvailable === undefined) {
+    if (!this.plpgsqlCheckAvailable.has(source.serverId)) {
       try {
         const res = await client.query(
           "SELECT 1 FROM pg_extension WHERE extname = 'plpgsql_check'",
         );
-        this.plpgsqlCheckAvailable = res.rowCount !== null && res.rowCount > 0;
+        this.plpgsqlCheckAvailable.set(source.serverId, res.rowCount !== null && res.rowCount > 0);
       } catch {
-        this.plpgsqlCheckAvailable = false;
+        this.plpgsqlCheckAvailable.set(source.serverId, false);
       }
     }
-    if (!this.plpgsqlCheckAvailable) return;
+    if (!this.plpgsqlCheckAvailable.get(source.serverId)) return;
 
     const oid = source.oid;
 
@@ -109,6 +119,7 @@ export class PlpgsqlDiagnosticsProvider implements vscode.Disposable {
 
   dispose(): void {
     this.diagnostics.dispose();
+    this.trackedDocuments.clear();
     for (const d of this.disposables) d.dispose();
   }
 }

@@ -293,10 +293,18 @@ export type WorkbenchIndexPhase =
   | "checking-relations"
   | "cancelling";
 
+export interface WorkbenchIndexActiveRun {
+  cancelled: boolean;
+  id: number;
+  retainedGeneration?: number | null;
+  scope: string;
+  serverId: string;
+}
+
 export interface WorkbenchStateSnapshot {
   connection: {
-    activeServerId?: string;
     connected: boolean;
+    connectedServerIds: string[];
   };
   schemaSync: Array<{
     serverId: string;
@@ -339,19 +347,18 @@ export interface WorkbenchStateSnapshot {
     lastCompletedTransactionId?: string;
   }>;
   index: {
-    activeRun?: {
-      cancelled: boolean;
-      id: number;
-      retainedGeneration?: number | null;
-      scope: string;
-    };
+    activeRun?: WorkbenchIndexActiveRun;
+    activeRuns: WorkbenchIndexActiveRun[];
     currentRunPending: boolean;
+    pendingRuns: Array<{ scope: string; serverId: string }>;
     events: Array<{
       changeKind?: "full" | "incremental";
       generation?: number | null;
+      message?: string;
       phase?: WorkbenchIndexPhase;
       runId?: number;
       sequence: number;
+      serverId?: string;
       status: string;
     }>;
     gate?: {
@@ -363,6 +370,29 @@ export interface WorkbenchStateSnapshot {
     lastSettledRun?: { id: number; status: string };
     runSequence: number;
     sourceMutationsActive: number;
+    states: Array<{
+      change?: {
+        kind: "full" | "incremental";
+        schemas: string[];
+        sourceUris: string[];
+      };
+      progress?: {
+        completed?: number;
+        phase: WorkbenchIndexPhase;
+        total?: number;
+        unit?: "sources" | "symbols";
+      };
+      result?: {
+        database: string;
+        documents: number;
+        generation: number | null;
+        revision: string;
+        serverId: string;
+        symbols: number;
+      };
+      serverId?: string;
+      status: string;
+    }>;
     state: {
       change?: {
         kind: "full" | "incremental";

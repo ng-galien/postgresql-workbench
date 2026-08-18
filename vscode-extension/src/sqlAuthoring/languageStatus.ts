@@ -1,6 +1,6 @@
 import type { SqlAuthoringDocumentContext, SqlAuthoringRejectionReason } from "./protocol.js";
 
-export const INDEX_ACTIVE_DATABASE_COMMAND = "postgresql-workbench.indexActiveDatabase";
+export const INDEX_DATABASE_COMMAND = "postgresql-workbench.indexDatabase";
 export const ASSIGN_DOCUMENT_CONNECTION_COMMAND = "postgresql-workbench.assignDocumentConnection";
 export const CHANGE_SCRATCHPAD_CONNECTION_COMMAND =
   "postgresql-workbench.changeSqlNotebookConnection";
@@ -8,7 +8,7 @@ export const OPEN_SETTINGS_COMMAND = "workbench.action.openSettings";
 export const SQL_AUTHORING_SYNTAX_SETTINGS_QUERY = "postgresql-workbench.sqlAuthoring.syntax";
 
 /** Which Association governs one SQL document. */
-export type SqlAuthoringScope = "scratchpad" | "document" | "active";
+export type SqlAuthoringScope = "scratchpad" | "document";
 
 export interface SqlAuthoringCommand {
   title: string;
@@ -49,7 +49,7 @@ export function changeAssociationCommand(
 
 export const REINDEX_COMMAND: SqlAuthoringCommand = {
   title: "Reindex",
-  command: INDEX_ACTIVE_DATABASE_COMMAND,
+  command: INDEX_DATABASE_COMMAND,
 };
 
 export const OPEN_SYNTAX_SETTINGS_COMMAND: SqlAuthoringCommand = {
@@ -131,7 +131,5 @@ function scopeLabel(scope: SqlAuthoringScope): string {
       return "Scratchpad Association";
     case "document":
       return "Document Association";
-    default:
-      return "Active DatabaseContext";
   }
 }

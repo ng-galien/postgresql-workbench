@@ -7,8 +7,8 @@ eyebrow: Workbench Cockpit
 # Workbench Cockpit
 
 The Cockpit is a PostgreSQL schema explorer and dependency graph for VS Code. It
-uses the active DatabaseContext and the current Code Moniker index; it never
-displays table rows.
+follows the exact Connexion and database it was opened from and the current
+Code Moniker index of that Connexion; it never displays table rows.
 
 ## Cockpit map
 
@@ -16,7 +16,7 @@ Each numbered marker corresponds to an explanation below the image.
 
 {{cockpit-map}}
 
-1. **Sources tree.** Browse schemas and indexed objects lazily. Expanding an
+1. **Schemas tree.** Browse schemas and indexed objects lazily. Expanding an
    object shows direct incoming and outgoing relations known by the index.
 2. **Scope and search.** Search by object name, `#schema`, or `@type`. Upstream
    and downstream controls set graph exploration depth, not zoom.
@@ -34,9 +34,10 @@ Each numbered marker corresponds to an explanation below the image.
 
 ## Where the relations come from
 
-The Cockpit and Sources tree use the same indexed relations. They show direct
-calls, reads, writes, references, and type usages from the PostgreSQL
-definitions currently indexed for the active database.
+The Cockpit and the Schemas tree use the same indexed relations. They show
+direct calls, reads, writes, references, and type usages from the PostgreSQL
+definitions currently indexed for that Connexion and database. Indexing
+another Connexion never invalidates an open Cockpit.
 
 ## Automatic DDL synchronization
 

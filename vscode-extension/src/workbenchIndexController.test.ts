@@ -5,7 +5,15 @@ import type {
   PostgresCatalogSnapshot,
   VirtualSqlSourceSet,
 } from "../../src/workbench/postgresCatalog.js";
+import {
+  postgresDatabaseDocumentRoot,
+  postgresDocumentUri,
+  postgresSourceSetName,
+} from "../../src/workbench/postgresCatalog.js";
 import type { ConnectionManager } from "./connectionManager.js";
+
+const SCOPE_A = postgresDatabaseDocumentRoot({ serverId: "server-a", database: "database-a" });
+const SCOPE_B = postgresDatabaseDocumentRoot({ serverId: "server-b", database: "database-b" });
 
 vi.mock("vscode", () => {
   class EventEmitter<T> {
@@ -51,39 +59,142 @@ import { readPostgresCatalog } from "../../src/workbench/postgresCatalog.js";
 import type { WorkbenchIndexResult } from "./workbenchIndexController.js";
 import { WorkbenchIndexController } from "./workbenchIndexController.js";
 
+function state(controller: WorkbenchIndexController, serverId = "server-a") {
+  return controller.databaseState({
+    serverId,
+    database: serverId === "server-a" ? "database-a" : "database-b",
+  });
+}
+
+function symbols(controller: WorkbenchIndexController, serverId = "server-a") {
+  return controller.databaseSymbols({
+    serverId,
+    database: serverId === "server-a" ? "database-a" : "database-b",
+  });
+}
+
+function seedAvailable(
+  controller: WorkbenchIndexController,
+  result: WorkbenchIndexResult,
+  indexedSymbols: readonly {
+    uri: string;
+    file: string;
+    name: string;
+    kind: string;
+    signature: string;
+  }[],
+): void {
+  const scope = postgresDatabaseDocumentRoot(result);
+  const internals = controller as unknown as {
+    states: Map<string, unknown>;
+    registries: Map<string, unknown>;
+  };
+  internals.registries.set(scope, {
+    result,
+    symbols: [...indexedSymbols],
+    sourceSet: { srcset: "postgres-test", revision: result.revision, documents: [] },
+    documents: new Map(),
+    origins: new Map(),
+    foreignKeys: [],
+    viewDependencies: [],
+    resources: new Map(),
+  });
+  internals.states.set(scope, { status: "available", serverId: result.serverId, result });
+}
+
 interface TestServer {
   id: string;
   database: string;
 }
 
 class FakeConnections {
-  private readonly listeners = new Set<() => void>();
-  activeServer: TestServer | undefined = { id: "server-a", database: "database-a" };
-  isConnected = true;
+  private readonly listeners = new Set<(change: { serverIds: string[] }) => void>();
+  private server: TestServer | undefined = { id: "server-a", database: "database-a" };
 
-  onChanged(listener: () => void): vscode.Disposable {
+  get servers(): TestServer[] {
+    return this.server ? [this.server] : [];
+  }
+
+  get connectedServerIds(): string[] {
+    return this.server ? [this.server.id] : [];
+  }
+
+  readonly store = {
+    get: (id: string) => (this.server?.id === id ? this.server : undefined),
+  };
+
+  isServerConnected(id: string): boolean {
+    return this.server?.id === id;
+  }
+
+  onChanged(listener: (change: { serverIds: string[] }) => void): vscode.Disposable {
     this.listeners.add(listener);
     return {
       dispose: () => this.listeners.delete(listener),
     };
   }
 
-  getClient(): { query(): Promise<never> } {
+  getClient(id: string): { query(): Promise<never> } | undefined {
+    if (this.server?.id !== id) return undefined;
     return {
       query: () => Promise.reject(new Error("catalog unavailable")),
     };
   }
 
   switchTo(server: TestServer | undefined): void {
-    this.activeServer = server;
-    this.isConnected = server !== undefined;
+    const previous = this.server;
+    this.server = server;
     for (const listener of this.listeners) {
-      listener();
+      listener({ serverIds: [...new Set([previous?.id, server?.id].filter(Boolean) as string[])] });
     }
   }
 }
 
 describe("WorkbenchIndexController connection state", () => {
+  it("indexes each newly connected Connexion automatically", async () => {
+    const connections = new FakeConnections();
+    connections.switchTo(undefined);
+    const controller = new WorkbenchIndexController(
+      {
+        extensionPath: "/extension",
+        globalStorageUri: { fsPath: "/storage" },
+      } as vscode.ExtensionContext,
+      connections as unknown as ConnectionManager,
+      { appendLine: vi.fn() } as unknown as vscode.OutputChannel,
+    );
+    const result: WorkbenchIndexResult = {
+      serverId: "server-a",
+      database: "database-a",
+      revision: "revision-a",
+      documents: 1,
+      symbols: 1,
+      generation: 1,
+      introspectionMs: 1,
+      materializationMs: 1,
+      publicationMs: 1,
+      symbolQueryMs: 1,
+      indexingMs: 1,
+      graphQueryMs: 1,
+    };
+    const indexPostgresDatabase = vi
+      .spyOn(controller, "indexPostgresDatabase")
+      .mockResolvedValue(result);
+
+    connections.switchTo({ id: "server-a", database: "database-a" });
+    await vi.waitFor(() => expect(indexPostgresDatabase).toHaveBeenCalledTimes(1));
+
+    connections.switchTo({ id: "server-a", database: "database-a" });
+    await Promise.resolve();
+    expect(indexPostgresDatabase).toHaveBeenCalledTimes(1);
+
+    connections.switchTo(undefined);
+    expect(state(controller)).toMatchObject({ status: "not-indexed", serverId: "server-a" });
+
+    connections.switchTo({ id: "server-a", database: "database-a" });
+    await vi.waitFor(() => expect(indexPostgresDatabase).toHaveBeenCalledTimes(2));
+    controller.dispose();
+  });
+
   it("serializes an ad hoc database refresh and invalidates an older active snapshot", async () => {
     const connections = new FakeConnections();
     const controller = new WorkbenchIndexController(
@@ -114,29 +225,39 @@ describe("WorkbenchIndexController connection state", () => {
     });
     const runPostgresDatabaseIndex = vi.fn().mockResolvedValue(result);
     const internals = controller as unknown as {
-      currentRun?: Promise<WorkbenchIndexResult>;
+      scopeRuns: Map<string, { serverId: string; tail: Promise<unknown> }>;
       runPostgresDatabaseIndex: typeof runPostgresDatabaseIndex;
       scopeRefreshEpoch(scope: string): number;
     };
-    internals.currentRun = previous;
+    internals.scopeRuns.set(SCOPE_A, { serverId: "server-a", tail: previous });
     internals.runPostgresDatabaseIndex = runPostgresDatabaseIndex;
-    const oldEpoch = internals.scopeRefreshEpoch("server-a\0database-a");
+    const oldEpoch = internals.scopeRefreshEpoch(SCOPE_A);
 
     const refresh = controller.indexPostgresDatabase({ query: vi.fn() } as never, {
       serverId: "server-a",
       database: "database-a",
     });
+    const otherRefresh = controller.indexPostgresDatabase({ query: vi.fn() } as never, {
+      serverId: "server-b",
+      database: "database-b",
+    });
 
-    expect(internals.currentRun).toBe(refresh);
-    expect(internals.scopeRefreshEpoch("server-a\0database-a")).toBeGreaterThan(oldEpoch);
-    expect(runPostgresDatabaseIndex).not.toHaveBeenCalled();
+    expect(internals.scopeRuns.has(SCOPE_A)).toBe(true);
+    expect(internals.scopeRefreshEpoch(SCOPE_A)).toBeGreaterThan(oldEpoch);
+    // Another Connexion never waits behind this scope's queue.
+    await expect(otherRefresh).resolves.toBe(result);
+    expect(runPostgresDatabaseIndex).toHaveBeenCalledTimes(1);
+    expect(runPostgresDatabaseIndex.mock.calls[0]?.[1]).toEqual({
+      serverId: "server-b",
+      database: "database-b",
+    });
     releasePrevious();
     await expect(refresh).resolves.toBe(result);
-    expect(runPostgresDatabaseIndex).toHaveBeenCalledTimes(1);
+    expect(runPostgresDatabaseIndex).toHaveBeenCalledTimes(2);
     controller.dispose();
   });
 
-  it("adopts a refreshed registry for the active DatabaseContext", () => {
+  it("publishes a refreshed registry only for its exact Connexion", () => {
     const connections = new FakeConnections();
     const controller = new WorkbenchIndexController(
       {
@@ -178,21 +299,21 @@ describe("WorkbenchIndexController connection state", () => {
       resources: new Map(),
     };
     const internals = controller as unknown as {
-      activateRegistry(
+      publishRegistry(
         scope: string,
         registry: typeof refreshedRegistry,
         change: { kind: "full"; schemas: []; sourceUris: [] },
       ): void;
     };
 
-    internals.activateRegistry("server-a\0database-a", refreshedRegistry, {
+    internals.publishRegistry(SCOPE_A, refreshedRegistry, {
       kind: "full",
       schemas: [],
       sourceUris: [],
     });
 
-    expect(controller.state).toMatchObject({ status: "available", result });
-    expect(controller.indexedSymbols).toEqual([symbol]);
+    expect(state(controller)).toMatchObject({ status: "available", result });
+    expect(symbols(controller)).toEqual([symbol]);
     controller.dispose();
   });
 
@@ -212,7 +333,7 @@ describe("WorkbenchIndexController connection state", () => {
 
     try {
       controller.armAcceptancePhaseGate(["reading-catalog"]);
-      const refresh = controller.indexActiveDatabase();
+      const refresh = controller.indexDatabase("server-a");
       await vi.waitFor(() => {
         expect(controller.acceptanceSnapshot()).toMatchObject({
           activeRun: { cancelled: false, id: 1 },
@@ -247,7 +368,7 @@ describe("WorkbenchIndexController connection state", () => {
     }
   });
 
-  it("settles a failed run from its own outcome after the active scope changes", async () => {
+  it("settles a failed run without changing another Connexion state", async () => {
     const previousControlFile = process.env.POSTGRESQL_WORKBENCH_ACCEPTANCE_CONTROL_FILE;
     process.env.POSTGRESQL_WORKBENCH_ACCEPTANCE_CONTROL_FILE = "/tmp/workbench-control.json";
     const connections = new FakeConnections();
@@ -288,7 +409,7 @@ describe("WorkbenchIndexController connection state", () => {
         }
       >;
     };
-    internals.registries.set("server-b\0database-b", {
+    internals.registries.set(SCOPE_B, {
       result,
       symbols: [],
       documents: new Map<string, never>(),
@@ -300,7 +421,7 @@ describe("WorkbenchIndexController connection state", () => {
 
     try {
       controller.armAcceptancePhaseGate(["reading-catalog"]);
-      const refresh = controller.indexActiveDatabase();
+      const refresh = controller.indexDatabase("server-a");
       await vi.waitFor(() => {
         expect(controller.acceptanceSnapshot().gate).toMatchObject({
           reachedPhase: "reading-catalog",
@@ -309,12 +430,19 @@ describe("WorkbenchIndexController connection state", () => {
       });
 
       connections.switchTo({ id: "server-b", database: "database-b" });
-      expect(controller.state).toMatchObject({ status: "available", serverId: "server-b" });
+      expect(state(controller, "server-b")).toMatchObject({
+        status: "available",
+        serverId: "server-b",
+      });
       controller.releaseAcceptancePhaseGate(1, "reading-catalog");
       await expect(refresh).rejects.toThrow("catalog unavailable");
       expect(controller.acceptanceSnapshot()).toMatchObject({
         lastSettledRun: { id: 1, status: "error" },
-        state: { status: "available", serverId: "server-b" },
+        state: { status: "error", serverId: "server-a" },
+      });
+      expect(state(controller, "server-b")).toMatchObject({
+        status: "available",
+        serverId: "server-b",
       });
     } finally {
       controller.dispose();
@@ -326,7 +454,7 @@ describe("WorkbenchIndexController connection state", () => {
     }
   });
 
-  it("clears a pre-publication indexing error on switch and disconnect", async () => {
+  it("keeps pre-publication errors scoped to their exact Connexion", async () => {
     const connections = new FakeConnections();
     const controller = new WorkbenchIndexController(
       {
@@ -337,26 +465,28 @@ describe("WorkbenchIndexController connection state", () => {
       { appendLine: vi.fn() } as unknown as vscode.OutputChannel,
     );
 
-    await expect(controller.indexActiveDatabase()).rejects.toThrow("catalog unavailable");
-    expect(controller.state).toMatchObject({
+    await expect(controller.indexDatabase("server-a")).rejects.toThrow("catalog unavailable");
+    expect(state(controller)).toMatchObject({
       status: "error",
       serverId: "server-a",
     });
 
     connections.switchTo({ id: "server-b", database: "database-b" });
 
-    expect(controller.state).toEqual({ status: "not-indexed" });
-    expect(controller.indexedSymbols).toEqual([]);
-
-    await expect(controller.indexActiveDatabase()).rejects.toThrow("catalog unavailable");
-    expect(controller.state).toMatchObject({
-      status: "error",
-      serverId: "server-b",
-    });
+    await vi.waitFor(() =>
+      expect(state(controller, "server-b")).toMatchObject({
+        status: "error",
+        serverId: "server-b",
+      }),
+    );
+    expect(symbols(controller, "server-b")).toEqual([]);
 
     connections.switchTo(undefined);
 
-    expect(controller.state).toEqual({ status: "not-indexed" });
+    expect(state(controller, "server-b")).toMatchObject({
+      status: "error",
+      serverId: "server-b",
+    });
     controller.dispose();
   });
 
@@ -391,19 +521,12 @@ describe("WorkbenchIndexController connection state", () => {
       kind: "table",
       signature: "",
     };
-    const internals = controller as unknown as {
-      stateScope: string;
-      currentState: { status: "available"; serverId: string; result: WorkbenchIndexResult };
-      currentSymbols: (typeof symbol)[];
-    };
-    internals.stateScope = "server-a\0database-a";
-    internals.currentState = { status: "available", serverId: "server-a", result };
-    internals.currentSymbols = [symbol];
+    seedAvailable(controller, result, [symbol]);
 
-    await expect(controller.indexActiveDatabase()).rejects.toThrow("catalog unavailable");
+    await expect(controller.indexDatabase("server-a")).rejects.toThrow("catalog unavailable");
 
-    expect(controller.state).toMatchObject({ status: "error", result });
-    expect(controller.indexedSymbols).toEqual([symbol]);
+    expect(state(controller)).toMatchObject({ status: "error", result });
+    expect(symbols(controller)).toEqual([symbol]);
     controller.dispose();
   });
 
@@ -438,32 +561,92 @@ describe("WorkbenchIndexController connection state", () => {
       kind: "table",
       signature: "",
     };
-    const internals = controller as unknown as {
-      stateScope: string;
-      currentState: { status: "available"; serverId: string; result: WorkbenchIndexResult };
-      currentSymbols: (typeof symbol)[];
-    };
-    internals.stateScope = "server-a\0database-a";
-    internals.currentState = { status: "available", serverId: "server-a", result };
-    internals.currentSymbols = [symbol];
+    seedAvailable(controller, result, [symbol]);
 
-    const refresh = controller.indexActiveDatabase();
-    expect(controller.state).toMatchObject({
+    const refresh = controller.indexDatabase("server-a");
+    expect(state(controller)).toMatchObject({
       status: "indexing",
       result,
       progress: { phase: "reading-catalog" },
     });
-    expect(controller.cancelActiveDatabaseIndex()).toBe(true);
-    expect(controller.cancelActiveDatabaseIndex()).toBe(false);
-    expect(controller.state).toMatchObject({
+    expect(controller.cancelDatabaseIndex("server-b")).toBe(false);
+    expect(state(controller)).toMatchObject({
+      status: "indexing",
+      result,
+      progress: { phase: "reading-catalog" },
+    });
+    expect(controller.cancelDatabaseIndex("server-a")).toBe(true);
+    expect(controller.cancelDatabaseIndex()).toBe(false);
+    expect(state(controller)).toMatchObject({
       status: "indexing",
       result,
       progress: { phase: "cancelling" },
     });
 
     await expect(refresh).rejects.toThrow("indexing was cancelled");
-    expect(controller.state).toMatchObject({ status: "cancelled", result });
-    expect(controller.indexedSymbols).toEqual([symbol]);
+    expect(state(controller)).toMatchObject({ status: "cancelled", result });
+    expect(symbols(controller)).toEqual([symbol]);
+    controller.dispose();
+  });
+
+  it("tracks an automatic refresh as a cancellable run of its exact Connexion", async () => {
+    const connections = new FakeConnections();
+    const controller = new WorkbenchIndexController(
+      {
+        extensionPath: "/extension",
+        globalStorageUri: { fsPath: "/storage" },
+      } as vscode.ExtensionContext,
+      connections as unknown as ConnectionManager,
+      { appendLine: vi.fn() } as unknown as vscode.OutputChannel,
+    );
+    const result: WorkbenchIndexResult = {
+      serverId: "server-a",
+      database: "database-a",
+      revision: "revision-a",
+      documents: 2,
+      symbols: 8,
+      generation: 1,
+      introspectionMs: 1,
+      materializationMs: 1,
+      publicationMs: 1,
+      symbolQueryMs: 1,
+      indexingMs: 1,
+      graphQueryMs: 1,
+    };
+    seedAvailable(controller, result, []);
+    const abortCatalogReads: Array<() => void> = [];
+    let catalogReleased = false;
+    const releaseCatalog = () => {
+      catalogReleased = true;
+      for (const abort of abortCatalogReads.splice(0)) abort();
+    };
+    const client = {
+      query: () =>
+        new Promise<never>((_, reject) => {
+          const abort = () => reject(new Error("catalog read aborted"));
+          if (catalogReleased) abort();
+          else abortCatalogReads.push(abort);
+        }),
+    };
+
+    const refresh = controller.indexPostgresDatabase(client as never, {
+      serverId: "server-a",
+      database: "database-a",
+    });
+    expect(state(controller)).toMatchObject({
+      status: "indexing",
+      result,
+      progress: { phase: "reading-catalog" },
+    });
+    expect(controller.cancelDatabaseIndex("server-b")).toBe(false);
+    expect(controller.cancelDatabaseIndex("server-a")).toBe(true);
+    expect(state(controller)).toMatchObject({
+      status: "indexing",
+      progress: { phase: "cancelling" },
+    });
+    releaseCatalog();
+    await expect(refresh).rejects.toThrow("indexing was cancelled");
+    expect(state(controller)).toMatchObject({ status: "cancelled", result });
     controller.dispose();
   });
 
@@ -535,7 +718,7 @@ describe("WorkbenchIndexController connection state", () => {
           sources: { replace, remove },
         },
       } as unknown as LocalCodeMonikerSession;
-      const scope = "server-a\0database-a";
+      const scope = SCOPE_A;
       const previousRegistry = {
         result: previousResult,
         symbols: [],
@@ -628,6 +811,8 @@ function indexResult(overrides: Partial<WorkbenchIndexResult> = {}): WorkbenchIn
 
 function tableRegistry(result: WorkbenchIndexResult) {
   const identity = { serverId: result.serverId, database: result.database };
+  const sourceUri = postgresDocumentUri(identity, "shop", "table", "orders");
+  const sourceSet = postgresSourceSetName(identity);
   const table = {
     ...identity,
     schema: "shop",
@@ -640,16 +825,16 @@ function tableRegistry(result: WorkbenchIndexResult) {
     result,
     symbols: [
       {
-        uri: "sql:table:orders",
-        file: "postgresql://shop/orders.sql",
+        uri: `sql:${sourceSet}:table:orders`,
+        file: sourceUri,
         name: "orders",
         kind: "table",
         signature: "shop.orders",
         postgres: table,
       },
       {
-        uri: "sql:column:orders.id",
-        file: "postgresql://shop/orders.sql",
+        uri: `sql:${sourceSet}:column:orders.id`,
+        file: sourceUri,
         name: "id",
         kind: "column",
         signature: "bigint",
@@ -657,7 +842,7 @@ function tableRegistry(result: WorkbenchIndexResult) {
         postgres: table,
       },
     ],
-    sourceSet: { srcset: "postgres-test", revision: result.revision, documents: [] },
+    sourceSet: { srcset: sourceSet, revision: result.revision, documents: [] },
     documents: new Map(),
     origins: new Map(),
     foreignKeys: [],
@@ -678,7 +863,7 @@ function newController(connections: FakeConnections): WorkbenchIndexController {
 }
 
 describe("WorkbenchIndexController SQL authoring snapshot", () => {
-  const scope = "server-a\0database-a";
+  const scope = SCOPE_A;
 
   it("memoizes the snapshot until the registry or its staleness changes", () => {
     const controller = newController(new FakeConnections());
@@ -686,7 +871,7 @@ describe("WorkbenchIndexController SQL authoring snapshot", () => {
     type Registry = ReturnType<typeof tableRegistry>;
     const internals = controller as unknown as {
       registries: Map<string, Registry>;
-      activateRegistry(
+      publishRegistry(
         scope: string,
         registry: Registry,
         change: { kind: "full"; schemas: []; sourceUris: [] },
@@ -711,7 +896,7 @@ describe("WorkbenchIndexController SQL authoring snapshot", () => {
 
     const refreshed = tableRegistry(indexResult({ revision: "revision-b", generation: 2 }));
     internals.registries.set(scope, refreshed);
-    internals.activateRegistry(scope, refreshed, { kind: "full", schemas: [], sourceUris: [] });
+    internals.publishRegistry(scope, refreshed, { kind: "full", schemas: [], sourceUris: [] });
     const rebuilt = controller.sqlAuthoringSnapshot(identity);
     expect(rebuilt).not.toBe(stale);
     expect(rebuilt).toMatchObject({ status: "available", revision: "revision-b", generation: 2 });
@@ -725,11 +910,47 @@ describe("WorkbenchIndexController SQL authoring snapshot", () => {
     controller.dispose();
   });
 
-  it("clears the stale flag of an inactive scope after its ad hoc refresh and notifies", async () => {
+  it("keeps equal object names and OIDs in independent Connexion URI scopes", () => {
+    const controller = newController(new FakeConnections());
+    const first = tableRegistry(indexResult());
+    const secondIdentity = { serverId: "server-b", database: "database-b" };
+    const second = tableRegistry(
+      indexResult({ ...secondIdentity, revision: "revision-b", generation: 2 }),
+    );
+    const internals = controller as unknown as {
+      registries: Map<string, typeof first>;
+    };
+    internals.registries.set(SCOPE_A, first);
+    internals.registries.set(SCOPE_B, second);
+
+    const firstSnapshot = controller.sqlAuthoringSnapshot({
+      serverId: "server-a",
+      database: "database-a",
+    });
+    const secondSnapshot = controller.sqlAuthoringSnapshot(secondIdentity);
+
+    expect(first.sourceSet.srcset).not.toBe(second.sourceSet.srcset);
+    expect(first.symbols[0]?.file).not.toBe(second.symbols[0]?.file);
+    expect(firstSnapshot).toMatchObject({
+      serverId: "server-a",
+      database: "database-a",
+      revision: "revision-a",
+      objects: [{ name: "orders", oid: 10 }],
+    });
+    expect(secondSnapshot).toMatchObject({
+      serverId: "server-b",
+      database: "database-b",
+      revision: "revision-b",
+      objects: [{ name: "orders", oid: 10 }],
+    });
+    controller.dispose();
+  });
+
+  it("clears only the refreshed Connexion stale flag and publishes its exact state", async () => {
     const connections = new FakeConnections();
     const controller = newController(connections);
     const identity = { serverId: "server-b", database: "database-b" };
-    const inactiveScope = "server-b\0database-b";
+    const inactiveScope = SCOPE_B;
     const previous = tableRegistry(indexResult({ ...identity }));
     const refreshed = tableRegistry(indexResult({ ...identity, revision: "revision-b" }));
     const internals = controller as unknown as {
@@ -750,7 +971,10 @@ describe("WorkbenchIndexController SQL authoring snapshot", () => {
     controller.onDidChangeState((state) => states.push(state));
 
     controller.markDatabaseStale(identity.serverId, identity.database, "schema changed");
-    expect(controller.state).toEqual({ status: "not-indexed" });
+    expect(state(controller, "server-b")).toMatchObject({
+      status: "stale",
+      serverId: "server-b",
+    });
     expect(controller.isDatabaseStale(identity.serverId, identity.database)).toBe(true);
     expect(controller.sqlAuthoringSnapshot(identity)).toMatchObject({ status: "stale" });
 
@@ -763,9 +987,16 @@ describe("WorkbenchIndexController SQL authoring snapshot", () => {
       status: "available",
       revision: "revision-b",
     });
-    expect(states).toEqual([{ status: "not-indexed" }]);
-    expect(controller.state).toEqual({ status: "not-indexed" });
-    expect(controller.indexedSymbols).toEqual([]);
+    expect(states.at(-1)).toMatchObject({
+      status: "available",
+      serverId: "server-b",
+      result: refreshed.result,
+    });
+    expect(state(controller, "server-b")).toMatchObject({
+      status: "available",
+      result: refreshed.result,
+    });
+    expect(symbols(controller, "server-b")).toEqual(refreshed.symbols);
     controller.dispose();
   });
 });

@@ -22,10 +22,10 @@ not guessed: it is hidden or rejected with the missing precondition.
 
 | Term | Meaning |
 | --- | --- |
-| **DatabaseContext** | The active saved Connexion followed by Sources, the Cockpit, search, and ordinary authoring. |
+| **Connexion** | One saved PostgreSQL server and database. Several Connexions can be open at once; the Schemas tree, the Cockpit, search, and authoring always name the exact Connexion they act on. |
 | **Scratchpad Association** | The saved Connexion persisted by a Scratchpad. Its cells, results, completion, Run, and Debug use this Association exclusively. |
 | **Document Association** | The saved Connexion selected for a free `.sql` or `.pgsql` document. Run and Debug use the same Association instead of remembering different connections per call. |
-| **Object Binding** | The immutable server, database, object kind, schema, name, and signature carried by an indexed managed source. It never follows the active DatabaseContext. |
+| **Object Binding** | The immutable server, database, object kind, schema, name, and signature carried by an indexed managed source. It never follows another open Connexion. |
 | **Working copy** | Edited text derived from a managed deployed source. Saving the working copy does not by itself change PostgreSQL. |
 | **Execution intent** | The cell or Statement action: **Run** or **Debug**. It is independent from the Scratchpad Transaction Mode. |
 
@@ -103,7 +103,7 @@ procedure replacement. Every condition below is mandatory:
    conflict and must be compared or reopened; Workbench never overwrites it
    silently.
 5. The bound Connexion and database still exist, and the indexed revision is
-   fresh. The active DatabaseContext is irrelevant.
+   fresh. Other open Connexions are irrelevant.
 6. PostgreSQL accepts the replacement. Workbench then refreshes the bound
    database index and clears the saved working copy only after that successful
    deployment.
@@ -138,7 +138,7 @@ rejected.
   its first Statement; once chosen, it displays the Connexion name and, when
   the Workbench Index of that Connexion is missing or stale, a second
   **Index missing: index** or **Index stale: reindex** lens that indexes that
-  Association without changing the active DatabaseContext. Every non-empty
+  Association without touching any other Connexion. Every non-empty
   PostgreSQL Statement has a **Run SQL** CodeLens, even when semantic analysis
   cannot prove that it is valid. A second **Debug PL/pgSQL** CodeLens appears
   only for an eligible routine entry point; a resolved routine that is still

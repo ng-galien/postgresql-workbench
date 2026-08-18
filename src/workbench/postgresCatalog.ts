@@ -479,7 +479,7 @@ export async function readPostgresCatalog(
 
   return {
     sourceSet: {
-      srcset: sourceSetName(identity),
+      srcset: postgresSourceSetName(identity),
       revision,
       documents,
     },
@@ -628,7 +628,7 @@ export function buildPostgresSourceSet(
 ): VirtualSqlSourceSet {
   const ordered = [...documents].sort((left, right) => left.uri.localeCompare(right.uri));
   return {
-    srcset: sourceSetName(identity),
+    srcset: postgresSourceSetName(identity),
     revision: sourceSetRevision(ordered, origins),
     documents: ordered,
   };
@@ -707,7 +707,7 @@ function catalogOrigins(
   const origins = new Map<string, PostgresCatalogObjectOrigin>();
   const add = (schema: string, kind: string, name: string, extension?: string) => {
     origins.set(
-      documentUri(identity, schema, kind, name),
+      postgresDocumentUri(identity, schema, kind, name),
       extension ? { kind: "extension", extension } : { kind: "database" },
     );
   };
@@ -741,7 +741,7 @@ function buildDocuments(
   catalog: CatalogDefinitionRows,
 ): VirtualSqlDocument[] {
   const documents: VirtualSqlDocument[] = catalog.schemas.map((schema) => ({
-    uri: documentUri(identity, schema.schemaName, "schema", schema.schemaName),
+    uri: postgresDocumentUri(identity, schema.schemaName, "schema", schema.schemaName),
     language: "sql",
     content: `CREATE SCHEMA ${quoteIdentifier(schema.schemaName)};\n`,
     postgres: descriptor(identity, schema.schemaName, "schema", schema.oid, schema.schemaName),
@@ -767,7 +767,7 @@ function buildDocuments(
   }
   for (const table of tables.values()) {
     documents.push({
-      uri: documentUri(identity, table.schemaName, "table", table.tableName),
+      uri: postgresDocumentUri(identity, table.schemaName, "table", table.tableName),
       language: "sql",
       content: renderTable(table),
       postgres: descriptor(identity, table.schemaName, "table", table.oid, table.tableName),
@@ -776,7 +776,7 @@ function buildDocuments(
 
   for (const view of catalog.views) {
     documents.push({
-      uri: documentUri(identity, view.schemaName, "view", view.objectName),
+      uri: postgresDocumentUri(identity, view.schemaName, "view", view.objectName),
       language: "sql",
       content: ensureStatement(
         `CREATE VIEW ${qualifiedName(view.schemaName, view.objectName)} AS\n${view.definition.trim()}`,
@@ -803,7 +803,7 @@ function appendDefinitions(
         ? `${definition.objectName}(${definition.identityArguments})`
         : `${definition.relationName ? `${definition.relationName}.` : ""}${definition.objectName}`;
     documents.push({
-      uri: documentUri(identity, definition.schemaName, kind, identityName),
+      uri: postgresDocumentUri(identity, definition.schemaName, kind, identityName),
       language: "sql",
       content: ensureStatement(definition.definition),
       postgres: descriptor(
@@ -854,16 +854,24 @@ function renderColumn(column: TableColumnRow): string {
   return definition;
 }
 
-function documentUri(
+export function postgresDocumentUri(
   identity: PostgresCatalogIdentity,
   schemaName: string,
   kind: string,
   semanticName: string,
 ): string {
   return (
-    `postgresql://${encodeURIComponent(identity.serverId)}/${encodeURIComponent(identity.database)}/` +
+    postgresDatabaseDocumentRoot(identity) +
     `${encodeURIComponent(schemaName)}/${kind}/${encodeURIComponent(semanticName)}.sql`
   );
+}
+
+export function postgresDatabaseDocumentRoot(identity: PostgresCatalogIdentity): string {
+  return `postgresql://${encodeURIComponent(identity.serverId)}/${encodeURIComponent(identity.database)}/`;
+}
+
+export function postgresDatabaseDocumentGlob(identity: PostgresCatalogIdentity): string {
+  return `${postgresDatabaseDocumentRoot(identity)}**`;
 }
 
 function descriptor(
@@ -921,11 +929,9 @@ function sourceSetRevision(
   return hash.digest("hex");
 }
 
-function sourceSetName(identity: PostgresCatalogIdentity): string {
+export function postgresSourceSetName(identity: PostgresCatalogIdentity): string {
   const hash = createHash("sha256");
-  hash.update(identity.serverId);
-  hash.update("\0");
-  hash.update(identity.database);
+  hash.update(postgresDatabaseDocumentRoot(identity));
   return `postgres-${hash.digest("hex").slice(0, 20)}`;
 }
 

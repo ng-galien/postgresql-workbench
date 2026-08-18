@@ -6,6 +6,7 @@ import {
 import { expect, test } from "../../fixtures/test";
 import type { CockpitPage } from "../../pages/CockpitPage";
 import type { WorkbenchPage } from "../../pages/WorkbenchPage";
+import { SCHEMAS_TREE_ITEM } from "../../pages/WorkbenchTreeLabels";
 
 async function openCockpitFromTree(
   workbench: WorkbenchPage,
@@ -14,8 +15,8 @@ async function openCockpitFromTree(
   expectedFocus: string,
 ): Promise<void> {
   await workbench.ensureServer(demoConnectionUrl, server);
-  await workbench.expectActiveDatabaseIndexed(server, database);
-  const schema = await workbench.tree.expandPath([server, database, /^Sources/, /^shop/]);
+  await workbench.expectDatabaseIndexed(server, database);
+  const schema = await workbench.tree.expandPath([server, database, SCHEMAS_TREE_ITEM, /^shop/]);
   const item = await workbench.tree.findChild(schema, source);
   await expect(item).toBeVisible({ timeout: 5_000 });
   await workbench.dragTreeItemToEditor(item);
@@ -44,7 +45,12 @@ test.describe("Workbench graph", () => {
     });
 
     await test.step("drop product into the open Cockpit exactly like selecting it", async () => {
-      const schema = await workbench.tree.expandPath([server, database, /^Sources/, /^shop/]);
+      const schema = await workbench.tree.expandPath([
+        server,
+        database,
+        SCHEMAS_TREE_ITEM,
+        /^shop/,
+      ]);
       const product = await workbench.tree.findChild(schema, /^product(?:\s|$)/);
       await expect(product).toBeVisible({ timeout: 5_000 });
       await cockpit.dragTreeItem(product);
@@ -62,7 +68,7 @@ test.describe("Workbench graph", () => {
       const address = await workbench.tree.expandPath([
         server,
         database,
-        /^Sources/,
+        SCHEMAS_TREE_ITEM,
         /^shop/,
         /^address/,
       ]);

@@ -30,6 +30,21 @@ function result(id: string, payloadBytes = 100): DebugResult {
 }
 
 describe("DebugResultStore", () => {
+  it("attributes each result to the Connexion that produced it", () => {
+    const store = new DebugResultStore(2, 1_000);
+    store.add(result("one"), "postgres@first:5432/demo");
+    store.add(result("two"), "postgres@second:5432/demo");
+    store.add(result("three"));
+
+    expect(store.viewState().results.map(({ id, connection }) => ({ id, connection }))).toEqual([
+      { id: "three", connection: undefined },
+      { id: "two", connection: "postgres@second:5432/demo" },
+    ]);
+    expect(store.connectionOf("one")).toBeUndefined();
+    store.clear();
+    expect(store.connectionOf("two")).toBeUndefined();
+  });
+
   it("keeps bounded history and selects the newest result", () => {
     const store = new DebugResultStore(2, 1_000);
     store.add(result("one"));

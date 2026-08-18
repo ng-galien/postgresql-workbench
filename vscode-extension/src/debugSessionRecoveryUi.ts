@@ -8,6 +8,7 @@ import {
   listDebugSessions,
   terminateDebugSessions,
 } from "./debugSessionRecovery.js";
+import { getConnectionName } from "./serverStore.js";
 
 interface RefreshableTree {
   refresh(): void;
@@ -71,11 +72,23 @@ export async function manageDebugSessions(
   out: vscode.OutputChannel,
   statuses: () => readonly DebugSessionStatus[] = () => [],
 ): Promise<void> {
-  if (!cm.isConnected || !cm.activeServer) {
+  let server =
+    cm.connectedServerIds.length === 1 ? cm.store.get(cm.connectedServerIds[0]) : undefined;
+  if (!server && cm.connectedServerIds.length > 1) {
+    const picked = await vscode.window.showQuickPick(
+      cm.connectedServerIds.flatMap((id) => {
+        const candidate = cm.store.get(id);
+        return candidate ? [{ label: getConnectionName(candidate), server: candidate }] : [];
+      }),
+      { placeHolder: "Select the Connexion whose debug sessions you want to manage" },
+    );
+    server = picked?.server;
+  }
+  if (!server) {
     vscode.window.showInformationMessage("Connect to a PostgreSQL server first.");
     return;
   }
-  const client = cm.getClient();
+  const client = cm.getClient(server.id);
   if (!client) return;
 
   let sessions: DebugSessionInfo[];
@@ -90,7 +103,7 @@ export async function manageDebugSessions(
 
   if (sessions.length === 0) {
     vscode.window.showInformationMessage(
-      `${cm.activeServer.name}: no PL/pgSQL debug sessions found.`,
+      `${getConnectionName(server)}: no PL/pgSQL debug sessions found.`,
     );
     treeProvider.refresh();
     return;
@@ -107,7 +120,7 @@ export async function manageDebugSessions(
       canPickMany: true,
       ignoreFocusOut: true,
       placeHolder: "Select stale or blocked debug sessions to terminate",
-      title: `${cm.activeServer.name} — Debug session recovery`,
+      title: `${getConnectionName(server)} — Debug session recovery`,
     },
   );
   if (!picked || picked.length === 0) return;

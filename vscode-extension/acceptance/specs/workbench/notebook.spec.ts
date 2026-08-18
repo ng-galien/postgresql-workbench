@@ -161,7 +161,7 @@ test.describe("Scratchpads", () => {
         )
         .toBe(false);
       await workbench.ensureServer(demoConnectionUrl, server);
-      await workbench.ensureActiveDatabaseIndexed(server, database);
+      await workbench.ensureDatabaseIndexed(server, database);
     });
   });
 
@@ -169,7 +169,7 @@ test.describe("Scratchpads", () => {
     workbench,
     notebook,
   }) => {
-    await test.step("create a scratchpad from its database context", async () => {
+    await test.step("create a scratchpad from its Connexion", async () => {
       await workbench.ensureServer(demoConnectionUrl, server);
       await createScratchpad(workbench, notebook, demoAssociationText);
     });

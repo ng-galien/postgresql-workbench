@@ -182,13 +182,22 @@ describe("DAP client e2e", { timeout: DEBUG_INTEGRATION_TEST_TIMEOUT_MS }, () =>
   it(
     "does not publish recursive technical entry stops after Continue",
     async () => {
+      // fib(5) recurses 15 times: enough nested entries to prove that no
+      // technical stop is republished, without dozens of pldbgapi round trips.
       const stopped = await launchAndWaitForStop(
         dc,
-        launchConfig("SELECT test_recursive_entry(8)"),
+        launchConfig("SELECT test_recursive_entry(5)"),
       );
       let repeatedStops = 0;
       dc.on("stopped", () => repeatedStops++);
-      const terminated = dc.waitForEvent("terminated", DEBUG_DAP_EVENT_TIMEOUT_MS);
+      const terminated = dc
+        .waitForEvent("terminated", DEBUG_DAP_EVENT_TIMEOUT_MS)
+        .catch((error) => {
+          throw new Error(
+            `terminated was not published after Continue (stopped events published: ${repeatedStops})`,
+            { cause: error },
+          );
+        });
 
       await runPacedDebugAction(dc, () => dc.continueRequest({ threadId: stopped.body.threadId }));
 

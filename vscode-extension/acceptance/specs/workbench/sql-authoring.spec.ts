@@ -4,11 +4,13 @@ import {
   alternateConnexionTreeItem as alternateServer,
   demoDatabaseTreeItem as database,
   demoAssociationText,
+  demoConnectionId,
   demoConnectionUrl,
   demoConnexionTreeItem as server,
 } from "../../fixtures/demoDatabase";
 import { expect, test } from "../../fixtures/test";
 import { createScratchpad } from "../../journeys/scratchpad";
+import { SCHEMAS_TREE_ITEM } from "../../pages/WorkbenchTreeLabels";
 
 const productProjection =
   /^SELECT\s+product\.id,\s+product\.name,\s+product\.price,\s+product\.stock,\s+product\.sku,\s+product\.brand_id,\s+product\.description,\s+product\.active\s+FROM\s+shop\.product AS product;\s*$/u;
@@ -20,7 +22,7 @@ test.describe("SQL authoring", () => {
     sqlEditor,
   }) => {
     await workbench.ensureServer(demoConnectionUrl, server);
-    await workbench.expectActiveDatabaseIndexed(server, database);
+    await workbench.expectDatabaseIndexed(server, database);
 
     await test.step("format PostgreSQL SQL consistently through the standard editor action", async () => {
       await vscode.openSqlDocument("select id,name from shop.product where stock>0;");
@@ -51,7 +53,12 @@ test.describe("SQL authoring", () => {
       await vscode.openSqlDocument("");
       await sqlEditor.associateDocumentAutomatically(demoAssociationText);
       await workbench.tree.scrollToTop();
-      const schema = await workbench.tree.expandPath([server, database, /^Sources/, /^shop$/]);
+      const schema = await workbench.tree.expandPath([
+        server,
+        database,
+        SCHEMAS_TREE_ITEM,
+        /^shop$/,
+      ]);
       const product = await workbench.tree.findChild(schema, /^product$/);
       await workbench.dragTreeItemToTextEditor(product, sqlEditor.editor);
       await expect
@@ -64,7 +71,12 @@ test.describe("SQL authoring", () => {
     await test.step("extend an existing projection with an indexed column", async () => {
       await vscode.openSqlDocument("SELECT product.id FROM shop.product;");
       await sqlEditor.associateDocumentAutomatically(demoAssociationText);
-      const schema = await workbench.tree.expandPath([server, database, /^Sources/, /^shop$/]);
+      const schema = await workbench.tree.expandPath([
+        server,
+        database,
+        SCHEMAS_TREE_ITEM,
+        /^shop$/,
+      ]);
       const product = await workbench.tree.findChild(schema, /^product$/);
       await workbench.tree.expandItem(product, /^product$/);
       const name = await workbench.tree.findChild(product, /^name\s*text$/u);
@@ -81,7 +93,12 @@ test.describe("SQL authoring", () => {
     await test.step("derive JOIN and LEFT JOIN from indexed foreign-key nullability", async () => {
       await vscode.openSqlDocument("SELECT order_line.id FROM shop.order_line;");
       await sqlEditor.associateDocumentAutomatically(demoAssociationText);
-      const schema = await workbench.tree.expandPath([server, database, /^Sources/, /^shop$/]);
+      const schema = await workbench.tree.expandPath([
+        server,
+        database,
+        SCHEMAS_TREE_ITEM,
+        /^shop$/,
+      ]);
       const product = await workbench.tree.findChild(schema, /^product$/);
       await workbench.dragTreeItemToTextEditor(product, sqlEditor.editor, true);
       await expect
@@ -94,7 +111,12 @@ test.describe("SQL authoring", () => {
 
       await vscode.openSqlDocument("SELECT product.id FROM shop.product;");
       await sqlEditor.associateDocumentAutomatically(demoAssociationText);
-      const brandSchema = await workbench.tree.expandPath([server, database, /^Sources/, /^shop$/]);
+      const brandSchema = await workbench.tree.expandPath([
+        server,
+        database,
+        SCHEMAS_TREE_ITEM,
+        /^shop$/,
+      ]);
       const brand = await workbench.tree.findChild(brandSchema, /^brand$/);
       await workbench.dragTreeItemToTextEditor(brand, sqlEditor.editor, true);
       await expect
@@ -109,7 +131,12 @@ test.describe("SQL authoring", () => {
     await test.step("start another SELECT when no direct foreign key can form a JOIN", async () => {
       await vscode.openSqlDocument("SELECT product.id FROM shop.product;");
       await sqlEditor.associateDocumentAutomatically(demoAssociationText);
-      const schema = await workbench.tree.expandPath([server, database, /^Sources/, /^shop$/]);
+      const schema = await workbench.tree.expandPath([
+        server,
+        database,
+        SCHEMAS_TREE_ITEM,
+        /^shop$/,
+      ]);
       const customer = await workbench.tree.findChild(schema, /^customer$/);
       await workbench.dragTreeItemToTextEditor(customer, sqlEditor.editor, true);
       await expect
@@ -124,7 +151,12 @@ test.describe("SQL authoring", () => {
     await test.step("choose one foreign key when several JOINs are valid", async () => {
       await vscode.openSqlDocument("SELECT sales_order.id FROM shop.sales_order;");
       await sqlEditor.associateDocumentAutomatically(demoAssociationText);
-      const schema = await workbench.tree.expandPath([server, database, /^Sources/, /^shop$/]);
+      const schema = await workbench.tree.expandPath([
+        server,
+        database,
+        SCHEMAS_TREE_ITEM,
+        /^shop$/,
+      ]);
       const address = await workbench.tree.findChild(schema, /^address$/);
       await workbench.dragTreeItemToTextEditor(address, sqlEditor.editor, true);
       await expect(workbench.page.locator(".quick-input-title:visible")).toHaveText(
@@ -148,7 +180,12 @@ test.describe("SQL authoring", () => {
     await test.step("compose the targeted Statement when another Statement is invalid", async () => {
       await vscode.openSqlDocument("SELECT product.id FROM shop.product;\nSELECT broken FROM;");
       await sqlEditor.associateDocumentAutomatically(demoAssociationText);
-      const schema = await workbench.tree.expandPath([server, database, /^Sources/, /^shop$/]);
+      const schema = await workbench.tree.expandPath([
+        server,
+        database,
+        SCHEMAS_TREE_ITEM,
+        /^shop$/,
+      ]);
       const brand = await workbench.tree.findChild(schema, /^brand$/);
       await workbench.dragTreeItemToTextEditor(brand, sqlEditor.editor, true);
       await expect
@@ -167,11 +204,11 @@ test.describe("SQL authoring", () => {
     vscode,
   }) => {
     await workbench.ensureServer(demoConnectionUrl, server);
-    await workbench.expectActiveDatabaseIndexed(server, database);
+    await workbench.expectDatabaseIndexed(server, database);
     await createScratchpad(workbench, notebook, demoAssociationText);
 
     await workbench.tree.scrollToTop();
-    const schema = await workbench.tree.expandPath([server, database, /^Sources/, /^shop$/]);
+    const schema = await workbench.tree.expandPath([server, database, SCHEMAS_TREE_ITEM, /^shop$/]);
     const product = await workbench.tree.findChild(schema, /^product$/);
     await workbench.dragTreeItemToTextEditor(product, notebook.cell(0));
 
@@ -186,32 +223,24 @@ test.describe("SQL authoring", () => {
         ],
       });
 
-    await test.step("keep completion on the Association when another DatabaseContext becomes active", async () => {
+    await test.step("keep completion on the Association when another Connexion is connected", async () => {
       try {
         await workbench.tree.scrollToTop();
         await workbench.addServer(alternateConnectionUrl, alternateServer);
         await expect
           .poll(() =>
-            vscode.inspectWorkbenchState().then(({ connection }) => connection.activeServerId),
+            vscode
+              .inspectWorkbenchState()
+              .then(({ connection }) => connection.connectedServerIds.sort()),
           )
-          .toBe(alternateConnectionId);
-        const debuggerSetup = workbench.page.locator(".notification-toast:visible").filter({
-          hasText: /pldbgapi extension not installed.*Install now/i,
-        });
-        const skipDebuggerSetup = debuggerSetup.getByRole("button", {
-          name: "Skip",
-          exact: true,
-        });
-        await expect(skipDebuggerSetup).toBeVisible({ timeout: 5_000 });
-        await skipDebuggerSetup.click();
-        await expect(debuggerSetup).toHaveCount(0, { timeout: 5_000 });
+          .toEqual([alternateConnectionId, demoConnectionId].sort());
         const completion = await notebook.addCodeCell();
         await notebook.typeInCell(completion, "SELECT * FROM shop.pro");
         await notebook.requestCompletion(completion);
         await expect(notebook.suggestion(/^product$/)).toBeVisible({ timeout: 5_000 });
         await notebook.dismissCompletion();
       } finally {
-        await workbench.ensureActiveDatabaseIndexed(server, database);
+        await workbench.ensureDatabaseIndexed(server, database);
         await vscode.removeServer(alternateConnectionId);
         await workbench.tree.expectItemAbsent(alternateServer);
       }

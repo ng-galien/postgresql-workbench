@@ -1,6 +1,10 @@
 import * as vscode from "vscode";
 import type { DebugSessionStatus } from "../../src/debugger/launch/debugSessionStatus.js";
-import type { ConnectionManager } from "./connectionManager.js";
+import type {
+  ConnectionChange,
+  ConnectionManager,
+  DebugCapabilitySnapshot,
+} from "./connectionManager.js";
 import {
   type DebugSessionInfo,
   enrichDebugSessions,
@@ -11,7 +15,7 @@ import type {
   ScratchpadTransaction,
   ScratchpadTransactionManager,
 } from "./scratchpadTransactions.js";
-import type { ServerConfig } from "./serverStore.js";
+import { getConnectionName, type ServerConfig } from "./serverStore.js";
 import {
   resolveScratchpadAssociation,
   type ScratchpadAssociation,
@@ -50,27 +54,26 @@ export class ServerItem extends vscode.TreeItem {
   readonly kind = "server" as const;
   constructor(
     public readonly server: ServerConfig,
-    public readonly active: boolean,
     public readonly connected: boolean,
-    public readonly pldbgapi: boolean,
+    public readonly debugCapability: DebugCapabilitySnapshot,
   ) {
-    super(
-      `${server.user}@${server.host}:${server.port}`,
-      vscode.TreeItemCollapsibleState.Collapsed,
-    );
+    // Always collapsible: a disconnected Connexion keeps a closed chevron so
+    // sibling rows stay aligned and its branch offers the connect hint.
+    super(getConnectionName(server), vscode.TreeItemCollapsibleState.Collapsed);
     this.id = `postgres-server:${server.id}`;
-    if (connected) {
-      this.iconPath = new vscode.ThemeIcon("plug", new vscode.ThemeColor("testing.iconPassed"));
-      this.description = pldbgapi
-        ? `${server.database} · connected`
-        : `${server.database} · connected (no pldbgapi)`;
-    } else {
+    if (!connected) {
       this.iconPath = new vscode.ThemeIcon("debug-disconnect");
-      this.description = server.database;
+      this.description = "disconnected";
+    } else {
+      this.iconPath = new vscode.ThemeIcon("plug", new vscode.ThemeColor("testing.iconPassed"));
+      this.description = "connected";
     }
-    this.contextValue =
-      active && connected ? "postgresql-workbench-server-connected" : "postgresql-workbench-server";
-    this.tooltip = `${server.user}@${server.host}:${server.port}`;
+    this.contextValue = connected
+      ? "postgresql-workbench-server-connected"
+      : "postgresql-workbench-server";
+    this.tooltip = connected
+      ? `${getConnectionName(server)} · connected\n${debugCapability.status === "available" ? "PL/pgSQL debugging available" : debugCapability.status === "checking" ? "Checking PL/pgSQL debugger capability" : `PL/pgSQL debugging unavailable${debugCapability.message ? `: ${debugCapability.message}` : ""}`}`
+      : `${getConnectionName(server)} · disconnected`;
   }
 }
 
@@ -92,26 +95,13 @@ export class DatabaseSourceItem extends vscode.TreeItem {
   constructor(
     public readonly server: ServerConfig,
     state: WorkbenchIndexState,
-    public readonly active = false,
   ) {
     super(server.database, vscode.TreeItemCollapsibleState.Collapsed);
     this.id = `postgres-database:${server.id}:${server.database}`;
     this.iconPath = postgresThemeIcon("database");
-    this.description = active ? "active" : "inactive";
-    this.contextValue = active
-      ? "postgresql-workbench-database-context-active"
-      : "postgresql-workbench-database-context";
+    this.description = databaseDescription(state);
+    this.contextValue = "postgresql-workbench-database";
     this.tooltip = `PostgreSQL source ${server.database} on ${server.host}:${server.port}`;
-    if (active && state.status === "indexing") {
-      this.description = state.result ? "active · refreshing" : "active · indexing";
-    }
-    if (!active) {
-      this.command = {
-        command: "postgresql-workbench.useDatabaseContextAsActive",
-        title: "Set Active Database Context",
-        arguments: [server.id],
-      };
-    }
   }
 }
 
@@ -120,41 +110,30 @@ export class SourcesSnapshotItem extends vscode.TreeItem {
 
   constructor(
     public readonly server: ServerConfig,
-    public readonly active: boolean,
     state: WorkbenchIndexState,
   ) {
-    super(
-      "Sources",
-      active ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None,
-    );
+    super("Schemas", vscode.TreeItemCollapsibleState.Collapsed);
     this.id = `postgres-sources:${server.id}`;
-    this.iconPath = new vscode.ThemeIcon(
-      active && state.status === "indexing" ? "loading~spin" : "files",
-    );
-    this.contextValue = active
-      ? state.status === "indexing"
+    this.iconPath = new vscode.ThemeIcon(state.status === "indexing" ? "loading~spin" : "files");
+    this.contextValue =
+      state.status === "indexing"
         ? "postgresql-workbench-sources-indexing"
-        : "postgresql-workbench-sources-active"
-      : "postgresql-workbench-sources-inactive";
-    this.description = active ? sourcesDescription(state) : "inactive";
-    this.tooltip = active
-      ? sourcesTooltip(server.database, state)
-      : "Set this database context active to browse its sources";
+        : "postgresql-workbench-sources";
+    this.description = sourcesDescription(state);
+    this.tooltip = sourcesTooltip(server.database, state);
     this.accessibilityInformation = {
-      label: active
-        ? sourcesAccessibilityLabel(server.database, state)
-        : `Sources, ${server.database}, inactive`,
+      label: sourcesAccessibilityLabel(server.database, state),
     };
     if (
-      active &&
-      (state.status === "not-indexed" ||
-        state.status === "stale" ||
-        state.status === "cancelled" ||
-        state.status === "error")
+      state.status === "not-indexed" ||
+      state.status === "stale" ||
+      state.status === "cancelled" ||
+      state.status === "error"
     ) {
       this.command = {
-        command: "postgresql-workbench.indexActiveDatabase",
+        command: "postgresql-workbench.indexDatabase",
         title: state.status === "not-indexed" ? "Index Database" : "Reindex Database",
+        arguments: [server.id],
       };
     }
   }
@@ -176,6 +155,23 @@ function sourcesDescription(state: WorkbenchIndexState): string {
       return state.result ? "cancelled · previous snapshot available" : "cancelled · retry";
     case "error":
       return state.result ? "failed · previous snapshot available · retry" : "failed · retry";
+  }
+}
+
+function databaseDescription(state: WorkbenchIndexState): string {
+  switch (state.status) {
+    case "not-indexed":
+      return "preparing index";
+    case "indexing":
+      return state.result ? "refreshing" : "indexing";
+    case "available":
+      return "ready";
+    case "stale":
+      return "degraded";
+    case "cancelled":
+      return "indexing paused";
+    case "error":
+      return state.result ? "degraded" : "indexing failed";
   }
 }
 
@@ -255,22 +251,22 @@ function sourcesTooltip(database: string, state: WorkbenchIndexState): string {
 function sourcesAccessibilityLabel(database: string, state: WorkbenchIndexState): string {
   switch (state.status) {
     case "not-indexed":
-      return `Sources, ${database}, not indexed, select to index`;
+      return `Schemas, ${database}, not indexed, select to index`;
     case "indexing":
       return [
-        `Sources, ${database}, ${state.result ? "refreshing" : "indexing"}, ${indexProgressLabel(state)}`,
+        `Schemas, ${database}, ${state.result ? "refreshing" : "indexing"}, ${indexProgressLabel(state)}`,
         state.result ? "previous snapshot available" : undefined,
       ]
         .filter(Boolean)
         .join(", ");
     case "available":
-      return `Sources, ${database}, available${state.result ? `, ${resultSummary(state.result)}` : ""}`;
+      return `Schemas, ${database}, available${state.result ? `, ${resultSummary(state.result)}` : ""}`;
     case "stale":
-      return `Sources, ${database}, stale${state.result ? ", previous snapshot available" : ""}, select to reindex`;
+      return `Schemas, ${database}, stale${state.result ? ", previous snapshot available" : ""}, select to reindex`;
     case "cancelled":
-      return `Sources, ${database}, indexing cancelled${state.result ? ", previous snapshot available" : ""}, select to retry`;
+      return `Schemas, ${database}, indexing cancelled${state.result ? ", previous snapshot available" : ""}, select to retry`;
     case "error":
-      return `Sources, ${database}, indexing failed${state.message ? `, ${state.message}` : ""}${state.result ? ", previous snapshot available" : ""}, select to retry`;
+      return `Schemas, ${database}, indexing failed${state.message ? `, ${state.message}` : ""}${state.result ? ", previous snapshot available" : ""}, select to retry`;
   }
 }
 
@@ -310,16 +306,21 @@ export class SqlNotebookItem extends vscode.TreeItem {
     public readonly association: ScratchpadAssociation,
     public readonly mode: "auto" | "manual",
     public readonly transaction?: ScratchpadTransaction,
+    public readonly connected = false,
   ) {
     const label = sqlNotebookDisplayName(entry.name);
     super(label, vscode.TreeItemCollapsibleState.Collapsed);
     this.id = entry.uri.toString();
     this.resourceUri = entry.uri;
-    this.iconPath = new vscode.ThemeIcon(entry.error ? "warning" : "note");
+    this.iconPath = entry.error
+      ? new vscode.ThemeIcon("warning")
+      : connected
+        ? new vscode.ThemeIcon("note", new vscode.ThemeColor("testing.iconPassed"))
+        : new vscode.ThemeIcon("note");
     this.contextValue = `postgresql-workbench-scratchpad-${mode}`;
     this.description =
       association.status === "associated"
-        ? `${association.snapshot.serverName} · ${mode.toUpperCase()}`
+        ? `${association.snapshot.serverName}${connected ? "" : " · disconnected"} · ${mode.toUpperCase()}`
         : association.status === "unavailable"
           ? `${association.snapshot.serverName} unavailable · ${mode.toUpperCase()}`
           : `No connection · ${mode.toUpperCase()}`;
@@ -329,7 +330,7 @@ export class SqlNotebookItem extends vscode.TreeItem {
         ? `Invalid SQL scratchpad ${label}`
         : association.status === "unassociated"
           ? `Scratchpad ${label}, no Connexion Association, ${mode}`
-          : `Scratchpad ${label}, ${association.snapshot.serverName} · ${association.snapshot.database}, ${association.status}, ${mode}`,
+          : `Scratchpad ${label}, ${association.snapshot.serverName}, ${connected ? "connected" : "disconnected"}, ${mode}`,
     };
     this.command = {
       command: OPEN_SQL_NOTEBOOK_COMMAND,
@@ -345,21 +346,28 @@ export class ScratchpadAssociationItem extends vscode.TreeItem {
   constructor(
     public readonly scratchpad: SqlNotebookItem,
     public readonly association: ScratchpadAssociation,
+    public readonly connected = false,
   ) {
     const label =
-      association.status === "unassociated"
-        ? "No connection"
-        : `${association.snapshot.serverName} · ${association.snapshot.database}`;
+      association.status === "unassociated" ? "No connection" : association.snapshot.serverName;
     super(label, vscode.TreeItemCollapsibleState.None);
     this.id = `${scratchpad.id}:association`;
-    this.iconPath = new vscode.ThemeIcon(
-      association.status === "associated" ? "database" : "warning",
-    );
+    this.iconPath =
+      association.status === "associated" && connected
+        ? new vscode.ThemeIcon("circle-filled", new vscode.ThemeColor("testing.iconPassed"))
+        : new vscode.ThemeIcon(association.status === "unavailable" ? "warning" : "circle-outline");
     this.contextValue = `postgresql-workbench-scratchpad-association-${association.status}`;
-    this.description = association.status;
+    this.description =
+      association.status === "associated"
+        ? connected
+          ? "connected"
+          : "disconnected"
+        : association.status === "unavailable"
+          ? "unavailable"
+          : "not configured";
     this.tooltip =
       association.status === "associated"
-        ? "This persistent Association is independent from the active Workbench database context"
+        ? "This persistent Association identifies the exact Connexion used by this Scratchpad"
         : "Execution requires a saved Connexion Association";
   }
 }
@@ -399,9 +407,12 @@ export class ScratchpadStatementItem extends vscode.TreeItem {
 
 export class SchemaItem extends vscode.TreeItem {
   readonly kind = "schema" as const;
-  constructor(public readonly schema: string) {
+  constructor(
+    public readonly server: ServerConfig,
+    public readonly schema: string,
+  ) {
     super(schema, vscode.TreeItemCollapsibleState.Collapsed);
-    this.id = `postgres-schema:${schema}`;
+    this.id = `postgres-schema:${server.id}:${server.database}:${schema}`;
     this.iconPath = postgresThemeIcon("schema");
     this.contextValue = "postgresql-workbench-schema";
   }
@@ -417,7 +428,8 @@ export class ExtensionGroupItem extends vscode.TreeItem {
     public readonly snapshot: Pick<WorkbenchIndexResult, "revision" | "generation">,
   ) {
     super(extension, vscode.TreeItemCollapsibleState.Collapsed);
-    this.id = `postgres-extension:${schema}:${extension}`;
+    const owner = objects[0];
+    this.id = `postgres-extension:${owner?.serverId ?? "unknown"}:${owner?.database ?? "unknown"}:${schema}:${extension}`;
     this.iconPath = postgresThemeIcon("extension");
     this.description = `${objects.length} object${objects.length === 1 ? "" : "s"}`;
     this.contextValue = "postgresql-workbench-extension-objects";
@@ -428,6 +440,7 @@ export class ExtensionGroupItem extends vscode.TreeItem {
 export class DebugSessionsItem extends vscode.TreeItem {
   readonly kind = "debugSessions" as const;
   constructor(
+    public readonly server: ServerConfig,
     public readonly count: number | undefined,
     sessions: readonly DebugSessionInfo[] = [],
   ) {
@@ -587,13 +600,28 @@ class MessageItem extends vscode.TreeItem {
   }
 }
 
+class ConnectServerMessageItem extends MessageItem {
+  constructor(server: ServerConfig) {
+    super("Not connected");
+    this.id = `postgres-server-connect:${server.id}`;
+    this.iconPath = new vscode.ThemeIcon("plug");
+    this.description = "select to connect";
+    this.tooltip = `${getConnectionName(server)} is disconnected. Select to connect.`;
+    this.command = {
+      command: "postgresql-workbench.connectServer",
+      title: "Connect",
+      arguments: [server.id],
+    };
+  }
+}
+
 class ReindexDatabaseMessageItem extends MessageItem {
   constructor(message: string) {
     super(message);
     this.iconPath = new vscode.ThemeIcon("refresh");
-    this.tooltip = `${message}. Select to reindex the active database.`;
+    this.tooltip = `${message}. Select to reindex this database.`;
     this.command = {
-      command: "postgresql-workbench.indexActiveDatabase",
+      command: "postgresql-workbench.indexDatabase",
       title: "Reindex Database",
     };
   }
@@ -626,8 +654,6 @@ export type PlpgsqlConnectionTreeItem = ServerItem | AddServerItem | DebugSessio
 export type WorkbenchTreeScope = "database" | "scratchpads";
 
 class WorkbenchTreeChildren {
-  private schemaNames: string[] = [];
-  private loadedSnapshot?: string;
   private scratchpadFilter = "";
 
   constructor(
@@ -641,8 +667,7 @@ class WorkbenchTreeChildren {
   ) {}
 
   refresh(): void {
-    this.schemaNames = [];
-    this.loadedSnapshot = undefined;
+    // Children are resolved from the exact Connexion snapshot on every request.
   }
 
   setScratchpadFilter(filter: string): void {
@@ -652,11 +677,16 @@ class WorkbenchTreeChildren {
   async getChildren(element?: PlpgsqlTreeItem): Promise<PlpgsqlTreeItem[]> {
     if (!element) return this.rootChildren();
     if (element.kind === "server") {
+      if (!this.connections.isServerConnected(element.server.id)) {
+        return [new ConnectServerMessageItem(element.server)];
+      }
       return [
         new DatabaseSourceItem(
           element.server,
-          this.index.state,
-          this.connections.isActiveServer(element.server.id),
+          this.index.databaseState({
+            serverId: element.server.id,
+            database: element.server.database,
+          }),
         ),
       ];
     }
@@ -664,7 +694,7 @@ class WorkbenchTreeChildren {
     if (element.kind === "sourcesSnapshot") return this.sourceChildren(element);
     if (element.kind === "sqlNotebook") {
       return [
-        new ScratchpadAssociationItem(element, element.association),
+        new ScratchpadAssociationItem(element, element.association, element.connected),
         ...(element.transaction ? [new ScratchpadTransactionItem(element.transaction)] : []),
       ];
     }
@@ -673,7 +703,7 @@ class WorkbenchTreeChildren {
         (statement, index) => new ScratchpadStatementItem(element.transaction, statement, index),
       );
     }
-    if (element.kind === "schema") return this.schemaChildren(element.schema);
+    if (element.kind === "schema") return this.schemaChildren(element.server, element.schema);
     if (element.kind === "extensionGroup") {
       return element.objects.map((object) => objectTreeItem(object, element.snapshot));
     }
@@ -692,38 +722,37 @@ class WorkbenchTreeChildren {
     if (this.scope === "scratchpads") return this.scratchpads();
     return [
       ...this.connections.servers.map((server) => {
-        const connected = this.connections.isActiveServer(server.id);
-        return new ServerItem(
-          server,
-          connected,
-          connected,
-          connected && this.connections.pldbgapiAvailable,
-        );
+        const connected = this.connections.isServerConnected(server.id);
+        return new ServerItem(server, connected, this.connections.debugCapabilityFor(server.id));
       }),
       new AddServerItem(),
     ];
   }
 
   private async databaseChildren(element: DatabaseSourceItem): Promise<PlpgsqlTreeItem[]> {
-    const active = this.connections.isActiveServer(element.server.id);
+    const state = this.index.databaseState({
+      serverId: element.server.id,
+      database: element.server.database,
+    });
     const children: PlpgsqlTreeItem[] = [
       new WorkbenchDdlSyncItem(element.server, this.ddlSync.state(element.server.id)),
-      new SourcesSnapshotItem(element.server, active, this.index.state),
+      new SourcesSnapshotItem(element.server, state),
     ];
-    if (active) children.push(await this.debugSessionsItem());
+    children.push(await this.debugSessionsItem(element.server.id));
     return children;
   }
 
   private sourceChildren(element: SourcesSnapshotItem): PlpgsqlTreeItem[] {
-    if (!element.active || !this.connections.isActiveServer(element.server.id)) return [];
-    this.loadIndexedSchemas();
+    const identity = { serverId: element.server.id, database: element.server.database };
+    const state = this.index.databaseState(identity);
+    const schemaNames = listWorkbenchSchemas(this.index.databaseSymbols(identity), identity);
     const children: PlpgsqlTreeItem[] = [];
-    if (!this.index.state.result) return children;
-    if (this.schemaNames.length === 0) {
+    if (!state.result) return children;
+    if (schemaNames.length === 0) {
       children.push(new MessageItem("No PostgreSQL objects in the index"));
       return children;
     }
-    children.push(...this.schemaNames.map((schema) => new SchemaItem(schema)));
+    children.push(...schemaNames.map((schema) => new SchemaItem(element.server, schema)));
     return children;
   }
 
@@ -731,11 +760,15 @@ class WorkbenchTreeChildren {
     const entries = await this.notebooks.list();
     const items = entries.map((entry) => {
       const association = resolveScratchpadAssociation(entry.metadata, this.connections.servers);
+      const connected =
+        association.status === "associated" &&
+        this.connections.isServerConnected(association.connection.id);
       return new SqlNotebookItem(
         entry,
         association,
         scratchpadExecutionMode(entry.metadata),
         this.transactions.transaction(entry.uri.toString()),
+        connected,
       );
     });
     if (!this.scratchpadFilter) return items;
@@ -746,18 +779,15 @@ class WorkbenchTreeChildren {
     );
   }
 
-  private schemaChildren(schema: string): PlpgsqlTreeItem[] {
-    const result = this.index.state.result;
+  private schemaChildren(server: ServerConfig, schema: string): PlpgsqlTreeItem[] {
+    const identity = { serverId: server.id, database: server.database };
+    const result = this.index.databaseState(identity).result;
     if (!result) return [];
-    const objects = buildWorkbenchObjects(
-      this.index.indexedSymbols,
-      { serverId: result.serverId, database: result.database },
-      schema,
-    );
+    const objects = buildWorkbenchObjects(this.index.databaseSymbols(identity), identity, schema);
     const userObjects: WorkbenchObjectModel[] = [];
     const extensionObjects = new Map<string, WorkbenchObjectModel[]>();
     for (const object of objects) {
-      const origin = this.index.objectOrigin(object.sourceUri);
+      const origin = this.index.databaseObjectOrigin(identity, object.sourceUri);
       if (origin?.kind !== "extension") {
         userObjects.push(object);
         continue;
@@ -779,9 +809,13 @@ class WorkbenchTreeChildren {
   ): Promise<PlpgsqlTreeItem[]> {
     const members =
       element.kind === "object"
-        ? buildWorkbenchTableMembers(this.index.indexedSymbols, element.object).map(
-            (member) => new WorkbenchTableMemberItem(member, element.object),
-          )
+        ? buildWorkbenchTableMembers(
+            this.index.databaseSymbols({
+              serverId: element.object.serverId,
+              database: element.object.database,
+            }),
+            element.object,
+          ).map((member) => new WorkbenchTableMemberItem(member, element.object))
         : [];
     const relations = await this.index.relations(element.object, element.snapshot);
     switch (relations.status) {
@@ -808,9 +842,9 @@ class WorkbenchTreeChildren {
     }
   }
 
-  private async debugSessionsItem(): Promise<DebugSessionsItem> {
+  private async debugSessionsItem(serverId: string): Promise<DebugSessionsItem> {
     let sessions: DebugSessionInfo[] | undefined;
-    const client = this.connections.getClient();
+    const client = this.connections.getClient(serverId);
     try {
       if (client) {
         sessions = enrichDebugSessions(
@@ -819,23 +853,9 @@ class WorkbenchTreeChildren {
         );
       }
     } catch {}
-    return new DebugSessionsItem(sessions?.length, sessions);
-  }
-
-  private loadIndexedSchemas(): void {
-    const result = this.index.state.result;
-    if (!result) {
-      this.schemaNames = [];
-      this.loadedSnapshot = undefined;
-      return;
-    }
-    const snapshot = `${result.revision}\0${result.generation ?? "none"}`;
-    if (this.loadedSnapshot === snapshot) return;
-    this.schemaNames = listWorkbenchSchemas(this.index.indexedSymbols, {
-      serverId: result.serverId,
-      database: result.database,
-    });
-    this.loadedSnapshot = snapshot;
+    const server = this.connections.store.get(serverId);
+    if (!server) throw new Error(`Unknown Connexion: ${serverId}`);
+    return new DebugSessionsItem(server, sessions?.length, sessions);
   }
 }
 
@@ -847,12 +867,10 @@ export class WorkbenchTreeProvider
 
   private readonly subscriptions: vscode.Disposable[];
   private readonly children: WorkbenchTreeChildren;
-  private sourcesExpanded = false;
+  private readonly expandedSources = new Set<string>();
   private readonly materializedSchemas = new Set<string>();
   private readonly visibleObjects = new Map<string, FunctionItem | WorkbenchObjectItem>();
   private readonly visibleItems = new Map<string, PlpgsqlTreeItem>();
-  private knownSchemas: string[] = [];
-  private activeDatabaseContextId: string | undefined;
 
   constructor(
     private readonly connections: ConnectionManager,
@@ -863,7 +881,6 @@ export class WorkbenchTreeProvider
     debugSessionStatuses: () => readonly DebugSessionStatus[] = () => [],
     private readonly scope: WorkbenchTreeScope = "database",
   ) {
-    this.activeDatabaseContextId = connections.activeServer?.id;
     this.children = new WorkbenchTreeChildren(
       connections,
       index,
@@ -873,7 +890,7 @@ export class WorkbenchTreeProvider
       debugSessionStatuses,
       scope,
     );
-    this.subscriptions = [connections.onChanged(() => this.refreshConnections())];
+    this.subscriptions = [connections.onChanged((change) => this.refreshConnections(change))];
     if (scope === "database") {
       this.subscriptions.push(
         index.onDidChangeState((state) => this.refreshIndex(state)),
@@ -898,10 +915,9 @@ export class WorkbenchTreeProvider
     this.children.refresh();
     if (resetMaterialized) {
       this.visibleItems.clear();
-      this.sourcesExpanded = false;
+      this.expandedSources.clear();
       this.materializedSchemas.clear();
       this.visibleObjects.clear();
-      this.knownSchemas = [];
     }
     this.changeEmitter.fire(undefined);
   }
@@ -912,25 +928,82 @@ export class WorkbenchTreeProvider
     this.refresh();
   }
 
-  private refreshConnections(): void {
-    const activeDatabaseContextId = this.connections.activeServer?.id;
-    const changed = activeDatabaseContextId !== this.activeDatabaseContextId;
-    this.activeDatabaseContextId = activeDatabaseContextId;
-    this.refresh(changed);
+  refreshServer(serverId: string | undefined): void {
+    if (!serverId) return;
+    this.refreshConnections({
+      serverIds: [serverId],
+      rootsChanged: false,
+    });
+  }
+
+  private refreshConnections(change: ConnectionChange): void {
+    if (change.rootsChanged) {
+      this.refresh(true);
+      return;
+    }
+    if (this.scope === "scratchpads") {
+      this.refreshScratchpadConnections(change.serverIds);
+      return;
+    }
+    for (const serverId of change.serverIds) {
+      const server = this.connections.store.get(serverId);
+      if (!server) continue;
+      const connected = this.connections.isServerConnected(serverId);
+      this.emitUpdated(
+        new ServerItem(server, connected, this.connections.debugCapabilityFor(serverId)),
+      );
+      const state = this.index.databaseState({ serverId, database: server.database });
+      this.emitUpdated(new DatabaseSourceItem(server, state));
+      this.emitUpdated(new SourcesSnapshotItem(server, state));
+    }
+  }
+
+  private refreshScratchpadConnections(serverIds: readonly string[]): void {
+    const changed = new Set(serverIds);
+    for (const visible of [...this.visibleItems.values()]) {
+      if (visible.kind !== "sqlNotebook") continue;
+      const association = resolveScratchpadAssociation(
+        visible.entry.metadata,
+        this.connections.servers,
+      );
+      const previousId =
+        visible.association.status === "unassociated"
+          ? undefined
+          : visible.association.snapshot.serverId;
+      const nextId =
+        association.status === "unassociated" ? undefined : association.snapshot.serverId;
+      if (!changed.has(previousId ?? "") && !changed.has(nextId ?? "")) continue;
+      const connected =
+        association.status === "associated" &&
+        this.connections.isServerConnected(association.connection.id);
+      const replacement = new SqlNotebookItem(
+        visible.entry,
+        association,
+        visible.mode,
+        visible.transaction,
+        connected,
+      );
+      this.emitUpdated(replacement);
+      this.emitUpdated(new ScratchpadAssociationItem(replacement, association, connected));
+    }
   }
 
   searchObjects(query: string, limit = 100): WorkbenchObjectModel[] {
-    const result = this.index.state.result;
-    if (!result) {
-      return [];
-    }
-    return searchWorkbenchObjects(
-      this.index.indexedSymbols,
-      { serverId: result.serverId, database: result.database },
-      query,
-      Number.MAX_SAFE_INTEGER,
-    )
-      .filter((object) => this.index.objectOrigin(object.sourceUri)?.kind !== "extension")
+    return this.connections.connectedServerIds
+      .flatMap((serverId) => {
+        const server = this.connections.store.get(serverId);
+        if (!server) return [];
+        const identity = { serverId, database: server.database };
+        return searchWorkbenchObjects(
+          this.index.databaseSymbols(identity),
+          identity,
+          query,
+          Number.MAX_SAFE_INTEGER,
+        ).filter(
+          (object) =>
+            this.index.databaseObjectOrigin(identity, object.sourceUri)?.kind !== "extension",
+        );
+      })
       .slice(0, Math.max(0, limit));
   }
 
@@ -942,9 +1015,13 @@ export class WorkbenchTreeProvider
       this.visibleObjects.set(element.object.sourceUri, element);
     }
     if (element.kind === "function") {
-      const result = this.index.state.result;
+      const state = this.index.databaseState({
+        serverId: element.object.serverId,
+        database: element.object.database,
+      });
+      const result = state.result;
       element.contextValue =
-        this.index.state.status !== "indexing" &&
+        state.status !== "indexing" &&
         result?.serverId === element.object.serverId &&
         result.database === element.object.database
           ? "postgresql-workbench-function-debuggable"
@@ -953,30 +1030,29 @@ export class WorkbenchTreeProvider
     return element;
   }
 
-  activeSourcesItem(): SourcesSnapshotItem | undefined {
-    const server = this.connections.activeServer;
-    if (!server || !this.connections.isActiveServer(server.id)) return undefined;
+  sourcesItem(serverId: string): SourcesSnapshotItem | undefined {
+    const server = this.connections.store.get(serverId);
+    if (!server || !this.connections.isServerConnected(server.id)) return undefined;
     const id = `postgres-sources:${server.id}`;
     const visible = this.visibleItems.get(id);
-    return visible?.kind === "sourcesSnapshot"
-      ? visible
-      : new SourcesSnapshotItem(server, true, this.index.state);
+    const state = this.index.databaseState({ serverId: server.id, database: server.database });
+    return visible?.kind === "sourcesSnapshot" ? visible : new SourcesSnapshotItem(server, state);
   }
 
   getParent(element: PlpgsqlTreeItem): PlpgsqlTreeItem | undefined {
     if (element.kind === "schema") {
-      const server = this.connections.activeServer;
-      return server
-        ? this.canonicalItem(new SourcesSnapshotItem(server, true, this.index.state))
-        : undefined;
+      const state = this.index.databaseState({
+        serverId: element.server.id,
+        database: element.server.database,
+      });
+      return this.canonicalItem(new SourcesSnapshotItem(element.server, state));
     }
     if (element.kind === "databaseSource") {
       return this.canonicalItem(
         new ServerItem(
           element.server,
-          element.active,
-          this.connections.isActiveServer(element.server.id),
-          this.connections.pldbgapiAvailable,
+          this.connections.isServerConnected(element.server.id),
+          this.connections.debugCapabilityFor(element.server.id),
         ),
       );
     }
@@ -985,14 +1061,12 @@ export class WorkbenchTreeProvider
       element.kind === "ddlSync" ||
       element.kind === "debugSessions"
     ) {
-      const server =
-        element.kind === "debugSessions" ? this.connections.activeServer : element.server;
+      const server = element.server;
       return server
         ? this.canonicalItem(
             new DatabaseSourceItem(
               server,
-              this.index.state,
-              this.connections.isActiveServer(server.id),
+              this.index.databaseState({ serverId: server.id, database: server.database }),
             ),
           )
         : undefined;
@@ -1016,16 +1090,37 @@ export class WorkbenchTreeProvider
       element.kind === "extensionGroup"
     ) {
       return this.canonicalItem(
-        new SchemaItem(element.kind === "extensionGroup" ? element.schema : element.object.schema),
+        new SchemaItem(
+          this.connections.store.get(
+            element.kind === "extensionGroup"
+              ? (element.objects[0]?.serverId ?? "")
+              : element.object.serverId,
+          ) ?? {
+            id:
+              element.kind === "extensionGroup"
+                ? (element.objects[0]?.serverId ?? "")
+                : element.object.serverId,
+            host: "",
+            port: 0,
+            database:
+              element.kind === "extensionGroup"
+                ? (element.objects[0]?.database ?? "")
+                : element.object.database,
+            user: "",
+          },
+          element.kind === "extensionGroup" ? element.schema : element.object.schema,
+        ),
       );
     }
     return undefined;
   }
 
   itemForObject(object: WorkbenchObjectModel): FunctionItem | WorkbenchObjectItem | undefined {
-    const result = this.index.state.result;
+    const identity = { serverId: object.serverId, database: object.database };
+    const state = this.index.databaseState(identity);
+    const result = state.result;
     if (
-      this.index.state.status === "indexing" ||
+      state.status === "indexing" ||
       !result ||
       result.serverId !== object.serverId ||
       result.database !== object.database
@@ -1037,9 +1132,6 @@ export class WorkbenchTreeProvider
   }
 
   async getChildren(element?: PlpgsqlTreeItem): Promise<PlpgsqlTreeItem[]> {
-    if (element?.kind === "sourcesSnapshot") {
-      this.knownSchemas = this.indexedSchemaNames();
-    }
     return (await this.children.getChildren(element)).map((child) => this.canonicalItem(child));
   }
 
@@ -1056,93 +1148,74 @@ export class WorkbenchTreeProvider
 
   setExpanded(element: PlpgsqlTreeItem, expanded: boolean): void {
     if (element.kind === "sourcesSnapshot") {
-      this.sourcesExpanded = expanded;
+      const scope = treeDatabaseScope(element.server.id, element.server.database);
+      if (expanded) this.expandedSources.add(scope);
+      else this.expandedSources.delete(scope);
       if (!expanded) {
-        this.materializedSchemas.clear();
-        this.forgetVisibleObjects();
+        for (const key of this.materializedSchemas) {
+          if (key.startsWith(`${scope}\0`)) this.materializedSchemas.delete(key);
+        }
+        this.forgetVisibleObjects(undefined, element.server);
       }
       return;
     }
     if (element.kind === "schema") {
-      if (expanded) this.materializedSchemas.add(element.schema);
+      const key = treeSchemaScope(element.server.id, element.server.database, element.schema);
+      if (expanded) this.materializedSchemas.add(key);
       else {
-        this.materializedSchemas.delete(element.schema);
-        this.forgetVisibleObjects(element.schema);
+        this.materializedSchemas.delete(key);
+        this.forgetVisibleObjects(element.schema, element.server);
       }
       return;
     }
   }
 
-  private refreshIndex(state: WorkbenchIndexState): void {
-    if (state.status === "available" || !state.result) this.children.refresh();
-    const server = this.connections.activeServer;
-    if (!server || !this.connections.isActiveServer(server.id)) return;
-    this.emitUpdated(new DatabaseSourceItem(server, state, true));
-
-    if (!state.result) {
-      this.knownSchemas = [];
-      this.emitUpdated(new SourcesSnapshotItem(server, true, state));
-      return;
-    }
-
-    this.emitUpdated(new SourcesSnapshotItem(server, true, state));
-    const functionContext =
-      state.status === "indexing"
-        ? "postgresql-workbench-function"
-        : "postgresql-workbench-function-debuggable";
-    for (const item of this.visibleObjects.values()) {
-      if (item.kind === "function" && item.contextValue !== functionContext) {
-        item.contextValue = functionContext;
-        this.emitUpdated(item);
-      }
-    }
-    if (state.status !== "available") return;
-
-    const nextSchemas = this.indexedSchemaNames();
-    const objects = buildWorkbenchObjects(this.index.indexedSymbols, {
-      serverId: state.result.serverId,
-      database: state.result.database,
-    });
-    if (state.change?.kind !== "incremental" || !sameStrings(this.knownSchemas, nextSchemas)) {
-      this.knownSchemas = nextSchemas;
-      if (this.sourcesExpanded) {
-        for (const schema of this.materializedSchemas) {
-          if (nextSchemas.includes(schema)) this.emitUpdated(new SchemaItem(schema));
+  private refreshIndex(changedState: WorkbenchIndexState): void {
+    this.children.refresh();
+    const serverId = changedState.serverId;
+    if (!serverId) return;
+    const server = this.connections.store.get(serverId);
+    if (!server || !this.connections.isServerConnected(serverId)) return;
+    const state = this.index.databaseState({ serverId, database: server.database });
+    this.emitUpdated(new ServerItem(server, true, this.connections.debugCapabilityFor(server.id)));
+    this.emitUpdated(new DatabaseSourceItem(server, state));
+    this.emitUpdated(new SourcesSnapshotItem(server, state));
+    if (state.status === "available" && state.result) {
+      const identity = { serverId, database: server.database };
+      const scope = treeDatabaseScope(serverId, server.database);
+      if (this.expandedSources.has(scope)) {
+        const changedSchemas =
+          state.change?.kind === "incremental" ? new Set(state.change.schemas) : undefined;
+        for (const key of this.materializedSchemas) {
+          const schema = schemaFromTreeScope(key, scope);
+          if (schema && (!changedSchemas || changedSchemas.has(schema))) {
+            this.emitUpdated(new SchemaItem(server, schema));
+          }
         }
-        this.refreshVisibleObjectSnapshots(objects, state.result);
       }
-      return;
+      this.refreshVisibleObjectSnapshots(
+        buildWorkbenchObjects(this.index.databaseSymbols(identity), identity),
+        state.result,
+        state.change ? new Set(state.change.sourceUris) : undefined,
+        identity,
+      );
     }
-    if (!this.sourcesExpanded) {
-      this.knownSchemas = nextSchemas;
-      return;
-    }
-
-    const changedUris = new Set(state.change.sourceUris);
-    const changedSchemas = new Set(state.change.schemas);
-    for (const object of objects) {
-      if (changedUris.has(object.sourceUri)) changedSchemas.add(object.schema);
-    }
-    for (const item of this.visibleObjects.values()) {
-      if (changedUris.has(item.object.sourceUri)) changedSchemas.add(item.object.schema);
-    }
-
-    for (const schema of changedSchemas) {
-      if (this.materializedSchemas.has(schema)) {
-        this.emitUpdated(new SchemaItem(schema));
-      }
-    }
-    this.refreshVisibleObjectSnapshots(objects, state.result, changedUris);
-    this.knownSchemas = nextSchemas;
   }
 
   private refreshVisibleObjectSnapshots(
     objects: readonly WorkbenchObjectModel[],
     result: WorkbenchIndexResult,
     changedUris?: ReadonlySet<string>,
+    identity?: { serverId: string; database: string },
   ): void {
     const currentObjects = new Map(objects.map((object) => [object.sourceUri, object]));
     for (const [sourceUri, item] of this.visibleObjects) {
+      if (
+        identity &&
+        (item.object.serverId !== identity.serverId || item.object.database !== identity.database)
+      ) {
+        continue;
+      }
       const current = currentObjects.get(sourceUri);
       if (current) {
         this.emitUpdated(objectTreeItem(current, result));
@@ -1153,9 +1226,15 @@ export class WorkbenchTreeProvider
     }
   }
 
-  private forgetVisibleObjects(schema?: string): void {
+  private forgetVisibleObjects(schema?: string, server?: ServerConfig): void {
     for (const [sourceUri, item] of this.visibleObjects) {
       if (schema && item.object.schema !== schema) continue;
+      if (
+        server &&
+        (item.object.serverId !== server.id || item.object.database !== server.database)
+      ) {
+        continue;
+      }
       this.visibleObjects.delete(sourceUri);
       if (item.id) this.visibleItems.delete(item.id);
     }
@@ -1173,20 +1252,19 @@ export class WorkbenchTreeProvider
     synchronizeTreeItem(current, replacement);
     this.changeEmitter.fire(current);
   }
-
-  private indexedSchemaNames(): string[] {
-    const result = this.index.state.result;
-    return result
-      ? listWorkbenchSchemas(this.index.indexedSymbols, {
-          serverId: result.serverId,
-          database: result.database,
-        })
-      : [];
-  }
 }
 
-function sameStrings(left: readonly string[], right: readonly string[]): boolean {
-  return left.length === right.length && left.every((value, index) => value === right[index]);
+function treeDatabaseScope(serverId: string, database: string): string {
+  return `${serverId}\0${database}`;
+}
+
+function treeSchemaScope(serverId: string, database: string, schema: string): string {
+  return `${treeDatabaseScope(serverId, database)}\0${schema}`;
+}
+
+function schemaFromTreeScope(key: string, scope: string): string | undefined {
+  const prefix = `${scope}\0`;
+  return key.startsWith(prefix) ? key.slice(prefix.length) : undefined;
 }
 
 function synchronizeTreeItem(current: PlpgsqlTreeItem, replacement: PlpgsqlTreeItem): void {
@@ -1258,7 +1336,7 @@ function ddlSyncDescription(state: WorkbenchDdlSyncState): string {
     case "provisioning-required":
       return "provisioning required";
     case "listening":
-      return "active · listening";
+      return "listening";
     case "insufficient-privilege":
       return "insufficient privilege";
     case "unavailable":
