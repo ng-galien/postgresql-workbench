@@ -14,6 +14,11 @@ import {
   type DebugSessionStatus,
 } from "../src/debugger/launch/index.js";
 import { type CodeMonikerTestRuntime, startCodeMonikerTestRuntime } from "./codeMonikerRuntime.js";
+import {
+  DEBUG_DAP_EVENT_TIMEOUT_MS,
+  DEBUG_INTEGRATION_TEST_TIMEOUT_MS,
+  runPacedDebugAction,
+} from "./debugTestTiming.js";
 
 const DAP_SERVER = path.resolve(__dirname, "../dist/main.js");
 const LAUNCH_ARGS = {
@@ -56,7 +61,7 @@ async function stopDebugClient(client: DebugClient, timeout = 3_000): Promise<vo
 }
 
 async function launchAndWaitForEntry(dc: DebugClient, sql: string) {
-  const stopped = dc.waitForEvent("stopped", 15_000);
+  const stopped = dc.waitForEvent("stopped", DEBUG_DAP_EVENT_TIMEOUT_MS);
   await Promise.all([
     dc.launch(launchConfig(sql, { stopOnEntry: true })),
     dc.configurationSequence(),
@@ -100,7 +105,7 @@ async function waitForDebuggerBackendsToClose(): Promise<number> {
   return count;
 }
 
-describe("DAP human debug lifecycle", () => {
+describe("DAP human debug lifecycle", { timeout: DEBUG_INTEGRATION_TEST_TIMEOUT_MS }, () => {
   let dc: DebugClient;
   let outputs: string[];
   let terminatedCount: number;
@@ -109,7 +114,7 @@ describe("DAP human debug lifecycle", () => {
   beforeAll(async () => {
     codeMoniker = await startCodeMonikerTestRuntime();
     canonicalSourceUris = await codeMoniker.sourceUris(LAUNCH_ARGS);
-  }, 30_000);
+  }, DEBUG_INTEGRATION_TEST_TIMEOUT_MS);
 
   afterAll(async () => {
     await codeMoniker?.dispose();
@@ -120,7 +125,7 @@ describe("DAP human debug lifecycle", () => {
     dc = new DebugClient("node", DAP_SERVER, "plpgsql", {
       env: codeMoniker.dapEnvironment(),
     });
-    dc.defaultTimeout = 15_000;
+    dc.defaultTimeout = DEBUG_DAP_EVENT_TIMEOUT_MS;
     outputs = [];
     terminatedCount = 0;
     dc.on("output", (event) => outputs.push(String(event.body.output ?? "")));
@@ -133,150 +138,164 @@ describe("DAP human debug lifecycle", () => {
   afterEach(async () => {
     await stopDebugClient(dc);
     expect(await waitForDebuggerBackendsToClose()).toBe(0);
-  }, 15_000);
+  }, DEBUG_INTEGRATION_TEST_TIMEOUT_MS);
 
-  it("skips the recursive technical entry and reports every recursive line-breakpoint frame", async () => {
-    let stoppedCount = 0;
-    dc.on("stopped", () => {
-      stoppedCount++;
-    });
-    const oid = await routineOid("playground.fib(integer)");
-    const sourcePath = canonicalSourceUris[String(oid)];
-    expect(sourcePath).toMatch(/^code\+moniker:\/\//);
+  it(
+    "skips the recursive technical entry and reports every recursive line-breakpoint frame",
+    async () => {
+      let stoppedCount = 0;
+      dc.on("stopped", () => {
+        stoppedCount++;
+      });
+      const oid = await routineOid("playground.fib(integer)");
+      const sourcePath = canonicalSourceUris[String(oid)];
+      expect(sourcePath).toMatch(/^code\+moniker:\/\//);
 
-    const initialized = dc.waitForEvent("initialized", 15_000);
-    // VS Code uses zero-based editor lines in its DAP session. Prove that the
-    // adapter converts that client convention to PostgreSQL's one-based lines.
-    await dc.initializeRequest({
-      adapterID: "plpgsql",
-      linesStartAt1: false,
-      columnsStartAt1: false,
-      pathFormat: "path",
-    });
-    await initialized;
+      const initialized = dc.waitForEvent("initialized", DEBUG_DAP_EVENT_TIMEOUT_MS);
+      // VS Code uses zero-based editor lines in its DAP session. Prove that the
+      // adapter converts that client convention to PostgreSQL's one-based lines.
+      await dc.initializeRequest({
+        adapterID: "plpgsql",
+        linesStartAt1: false,
+        columnsStartAt1: false,
+        pathFormat: "path",
+      });
+      await initialized;
 
-    const pending = await dc.setBreakpointsRequest({
-      source: { path: sourcePath },
-      breakpoints: [{ line: 11 }],
-    });
-    expect(pending.body.breakpoints[0]?.verified).toBe(false);
+      const pending = await dc.setBreakpointsRequest({
+        source: { path: sourcePath },
+        breakpoints: [{ line: 11 }],
+      });
+      expect(pending.body.breakpoints[0]?.verified).toBe(false);
 
-    const changed = dc.waitForEvent("breakpoint", 15_000);
-    const breakpointStop = dc.waitForEvent("stopped", 15_000);
-    await dc.launchRequest(
-      launchConfig("SELECT playground.fib(5)", {
-        stopOnEntry: true,
-      }),
-    );
-    await dc.configurationDoneRequest();
+      const changed = dc.waitForEvent("breakpoint", DEBUG_DAP_EVENT_TIMEOUT_MS);
+      const breakpointStop = dc.waitForEvent("stopped", DEBUG_DAP_EVENT_TIMEOUT_MS);
+      await dc.launchRequest(
+        launchConfig("SELECT playground.fib(5)", {
+          stopOnEntry: true,
+        }),
+      );
+      await dc.configurationDoneRequest();
 
-    expect((await changed).body.breakpoint.verified).toBe(true);
-    let stopped = await breakpointStop;
-    const expectedReturns = [
-      { n: "2", result: "1" },
-      { n: "3", result: "2" },
-      { n: "2", result: "1" },
-      { n: "4", result: "3" },
-      { n: "2", result: "1" },
-      { n: "3", result: "2" },
-      { n: "5", result: "5" },
-    ];
-    const seenScopeReferences = new Set<number>();
-    const seenFrameIds = new Set<number>();
-    for (const expected of expectedReturns) {
-      expect(stopped.body.reason).toBe("breakpoint");
-      const stack = await dc.stackTraceRequest({ threadId: stopped.body.threadId });
-      expect(stack.body.stackFrames[0]?.line).toBe(11);
-      const frameId = stack.body.stackFrames[0].id;
-      expect(seenFrameIds.has(frameId)).toBe(false);
-      seenFrameIds.add(frameId);
-      const scopes = await dc.scopesRequest({ frameId });
-      const values = new Map<string, string>();
-      for (const scope of scopes.body.scopes) {
-        expect(seenScopeReferences.has(scope.variablesReference)).toBe(false);
-        seenScopeReferences.add(scope.variablesReference);
-        const variables = await dc.variablesRequest({
-          variablesReference: scope.variablesReference,
+      expect((await changed).body.breakpoint.verified).toBe(true);
+      let stopped = await breakpointStop;
+      const expectedReturns = [
+        { n: "2", result: "1" },
+        { n: "3", result: "2" },
+        { n: "2", result: "1" },
+        { n: "4", result: "3" },
+        { n: "2", result: "1" },
+        { n: "3", result: "2" },
+        { n: "5", result: "5" },
+      ];
+      const seenScopeReferences = new Set<number>();
+      const seenFrameIds = new Set<number>();
+      for (const expected of expectedReturns) {
+        expect(stopped.body.reason).toBe("breakpoint");
+        const stack = await dc.stackTraceRequest({ threadId: stopped.body.threadId });
+        expect(stack.body.stackFrames[0]?.line).toBe(11);
+        const frameId = stack.body.stackFrames[0].id;
+        expect(seenFrameIds.has(frameId)).toBe(false);
+        seenFrameIds.add(frameId);
+        const scopes = await dc.scopesRequest({ frameId });
+        const values = new Map<string, string>();
+        for (const scope of scopes.body.scopes) {
+          expect(seenScopeReferences.has(scope.variablesReference)).toBe(false);
+          seenScopeReferences.add(scope.variablesReference);
+          const variables = await dc.variablesRequest({
+            variablesReference: scope.variablesReference,
+          });
+          for (const { name, value } of variables.body.variables) values.set(name, value);
+        }
+        const evaluatedN = await dc.evaluateRequest({
+          context: "watch",
+          expression: "n",
+          frameId,
         });
-        for (const { name, value } of variables.body.variables) values.set(name, value);
+        const evaluatedResult = await dc.evaluateRequest({
+          context: "watch",
+          expression: "result",
+          frameId,
+        });
+        expect(values.get("n")).toBe(expected.n);
+        expect(values.get("result")).toBe(expected.result);
+        expect(evaluatedN.body.result).toBe(expected.n);
+        expect(evaluatedResult.body.result).toBe(expected.result);
+        if (expected !== expectedReturns.at(-1)) {
+          const nextStop = dc.waitForEvent("stopped", DEBUG_DAP_EVENT_TIMEOUT_MS);
+          await runPacedDebugAction(dc, () =>
+            dc.continueRequest({ threadId: stopped.body.threadId }),
+          );
+          stopped = await nextStop;
+        }
       }
-      const evaluatedN = await dc.evaluateRequest({
-        context: "watch",
-        expression: "n",
-        frameId,
+
+      expect(stoppedCount).toBe(expectedReturns.length);
+      const terminated = dc.waitForEvent("terminated", DEBUG_DAP_EVENT_TIMEOUT_MS);
+      await runPacedDebugAction(dc, () => dc.continueRequest({ threadId: stopped.body.threadId }));
+      await terminated;
+      await delay(100);
+      expect(stoppedCount).toBe(expectedReturns.length);
+      expect(terminatedCount).toBe(1);
+      expect(await waitForDebuggerBackendsToClose()).toBe(0);
+    },
+    DEBUG_INTEGRATION_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "reconciles repeated and replaced breakpoints without leaving stale server state",
+    async () => {
+      const entry = await launchAndWaitForEntry(dc, "SELECT test_increments()");
+      const stack = await dc.stackTraceRequest({ threadId: entry.body.threadId });
+      const sourcePath = stack.body.stackFrames[0]?.source?.path ?? "";
+
+      const first = await dc.setBreakpointsRequest({
+        source: { path: sourcePath },
+        breakpoints: [{ line: 10 }],
       });
-      const evaluatedResult = await dc.evaluateRequest({
-        context: "watch",
-        expression: "result",
-        frameId,
+      const repeated = await dc.setBreakpointsRequest({
+        source: { path: sourcePath },
+        breakpoints: [{ line: 10 }],
       });
-      expect(values.get("n")).toBe(expected.n);
-      expect(values.get("result")).toBe(expected.result);
-      expect(evaluatedN.body.result).toBe(expected.n);
-      expect(evaluatedResult.body.result).toBe(expected.result);
-      if (expected !== expectedReturns.at(-1)) {
-        const nextStop = dc.waitForEvent("stopped", 15_000);
-        await dc.continueRequest({ threadId: stopped.body.threadId });
-        stopped = await nextStop;
-      }
-    }
+      const replaced = await dc.setBreakpointsRequest({
+        source: { path: sourcePath },
+        breakpoints: [{ line: 11 }],
+      });
 
-    expect(stoppedCount).toBe(expectedReturns.length);
-    const terminated = dc.waitForEvent("terminated", 15_000);
-    await dc.continueRequest({ threadId: stopped.body.threadId });
-    await terminated;
-    await delay(100);
-    expect(stoppedCount).toBe(expectedReturns.length);
-    expect(terminatedCount).toBe(1);
-    expect(await waitForDebuggerBackendsToClose()).toBe(0);
-  }, 30_000);
+      expect(first.body.breakpoints[0]?.verified).toBe(true);
+      expect(repeated.body.breakpoints[0]?.verified).toBe(true);
+      expect(replaced.body.breakpoints[0]?.verified).toBe(true);
 
-  it("reconciles repeated and replaced breakpoints without leaving stale server state", async () => {
-    const entry = await launchAndWaitForEntry(dc, "SELECT test_increments()");
-    const stack = await dc.stackTraceRequest({ threadId: entry.body.threadId });
-    const sourcePath = stack.body.stackFrames[0]?.source?.path ?? "";
+      const stopped = dc.waitForEvent("stopped", DEBUG_DAP_EVENT_TIMEOUT_MS);
+      await runPacedDebugAction(dc, () => dc.continueRequest({ threadId: entry.body.threadId }));
+      expect((await stopped).body.reason).toBe("breakpoint");
 
-    const first = await dc.setBreakpointsRequest({
-      source: { path: sourcePath },
-      breakpoints: [{ line: 10 }],
-    });
-    const repeated = await dc.setBreakpointsRequest({
-      source: { path: sourcePath },
-      breakpoints: [{ line: 10 }],
-    });
-    const replaced = await dc.setBreakpointsRequest({
-      source: { path: sourcePath },
-      breakpoints: [{ line: 11 }],
-    });
+      const stoppedStack = await dc.stackTraceRequest({ threadId: entry.body.threadId });
+      expect(stoppedStack.body.stackFrames[0]?.line).toBe(11);
+    },
+    DEBUG_INTEGRATION_TEST_TIMEOUT_MS,
+  );
 
-    expect(first.body.breakpoints[0]?.verified).toBe(true);
-    expect(repeated.body.breakpoints[0]?.verified).toBe(true);
-    expect(replaced.body.breakpoints[0]?.verified).toBe(true);
+  it(
+    "accepts only one Continue and terminates exactly once when no breakpoint follows",
+    async () => {
+      const entry = await launchAndWaitForEntry(dc, "SELECT test_simple(1, 'continue')");
+      const terminated = dc.waitForEvent("terminated", DEBUG_DAP_EVENT_TIMEOUT_MS);
 
-    const stopped = dc.waitForEvent("stopped", 15_000);
-    await dc.continueRequest({ threadId: entry.body.threadId });
-    expect((await stopped).body.reason).toBe("breakpoint");
+      const responses = await Promise.allSettled([
+        dc.continueRequest({ threadId: entry.body.threadId }),
+        dc.continueRequest({ threadId: entry.body.threadId }),
+      ]);
+      await terminated;
+      await delay(100);
 
-    const stoppedStack = await dc.stackTraceRequest({ threadId: entry.body.threadId });
-    expect(stoppedStack.body.stackFrames[0]?.line).toBe(11);
-  }, 20_000);
-
-  it("accepts only one Continue and terminates exactly once when no breakpoint follows", async () => {
-    const entry = await launchAndWaitForEntry(dc, "SELECT test_simple(1, 'continue')");
-    const terminated = dc.waitForEvent("terminated", 15_000);
-
-    const responses = await Promise.allSettled([
-      dc.continueRequest({ threadId: entry.body.threadId }),
-      dc.continueRequest({ threadId: entry.body.threadId }),
-    ]);
-    await terminated;
-    await delay(100);
-
-    expect(responses.filter((result) => result.status === "fulfilled")).toHaveLength(1);
-    expect(responses.filter((result) => result.status === "rejected")).toHaveLength(1);
-    expect(terminatedCount).toBe(1);
-    expect(await waitForDebuggerBackendsToClose()).toBe(0);
-  }, 20_000);
+      expect(responses.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+      expect(responses.filter((result) => result.status === "rejected")).toHaveLength(1);
+      expect(terminatedCount).toBe(1);
+      expect(await waitForDebuggerBackendsToClose()).toBe(0);
+    },
+    DEBUG_INTEGRATION_TEST_TIMEOUT_MS,
+  );
 
   it("returns SQL output and fails promptly when the query never reaches the target", async () => {
     const structured = dc.waitForEvent(DEBUG_RESULT_EVENT, 10_000);
@@ -304,27 +323,31 @@ describe("DAP human debug lifecycle", () => {
     expect(await waitForDebuggerBackendsToClose()).toBe(0);
   });
 
-  it("publishes concise lifecycle information for a complete session", async () => {
-    const entry = await launchAndWaitForEntry(dc, "SELECT test_simple(2, 'status')");
-    const terminated = dc.waitForEvent("terminated", 15_000);
-    await dc.continueRequest({ threadId: entry.body.threadId });
-    await terminated;
+  it(
+    "publishes concise lifecycle information for a complete session",
+    async () => {
+      const entry = await launchAndWaitForEntry(dc, "SELECT test_simple(2, 'status')");
+      const terminated = dc.waitForEvent("terminated", DEBUG_DAP_EVENT_TIMEOUT_MS);
+      await runPacedDebugAction(dc, () => dc.continueRequest({ threadId: entry.body.threadId }));
+      await terminated;
 
-    const transcript = outputs.join("");
-    expect(transcript).toContain("Preparing PL/pgSQL debug session");
-    expect(transcript).toContain("Waiting for SELECT test_simple(2, 'status')");
-    expect(transcript).toMatch(/Attached to PostgreSQL backend \d+/);
-    expect(transcript).toContain("Execution completed");
-  }, 20_000);
+      const transcript = outputs.join("");
+      expect(transcript).toContain("Preparing PL/pgSQL debug session");
+      expect(transcript).toContain("Waiting for SELECT test_simple(2, 'status')");
+      expect(transcript).toMatch(/Attached to PostgreSQL backend \d+/);
+      expect(transcript).toContain("Execution completed");
+    },
+    DEBUG_INTEGRATION_TEST_TIMEOUT_MS,
+  );
 
   it("correlates adapter state and returns the CALL output row before termination", async () => {
     const statuses: DebugSessionStatus[] = [];
     dc.on(DEBUG_SESSION_STATUS_EVENT, (event) => statuses.push(event.body));
     const entry = await launchAndWaitForEntry(dc, "CALL test_proc(7)");
-    const result = dc.waitForEvent(DEBUG_RESULT_EVENT, 15_000);
-    const terminated = dc.waitForEvent("terminated", 15_000);
+    const result = dc.waitForEvent(DEBUG_RESULT_EVENT, DEBUG_DAP_EVENT_TIMEOUT_MS);
+    const terminated = dc.waitForEvent("terminated", DEBUG_DAP_EVENT_TIMEOUT_MS);
 
-    await dc.continueRequest({ threadId: entry.body.threadId });
+    await runPacedDebugAction(dc, () => dc.continueRequest({ threadId: entry.body.threadId }));
     const callResult = await result;
     await terminated;
 
@@ -366,8 +389,8 @@ describe("DAP human debug lifecycle", () => {
     dc.on(DEBUG_SESSION_STATUS_EVENT, (event) => statuses.push(event.body));
     const entry = await launchAndWaitForEntry(dc, "SELECT test_step_into(5)");
 
-    const nestedStop = dc.waitForEvent("stopped", 15_000);
-    await dc.stepInRequest({ threadId: entry.body.threadId });
+    const nestedStop = dc.waitForEvent("stopped", DEBUG_DAP_EVENT_TIMEOUT_MS);
+    await runPacedDebugAction(dc, () => dc.stepInRequest({ threadId: entry.body.threadId }));
     await nestedStop;
 
     const deadline = Date.now() + 5_000;

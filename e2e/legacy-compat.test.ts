@@ -10,6 +10,11 @@ import * as path from "node:path";
 import { DebugClient } from "@vscode/debugadapter-testsupport";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { type CodeMonikerTestRuntime, startCodeMonikerTestRuntime } from "./codeMonikerRuntime.js";
+import {
+  DEBUG_DAP_EVENT_TIMEOUT_MS,
+  DEBUG_INTEGRATION_TEST_TIMEOUT_MS,
+  runPacedDebugAction,
+} from "./debugTestTiming.js";
 
 const DAP_SERVER = path.resolve(__dirname, "../dist/main.js");
 const LAUNCH_ARGS = {
@@ -26,7 +31,7 @@ function delay(ms: number): Promise<void> {
 }
 
 async function launchAndWaitForStop(dc: DebugClient, sql: string) {
-  const stopped = dc.waitForEvent("stopped", 15_000);
+  const stopped = dc.waitForEvent("stopped", DEBUG_DAP_EVENT_TIMEOUT_MS);
   await Promise.all([
     dc.launch({ ...LAUNCH_ARGS, sourceUris: canonicalSourceUris, sql }),
     dc.configurationSequence(),
@@ -35,19 +40,21 @@ async function launchAndWaitForStop(dc: DebugClient, sql: string) {
 }
 
 async function runAndWaitForStop(dc: DebugClient, action: () => Promise<unknown>) {
-  const stopped = dc.waitForEvent("stopped", 15_000);
-  await action();
+  const stopped = dc.waitForEvent("stopped", DEBUG_DAP_EVENT_TIMEOUT_MS);
+  await runPacedDebugAction(dc, action);
   return stopped;
 }
 
-describe("DAP compatibility with upstream EnterpriseDB pldebugger", () => {
+describe("DAP compatibility with upstream EnterpriseDB pldebugger", {
+  timeout: DEBUG_INTEGRATION_TEST_TIMEOUT_MS,
+}, () => {
   let dc: DebugClient;
   let codeMoniker: CodeMonikerTestRuntime;
 
   beforeAll(async () => {
     codeMoniker = await startCodeMonikerTestRuntime();
     canonicalSourceUris = await codeMoniker.sourceUris(LAUNCH_ARGS);
-  }, 30_000);
+  }, DEBUG_INTEGRATION_TEST_TIMEOUT_MS);
 
   afterAll(async () => {
     await codeMoniker.dispose();
@@ -66,7 +73,7 @@ describe("DAP compatibility with upstream EnterpriseDB pldebugger", () => {
     } catch {
       // The session may already be closed.
     }
-  }, 10_000);
+  }, DEBUG_INTEGRATION_TEST_TIMEOUT_MS);
 
   it("keeps scalar argument and local inspection functional", async () => {
     const stopped = await launchAndWaitForStop(dc, "SELECT test_simple(41, 'legacy')");

@@ -1,8 +1,14 @@
 import { expect, type Frame, type Locator } from "@playwright/test";
+import { DEBUG_DAP_EVENT_TIMEOUT_MS, runPacedDebugAction } from "../../../e2e/debugTestTiming.js";
 import type { DebugStateSnapshot } from "../fixtures/vscode";
 import { currentPage, type PageProvider } from "./PageProvider";
 import { QuickInput } from "./QuickInput";
 import { WorkbenchTree } from "./WorkbenchTree";
+
+type DebugActionCommand =
+  | "workbench.action.debug.continue"
+  | "workbench.action.debug.stepInto"
+  | "workbench.action.debug.stepOver";
 
 export class DebuggerPage {
   private readonly quickInput: QuickInput;
@@ -13,10 +19,7 @@ export class DebuggerPage {
     private readonly openWorkspaceFile: (fileName: string) => Promise<void>,
     private readonly inspectDebugState: () => Promise<DebugStateSnapshot>,
     private readonly executeCommand: (
-      command:
-        | "workbench.action.debug.continue"
-        | "workbench.action.debug.stepInto"
-        | "workbench.action.debug.stepOver",
+      command: DebugActionCommand,
       timeout?: number,
     ) => Promise<void>,
   ) {
@@ -141,10 +144,10 @@ export class DebuggerPage {
 
   async continueToCompletion(expectedResult?: string): Promise<void> {
     await expect(this.debugToolbar()).toBeVisible({ timeout: 5_000 });
-    await this.executeCommand("workbench.action.debug.continue");
+    await this.runDebugAction("workbench.action.debug.continue");
     const results = await this.resultsFrame();
     await expect(results.locator(".badge.status-success")).toHaveText("Completed", {
-      timeout: 20_000,
+      timeout: DEBUG_DAP_EVENT_TIMEOUT_MS,
     });
     await expect(results.locator(".badge.status-pending")).toHaveCount(0, {
       timeout: 5_000,
@@ -177,11 +180,13 @@ export class DebuggerPage {
     expectedStopLine: string,
   ): Promise<void> {
     await expect(this.debugToolbar()).toBeVisible({ timeout: 5_000 });
-    await this.executeCommand("workbench.action.debug.continue");
-    await expect(this.page.getByRole("tab", { name: sourceTab })).toBeVisible({ timeout: 10_000 });
+    await this.runDebugAction("workbench.action.debug.continue");
+    await expect(this.page.getByRole("tab", { name: sourceTab })).toBeVisible({
+      timeout: DEBUG_DAP_EVENT_TIMEOUT_MS,
+    });
     await expect(
       this.activeEditor().locator(".view-line").filter({ hasText: routineSource }).first(),
-    ).toBeVisible({ timeout: 10_000 });
+    ).toBeVisible({ timeout: DEBUG_DAP_EVENT_TIMEOUT_MS });
     await this.expectStoppedAt(expectedStopLine);
   }
 
@@ -191,17 +196,19 @@ export class DebuggerPage {
     expectedStopLine: string,
   ): Promise<void> {
     await expect(this.debugToolbar()).toBeVisible({ timeout: 5_000 });
-    await this.executeCommand("workbench.action.debug.stepInto");
-    await expect(this.page.getByRole("tab", { name: sourceTab })).toBeVisible({ timeout: 10_000 });
+    await this.runDebugAction("workbench.action.debug.stepInto");
+    await expect(this.page.getByRole("tab", { name: sourceTab })).toBeVisible({
+      timeout: DEBUG_DAP_EVENT_TIMEOUT_MS,
+    });
     await expect(
       this.activeEditor().locator(".view-line").filter({ hasText: routineSource }).first(),
-    ).toBeVisible({ timeout: 10_000 });
+    ).toBeVisible({ timeout: DEBUG_DAP_EVENT_TIMEOUT_MS });
     await this.expectStoppedAt(expectedStopLine);
   }
 
   async stepOver(expectedStopLine: string): Promise<void> {
     await expect(this.debugToolbar()).toBeVisible({ timeout: 5_000 });
-    await this.executeCommand("workbench.action.debug.stepOver");
+    await this.runDebugAction("workbench.action.debug.stepOver");
     await this.expectStoppedAt(expectedStopLine);
   }
 
@@ -240,7 +247,7 @@ export class DebuggerPage {
       );
     }
     await expect(this.debugToolbar()).toBeVisible({ timeout: 5_000 });
-    await this.executeCommand("workbench.action.debug.continue");
+    await this.runDebugAction("workbench.action.debug.continue");
     await expect
       .poll(
         async () => {
@@ -250,7 +257,7 @@ export class DebuggerPage {
             : previousTimestamp;
         },
         {
-          timeout: 10_000,
+          timeout: DEBUG_DAP_EVENT_TIMEOUT_MS,
           message: "The debugger must publish a new suspended DAP status after Continue",
         },
       )
@@ -283,7 +290,7 @@ export class DebuggerPage {
           return variable ? (await variable.innerText()).replace(/\s+/gu, " ").trim() : undefined;
         },
         {
-          timeout: 5_000,
+          timeout: DEBUG_DAP_EVENT_TIMEOUT_MS,
           message: `${name} must be reprojected with value ${value} in ${scopeName}`,
         },
       )
@@ -313,7 +320,7 @@ export class DebuggerPage {
   private async expectStoppedAt(sourceLine: string): Promise<void> {
     const editor = this.activeEditor();
     const marker = editor.locator(".codicon-debug-stackframe").first();
-    await expect(marker).toBeVisible({ timeout: 10_000 });
+    await expect(marker).toBeVisible({ timeout: DEBUG_DAP_EVENT_TIMEOUT_MS });
     await expect
       .poll(
         async () => {
@@ -326,11 +333,19 @@ export class DebuggerPage {
           return Math.abs(lineBox.y + lineBox.height / 2 - (markerBox.y + markerBox.height / 2));
         },
         {
-          timeout: 10_000,
+          timeout: DEBUG_DAP_EVENT_TIMEOUT_MS,
           message: `The active stack-frame marker must settle on ${sourceLine}`,
         },
       )
       .toBeLessThan(4);
+  }
+
+  private async runDebugAction(command: DebugActionCommand): Promise<void> {
+    await runPacedDebugAction(
+      this,
+      () => this.executeCommand(command, DEBUG_DAP_EVENT_TIMEOUT_MS),
+      (milliseconds) => this.page.waitForTimeout(milliseconds),
+    );
   }
 
   private activeEditor(): Locator {
