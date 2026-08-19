@@ -66,6 +66,7 @@
     "@vscode/debugadapter-testsupport": "^1.68.0",
     "@xyflow/react": "^12.11.3",
     "esbuild": "^0.28.1",
+    "jszip": "^3.10.1",
     "lefthook": "^2.1.4",
     "marked": "^18.0.9",
     "pg-cursor": "^2.22.0",

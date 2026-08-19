@@ -72,6 +72,7 @@ jobs:
         run: npm run test:e2e:up
       - name: Run DAP integration tests
         run: npm run test:e2e:run
+        timeout-minutes: 20
       - name: Stop PostgreSQL integration fixture
         if: always()
         run: npm run test:e2e:down
@@ -90,10 +91,13 @@ jobs:
             package-lock.json
             vscode-extension/package-lock.json
       - run: sudo apt-get update
-      - run: sudo apt-get install -y xvfb
+        timeout-minutes: 5
+      - run: sudo apt-get install -y --no-install-recommends xvfb
+        timeout-minutes: 5
       - run: npm ci
       - run: npm --prefix vscode-extension ci
       - run: xvfb-run -a npm --prefix vscode-extension test
+        timeout-minutes: 15
       - name: Upload logs
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -108,7 +112,7 @@ jobs:
   vscode-compatibility:
     name: VS Code Compatibility
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
@@ -119,10 +123,13 @@ jobs:
             package-lock.json
             vscode-extension/package-lock.json
       - run: sudo apt-get update
-      - run: sudo apt-get install -y xvfb
+        timeout-minutes: 5
+      - run: sudo apt-get install -y --no-install-recommends xvfb
+        timeout-minutes: 5
       - run: npm ci
       - run: npm --prefix vscode-extension ci
       - run: xvfb-run -a npm --prefix vscode-extension run test:min-vscode
+        timeout-minutes: 15
 
   legacy-compatibility:
     name: EnterpriseDB pldebugger Compatibility
@@ -141,11 +148,12 @@ jobs:
       - run: npm --prefix vscode-extension ci
       - run: npm --prefix vscode-extension run stage:code-moniker
       - run: npm run test:e2e:legacy
+        timeout-minutes: 25
 
   workbench-bootstrap:
     name: Playwright Bootstrap
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 30
     env:
       PGWB_ACCEPTANCE_VSCODE_VERSION: "1.109.0"
       PGWB_PLAYWRIGHT_MINIMAL_DIAGNOSTICS: "1"
@@ -159,13 +167,16 @@ jobs:
             package-lock.json
             vscode-extension/package-lock.json
       - run: sudo apt-get update
-      - run: sudo apt-get install -y scrot xvfb
+        timeout-minutes: 5
+      - run: sudo apt-get install -y --no-install-recommends scrot xvfb
+        timeout-minutes: 5
       - run: npm ci
       - run: npm --prefix vscode-extension ci
       - name: Probe VS Code and extension bootstrap
         run: >-
           xvfb-run -a -s "-screen 0 1600x1000x24"
           bash scripts/test/run-playwright-ci.sh test:bootstrap
+        timeout-minutes: 15
       - name: Upload Playwright bootstrap evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -177,7 +188,7 @@ jobs:
   workbench-acceptance:
     name: Playwright
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 30
     env:
       PGWB_ACCEPTANCE_VSCODE_VERSION: "1.109.0"
       PGWB_PLAYWRIGHT_MINIMAL_DIAGNOSTICS: "1"
@@ -191,13 +202,16 @@ jobs:
             package-lock.json
             vscode-extension/package-lock.json
       - run: sudo apt-get update
-      - run: sudo apt-get install -y scrot xvfb
+        timeout-minutes: 5
+      - run: sudo apt-get install -y --no-install-recommends scrot xvfb
+        timeout-minutes: 5
       - run: npm ci
       - run: npm --prefix vscode-extension ci
       - name: Run Playwright Core lane
         run: >-
           xvfb-run -a -s "-screen 0 1600x1000x24"
           bash scripts/test/run-playwright-ci.sh test:acceptance:core
+        timeout-minutes: 20
       - name: Upload Playwright evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -212,7 +226,7 @@ jobs:
   workbench-index-lifecycle:
     name: Playwright Index lifecycle
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 30
     env:
       PGWB_ACCEPTANCE_VSCODE_VERSION: "1.109.0"
       PGWB_PLAYWRIGHT_MINIMAL_DIAGNOSTICS: "1"
@@ -226,13 +240,16 @@ jobs:
             package-lock.json
             vscode-extension/package-lock.json
       - run: sudo apt-get update
-      - run: sudo apt-get install -y scrot xvfb
+        timeout-minutes: 5
+      - run: sudo apt-get install -y --no-install-recommends scrot xvfb
+        timeout-minutes: 5
       - run: npm ci
       - run: npm --prefix vscode-extension ci
       - name: Run Playwright Index lifecycle lane
         run: >-
           xvfb-run -a -s "-screen 0 1600x1000x24"
           bash scripts/test/run-playwright-ci.sh test:acceptance:index-lifecycle
+        timeout-minutes: 15
       - name: Upload Playwright evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -247,7 +264,7 @@ jobs:
   workbench-schema-sync:
     name: Playwright Schema Sync
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 30
     env:
       PGWB_ACCEPTANCE_VSCODE_VERSION: "1.109.0"
       PGWB_PLAYWRIGHT_MINIMAL_DIAGNOSTICS: "1"
@@ -261,13 +278,16 @@ jobs:
             package-lock.json
             vscode-extension/package-lock.json
       - run: sudo apt-get update
-      - run: sudo apt-get install -y scrot xvfb
+        timeout-minutes: 5
+      - run: sudo apt-get install -y --no-install-recommends scrot xvfb
+        timeout-minutes: 5
       - run: npm ci
       - run: npm --prefix vscode-extension ci
       - name: Run Playwright Schema Sync lane
         run: >-
           xvfb-run -a -s "-screen 0 1600x1000x24"
           bash scripts/test/run-playwright-ci.sh test:acceptance:schema-sync
+        timeout-minutes: 15
       - name: Upload Playwright evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -282,7 +302,7 @@ jobs:
   package-dap:
     name: Smoke standalone DAP (${{ matrix.target }})
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 15
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -310,7 +330,7 @@ jobs:
   package-extension:
     name: Package extension (${{ matrix.target }})
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 15
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -340,14 +360,17 @@ jobs:
       - run: git diff --exit-code -- vscode-extension/THIRD_PARTY_NOTICES.md
       - name: Install Linux display server for VS Code smoke test
         if: runner.os == 'Linux'
+        timeout-minutes: 5
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb
+          sudo apt-get install -y --no-install-recommends xvfb
       - name: Smoke-test extension activation and Code Moniker on Linux
         if: runner.os == 'Linux'
+        timeout-minutes: 10
         run: xvfb-run -a npm --prefix vscode-extension run test:smoke
       - name: Smoke-test extension activation and Code Moniker
         if: runner.os != 'Linux'
+        timeout-minutes: 10
         run: npm --prefix vscode-extension run test:smoke
       - name: Generate validated artifact checksum
         run: npm --prefix vscode-extension run checksum:package
