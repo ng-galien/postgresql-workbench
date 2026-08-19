@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
 import { Client } from "pg";
 
-const repositoryRoot = resolve(__dirname, "../../..");
+const repositoryRoot = resolve(__dirname, "../../../..");
 const demoCompose = resolve(repositoryRoot, "docker", "demo", "compose.yml");
 
 export const demoConnectionUrl = "postgresql://postgres:postgres@localhost:5434/demo";

@@ -15,7 +15,7 @@ import type { ElectronApplication, Page } from "@playwright/test";
 import { _electron as electron } from "playwright";
 import { preparedAcceptanceVSCode } from "./vscodeDownload";
 
-const extensionRoot = resolve(__dirname, "../..");
+const extensionRoot = resolve(__dirname, "../../..");
 const workspace = resolve(extensionRoot, "tests", "workspace");
 const artifactsRoot = resolve(
   extensionRoot,

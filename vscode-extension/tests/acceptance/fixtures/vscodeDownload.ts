@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { downloadAndUnzipVSCode } from "@vscode/test-electron";
 
-const preparedRuntimeFile = resolve(__dirname, "../../test-results/acceptance-runtime.json");
+const preparedRuntimeFile = resolve(__dirname, "../../../test-results/acceptance-runtime.json");
 
 interface PreparedAcceptanceRuntime {
   executablePath: string;
