@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ServerConfig } from "../connection/savedConnections.js";
+import type { ServerConfig } from "../../connection/src/savedConnection.js";
 import {
   classifyWorkbenchDdlSyncFailure,
   resolveWorkbenchDdlSyncConfiguration,

@@ -1901,7 +1901,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
   context.subscriptions.push(cm);
   const workbenchIndex = new WorkbenchIndexController(context, cm, out);
   context.subscriptions.push(workbenchIndex);
-  const workbenchDdlSync = new WorkbenchDdlSyncController(cm, workbenchIndex, out);
+  // The listener is domain code: VS Code supplies the log and the Schema Sync settings.
+  const workbenchDdlSync = new WorkbenchDdlSyncController(cm, workbenchIndex, {
+    log: (message) => out.appendLine(message),
+    settings: () => {
+      const configuration = vscode.workspace.getConfiguration(
+        "postgresql-workbench.workbench.schemaSync",
+      );
+      return {
+        enabled: configuration.get<boolean>("enabled", false),
+        supportSchema: configuration.get<string>("supportSchema", "workbench"),
+      };
+    },
+    onSettingsChanged: (listener) =>
+      vscode.workspace.onDidChangeConfiguration((event) => {
+        if (event.affectsConfiguration("postgresql-workbench.workbench.schemaSync")) listener();
+      }),
+  });
   context.subscriptions.push(workbenchDdlSync);
   armAcceptanceIndexPhaseGate = (phases) => workbenchIndex.armAcceptancePhaseGate(phases);
   releaseAcceptanceIndexPhaseGate = (runId, phase) =>

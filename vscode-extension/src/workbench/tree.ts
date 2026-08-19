@@ -1,4 +1,8 @@
 import * as vscode from "vscode";
+import type {
+  WorkbenchDdlSyncController,
+  WorkbenchDdlSyncState,
+} from "../../../packages/catalog/src/ddlSync.js";
 import {
   buildWorkbenchObjects,
   buildWorkbenchTableMembers,
@@ -34,7 +38,6 @@ import {
   sqlNotebookDisplayName,
 } from "../scratchpad/index.js";
 import { postgresVisual } from "../sources/index.js";
-import type { WorkbenchDdlSyncController, WorkbenchDdlSyncState } from "./ddlSync.js";
 import type {
   WorkbenchIndexController,
   WorkbenchIndexResult,

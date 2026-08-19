@@ -1,5 +1,5 @@
 import { validateSupportSchema } from "../../../packages/catalog/src/postgresDdlSync.js";
-import type { ServerConfig } from "../connection/savedConnections.js";
+import type { ServerConfig } from "../../connection/src/savedConnection.js";
 
 export interface WorkbenchDdlSyncDefaults {
   enabled: boolean;

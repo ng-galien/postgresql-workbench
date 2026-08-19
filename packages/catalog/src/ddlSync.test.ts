@@ -1,36 +1,31 @@
 import type { Client } from "pg";
 import { describe, expect, it, vi } from "vitest";
-import type * as vscode from "vscode";
-import type { ConnectionChange, ConnectionManager, ServerConfig } from "../connection/index.js";
-import type { WorkbenchIndexController } from "./indexController.js";
 
-vi.mock("vscode", () => {
-  class EventEmitter<T> {
-    private readonly listeners = new Set<(value: T) => void>();
-    readonly event = (listener: (value: T) => void) => {
-      this.listeners.add(listener);
-      return { dispose: () => this.listeners.delete(listener) };
-    };
-    fire(value: T): void {
-      for (const listener of this.listeners) listener(value);
-    }
-    dispose(): void {
-      this.listeners.clear();
-    }
-  }
-
+/** The Schema Sync settings and log a test controller runs with. */
+function testHost() {
   return {
-    EventEmitter,
-    workspace: {
-      getConfiguration: () => ({
-        get: (_key: string, fallback: unknown) => fallback,
-      }),
-      onDidChangeConfiguration: () => ({ dispose: () => undefined }),
-    },
+    log: vi.fn(),
+    settings: () => ({ enabled: true, supportSchema: "workbench" }),
+    onSettingsChanged: () => ({ dispose: () => {} }),
   };
-});
+}
+import type {
+  ServerConfig,
+} from "../../connection/src/savedConnection.js";
 
-import { WorkbenchDdlSyncController } from "./ddlSync.js";
+
+import {
+  type DdlSyncConnections,
+  type DdlSyncIndex,
+  WorkbenchDdlSyncController,
+} from "./ddlSync.js";
+
+/** The change the Connections publish; only the two fields the listener reads. */
+type ConnectionChange = {
+  serverIds: readonly string[];
+  rootsChanged?: boolean;
+  debugCapabilityOnly?: boolean;
+};
 
 const SERVER: ServerConfig = {
   id: "local:5432/app:postgres",
@@ -150,9 +145,9 @@ describe("WorkbenchDdlSyncController", () => {
       },
     };
     const controller = new WorkbenchDdlSyncController(
-      connections as unknown as ConnectionManager,
-      indexStub().value as unknown as WorkbenchIndexController,
-      { appendLine: vi.fn() } as unknown as vscode.OutputChannel,
+      connections as unknown as DdlSyncConnections,
+      indexStub().value as unknown as DdlSyncIndex,
+      testHost(),
     );
     await drainMicrotasks();
     const beforeA = controller.diagnosticState(serverA.id).lifecycle.epoch;
@@ -182,9 +177,9 @@ describe("WorkbenchDdlSyncController", () => {
     const connections = connectionsWithClients([listener, refresh]);
     const index = indexStub();
     const controller = new WorkbenchDdlSyncController(
-      connections.value as unknown as ConnectionManager,
-      index.value as unknown as WorkbenchIndexController,
-      { appendLine: vi.fn() } as unknown as vscode.OutputChannel,
+      connections.value as unknown as DdlSyncConnections,
+      index.value as unknown as DdlSyncIndex,
+      testHost(),
     );
     try {
       await drainMicrotasks(50);
@@ -212,9 +207,9 @@ describe("WorkbenchDdlSyncController", () => {
     const connections = connectionsWithClients([listener]);
     const index = indexStub();
     const controller = new WorkbenchDdlSyncController(
-      connections.value as unknown as ConnectionManager,
-      index.value as unknown as WorkbenchIndexController,
-      { appendLine: vi.fn() } as unknown as vscode.OutputChannel,
+      connections.value as unknown as DdlSyncConnections,
+      index.value as unknown as DdlSyncIndex,
+      testHost(),
     );
 
     await vi.waitFor(() => expect(listener.end).toHaveBeenCalledOnce());
@@ -239,7 +234,7 @@ describe("WorkbenchDdlSyncController", () => {
       store: { get: (serverId: string) => (serverId === SERVER.id ? SERVER : undefined) },
       onChanged(
         callback: (change: { serverIds: string[]; rootsChanged: boolean }) => void,
-      ): vscode.Disposable {
+      ) {
         connectionListeners.add(callback);
         return { dispose: () => connectionListeners.delete(callback) };
       },
@@ -265,9 +260,9 @@ describe("WorkbenchDdlSyncController", () => {
     };
     const appendLine = vi.fn();
     const controller = new WorkbenchDdlSyncController(
-      connections as unknown as ConnectionManager,
-      index as unknown as WorkbenchIndexController,
-      { appendLine } as unknown as vscode.OutputChannel,
+      connections as unknown as DdlSyncConnections,
+      index as unknown as DdlSyncIndex,
+      { ...testHost(), log: appendLine },
     );
 
     await vi.waitFor(() => expect(controller.state(SERVER.id).status).toBe("listening"));
@@ -342,7 +337,7 @@ describe("WorkbenchDdlSyncController", () => {
       store: { get: (serverId: string) => (serverId === server.id ? server : undefined) },
       onChanged(
         callback: (change: { serverIds: string[]; rootsChanged: boolean }) => void,
-      ): vscode.Disposable {
+      ) {
         connectionListeners.add(callback);
         return { dispose: () => connectionListeners.delete(callback) };
       },
@@ -350,9 +345,9 @@ describe("WorkbenchDdlSyncController", () => {
     };
     const index = indexStub();
     const controller = new WorkbenchDdlSyncController(
-      connections as unknown as ConnectionManager,
-      index.value as unknown as WorkbenchIndexController,
-      { appendLine: vi.fn() } as unknown as vscode.OutputChannel,
+      connections as unknown as DdlSyncConnections,
+      index.value as unknown as DdlSyncIndex,
+      testHost(),
     );
     await vi.waitFor(() => expect(controller.state(SERVER.id).status).toBe("listening"));
 
@@ -402,7 +397,7 @@ describe("WorkbenchDdlSyncController", () => {
       store: { get: (serverId: string) => (serverId === server.id ? server : undefined) },
       onChanged(
         callback: (change: { serverIds: string[]; rootsChanged: boolean }) => void,
-      ): vscode.Disposable {
+      ) {
         connectionListeners.add(callback);
         return { dispose: () => connectionListeners.delete(callback) };
       },
@@ -411,9 +406,9 @@ describe("WorkbenchDdlSyncController", () => {
     };
     const index = indexStub();
     const controller = new WorkbenchDdlSyncController(
-      connections as unknown as ConnectionManager,
-      index.value as unknown as WorkbenchIndexController,
-      { appendLine: vi.fn() } as unknown as vscode.OutputChannel,
+      connections as unknown as DdlSyncConnections,
+      index.value as unknown as DdlSyncIndex,
+      testHost(),
     );
     await vi.waitFor(() => expect(controller.state(SERVER.id).status).toBe("listening"));
 
@@ -468,7 +463,7 @@ describe("WorkbenchDdlSyncController", () => {
       store: { get: (serverId: string) => (serverId === server.id ? server : undefined) },
       onChanged(
         callback: (change: { serverIds: string[]; rootsChanged: boolean }) => void,
-      ): vscode.Disposable {
+      ) {
         connectionListeners.add(callback);
         return { dispose: () => connectionListeners.delete(callback) };
       },
@@ -477,9 +472,9 @@ describe("WorkbenchDdlSyncController", () => {
     };
     const index = indexStub();
     const controller = new WorkbenchDdlSyncController(
-      connections as unknown as ConnectionManager,
-      index.value as unknown as WorkbenchIndexController,
-      { appendLine: vi.fn() } as unknown as vscode.OutputChannel,
+      connections as unknown as DdlSyncConnections,
+      index.value as unknown as DdlSyncIndex,
+      testHost(),
     );
     await firstListener.listenStarted.promise;
 
@@ -532,9 +527,9 @@ describe("WorkbenchDdlSyncController", () => {
       synchronizeDatabaseDdl: synchronize,
     };
     const controller = new WorkbenchDdlSyncController(
-      connections.value as unknown as ConnectionManager,
-      index as unknown as WorkbenchIndexController,
-      { appendLine: vi.fn() } as unknown as vscode.OutputChannel,
+      connections.value as unknown as DdlSyncConnections,
+      index as unknown as DdlSyncIndex,
+      testHost(),
     );
     await vi.waitFor(() => expect(controller.state(SERVER.id).status).toBe("listening"));
 
@@ -592,9 +587,9 @@ describe("WorkbenchDdlSyncController", () => {
       synchronizeDatabaseDdl: synchronize,
     };
     const controller = new WorkbenchDdlSyncController(
-      connections.value as unknown as ConnectionManager,
-      index as unknown as WorkbenchIndexController,
-      { appendLine: vi.fn() } as unknown as vscode.OutputChannel,
+      connections.value as unknown as DdlSyncConnections,
+      index as unknown as DdlSyncIndex,
+      testHost(),
     );
     await vi.waitFor(() => expect(controller.state(SERVER.id).status).toBe("listening"));
 
@@ -673,9 +668,9 @@ describe("WorkbenchDdlSyncController", () => {
       synchronizeDatabaseDdl: synchronize,
     };
     const controller = new WorkbenchDdlSyncController(
-      connections as unknown as ConnectionManager,
-      index as unknown as WorkbenchIndexController,
-      { appendLine: vi.fn() } as unknown as vscode.OutputChannel,
+      connections as unknown as DdlSyncConnections,
+      index as unknown as DdlSyncIndex,
+      testHost(),
     );
     await vi.waitFor(() => expect(controller.state(SERVER.id).status).toBe("listening"));
 
@@ -718,7 +713,7 @@ describe("WorkbenchDdlSyncController", () => {
       store: { get: (serverId: string) => (serverId === server.id ? server : undefined) },
       onChanged(
         callback: (change: { serverIds: string[]; rootsChanged: boolean }) => void,
-      ): vscode.Disposable {
+      ) {
         connectionListeners.add(callback);
         return { dispose: () => connectionListeners.delete(callback) };
       },
@@ -726,9 +721,9 @@ describe("WorkbenchDdlSyncController", () => {
     };
     const index = indexStub();
     const controller = new WorkbenchDdlSyncController(
-      connections as unknown as ConnectionManager,
-      index.value as unknown as WorkbenchIndexController,
-      { appendLine: vi.fn() } as unknown as vscode.OutputChannel,
+      connections as unknown as DdlSyncConnections,
+      index.value as unknown as DdlSyncIndex,
+      testHost(),
     );
     for (const changed of connectionListeners)
       changed({ serverIds: [SERVER.id], rootsChanged: false });
@@ -761,9 +756,9 @@ describe("WorkbenchDdlSyncController", () => {
     ]);
     const firstIndex = indexStub();
     const first = new WorkbenchDdlSyncController(
-      firstConnections.value as unknown as ConnectionManager,
-      firstIndex.value as unknown as WorkbenchIndexController,
-      { appendLine: vi.fn() } as unknown as vscode.OutputChannel,
+      firstConnections.value as unknown as DdlSyncConnections,
+      firstIndex.value as unknown as DdlSyncIndex,
+      testHost(),
     );
     await vi.waitFor(() => expect(first.state(SERVER.id).status).toBe("provisioning-required"));
     expect(firstIndex.markDatabaseStale).toHaveBeenCalledWith(
@@ -784,9 +779,9 @@ describe("WorkbenchDdlSyncController", () => {
     const secondConnections = connectionsWithClients([listener, removal]);
     const secondIndex = indexStub();
     const second = new WorkbenchDdlSyncController(
-      secondConnections.value as unknown as ConnectionManager,
-      secondIndex.value as unknown as WorkbenchIndexController,
-      { appendLine: vi.fn() } as unknown as vscode.OutputChannel,
+      secondConnections.value as unknown as DdlSyncConnections,
+      secondIndex.value as unknown as DdlSyncIndex,
+      testHost(),
     );
     await vi.waitFor(() => expect(second.state(SERVER.id).status).toBe("listening"));
 
@@ -821,7 +816,7 @@ describe("WorkbenchDdlSyncController", () => {
       store: { get: (serverId: string) => (serverId === SERVER.id ? server : undefined) },
       onChanged(
         callback: (change: { serverIds: string[]; rootsChanged: boolean }) => void,
-      ): vscode.Disposable {
+      ) {
         connectionListeners.add(callback);
         return { dispose: () => connectionListeners.delete(callback) };
       },
@@ -829,9 +824,9 @@ describe("WorkbenchDdlSyncController", () => {
     };
     const index = indexStub();
     const controller = new WorkbenchDdlSyncController(
-      connections as unknown as ConnectionManager,
-      index.value as unknown as WorkbenchIndexController,
-      { appendLine: vi.fn() } as unknown as vscode.OutputChannel,
+      connections as unknown as DdlSyncConnections,
+      index.value as unknown as DdlSyncIndex,
+      testHost(),
     );
 
     await vi.waitFor(() =>
@@ -890,7 +885,7 @@ describe("WorkbenchDdlSyncController", () => {
       store: { get: (serverId: string) => (serverId === SERVER.id ? server : undefined) },
       onChanged(
         callback: (change: { serverIds: string[]; rootsChanged: boolean }) => void,
-      ): vscode.Disposable {
+      ) {
         connectionListeners.add(callback);
         return { dispose: () => connectionListeners.delete(callback) };
       },
@@ -898,9 +893,9 @@ describe("WorkbenchDdlSyncController", () => {
     };
     const index = indexStub();
     const controller = new WorkbenchDdlSyncController(
-      connections as unknown as ConnectionManager,
-      index.value as unknown as WorkbenchIndexController,
-      { appendLine: vi.fn() } as unknown as vscode.OutputChannel,
+      connections as unknown as DdlSyncConnections,
+      index.value as unknown as DdlSyncIndex,
+      testHost(),
     );
 
     await vi.waitFor(() => expect(controller.state(SERVER.id).status).toBe("listening"));
@@ -960,7 +955,7 @@ describe("WorkbenchDdlSyncController", () => {
       store: { get: (serverId: string) => (serverId === SERVER.id ? server : undefined) },
       onChanged(
         callback: (change: { serverIds: string[]; rootsChanged: boolean }) => void,
-      ): vscode.Disposable {
+      ) {
         connectionListeners.add(callback);
         return { dispose: () => connectionListeners.delete(callback) };
       },
@@ -969,9 +964,9 @@ describe("WorkbenchDdlSyncController", () => {
     };
     const index = indexStub();
     const controller = new WorkbenchDdlSyncController(
-      connections as unknown as ConnectionManager,
-      index.value as unknown as WorkbenchIndexController,
-      { appendLine: vi.fn() } as unknown as vscode.OutputChannel,
+      connections as unknown as DdlSyncConnections,
+      index.value as unknown as DdlSyncIndex,
+      testHost(),
     );
     await vi.waitFor(() => expect(controller.state(SERVER.id).status).toBe("disabled"));
 
@@ -1021,7 +1016,7 @@ function connectionsWithClients(clients: FakeClient[]) {
       store: { get: (serverId: string) => (serverId === SERVER.id ? SERVER : undefined) },
       onChanged(
         callback: (change: { serverIds: string[]; rootsChanged: boolean }) => void,
-      ): vscode.Disposable {
+      ) {
         connectionListeners.add(callback);
         return { dispose: () => connectionListeners.delete(callback) };
       },

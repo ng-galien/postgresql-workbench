@@ -8,6 +8,7 @@
  * them. Nothing else under `workbench/` may be imported from outside.
  */
 
+export { WorkbenchDdlSyncController } from "../../../packages/catalog/src/ddlSync.js";
 export {
   buildWorkbenchObjects,
   buildWorkbenchTableMembers,
@@ -16,7 +17,6 @@ export {
   type WorkbenchObjectModel,
   workbenchObjectFromSymbol,
 } from "../../../packages/catalog/src/objectModel.js";
-export { WorkbenchDdlSyncController } from "./ddlSync.js";
 export {
   WorkbenchIndexController,
   type WorkbenchIndexPhase,

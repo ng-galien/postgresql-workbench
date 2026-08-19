@@ -1,53 +1,21 @@
 import type * as vscode from "vscode";
 
-/**
- * A saved server entry (no password — stored separately in secrets).
- */
-export type SslMode = "disable" | "prefer" | "require";
+export {
+  getConnectionName,
+  getConnectionUrl,
+  getCustomConnectionName,
+  type ServerConfig,
+  type SslMode,
+  sameConnectionIdentity,
+} from "../../../packages/connection/src/savedConnection.js";
 
-export interface ServerConfig {
-  /** Unique key: "host:port/database:user" */
-  id: string;
-  /** Optional unique user-facing name. The canonical URL is used when absent. */
-  name?: string;
-  host: string;
-  port: number;
-  database: string;
-  user: string;
-  ssl?: SslMode;
-  /** Optional per-Connexion overrides for Workbench schema synchronization. */
-  schemaSync?: {
-    enabled?: boolean;
-    supportSchema?: string;
-  };
-}
-
-type ConnectionUrlIdentity = Pick<ServerConfig, "host" | "port" | "database" | "user">;
-
-export function getConnectionUrl(server: ConnectionUrlIdentity): string {
-  return `${server.user}@${server.host}:${server.port}/${server.database}`;
-}
-
-export function getCustomConnectionName(server: ServerConfig): string | undefined {
-  const name = server.name?.trim();
-  return name && name !== getConnectionUrl(server) ? name : undefined;
-}
-
-export function getConnectionName(server: ServerConfig): string {
-  return getCustomConnectionName(server) ?? getConnectionUrl(server);
-}
-
-export function sameConnectionIdentity(
-  left: Pick<ServerConfig, "host" | "port" | "database" | "user">,
-  right: Pick<ServerConfig, "host" | "port" | "database" | "user">,
-): boolean {
-  return (
-    left.host === right.host &&
-    left.port === right.port &&
-    left.database === right.database &&
-    left.user === right.user
-  );
-}
+import {
+  getConnectionName,
+  getConnectionUrl,
+  getCustomConnectionName,
+  type ServerConfig,
+  sameConnectionIdentity,
+} from "../../../packages/connection/src/savedConnection.js";
 
 const SERVERS_KEY = "postgresql-workbench.servers";
 const PASSWORD_PREFIX = "postgresql-workbench.pw.";
