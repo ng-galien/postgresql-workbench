@@ -68,7 +68,8 @@ function inferType(value: unknown): string {
   return "record";
 }
 
-interface LaunchRequestArguments extends DebugProtocol.LaunchRequestArguments {
+/** What a `launch` request carries for this adapter, beyond the fields the protocol declares. */
+export interface LaunchRequestArguments extends DebugProtocol.LaunchRequestArguments {
   name?: string;
   host: string;
   port: number;

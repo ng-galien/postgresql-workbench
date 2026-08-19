@@ -8,6 +8,7 @@ import * as path from "node:path";
 import { DebugClient } from "@vscode/debugadapter-testsupport";
 import { Client } from "pg";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import type { LaunchRequestArguments } from "../packages/dap/src/debugger/index.js";
 import {
   DEBUG_RESULT_EVENT,
   DEBUG_SESSION_STATUS_EVENT,
@@ -30,7 +31,10 @@ const LAUNCH_ARGS = {
 };
 let canonicalSourceUris: Record<string, string> = {};
 
-function launchConfig(sql: string, extra: Record<string, unknown> = {}) {
+function launchConfig(
+  sql: string,
+  extra: Partial<LaunchRequestArguments> = {},
+): LaunchRequestArguments {
   return { ...LAUNCH_ARGS, sourceUris: canonicalSourceUris, sql, ...extra };
 }
 
