@@ -67,9 +67,9 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
   const [localSort, setLocalSort] = useState<ResultSort>();
   const [activeCell, setActiveCell] = useState<{ row: number; ordinal: number }>();
   /** The one cell the grid keeps reachable with a single Tab; arrows move it. */
-  const [focusCell, setFocusCell] = useState<{ row: number; column: number }>({
+  const [focusCell, setFocusCell] = useState<{ row: number; ordinal: number }>({
     row: 0,
-    column: 0,
+    ordinal: 0,
   });
   const [menu, setMenu] = useState<{ ordinal: number; x: number; y: number }>();
   const [dragOver, setDragOver] = useState<number>();
@@ -105,6 +105,12 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
   const scrollerId = useId();
   const detailId = useId();
   const inspect = (cell: DebugResultCell) => setDetail(formattedCellValue(cell));
+  /** Acting on a cell: edit it when its policy allows, otherwise show what it holds. */
+  const activate = (rowIndex: number, ordinal: number, cell: DebugResultCell) => {
+    const policy = editing?.policies[ordinal];
+    if (policy?.editable && !cell.truncated) setActiveCell({ row: rowIndex, ordinal });
+    else inspect(cell);
+  };
   const columns = keyedValues(
     payload.columns,
     (column) => `${column.name}:${column.dataTypeId}:${column.typeName ?? ""}`,
@@ -136,38 +142,44 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
   const scrollbar = resultScrollbarGeometry(scrollMetrics, scrollTop);
 
   const gridRef = useRef<HTMLTableElement>(null);
-  // Arrows walk the visible columns, so a hidden one is never a dead stop.
-  const moveFocus = (rowDelta: number, columnDelta: number, absolute?: "row" | "column") => {
-    setFocusCell((current) => {
-      const row =
-        absolute === "row"
-          ? rowDelta
-          : Math.min(Math.max(current.row + rowDelta, 0), Math.max(rows.length - 1, 0));
-      const column =
-        absolute === "column"
-          ? columnDelta
-          : Math.min(Math.max(current.column + columnDelta, 0), Math.max(columns.length - 1, 0));
-      const element = scroller.current;
-      if (element) {
-        // The rows are virtualised: bring the target into the window before asking for its focus.
-        const top = row * RESULT_ROW_HEIGHT;
-        const viewport = element.clientHeight || RESULT_VIEWPORT_HEIGHT;
-        if (top < element.scrollTop) element.scrollTop = top;
-        else if (top + RESULT_ROW_HEIGHT > element.scrollTop + viewport) {
-          element.scrollTop = top + RESULT_ROW_HEIGHT - viewport;
-        }
-      }
-      return { row, column };
+  // Focus is keyed by ordinal, like every other position in this grid, so a hidden column never
+  // shifts it. Clamping on read means nothing has to reset it when the result changes.
+  const focus = {
+    row: Math.min(focusCell.row, Math.max(rows.length - 1, 0)),
+    ordinal: columns.some(({ ordinal }) => ordinal === focusCell.ordinal)
+      ? focusCell.ordinal
+      : (columns[0]?.ordinal ?? 0),
+  };
+  const moveTo = (next: { row: number; ordinal: number }) => {
+    if (next.row === focus.row && next.ordinal === focus.ordinal) return;
+    setFocusCell(next);
+  };
+  const step = (rowDelta: number, columnDelta: number) => {
+    const index = columns.findIndex(({ ordinal }) => ordinal === focus.ordinal);
+    const column = Math.min(Math.max(index + columnDelta, 0), Math.max(columns.length - 1, 0));
+    moveTo({
+      row: Math.min(Math.max(focus.row + rowDelta, 0), Math.max(rows.length - 1, 0)),
+      ordinal: columns[column]?.ordinal ?? focus.ordinal,
     });
   };
 
-  // Focus follows the window: a row that was not rendered yet gets it once it is.
+  // The rows are virtualised, so a focus that left the window scrolls it back into view and takes
+  // the cell once it exists. Both belong in an effect: a state updater may run more than once.
   useEffect(() => {
+    const element = scroller.current;
+    if (element) {
+      const top = focus.row * RESULT_ROW_HEIGHT;
+      const viewport = element.clientHeight || RESULT_VIEWPORT_HEIGHT;
+      if (top < element.scrollTop) element.scrollTop = top;
+      else if (top + RESULT_ROW_HEIGHT > element.scrollTop + viewport) {
+        element.scrollTop = top + RESULT_ROW_HEIGHT - viewport;
+      }
+    }
     const cell = gridRef.current?.querySelector<HTMLElement>(
-      `td[data-row="${focusCell.row}"][data-column="${focusCell.column}"]`,
+      `td[data-row="${focus.row}"][data-column="${focus.ordinal}"]`,
     );
     if (cell && gridRef.current?.contains(document.activeElement)) cell.focus();
-  }, [focusCell]);
+  }, [focus.row, focus.ordinal]);
 
   useEffect(() => {
     if (!scrollResetKey) return;
@@ -279,33 +291,42 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
             aria-colcount={columns.length}
             className={editing ? "editable" : undefined}
             onKeyDown={(event) => {
-              const handled: Record<string, () => void> = {
-                ArrowRight: () => moveFocus(0, 1),
-                ArrowLeft: () => moveFocus(0, -1),
-                ArrowDown: () => moveFocus(1, 0),
-                ArrowUp: () => moveFocus(-1, 0),
-                Home: () => moveFocus(0, 0, "column"),
-                End: () => moveFocus(0, columns.length - 1, "column"),
-                PageDown: () => moveFocus(Math.floor(viewportHeight / RESULT_ROW_HEIGHT), 0),
-                PageUp: () => moveFocus(-Math.floor(viewportHeight / RESULT_ROW_HEIGHT), 0),
-              };
-              const move = handled[event.key];
-              if (move) {
-                event.preventDefault();
-                move();
-                return;
+              const page = Math.floor(viewportHeight / RESULT_ROW_HEIGHT);
+              switch (event.key) {
+                case "ArrowRight":
+                  step(0, 1);
+                  break;
+                case "ArrowLeft":
+                  step(0, -1);
+                  break;
+                case "ArrowDown":
+                  step(1, 0);
+                  break;
+                case "ArrowUp":
+                  step(-1, 0);
+                  break;
+                case "Home":
+                  moveTo({ row: focus.row, ordinal: columns[0]?.ordinal ?? focus.ordinal });
+                  break;
+                case "End":
+                  moveTo({ row: focus.row, ordinal: columns.at(-1)?.ordinal ?? focus.ordinal });
+                  break;
+                case "PageDown":
+                  step(page, 0);
+                  break;
+                case "PageUp":
+                  step(-page, 0);
+                  break;
+                case "Enter":
+                case " ": {
+                  const cell = rows[focus.row]?.[focus.ordinal];
+                  if (cell) activate(focus.row, focus.ordinal, cell);
+                  break;
+                }
+                default:
+                  return;
               }
-              if (event.key !== "Enter" && event.key !== " ") return;
-              const ordinal = columns[focusCell.column]?.ordinal;
-              const cell = ordinal === undefined ? undefined : rows[focusCell.row]?.[ordinal];
-              if (!cell) return;
-              const policy = ordinal === undefined ? undefined : editing?.policies[ordinal];
               event.preventDefault();
-              if (policy?.editable && !cell.truncated) {
-                setActiveCell({ row: focusCell.row, ordinal });
-              } else {
-                inspect(cell);
-              }
             }}
             style={{
               width: `${columns.reduce((total, { ordinal }) => total + (widths[ordinal] ?? 12), 0)}ch`,
@@ -419,7 +440,7 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
                   <tr key={rowIndex} aria-rowindex={rowIndex + 2}>
                     {keyedValues(row, (cell) => `${cell.kind}:${cell.value ?? "NULL"}`)
                       .filter(({ ordinal }) => isVisible(ordinal))
-                      .map(({ key: cellKey, ordinal, value: cell }, columnIndex) => {
+                      .map(({ key: cellKey, ordinal, value: cell }) => {
                         const edit = editing?.editFor(row, rowIndex, ordinal);
                         const shown = edit ? edit.value : cell.value;
                         const value = shown === null ? "NULL" : shown;
@@ -429,15 +450,14 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
                         const policy = editing?.policies[ordinal];
                         const isActive =
                           activeCell?.row === rowIndex && activeCell.ordinal === ordinal;
-                        const isFocused =
-                          focusCell.row === rowIndex && focusCell.column === columnIndex;
+                        const isFocused = focus.row === rowIndex && focus.ordinal === ordinal;
                         return (
                           <td
                             key={cellKey}
                             tabIndex={isFocused ? 0 : -1}
                             data-row={rowIndex}
-                            data-column={columnIndex}
-                            onFocus={() => setFocusCell({ row: rowIndex, column: columnIndex })}
+                            data-column={ordinal}
+                            onFocus={() => moveTo({ row: rowIndex, ordinal })}
                             className={[
                               shown === null ? "null" : cell.kind === "null" ? "text" : cell.kind,
                               cell.truncated ? "truncated" : "",
@@ -455,11 +475,7 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
                                   : undefined
                             }
                             onDoubleClick={() => {
-                              if (policy?.editable && !cell.truncated) {
-                                setActiveCell({ row: rowIndex, ordinal });
-                              } else if (editing) {
-                                inspect(cell);
-                              }
+                              if (editing) activate(rowIndex, ordinal, cell);
                             }}
                           >
                             {isActive && policy?.editable && editing ? (

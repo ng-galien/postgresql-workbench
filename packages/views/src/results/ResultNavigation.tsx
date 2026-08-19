@@ -1,77 +1,54 @@
+import type { ReactNode } from "react";
 import {
   canNavigate,
   type ResultNavigationCommand,
   type ResultNavigationState,
 } from "../../../rows/src/navigation.js";
-import type { ResultTable } from "../../../rows/src/resultPayload.js";
 import { IconButton } from "./IconButton.js";
 
 /**
  * Moving through a bounded result: the page before, the page after, every remaining row, and the
  * stop that abandons a load. One control for every surface that reads rows through a cursor, so a
- * rule fixed once is fixed everywhere.
+ * rule fixed once is fixed everywhere. What a surface shows between the pages — a row count, a
+ * truncation mark — it composes as children.
  */
 export function ResultNavigation({
-  payload,
   state,
-  summary,
+  children,
   onAction,
-  disabled,
 }: {
-  payload: ResultTable | undefined;
   state: ResultNavigationState;
-  /** How the surface counts its rows, shown between the pages. */
-  summary?: React.ReactNode;
+  children?: ReactNode;
   onAction: (action: ResultNavigationCommand) => void;
-  /** The surface is busy with something else entirely, such as applying edits. */
-  disabled?: boolean;
 }) {
   if (!state.navigation) return null;
-  const offer = (action: ResultNavigationCommand) => disabled || !canNavigate(action, state);
   return (
     <div className="result-navigation">
       <IconButton
         icon="chevron-left"
         label="Previous page"
-        disabled={offer("previous")}
+        disabled={!canNavigate("previous", state)}
         onClick={() => onAction("previous")}
       />
-      {summary === undefined ? null : (
-        <span className="result-navigation-summary" title={truncationTitle(payload)}>
-          {summary}
-          {payload?.truncated ? (
-            <span className="codicon codicon-warning" title="Preview truncated" />
-          ) : null}
-          {state.closed ? (
-            <span
-              className="codicon codicon-debug-disconnect"
-              title="Cursor closed; refresh to load again"
-            />
-          ) : null}
-        </span>
-      )}
+      {children}
       <IconButton
         icon="chevron-right"
         label="Next page"
-        disabled={offer("next")}
+        disabled={!canNavigate("next", state)}
         onClick={() => onAction("next")}
       />
       <IconButton
         icon="cloud-download"
         label="Load every remaining row (may use significant memory)"
-        disabled={offer("load-all")}
+        disabled={!canNavigate("load-all", state)}
         onClick={() => onAction("load-all")}
       />
       <IconButton
         icon="stop-circle"
         label="Cancel loading"
-        disabled={offer("cancel")}
+        disabled={!canNavigate("cancel", state)}
         onClick={() => onAction("cancel")}
       />
     </div>
   );
-}
-
-function truncationTitle(payload: ResultTable | undefined): string | undefined {
-  return payload?.truncated ? payload.truncationReasons.join(", ") : undefined;
 }

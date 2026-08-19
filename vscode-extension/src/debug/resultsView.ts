@@ -1,16 +1,14 @@
 import { randomBytes } from "node:crypto";
 import * as vscode from "vscode";
-import type { DebugResultStore } from "../../../packages/dap/src/debugger/launch/capturedResults.js";
+import type {
+  DebugResultsRequest,
+  DebugResultsResponse,
+} from "../../../packages/views/src/debugResults/protocol.js";
+import type { DebugResultStore } from "./capturedResults.js";
 
 export const DEBUG_RESULTS_VIEW_ID = "postgresql-workbench-results";
 const DEBUG_RESULTS_CONTAINER_COMMAND =
   "workbench.view.extension.postgresql-workbench-results-container";
-
-interface ResultsWebviewMessage {
-  type?: string;
-  id?: string;
-  text?: string;
-}
 
 export class DebugResultsViewProvider implements vscode.WebviewViewProvider, vscode.Disposable {
   private view: vscode.WebviewView | undefined;
@@ -30,17 +28,11 @@ export class DebugResultsViewProvider implements vscode.WebviewViewProvider, vsc
       localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, "dist")],
     };
     view.webview.html = debugResultsHtml(view.webview, this.extensionUri);
-    view.webview.onDidReceiveMessage(async (message: ResultsWebviewMessage) => {
-      if (message.type === "ready") {
-        this.update();
-      } else if (message.type === "select" && message.id) {
-        this.store.select(message.id);
-      } else if (message.type === "copy" && typeof message.text === "string") {
-        await vscode.env.clipboard.writeText(message.text);
-        await view.webview.postMessage({ type: "copyResult", ok: true });
-      } else if (message.type === "openSource") {
-        await this.openSelectedSource();
-      }
+    view.webview.onDidReceiveMessage(async (message: DebugResultsRequest) => {
+      if (message.type === "ready") this.update();
+      else if (message.type === "select") this.store.select(message.id);
+      else if (message.type === "copy") await this.copySelection(view.webview);
+      else if (message.type === "openSource") await this.openSelectedSource();
     });
     this.update();
   }
@@ -65,10 +57,19 @@ export class DebugResultsViewProvider implements vscode.WebviewViewProvider, vsc
   }
 
   private update(): void {
-    void this.view?.webview.postMessage({
-      type: "state",
-      state: this.store.viewState(),
-    });
+    this.post({ type: "state", state: this.store.viewState() });
+  }
+
+  /** The Extension Host holds the selection, so it encodes the export the same way it exports. */
+  private async copySelection(webview: vscode.Webview): Promise<void> {
+    const tsv = this.store.selectedAsTsv();
+    if (tsv === undefined) return;
+    await vscode.env.clipboard.writeText(tsv);
+    await webview.postMessage({ type: "copyResult", ok: true } satisfies DebugResultsResponse);
+  }
+
+  private post(message: DebugResultsResponse): void {
+    void this.view?.webview.postMessage(message);
   }
 
   private async openSelectedSource(): Promise<void> {

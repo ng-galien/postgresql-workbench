@@ -281,7 +281,7 @@ export class DebuggerPage {
       for (const frame of this.page.frames()) {
         if (frame === this.page.mainFrame() || frame.isDetached()) continue;
         try {
-          if ((await frame.locator("#history").count()) > 0) return frame;
+          if ((await frame.getByLabel("Captured results").count()) > 0) return frame;
         } catch (error) {
           if (!frame.isDetached()) throw error;
         }

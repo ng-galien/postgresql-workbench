@@ -116,11 +116,7 @@ export function SqlResultView({ payload, messaging }: SqlResultViewProps) {
         {current.columns.length > 0 ? (
           <div className="result-actions">
             {messaging ? (
-              <ResultNavigation
-                payload={current}
-                state={{ navigation, busy, closed }}
-                onAction={(action) => request(action)}
-              />
+              <ResultNavigation state={{ navigation, busy, closed }} onAction={request} />
             ) : null}
             {current.statement && messaging ? (
               <button

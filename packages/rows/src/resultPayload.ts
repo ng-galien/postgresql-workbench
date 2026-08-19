@@ -1,4 +1,4 @@
-import type { DebugResult } from "../../dap/src/debugger/launch/index.js";
+import type { DebugResult, DebugResultEntry } from "../../dap/src/debugger/launch/index.js";
 
 /**
  * What a SQL result is: the rows PostgreSQL returned or the error it raised, the Connexion they
@@ -74,3 +74,25 @@ export interface SqlNotebookResultNavigation {
 }
 
 export type SqlNotebookOutputPayload = SqlNotebookResultPayload | SqlNotebookErrorPayload;
+
+/** One captured debug result as a history lists it: enough to name it and to say how it ended. */
+export interface DebugResultSummary {
+  id: string;
+  status: "pending" | "success" | "error";
+  label: string;
+  query: string;
+  command: string;
+  rowCount: number;
+  columnCount: number;
+  capturedRowCount: number;
+  truncated: boolean;
+  durationMs: number;
+  timestamp: string;
+  message?: string;
+  connection?: string;
+}
+
+export interface DebugResultViewState {
+  results: DebugResultSummary[];
+  selected?: DebugResultEntry;
+}

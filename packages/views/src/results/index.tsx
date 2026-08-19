@@ -10,6 +10,10 @@ import { SqlErrorView } from "./SqlErrorView.js";
 import { type SqlResultMessaging, SqlResultView } from "./SqlResultView.js";
 import styles from "./styles.css";
 
+// Each output renders in its own shadow root and carries every stylesheet it needs. Built once:
+// the codicon font travels inline, and a notebook shows many outputs.
+const outputStyles = `${codicons}\n${styles}\n${iconButtonStyles}`;
+
 interface RendererOutputItem {
   id: string;
   json(): unknown;
@@ -49,8 +53,7 @@ export function activate(context: RendererContext = {}): RendererApi {
       shadow.replaceChildren();
 
       const style = document.createElement("style");
-      // The output renders in a shadow root, so it carries every stylesheet it needs itself.
-      style.textContent = `${codicons}\n${styles}\n${iconButtonStyles}`;
+      style.textContent = outputStyles;
       const mount = document.createElement("div");
       shadow.append(style, mount);
 

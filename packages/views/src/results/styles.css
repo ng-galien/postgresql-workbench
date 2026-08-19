@@ -109,8 +109,7 @@
   outline-offset: -1px;
 }
 
-.result-actions,
-.navigation-actions {
+.result-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -147,11 +146,6 @@
 
 .result-button-primary:hover:not(:disabled) {
   background: var(--vscode-button-hoverBackground);
-}
-
-.result-button-warning {
-  color: var(--vscode-editorWarning-foreground);
-  border-color: var(--vscode-editorWarning-foreground);
 }
 
 .result-scroller-frame {

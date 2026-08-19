@@ -5,17 +5,17 @@
  */
 
 export {
+  type DebugSessionInfo,
+  enrichDebugSessions,
+  listDebugSessions,
+} from "../../../packages/dap/src/orphanSessions.js";
+export {
   DebugResultStore,
   delimitedHeader,
   delimitedRow,
   resultAsDelimited,
   resultAsJson,
-} from "../../../packages/dap/src/debugger/launch/capturedResults.js";
-export {
-  type DebugSessionInfo,
-  enrichDebugSessions,
-  listDebugSessions,
-} from "../../../packages/dap/src/orphanSessions.js";
+} from "./capturedResults.js";
 export {
   buildRoutineArgs,
   buildRoutineTarget,

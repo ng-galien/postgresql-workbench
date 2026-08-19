@@ -91,47 +91,9 @@ body,
   font-size: 12px;
 }
 
-.icon-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  height: 22px;
-  min-width: 22px;
-  padding: 0 3px;
-  color: var(--vscode-icon-foreground, var(--vscode-foreground));
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 4px;
-  cursor: pointer;
-  font: inherit;
-}
-
-.icon-button:hover:not(:disabled) {
-  background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
-}
-
-.icon-button:disabled {
-  cursor: default;
-  opacity: 0.4;
-}
-
-.icon-button.primary {
-  color: var(--vscode-button-foreground);
-  background: var(--vscode-button-background);
-}
-
-.icon-button.primary:hover:not(:disabled) {
-  background: var(--vscode-button-hoverBackground);
-}
-
-.icon-button:focus-visible,
 .data-view-clause:focus-visible {
   outline: 1px solid var(--vscode-focusBorder);
   outline-offset: -1px;
-}
-
-.icon-button-text {
-  font-size: 11px;
 }
 
 /* Query chips: WHERE, ORDER BY, hidden columns */

@@ -6,35 +6,15 @@ import {
   type DebugResultEntry,
   type DebugResultStatus,
   debugResultEntryStatus,
-} from "./index.js";
+} from "../../../packages/dap/src/debugger/launch/index.js";
+import type { DebugResultViewState } from "../../../packages/rows/src/resultPayload.js";
 
 /**
- * What a captured debug result looks like once it is listed and exported: the summary a history
- * shows, the state a result view renders, and the delimited and JSON forms of the rows. Free of
- * VS Code, so the webview that renders it shares the shapes with the Extension Host that fills them.
+ * The captured debug results the Extension Host holds: the bounded history it keeps, what it
+ * selects, and the delimited and JSON forms it exports. What a view renders of them is described
+ * in packages/rows, next to the other result shapes.
  */
 export const DEBUG_RESULT_NULL_EXPORT = "\\N";
-
-export interface DebugResultSummary {
-  id: string;
-  status: "pending" | "success" | "error";
-  label: string;
-  query: string;
-  command: string;
-  rowCount: number;
-  columnCount: number;
-  capturedRowCount: number;
-  truncated: boolean;
-  durationMs: number;
-  timestamp: string;
-  message?: string;
-  connection?: string;
-}
-
-export interface DebugResultViewState {
-  results: DebugResultSummary[];
-  selected?: DebugResultEntry;
-}
 
 export class DebugResultStore {
   private readonly results: DebugResultEntry[] = [];

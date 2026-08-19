@@ -1,3 +1,4 @@
+import type { ResultNavigationAction } from "../../../rows/src/navigation.js";
 import type {
   ScratchpadAssociationSnapshot,
   SqlNotebookResultPayload,
@@ -5,7 +6,8 @@ import type {
 
 /** What the result renderer and the Extension Host send each other. */
 
-export type SqlNotebookResultAction = "attach" | "previous" | "next" | "load-all" | "cancel";
+/** The renderer speaks the one navigation vocabulary; `attach` is its first read. */
+export type SqlNotebookResultAction = ResultNavigationAction;
 
 export interface SqlNotebookResultRequest {
   type: "sql-result/request";

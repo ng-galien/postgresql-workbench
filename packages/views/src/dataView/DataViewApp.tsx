@@ -352,12 +352,12 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
 
   const payload = state.payload;
   const navigation = payload?.navigation;
-  const _cursorOpen = state.status === "ready" && navigation !== undefined && !state.message;
   // The same rules the Scratchpad output applies, read from the one place that states them.
   const navigationState = {
     navigation,
-    busy: state.busy,
-    closed: !(state.status === "ready" && navigation !== undefined && !state.message),
+    // A result being written to is not navigable either: the rule states it, no caller overrides it.
+    busy: state.busy || state.applying,
+    closed: state.status !== "ready" || Boolean(state.message),
   };
   const disabled = state.busy || state.applying;
   const editCount = state.edits.length;
@@ -610,12 +610,25 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
 
         <div className="toolbar-group toolbar-navigation">
           <ResultNavigation
-            payload={payload}
             state={navigationState}
-            summary={payload ? resultRowSummary(payload) : ""}
             onAction={(action) => post({ type: "data-view/navigate", action })}
-            disabled={disabled || state.applying}
-          />
+          >
+            <span
+              className="toolbar-rows"
+              title={payload?.truncated ? payload.truncationReasons.join(", ") : undefined}
+            >
+              {payload ? resultRowSummary(payload) : ""}
+              {payload?.truncated ? (
+                <span className="codicon codicon-warning" title="Preview truncated" />
+              ) : null}
+              {navigationState.closed ? (
+                <span
+                  className="codicon codicon-debug-disconnect"
+                  title="Cursor closed; refresh to load again"
+                />
+              ) : null}
+            </span>
+          </ResultNavigation>
         </div>
 
         {editable ? (

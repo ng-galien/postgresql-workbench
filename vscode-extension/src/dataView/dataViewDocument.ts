@@ -16,7 +16,7 @@ import { READ_ONLY_REASONS } from "../../../packages/rows/src/editability.js";
 import { initialDataViewQuery } from "../../../packages/rows/src/initialProjection.js";
 import {
   navigateResult,
-  type ResultNavigationAction,
+  type ResultNavigationCommand,
 } from "../../../packages/rows/src/navigation.js";
 import { openDataViewResult, TableAccents } from "../../../packages/rows/src/openRows.js";
 import { PendingEdits } from "../../../packages/rows/src/pendingEdits.js";
@@ -525,7 +525,7 @@ export class DataViewDocument implements vscode.CustomDocument {
     }
   }
 
-  private async navigate(action: ResultNavigationAction): Promise<void> {
+  private async navigate(action: ResultNavigationCommand): Promise<void> {
     const session = this.session;
     if (!session) {
       this.notify("The result cursor is closed. Refresh to load the rows again.", "info");

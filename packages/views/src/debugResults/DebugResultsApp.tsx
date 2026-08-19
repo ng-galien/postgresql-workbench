@@ -1,12 +1,8 @@
 import { useEffect, useState } from "react";
-import type {
-  DebugResultSummary,
-  DebugResultViewState,
-} from "../../../dap/src/debugger/launch/capturedResults.js";
 import type { DebugResult } from "../../../dap/src/debugger/launch/index.js";
 import { debugResultEntryStatus } from "../../../dap/src/debugger/launch/index.js";
+import type { DebugResultSummary, DebugResultViewState } from "../../../rows/src/resultPayload.js";
 import { ResultGrid } from "../results/ResultGrid.js";
-import { resultAsTsv } from "../results/resultFormatting.js";
 import type { DebugResultsRequest } from "./protocol.js";
 
 /**
@@ -22,15 +18,12 @@ export function DebugResultsApp({
   post: (message: DebugResultsRequest) => void;
 }) {
   const selected = state.selected;
-  const status = selected ? debugResultEntryStatus(selected) : undefined;
   const source = selected && "source" in selected ? selected.source : undefined;
 
   return (
     <div className="debug-results">
       <header className="debug-results-bar">
         <select
-          // The Extension Host and the acceptance suite both recognise the view by this control.
-          id="history"
           aria-label="Captured results"
           className="debug-results-history"
           disabled={state.results.length === 0}
@@ -48,8 +41,8 @@ export function DebugResultsApp({
             Open source
           </button>
         ) : null}
-        {selected && status === "success" && "columns" in selected ? (
-          <button onClick={() => post({ type: "copy", text: resultAsTsv(selected) })} type="button">
+        {selected && "columns" in selected ? (
+          <button onClick={() => post({ type: "copy" })} type="button">
             Copy
           </button>
         ) : null}
@@ -127,15 +120,21 @@ function truncationWarnings(result: DebugResult): string[] {
 
 function historyLabel(item: DebugResultSummary): string {
   const when = new Date(item.timestamp).toLocaleTimeString();
-  const state =
-    item.status === "pending"
-      ? "running"
-      : item.status === "error"
-        ? "failed"
-        : `${item.rowCount} rows`;
+  const state = historyState(item);
   return `${when} · ${item.label} · ${state}${item.truncated ? " · preview" : ""}${
     item.connection ? ` · ${item.connection}` : ""
   }`;
+}
+
+function historyState(item: DebugResultSummary): string {
+  switch (item.status) {
+    case "pending":
+      return "running";
+    case "error":
+      return "failed";
+    default:
+      return `${item.rowCount} rows`;
+  }
 }
 
 function rowLabel(count: number): string {

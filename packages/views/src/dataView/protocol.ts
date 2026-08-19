@@ -8,6 +8,7 @@ import type {
   DataViewSort,
   DataViewSource,
 } from "../../../rows/src/dataView.js";
+import type { ResultNavigationCommand } from "../../../rows/src/navigation.js";
 import type { SqlNotebookResultPayload } from "../../../rows/src/resultPayload.js";
 
 /** What the Data View webview and the Extension Host send each other. */
@@ -30,7 +31,7 @@ export interface DataViewState {
 
 export type DataViewRequest =
   | { type: "data-view/ready" }
-  | { type: "data-view/navigate"; action: "previous" | "next" | "load-all" | "cancel" }
+  | { type: "data-view/navigate"; action: ResultNavigationCommand }
   | { type: "data-view/refresh" }
   /** Replaces the whole ORDER BY with these grid-column sorts (empty removes it). */
   | { type: "data-view/sort"; sorts: DataViewSort[] }

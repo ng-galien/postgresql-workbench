@@ -23,13 +23,15 @@ export interface ResultNavigationState {
  * Whether the reader may ask for this action right now. The rule lives here so a surface only
  * decides how to show it — a button, an icon, or nothing at all.
  */
-export function canNavigate(action: ResultNavigationAction, state: ResultNavigationState): boolean {
+export function canNavigate(
+  action: ResultNavigationCommand,
+  state: ResultNavigationState,
+): boolean {
   if (action === "cancel") return state.busy;
   if (state.busy || state.closed || !state.navigation) return false;
   if (action === "previous") return state.navigation.hasPrevious;
   if (action === "next") return state.navigation.hasNext;
-  if (action === "load-all") return state.navigation.canLoadAll;
-  return true;
+  return state.navigation.canLoadAll;
 }
 
 /**

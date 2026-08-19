@@ -31,6 +31,15 @@
   background: var(--vscode-button-hoverBackground);
 }
 
+.icon-button:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+}
+
+.icon-button-text {
+  font-size: 11px;
+}
+
 .result-navigation {
   display: inline-flex;
   gap: 2px;
