@@ -12,7 +12,7 @@ import {
   DEBUG_RESULT_EVENT,
   DEBUG_SESSION_STATUS_EVENT,
   type DebugSessionStatus,
-} from "../src/debugger/launch/index.js";
+} from "../packages/dap/src/debugger/launch/index.js";
 import { type CodeMonikerTestRuntime, startCodeMonikerTestRuntime } from "./codeMonikerRuntime.js";
 import {
   DEBUG_DAP_EVENT_TIMEOUT_MS,

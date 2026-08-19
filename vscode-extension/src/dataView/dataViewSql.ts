@@ -1,11 +1,10 @@
-import { quoteIdentifier } from "../sqlAuthoring/completion.js";
-import type { DataViewEdit, DataViewEditability } from "./protocol.js";
-import { sameDataViewRow } from "./protocol.js";
+import { quoteIdentifier } from "../../../packages/sql/src/authoring/completion.js";
 
-/** Removes trailing statement terminators so the SQL can be used as a subquery. */
-export function stripStatementTerminator(sql: string): string {
-  return sql.trim().replace(/[\s;]+$/u, "");
-}
+import type {
+  DataViewEdit,
+  DataViewEditability,
+} from "../../../packages/views/src/dataView/protocol.js";
+import { sameDataViewRow } from "../../../packages/views/src/dataView/protocol.js";
 
 export interface DataViewRowUpdate {
   text: string;

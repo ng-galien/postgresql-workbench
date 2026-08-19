@@ -6,12 +6,12 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   ensureLocalCodeMonikerWorkspace,
   type LocalCodeMonikerSession,
-} from "../src/workbench/localCodeMoniker.js";
+} from "../packages/catalog/src/localCodeMoniker.js";
 import {
   type CatalogQueryClient,
   postgresDatabaseDocumentGlob,
   readPostgresCatalog,
-} from "../src/workbench/postgresCatalog.js";
+} from "../packages/catalog/src/postgresCatalog.js";
 
 const PG_CONFIG = {
   host: "127.0.0.1",

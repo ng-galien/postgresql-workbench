@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import type {
   CodeMonikerGraphResult,
   CodeMonikerSymbol,
-} from "../../../src/workbench/localCodeMoniker.js";
-import type { PostgresDocumentDescriptor } from "../../../src/workbench/postgresCatalog.js";
+} from "../../../packages/catalog/src/localCodeMoniker.js";
+import type { PostgresDocumentDescriptor } from "../../../packages/catalog/src/postgresCatalog.js";
 import {
   COCKPIT_BATCH_SIZE,
   initialCockpitGraph,

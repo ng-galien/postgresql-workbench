@@ -17,3 +17,6 @@ vscode-extension/test-results/
 test-workspace/*
 !test-workspace/.gitkeep
 private/
+
+# built artefact of the published DAP package
+packages/dap/dist/

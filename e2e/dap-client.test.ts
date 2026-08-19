@@ -8,7 +8,10 @@ import * as path from "node:path";
 import { DebugClient } from "@vscode/debugadapter-testsupport";
 import { Client } from "pg";
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { DEBUG_RESULT_EVENT, DEBUG_RESULT_STATUS_EVENT } from "../src/debugger/launch/index.js";
+import {
+  DEBUG_RESULT_EVENT,
+  DEBUG_RESULT_STATUS_EVENT,
+} from "../packages/dap/src/debugger/launch/index.js";
 import {
   DEBUG_DAP_EVENT_TIMEOUT_MS,
   DEBUG_INTEGRATION_TEST_TIMEOUT_MS,

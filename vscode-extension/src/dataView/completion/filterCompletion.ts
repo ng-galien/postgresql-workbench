@@ -1,7 +1,10 @@
 import * as vscode from "vscode";
-import { scanPostgresSql } from "../../sqlAuthoring/sqlLexing.js";
-import type { DataViewCompletion } from "../protocol.js";
-import { type DataViewQueryAnalysis, setWhere } from "../queryAnalysis.js";
+import {
+  type SqlQueryAnalysis,
+  setWhere,
+} from "../../../../packages/sql/src/authoring/query/analysis.js";
+import { scanPostgresSql } from "../../../../packages/sql/src/authoring/sqlLexing.js";
+import type { DataViewCompletion } from "../../../../packages/views/src/dataView/protocol.js";
 
 /**
  * Completions for the WHERE input: the typed condition is placed in a hidden copy of the query
@@ -11,7 +14,7 @@ import { type DataViewQueryAnalysis, setWhere } from "../queryAnalysis.js";
  */
 export async function completeDataViewFilter(options: {
   queryText: string;
-  analysis: DataViewQueryAnalysis;
+  analysis: SqlQueryAnalysis;
   completionUri: vscode.Uri;
   text: string;
   offset: number;
@@ -24,6 +27,12 @@ export async function completeDataViewFilter(options: {
   const expressionStart = draft.indexOf(sentinel);
   if (expressionStart < 0) return [];
   const candidate = draft.replace(sentinel, "");
+  const caret = expressionStart + Math.min(offset, text.length);
+  // Inside a literal or a comment nothing can be proposed: decided before paying for the round-trip.
+  const masked = scanPostgresSql(candidate).maskedSource;
+  let probeIndex = caret - 1;
+  while (probeIndex >= 0 && candidate[probeIndex] === " ") probeIndex -= 1;
+  if (probeIndex >= 0 && masked[probeIndex] === " " && candidate[probeIndex] !== " ") return [];
   const document = await vscode.workspace.openTextDocument(completionUri);
   if (document.languageId !== "sql")
     await vscode.languages.setTextDocumentLanguage(document, "sql");
@@ -34,7 +43,6 @@ export async function completeDataViewFilter(options: {
     candidate,
   );
   await vscode.workspace.applyEdit(edit);
-  const caret = expressionStart + Math.min(offset, text.length);
   const position = document.positionAt(caret);
   const result = await vscode.commands.executeCommand<vscode.CompletionList | undefined>(
     "vscode.executeCompletionItemProvider",
@@ -49,10 +57,6 @@ export async function completeDataViewFilter(options: {
     : 0;
   const items = result?.items ?? [];
   options.log(`${items.length} completions at offset ${offset}`);
-  const masked = scanPostgresSql(candidate).maskedSource;
-  let probeIndex = caret - 1;
-  while (probeIndex >= 0 && candidate[probeIndex] === " ") probeIndex -= 1;
-  if (probeIndex >= 0 && masked[probeIndex] === " " && candidate[probeIndex] !== " ") return [];
   if (items.length === 0 && defaultReplace > 0) {
     return localFilterCompletions(analysis, text, offset, defaultReplace);
   }
@@ -84,7 +88,7 @@ export async function completeDataViewFilter(options: {
 
 /** Fallback when the SQL authoring server has no context: the projection's own columns. */
 export function localFilterCompletions(
-  analysis: DataViewQueryAnalysis,
+  analysis: SqlQueryAnalysis,
   text: string,
   offset: number,
   replaceLength: number,

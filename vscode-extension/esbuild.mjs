@@ -69,7 +69,7 @@ const dapServerConfig = {
 
 /** @type {import('esbuild').BuildOptions} */
 const sqlAuthoringServerConfig = {
-  entryPoints: ["src/sqlAuthoring/server.ts"],
+  entryPoints: ["../packages/sql/src/authoring/server.ts"],
   bundle: true,
   outfile: "dist/sql-authoring-server.js",
   format: "cjs",
@@ -82,7 +82,7 @@ const sqlAuthoringServerConfig = {
 
 /** @type {import('esbuild').BuildOptions} */
 const graphWebviewConfig = {
-  entryPoints: ["src/workbenchGraph/webview/index.tsx"],
+  entryPoints: ["../packages/views/src/cockpit/index.tsx"],
   bundle: true,
   outfile: "dist/workbench-graph.js",
   format: "iife",
@@ -97,7 +97,7 @@ const graphWebviewConfig = {
 
 /** @type {import('esbuild').BuildOptions} */
 const sqlNotebookRendererConfig = {
-  entryPoints: ["src/sqlNotebookRenderer/index.tsx"],
+  entryPoints: ["../packages/views/src/results/index.tsx"],
   bundle: true,
   outfile: "dist/sql-notebook-renderer.js",
   format: "esm",
@@ -113,7 +113,7 @@ const sqlNotebookRendererConfig = {
 
 /** @type {import('esbuild').BuildOptions} */
 const dataViewWebviewConfig = {
-  entryPoints: ["src/dataView/webview/index.tsx"],
+  entryPoints: ["../packages/views/src/dataView/index.tsx"],
   bundle: true,
   outfile: "dist/data-view.js",
   format: "iife",

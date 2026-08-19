@@ -15,7 +15,7 @@ import {
   CoverageTransactionControlError,
   createCoverageSyntaxService,
   PgTapUnavailableError,
-} from "../src/coverage/index.js";
+} from "../packages/coverage/src/index.js";
 import { type CodeMonikerTestRuntime, startCodeMonikerTestRuntime } from "./codeMonikerRuntime.js";
 
 const PG_CONFIG = {

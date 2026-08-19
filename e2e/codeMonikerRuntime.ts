@@ -1,12 +1,12 @@
 import { resolve } from "node:path";
 import { Client, type ClientConfig } from "pg";
-import { createCodeMonikerSyntaxParser } from "../src/analysis/codeMonikerSyntax.js";
-import type { SyntaxParser } from "../src/analysis/syntaxTree.js";
 import {
   ensureLocalCodeMonikerWorkspace,
   type LocalCodeMonikerSession,
-} from "../src/workbench/localCodeMoniker.js";
-import { readPostgresCatalog } from "../src/workbench/postgresCatalog.js";
+} from "../packages/catalog/src/localCodeMoniker.js";
+import { readPostgresCatalog } from "../packages/catalog/src/postgresCatalog.js";
+import { createCodeMonikerSyntaxParser } from "../packages/sql/src/analysis/codeMonikerSyntax.js";
+import type { SyntaxParser } from "../packages/sql/src/analysis/syntaxTree.js";
 
 export interface CodeMonikerTestRuntime {
   parser: SyntaxParser;

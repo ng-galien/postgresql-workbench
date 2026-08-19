@@ -1,26 +1,33 @@
 import * as vscode from "vscode";
-import { quoteIdentifier } from "../sqlAuthoring/completion.js";
-import type { SqlAuthoringDragPayload } from "../sqlAuthoring/protocol.js";
-import type { SqlNotebookResultPayload } from "../sqlNotebookModel.js";
-import type { SqlResultSession } from "../sqlResultSession.js";
-import { completeDataViewFilter } from "./completion/filterCompletion.js";
-import { dataViewCompletionUri, dataViewQueryUri } from "./dataViewUri.js";
-import { READ_ONLY_REASONS } from "./editability.js";
-import { exportAllRows, exportLoadedRows, pickExportTarget } from "./export/exportResult.js";
-import { type DataViewHostServices, errorMessage } from "./hostServices.js";
+import { quoteIdentifier } from "../../../packages/sql/src/authoring/completion.js";
+import type {
+  SqlAuthoringDragPayload,
+  SqlAuthoringSnapshot,
+} from "../../../packages/sql/src/authoring/protocol.js";
+import {
+  type QueryRewrite,
+  SqlQueryModel,
+} from "../../../packages/sql/src/authoring/query/model.js";
 import {
   type DataViewAddition,
   type DataViewEdit,
   type DataViewEditability,
   type DataViewProjection,
+  type DataViewQueryInfo,
   type DataViewRequest,
   type DataViewResponse,
   type DataViewSource,
   type DataViewState,
   dataViewSourceTitle,
-} from "./protocol.js";
+} from "../../../packages/views/src/dataView/protocol.js";
+import type { SqlNotebookResultPayload, SqlResultSession } from "../scratchpad/index.js";
+import { completeDataViewFilter } from "./completion/filterCompletion.js";
+import { dataViewCompletionUri, dataViewQueryUri } from "./dataViewUri.js";
+import { READ_ONLY_REASONS } from "./editability.js";
+import { exportAllRows, exportLoadedRows, pickExportTarget } from "./export/exportResult.js";
+import { type DataViewHostServices, errorMessage } from "./hostServices.js";
 import { composeIntoDataViewQuery, dataViewAdditions } from "./query/composition.js";
-import { DataViewQuery, initialDataViewQuery, type QueryRewrite } from "./query/dataViewQuery.js";
+import { initialDataViewQuery } from "./query/initialQuery.js";
 import { PendingEdits } from "./session/pendingEdits.js";
 import { openDataViewResult, TableAccents } from "./session/resultLoader.js";
 
@@ -39,7 +46,7 @@ export class DataViewDocument implements vscode.CustomDocument {
   readonly queryUri: vscode.Uri;
   /** Hidden SQL document that only exists to ask the SQL authoring server for filter completions. */
   private readonly completionUri: vscode.Uri;
-  private readonly query: DataViewQuery;
+  private readonly query: SqlQueryModel;
   private readonly edits = new PendingEdits();
   private readonly accents = new TableAccents();
   private hidden: string[] = [];
@@ -75,7 +82,16 @@ export class DataViewDocument implements vscode.CustomDocument {
     this.source = source;
     this.queryUri = dataViewQueryUri(source);
     this.completionUri = dataViewCompletionUri(source);
-    this.query = new DataViewQuery(() => services.parser());
+    this.query = new SqlQueryModel(() => services.parser(), {
+      budget: () => {
+        const settings = services.authoringSettings(this.queryUri.toString());
+        return {
+          uri: this.queryUri.toString(),
+          maxDepth: settings.syntaxMaxDepth,
+          maxNodes: settings.syntaxMaxNodes,
+        };
+      },
+    });
   }
 
   get title(): string {
@@ -91,15 +107,26 @@ export class DataViewDocument implements vscode.CustomDocument {
     return new vscode.Disposable(() => this.webviews.delete(webview));
   }
 
+  /** What the grid shows about the query: the shared model's view, plus this Data View's state. */
+  private queryInfo(): DataViewQueryInfo {
+    const whereText = this.query.whereText();
+    return {
+      uri: this.queryUri.toString(),
+      text: this.query.text,
+      ...(whereText === undefined ? {} : { whereText }),
+      orderBy: this.query.orderBy(),
+      hidden: [...this.hidden],
+      structured: this.query.analysis !== undefined,
+      ...(this.query.problem === undefined ? {} : { problem: this.query.problem }),
+      editorDirty: this.queryDocument()?.isDirty === true,
+    };
+  }
+
   state(): DataViewState {
     return {
       source: this.source,
       serverName: this.serverName(),
-      query: this.query.info(
-        this.queryUri.toString(),
-        this.hidden,
-        this.queryDocument()?.isDirty === true,
-      ),
+      query: this.queryInfo(),
       projection: this.projection,
       status: this.status,
       ...(this.message !== undefined ? { message: this.message } : {}),
@@ -356,16 +383,23 @@ export class DataViewDocument implements vscode.CustomDocument {
 
   // --- Composition ---------------------------------------------------------------------------
 
-  private additions() {
+  /** The indexed snapshot to compose against, or nothing when the query or the index refuses it. */
+  private composable(): SqlAuthoringSnapshot | undefined {
     const snapshot = this.services.authoringSnapshot(this.source.serverId, this.source.database);
     if (snapshot?.status !== "available") {
       this.notify("Index the database first: composition needs a fresh Workbench Index.", "info");
-      return [];
+      return undefined;
     }
     if (!this.query.analysis && !this.query.isEmpty) {
       this.notify(this.query.problem ?? "The query cannot be composed from the grid.", "info");
-      return [];
+      return undefined;
     }
+    return snapshot;
+  }
+
+  private additions() {
+    const snapshot = this.composable();
+    if (!snapshot) return [];
     const items = dataViewAdditions(
       this.projection,
       new Set(this.payload?.columns.map((column) => column.name) ?? []),
@@ -386,25 +420,18 @@ export class DataViewDocument implements vscode.CustomDocument {
       this.notify("This object belongs to another database than the Data View.", "info");
       return;
     }
-    const snapshot = this.services.authoringSnapshot(this.source.serverId, this.source.database);
-    if (snapshot?.status !== "available") {
-      this.notify("Index the database first: composition needs a fresh Workbench Index.", "info");
-      return;
-    }
+    const snapshot = this.composable();
+    if (!snapshot) return;
     const analysis = this.query.analysis;
-    if (!analysis && !this.query.isEmpty) {
-      this.notify(this.query.problem ?? "The query cannot be composed from the grid.", "info");
-      return;
-    }
     const outcome = await composeIntoDataViewQuery({
       text: this.query.text,
       statementEnd: analysis?.statement.end ?? 0,
       uri: this.queryUri.toString(),
       payload,
       ...(relationChoice === undefined ? {} : { relationChoice }),
-      snapshot,
       settings: this.services.authoringSettings(this.queryUri.toString()),
       parser: await this.services.parser(),
+      compose: (composeRequest) => this.services.compose(composeRequest),
     });
     if (outcome.status === "rejected") {
       this.notify(outcome.message, "info");

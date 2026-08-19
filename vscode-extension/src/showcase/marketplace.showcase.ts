@@ -5,13 +5,15 @@ import * as net from "node:net";
 import path from "node:path";
 import { TextDecoder } from "node:util";
 import * as vscode from "vscode";
-import type { PgTapCoverageSnapshot } from "../coverageRunProfile.js";
+import {
+  buildWorkbenchObjects,
+  type WorkbenchObjectModel,
+} from "../../../packages/catalog/src/objectModel.js";
+import type { WorkbenchGraphWebviewMessage } from "../../../packages/views/src/cockpit/protocol.js";
+import type { PgTapCoverageSnapshot } from "../coverage/index.js";
 import type { PlpgsqlExtensionApi } from "../extension.js";
-import { NEW_SQL_NOTEBOOK_COMMAND } from "../sqlNotebook.js";
-import { SQL_NOTEBOOK_RESULT_MIME } from "../sqlNotebookModel.js";
+import { NEW_SQL_NOTEBOOK_COMMAND, SQL_NOTEBOOK_RESULT_MIME } from "../scratchpad/index.js";
 import { delay, EXT_ID, stopActivePlpgsqlSession, waitForSessionStart } from "../test/testUtils.js";
-import type { WorkbenchGraphWebviewMessage } from "../workbenchGraph/protocol.js";
-import { buildWorkbenchObjects, type WorkbenchObjectModel } from "../workbenchTreeModel.js";
 
 const SCENE = process.env.POSTGRESQL_WORKBENCH_SHOWCASE_SCENE;
 const CONTROL_DIR = process.env.POSTGRESQL_WORKBENCH_SHOWCASE_CONTROL_DIR;

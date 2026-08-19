@@ -1,7 +1,7 @@
 import {
   startStdioDapServer,
   statelessSyntaxRuntimeFromEnvironment,
-} from "../../src/stdioDapServer.js";
+} from "../../packages/dap/src/stdioDapServer.js";
 
 try {
   startStdioDapServer(statelessSyntaxRuntimeFromEnvironment());

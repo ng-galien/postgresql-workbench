@@ -1,15 +1,9 @@
 import * as vscode from "vscode";
-import {
-  classifySqlStatementCount,
-  planSqlResultExecution,
-} from "../../src/analysis/sqlStatements.js";
-import type { SyntaxParser } from "../../src/analysis/syntaxTree.js";
-import { type ParsedCallSite, parseCall, parseSqlCalls } from "../../src/callParser.js";
 import type {
   DebugLaunchRoutineArgument,
   DebugLaunchRoutineTarget,
   DebugResultSource,
-} from "../../src/debugger/launch/index.js";
+} from "../../packages/dap/src/debugger/launch/index.js";
 import {
   clampDebugResultRows,
   DEBUG_RESULT_EVENT,
@@ -20,13 +14,43 @@ import {
   type DebugResultEntry,
   type DebugResultStatus,
   type DebugSessionStatus,
-} from "../../src/debugger/launch/index.js";
+} from "../../packages/dap/src/debugger/launch/index.js";
+import {
+  classifySqlStatementCount,
+  planSqlResultExecution,
+} from "../../packages/sql/src/analysis/sqlStatements.js";
+import type { SyntaxParser } from "../../packages/sql/src/analysis/syntaxTree.js";
+import type {
+  SqlAuthoringObject,
+  SqlAuthoringSnapshot,
+} from "../../packages/sql/src/authoring/protocol.js";
+import { sqlStatementAtOffset } from "../../packages/sql/src/authoring/sqlLexing.js";
+import {
+  type FunctionDefinition,
+  type ParsedCallSite,
+  parseCall,
+  parseSqlCalls,
+} from "../../packages/sql/src/callParser.js";
 import { registerAcceptanceControl } from "./acceptanceControl.js";
-import { CallSiteConnectionStore } from "./callSiteConnectionStore.js";
-import { CodeMonikerContentProvider } from "./codeMonikerContentProvider.js";
-import { ConnectionManager } from "./connectionManager.js";
-import { openCoverageClient } from "./coverageConnection.js";
-import { PgTapTestController } from "./coverageTestController.js";
+import {
+  type CommandCallSite,
+  type CommandFunctionDefinition,
+  type CommandSqlStatement,
+  type DocumentConnectionTarget,
+  debuggableSqlCall,
+  debuggableSqlDefinition,
+  PlpgsqlDiagnosticsProvider,
+  SqlCodeLensProvider,
+  type SqlDebugAvailability,
+} from "./codeLens/index.js";
+import {
+  CallSiteConnectionStore,
+  ConnectionManager,
+  getConnectionName,
+  type ServerConfig,
+  ServerStore,
+} from "./connection/index.js";
+import { openCoverageClient, PgTapTestController } from "./coverage/index.js";
 import { DataViewEditorProvider } from "./dataView/dataViewEditorProvider.js";
 import { dataViewSqlLabel } from "./dataView/dataViewUri.js";
 import { DataViewQueryFileSystem } from "./dataView/queryFileSystem.js";
@@ -36,86 +60,67 @@ import {
   buildRoutineTarget,
   configNameFromRoutine,
   configNameFromSql,
-  resolveDebugConfiguration,
-} from "./debugConfig.js";
-import { DebugResultStore } from "./debugResultStore.js";
-import { DEBUG_RESULTS_VIEW_ID, DebugResultsViewProvider } from "./debugResultsView.js";
-import {
   DEBUG_LAUNCH_TOKEN_PROPERTY,
+  DEBUG_RESULTS_VIEW_ID,
   type DebugLaunchDescriptor,
+  DebugResultStore,
+  DebugResultsViewProvider,
   DebugSessionController,
-} from "./debugSessionController.js";
-import { manageDebugSessions } from "./debugSessionRecoveryUi.js";
-import { PlpgsqlDiagnosticsProvider } from "./diagnosticsProvider.js";
-import { startDockerDebugDatabase } from "./dockerProvisioningUi.js";
-import { PlpgsqlInlineValuesProvider } from "./plpgsqlInlineValues.js";
-import { LEGEND, PlpgsqlSemanticTokensProvider } from "./plpgsqlSemanticTokens.js";
+  manageDebugSessions,
+  resolveDebugConfiguration,
+} from "./debug/index.js";
+import { showRequirementsGuide, startDockerDebugDatabase } from "./docker/index.js";
 import {
+  createRoutineComparisonHandler,
+  LEGEND,
+  PlpgsqlInlineValuesProvider,
+  PlpgsqlSemanticTokensProvider,
   POSTGRES_SOURCE_LANGUAGE_IDS,
   postgresSourceLanguageId,
-} from "./postgresDocumentLanguage.js";
-import { closePostgresqlDapTabs } from "./postgresqlDapSource.js";
-import { showRequirementsGuide } from "./requirementsGuide.js";
-import { createRoutineComparisonHandler } from "./routineComparisonCommand.js";
-import { getConnectionName, type ServerConfig, ServerStore } from "./serverStore.js";
+} from "./plpgsql/index.js";
+import type { SqlNotebookWorkspace } from "./scratchpad/index.js";
 import {
-  REFRESH_SQL_AUTHORING_CONTEXT_COMMAND,
-  registerSqlAuthoring,
-  resolveSqlAuthoringSettings,
-  type SqlAuthoringNavigationTarget,
-} from "./sqlAuthoring/client.js";
-import type { SqlAuthoringObject, SqlAuthoringSnapshot } from "./sqlAuthoring/protocol.js";
-import { sqlStatementSlices } from "./sqlAuthoring/sqlLexing.js";
-import {
-  debuggableSqlCall,
-  debuggableSqlDefinition,
-  type SqlDebugAvailability,
-} from "./sqlCodeLensPolicy.js";
-import {
-  type CommandCallSite,
-  type CommandFunctionDefinition,
-  type CommandSqlStatement,
-  type DocumentConnectionTarget,
-  type FunctionDefinition,
-  SqlCodeLensProvider,
-} from "./sqlCodeLensProvider.js";
-import {
+  executeSqlSelection,
+  prepareSqlSelection,
   registerSqlNotebook,
   type ScratchpadDebugEligibility,
   type ScratchpadDebugger,
   type ScratchpadDebugOutcome,
   type ScratchpadFeature,
   sqlResultSettings,
-} from "./sqlNotebook.js";
-import type { SqlNotebookWorkspace } from "./sqlNotebookWorkspace.js";
-import { executeSqlSelection, prepareSqlSelection } from "./sqlSelectionExecution.js";
-import { WorkbenchDdlSyncController } from "./workbenchDdlSync.js";
-import { WorkbenchGraphTreeSync } from "./workbenchGraph/treeSync.js";
-import { registerWorkbenchGraphDropBridge } from "./workbenchGraphDropBridge.js";
-import { WorkbenchGraphView } from "./workbenchGraphView.js";
-import { WorkbenchIndexController, type WorkbenchIndexPhase } from "./workbenchIndexController.js";
+} from "./scratchpad/index.js";
+import { CodeMonikerContentProvider, closePostgresqlDapTabs } from "./sources/index.js";
+import {
+  REFRESH_SQL_AUTHORING_CONTEXT_COMMAND,
+  registerSqlAuthoring,
+  resolveSqlAuthoringSettings,
+  type SqlAuthoringNavigationTarget,
+  type SqlAuthoringRegistration,
+} from "./sqlAuthoring/client.js";
 import {
   actionsForWorkbenchSurface,
   buildWorkbenchObjectActions,
+  buildWorkbenchObjects,
+  buildWorkbenchTableMembers,
+  FunctionItem,
+  type PlpgsqlTreeItem,
+  registerWorkbenchGraphDropBridge,
+  type ServerItem,
+  WorkbenchDdlSyncController,
+  type WorkbenchDdlSyncItem,
+  WorkbenchGraphView,
+  WorkbenchIndexController,
+  type WorkbenchIndexPhase,
   type WorkbenchObjectAction,
   type WorkbenchObjectActionId,
   type WorkbenchObjectActionSurface,
-} from "./workbenchObjectActions.js";
-import { WorkbenchTreeDragAndDropController } from "./workbenchTreeDragAndDrop.js";
-import {
-  buildWorkbenchObjects,
-  buildWorkbenchTableMembers,
-  type WorkbenchObjectModel,
-} from "./workbenchTreeModel.js";
-import {
-  FunctionItem,
-  type PlpgsqlTreeItem,
-  type ServerItem,
-  type WorkbenchDdlSyncItem,
   type WorkbenchObjectItem,
+  type WorkbenchObjectModel,
   type WorkbenchRelationTargetItem,
+  WorkbenchTreeDragAndDropController,
   WorkbenchTreeProvider,
-} from "./workbenchTreeProvider.js";
+} from "./workbench/index.js";
+import { WorkbenchGraphTreeSync } from "./workbenchGraph/treeSync.js";
 
 const out = vscode.window.createOutputChannel("PostgreSQL Workbench");
 
@@ -775,11 +780,7 @@ function registerSqlWorkbenchCommands(options: SqlWorkbenchCommandOptions): void
       const documentUri = document.uri.toString();
       const offset = document.offsetAt(editor.selection.active);
       const selectedText = document.getText(editor.selection).trim();
-      const statement =
-        selectedText ||
-        sqlStatementSlices(document.getText()).find(
-          (slice) => offset >= slice.start && offset <= slice.end,
-        )?.text;
+      const statement = selectedText || sqlStatementAtOffset(document.getText(), offset).text;
       if (!statement?.trim()) {
         void vscode.window.showInformationMessage("Place the cursor in a SQL Statement first.");
         return false;
@@ -1922,8 +1923,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
   };
   const dataViewQueryFiles = new DataViewQueryFileSystem();
   context.subscriptions.push(dataViewQueryFiles);
+  let composeSqlAuthoring: SqlAuthoringRegistration["compose"] = async () => ({
+    status: "rejected",
+    message: "The SQL authoring server is still starting.",
+  });
   const dataViews = new DataViewEditorProvider({
     parser: () => workbenchIndex.syntaxParser(),
+    compose: (request) => composeSqlAuthoring(request),
     authoringSnapshot: (serverId, database) =>
       workbenchIndex.sqlAuthoringSnapshot({ serverId, database }),
     authoringSettings: (uri) => resolveSqlAuthoringSettings(uri),
@@ -1940,7 +1946,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
         statementTimeoutMs: Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 60_000,
       });
     },
-    serverName: (serverId) => cm.store.get(serverId)?.name,
+    serverName: (serverId) => {
+      const server = cm.store.get(serverId);
+      return server ? getConnectionName(server) : undefined;
+    },
+    onConnectionsChanged: (listener) =>
+      cm.onChanged((change) => {
+        if (change.debugCapabilityOnly) return;
+        listener(change.serverIds);
+      }),
     resultSettings: () => sqlResultSettings(),
     openSql: async (source, sql) => {
       await openScratchpadWithSql(`${sql};\n`, cm.store.get(source.serverId));
@@ -2289,7 +2303,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
       const server = cm.store.get(association.serverId);
       void vscode.window
         .showWarningMessage(
-          `Debug needs a fresh Workbench Index of ${server?.name ?? association.database}.`,
+          `Debug needs a fresh Workbench Index of ${server ? getConnectionName(server) : association.database}.`,
           "Index Association",
         )
         .then((choice) => {
@@ -2445,22 +2459,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
     workbenchGraph,
   );
   try {
-    context.subscriptions.push(
-      await registerSqlAuthoring(
-        context,
-        cm,
-        workbenchIndex,
-        (target) =>
-          revealSqlAuthoringReference(
-            target,
-            workbenchIndex,
-            treeProvider,
-            workbenchTree,
-            graphTreeSync,
-          ),
-        (uri) => callSiteConnections.getDocument(uri),
-      ),
+    const authoring = await registerSqlAuthoring(
+      context,
+      cm,
+      workbenchIndex,
+      (target) =>
+        revealSqlAuthoringReference(
+          target,
+          workbenchIndex,
+          treeProvider,
+          workbenchTree,
+          graphTreeSync,
+        ),
+      (uri) => callSiteConnections.getDocument(uri),
     );
+    composeSqlAuthoring = (request, token) => authoring.compose(request, token);
+    context.subscriptions.push(authoring);
   } catch (error) {
     out.appendLine(
       `SQL authoring server failed to start: ${error instanceof Error ? error.message : String(error)}`,

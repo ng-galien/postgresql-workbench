@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import type { DataViewSource } from "./protocol.js";
+import type { DataViewSource } from "../../../packages/views/src/dataView/protocol.js";
 import { DATA_VIEW_QUERY_SCHEME } from "./queryFileSystem.js";
 
 export const DATA_VIEW_URI_SCHEME = "postgresql-workbench-data";

@@ -2,15 +2,14 @@ import type {
   CodeMonikerGraphResult,
   CodeMonikerIdentityGraphResult,
   CodeMonikerSymbol,
-} from "../../../src/workbench/localCodeMoniker.js";
-import { buildWorkbenchRelationGroups } from "../workbenchRelations.js";
+} from "../../../packages/catalog/src/localCodeMoniker.js";
 import {
   buildWorkbenchObjects,
   buildWorkbenchTableMembers,
   type WorkbenchDatabaseIdentity,
   type WorkbenchObjectModel,
   workbenchObjectFromSymbol,
-} from "../workbenchTreeModel.js";
+} from "../../../packages/catalog/src/objectModel.js";
 import type {
   CockpitNeighbor,
   CockpitNeighborhood,
@@ -18,7 +17,8 @@ import type {
   WorkbenchGraphIdentityPresentation,
   WorkbenchGraphSearchResult,
   WorkbenchGraphSourcePreview,
-} from "./protocol.js";
+} from "../../../packages/views/src/cockpit/protocol.js";
+import { buildWorkbenchRelationGroups } from "../workbench/relations.js";
 
 export const COCKPIT_BATCH_SIZE = 3;
 export const COCKPIT_DOM_BUDGET = 60;

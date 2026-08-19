@@ -1,15 +1,23 @@
-import type { SyntaxParser } from "../../../../src/analysis/syntaxTree.js";
-import { composePostgresSql } from "../../sqlAuthoring/composition.js";
-import { reachableJoinTargets, shortestJoinPlans } from "../../sqlAuthoring/joinPlanner.js";
+import type { SyntaxParser } from "../../../../packages/sql/src/analysis/syntaxTree.js";
+import {
+  reachableJoinTargets,
+  shortestJoinPlans,
+} from "../../../../packages/sql/src/authoring/joinPlanner.js";
 import type {
   SqlAuthoringComposeRequest,
   SqlAuthoringComposeResult,
   SqlAuthoringDragPayload,
   SqlAuthoringSettings,
   SqlAuthoringSnapshot,
-} from "../../sqlAuthoring/protocol.js";
-import type { DataViewAddition, DataViewProjection } from "../protocol.js";
-import { analyzeDataViewQuery, formatDataViewQuery } from "../queryAnalysis.js";
+} from "../../../../packages/sql/src/authoring/protocol.js";
+import {
+  analyzeSqlQuery,
+  formatSqlQuery,
+} from "../../../../packages/sql/src/authoring/query/analysis.js";
+import type {
+  DataViewAddition,
+  DataViewProjection,
+} from "../../../../packages/views/src/dataView/protocol.js";
 
 /**
  * Everything the composition engine can add to a query, grouped by table already present
@@ -24,9 +32,10 @@ export function dataViewAdditions(
   const items: DataViewAddition[] = [];
   const presentOids = projection.tables.map((table) => table.tableOid);
   const present = new Set(presentOids);
-  const name = (oid: number) => snapshot.objects.find((object) => object.oid === oid)?.name ?? "?";
+  const byOid = new Map(snapshot.objects.map((object) => [object.oid, object]));
+  const name = (oid: number) => byOid.get(oid)?.name ?? "?";
   projection.tables.forEach((table, tableIndex) => {
-    const object = snapshot.objects.find((candidate) => candidate.oid === table.tableOid);
+    const object = byOid.get(table.tableOid);
     if (!object) return;
     for (const column of object.columns) {
       if (projectedColumns.has(column.name)) continue;
@@ -123,9 +132,9 @@ export async function composeIntoDataViewQuery(options: {
   uri: string;
   payload: SqlAuthoringDragPayload;
   relationChoice?: number;
-  snapshot: SqlAuthoringSnapshot;
   settings: SqlAuthoringSettings;
   parser: SyntaxParser;
+  compose(request: SqlAuthoringComposeRequest): Promise<SqlAuthoringComposeResult>;
 }): Promise<CompositionOutcome> {
   const request: SqlAuthoringComposeRequest = {
     uri: options.uri,
@@ -134,11 +143,8 @@ export async function composeIntoDataViewQuery(options: {
     payload: options.payload,
     ...(options.relationChoice === undefined ? {} : { relationChoice: options.relationChoice }),
   };
-  const result: SqlAuthoringComposeResult = composePostgresSql(
-    request,
-    options.snapshot,
-    options.settings,
-  );
+  // Through the SQL authoring server, so a Data View drop is guarded exactly like a Scratchpad one.
+  const result = await options.compose(request);
   if (result.status === "ambiguous") {
     return {
       status: "ambiguous",
@@ -149,7 +155,11 @@ export async function composeIntoDataViewQuery(options: {
   if (result.status !== "edit") {
     return { status: "rejected", message: result.message };
   }
-  const composed = await analyzeDataViewQuery(result.text, options.parser);
+  const composed = await analyzeSqlQuery(result.text, options.parser, {
+    uri: options.uri,
+    maxDepth: options.settings.syntaxMaxDepth,
+    maxNodes: options.settings.syntaxMaxNodes,
+  });
   if (composed.status !== "ok") {
     return {
       status: "rejected",
@@ -158,7 +168,7 @@ export async function composeIntoDataViewQuery(options: {
   }
   return {
     status: "changed",
-    text: formatDataViewQuery(result.text, options.settings.tabSize),
+    text: formatSqlQuery(result.text, options.settings.tabSize),
     title: result.title,
   };
 }

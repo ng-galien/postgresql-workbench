@@ -4,11 +4,11 @@ import * as vscode from "vscode";
 import {
   formatQueryResultRow,
   queryResultColumns,
-} from "../../../../src/debugger/launch/boundedQueryResult.js";
-import type { DebugResultColumn } from "../../../../src/debugger/launch/index.js";
-import { delimitedHeader, delimitedRow, resultAsDelimited } from "../../debugResultStore.js";
-import type { SqlNotebookResultPayload } from "../../sqlNotebookModel.js";
-import { PostgresCursorReader } from "../../sqlResultSession.js";
+} from "../../../../packages/dap/src/debugger/launch/boundedQueryResult.js";
+import type { DebugResultColumn } from "../../../../packages/dap/src/debugger/launch/index.js";
+import { delimitedHeader, delimitedRow, resultAsDelimited } from "../../debug/index.js";
+import type { SqlNotebookResultPayload } from "../../scratchpad/index.js";
+import { PostgresCursorReader } from "../../scratchpad/index.js";
 import { TEXT_PASSTHROUGH_TYPES } from "../session/resultLoader.js";
 
 export type DataViewExportFormat = "csv" | "tsv" | "json";

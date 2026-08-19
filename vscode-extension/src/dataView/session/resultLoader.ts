@@ -1,21 +1,20 @@
 import type { Client, FieldDef } from "pg";
 import { types as pgTypes } from "pg";
-import type { NotebookBindingSnapshot } from "../../sqlNotebookModel.js";
-import { postgresCursorSafetyTimeoutMs } from "../../sqlNotebookResultHost.js";
-import {
-  PostgresCursorReader,
-  type SqlCursorTypes,
-  SqlResultSession,
-} from "../../sqlResultSession.js";
-import { loadDataViewCatalog } from "../dataViewCatalog.js";
-import { READ_ONLY_REASONS, resolveDataViewEditability } from "../editability.js";
-import type { DataViewResultSettings } from "../hostServices.js";
 import {
   type DataViewEditability,
   type DataViewProjection,
-  dataViewColumnKey,
   dataViewColumnKeys,
-} from "../protocol.js";
+} from "../../../../packages/views/src/dataView/protocol.js";
+import type { NotebookBindingSnapshot } from "../../scratchpad/index.js";
+import {
+  PostgresCursorReader,
+  postgresCursorSafetyTimeoutMs,
+  type SqlCursorTypes,
+  SqlResultSession,
+} from "../../scratchpad/index.js";
+import { loadDataViewCatalog } from "../dataViewCatalog.js";
+import { READ_ONLY_REASONS, resolveDataViewEditability } from "../editability.js";
+import type { DataViewResultSettings } from "../hostServices.js";
 
 /**
  * Data View cursors keep every value as PostgreSQL text except booleans and binary values, so
@@ -113,14 +112,16 @@ export async function openDataViewResult(options: {
       }),
     };
     const columnNames = probe.fields.map((field) => field.name);
-    const technicalKeys = probe.fields.flatMap((field, ordinal) => {
+    // One derivation of the column keys, so hiding technical columns matches what the grid shows.
+    const columnKeys = dataViewColumnKeys(projection, columnNames);
+    const technicalKeys = columnKeys.filter((_key, ordinal) => {
       const policy = editability.columns[ordinal];
-      return policy &&
+      return (
+        policy !== undefined &&
         !policy.editable &&
         (policy.reason === READ_ONLY_REASONS.identity ||
           policy.reason === READ_ONLY_REASONS.relationship)
-        ? [dataViewColumnKey(field.tableID || undefined, field.name)]
-        : [];
+      );
     });
     reader = new PostgresCursorReader(client, sql, { types: TEXT_PASSTHROUGH_TYPES });
     const session = await SqlResultSession.open(reader, {
@@ -134,7 +135,7 @@ export async function openDataViewResult(options: {
       session,
       editability,
       projection,
-      columnKeys: dataViewColumnKeys(projection, columnNames),
+      columnKeys,
       technicalKeys,
       idleTimeoutMs,
     };

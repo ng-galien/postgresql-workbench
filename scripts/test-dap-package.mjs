@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = resolve(scriptDirectory, "..");
-const packageRoot = resolve(repositoryRoot, "packages", "postgresql-dap");
+const packageRoot = resolve(repositoryRoot, "packages", "dap");
 const manifest = JSON.parse(readFileSync(resolve(packageRoot, "package.json"), "utf8"));
 const temporaryRoot = mkdtempSync(resolve(tmpdir(), "postgresql-dap-package-"));
 const npmExecPath = process.env.npm_execpath;

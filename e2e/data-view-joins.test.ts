@@ -10,24 +10,24 @@
  */
 import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { readPostgresCatalog } from "../src/workbench/postgresCatalog.js";
-import {
-  analyzeDataViewQuery,
-  formatDataViewQuery,
-  removeRelation,
-  setSort,
-  setWhere,
-} from "../vscode-extension/src/dataView/queryAnalysis.js";
+import { readPostgresCatalog } from "../packages/catalog/src/postgresCatalog.js";
 import {
   composePostgresSql,
   tableProjection,
   tableReferences,
-} from "../vscode-extension/src/sqlAuthoring/composition.js";
-import { planJoinPaths } from "../vscode-extension/src/sqlAuthoring/joinPlanner.js";
+} from "../packages/sql/src/authoring/composition.js";
+import { planJoinPaths } from "../packages/sql/src/authoring/joinPlanner.js";
 import {
   DEFAULT_SQL_AUTHORING_SETTINGS,
   type SqlAuthoringSnapshot,
-} from "../vscode-extension/src/sqlAuthoring/protocol.js";
+} from "../packages/sql/src/authoring/protocol.js";
+import {
+  analyzeSqlQuery,
+  formatSqlQuery,
+  removeRelation,
+  setSort,
+  setWhere,
+} from "../packages/sql/src/authoring/query/analysis.js";
 import { type CodeMonikerTestRuntime, startCodeMonikerTestRuntime } from "./codeMonikerRuntime.js";
 
 const CONNECTION = {
@@ -106,7 +106,7 @@ describe("Data View JOIN composition on PostgreSQL", () => {
   });
 
   const analyze = async (text: string) => {
-    const analyzed = await analyzeDataViewQuery(text, codeMoniker.parser);
+    const analyzed = await analyzeSqlQuery(text, codeMoniker.parser);
     if (analyzed.status !== "ok") throw new Error(`${analyzed.message}\n${text}`);
     return analyzed.analysis;
   };
@@ -154,8 +154,8 @@ describe("Data View JOIN composition on PostgreSQL", () => {
       const initial = await analyze(text);
       const firstTarget = initial.targets[0];
       if (!firstTarget) throw new Error(`no projection for ${base.name}`);
-      text = formatDataViewQuery(setWhere(text, initial, `${firstTarget.expression} IS NOT NULL`));
-      text = formatDataViewQuery(
+      text = formatSqlQuery(setWhere(text, initial, `${firstTarget.expression} IS NOT NULL`));
+      text = formatSqlQuery(
         setSort(text, await analyze(text), [
           { column: firstTarget.label, direction: "descending" },
         ]),
@@ -188,7 +188,7 @@ describe("Data View JOIN composition on PostgreSQL", () => {
         const removal = removeRelation(text, analysis, relation, []);
         expect(removal.status, `${base.name} - ${relation.name}`).toBe("removed");
         if (removal.status !== "removed") return;
-        text = formatDataViewQuery(removal.text);
+        text = formatSqlQuery(removal.text);
         await runs(text);
         analysis = await analyze(text);
         removed += 1;

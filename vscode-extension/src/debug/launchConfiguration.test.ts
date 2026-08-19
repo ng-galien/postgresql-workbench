@@ -1,0 +1,363 @@
+import { describe, expect, it, vi } from "vitest";
+import type { ServerConfig } from "../connection/savedConnections.js";
+import {
+  buildRoutineArgs,
+  buildRoutineTarget,
+  configNameFromRoutine,
+  type DebugConfigConnectionManager,
+  type DebugConfigLogger,
+  type DebugConfigUi,
+  type DebugConfigurationLike,
+  resolveDebugConfiguration,
+  type SqlTargetParser,
+} from "./launchConfiguration.js";
+
+const noSqlTarget: SqlTargetParser = async () => ({
+  schema: null,
+  routine: null,
+  args: [],
+  kind: null,
+});
+
+function makeServer(overrides: Partial<ServerConfig> = {}): ServerConfig {
+  return {
+    id: "localhost:5432/testdb:postgres",
+    name: "postgres@localhost:5432/testdb",
+    host: "localhost",
+    port: 5432,
+    database: "testdb",
+    user: "postgres",
+    ...overrides,
+  };
+}
+
+function makeManager(
+  server: ServerConfig | undefined,
+  overrides: Partial<DebugConfigConnectionManager> = {},
+): DebugConfigConnectionManager {
+  return {
+    store: {
+      get: vi.fn((id: string) => (server?.id === id ? server : undefined)),
+    },
+    connectedServerIds: server ? [server.id] : [],
+    commands: { pickConnection: vi.fn(async () => undefined) },
+    isServerConnected: vi.fn(() => Boolean(server)),
+    connectServer: vi.fn(async () => true),
+    refreshDebugCapability: vi.fn(async () => ({ available: true, error: "" })),
+    getPassword: vi.fn(async () => "secret"),
+    ...overrides,
+  };
+}
+
+describe("debugConfig", () => {
+  it("builds debug names from structured routine targets", () => {
+    expect(
+      configNameFromRoutine({
+        schema: "public",
+        name: "demo",
+        kind: "function",
+      }),
+    ).toBe("Debug public.demo");
+  });
+
+  it("builds structured routine targets and args", () => {
+    expect(
+      buildRoutineTarget({
+        schema: "public",
+        name: "demo",
+        params: [
+          { name: "a", type: "integer", mode: "in" },
+          { name: "b", type: "text", mode: "in" },
+        ],
+        line: 1,
+        kind: "function",
+      }),
+    ).toEqual({
+      schema: "public",
+      name: "demo",
+      kind: "function",
+      argTypes: ["integer", "text"],
+    });
+    expect(buildRoutineArgs(["42", "NULL", "hello"])).toEqual([
+      { value: "42" },
+      { value: null },
+      { value: "hello" },
+    ]);
+  });
+
+  it("rejects configs without sql or routine", async () => {
+    const ui: DebugConfigUi = { showErrorMessage: vi.fn() };
+    const config: DebugConfigurationLike = {};
+
+    const resolved = await resolveDebugConfiguration(
+      config,
+      makeManager(undefined),
+      ui,
+      noSqlTarget,
+    );
+
+    expect(resolved).toBeUndefined();
+    expect(ui.showErrorMessage).toHaveBeenCalledOnce();
+  });
+
+  it("keeps inline connection configs untouched", async () => {
+    const config: DebugConfigurationLike = {
+      routine: {
+        schema: "public",
+        name: "test_simple",
+        kind: "function",
+        argTypes: ["integer", "text"],
+      },
+      routineArgs: [{ value: "1" }, { value: "x" }],
+      host: "localhost",
+      port: 5433,
+      database: "testdb",
+      user: "postgres",
+      password: "postgres",
+    };
+    const ui: DebugConfigUi = { showErrorMessage: vi.fn() };
+    const out: DebugConfigLogger = { appendLine: vi.fn() };
+    const cm = makeManager(undefined, {
+      commands: {
+        pickConnection: vi.fn(async () => {
+          throw new Error("should not pick");
+        }),
+      },
+    });
+
+    const resolved = await resolveDebugConfiguration(config, cm, ui, noSqlTarget, out);
+
+    expect(resolved).toBe(config);
+    expect(cm.commands.pickConnection).not.toHaveBeenCalled();
+    expect(out.appendLine).toHaveBeenCalledWith(
+      "resolveDebugConfiguration: inline connection localhost:5433/testdb",
+    );
+    expect(resolved?.stopOnEntry).toBe(true);
+  });
+
+  it("preserves an explicit run-to-breakpoint configuration", async () => {
+    const config: DebugConfigurationLike = {
+      sql: "SELECT test_simple(1, 'run')",
+      stopOnEntry: false,
+      host: "localhost",
+      port: 5433,
+      database: "testdb",
+      user: "postgres",
+      password: "postgres",
+    };
+
+    const resolved = await resolveDebugConfiguration(
+      config,
+      makeManager(undefined),
+      { showErrorMessage: vi.fn() },
+      noSqlTarget,
+    );
+
+    expect(resolved?.stopOnEntry).toBe(false);
+  });
+
+  it("keeps raw SQL launches usable without a host-side syntax parser", async () => {
+    const resolved = await resolveDebugConfiguration(
+      {
+        sql: "SELECT test_simple(1, 'standalone')",
+        host: "localhost",
+        port: 5433,
+        database: "testdb",
+        user: "postgres",
+        password: "postgres",
+      },
+      makeManager(undefined),
+      { showErrorMessage: vi.fn() },
+    );
+
+    expect(resolved?.name).toBe("Debug PL/pgSQL");
+  });
+
+  it("resolves active server credentials and connects if needed", async () => {
+    const server = makeServer({ ssl: "require" });
+    const ui: DebugConfigUi = { showErrorMessage: vi.fn() };
+    const out: DebugConfigLogger = { appendLine: vi.fn() };
+    const cm = makeManager(server, {
+      isServerConnected: vi.fn(() => false),
+    });
+    const config: DebugConfigurationLike = {
+      routine: {
+        schema: "public",
+        name: "test_simple",
+        kind: "function",
+        argTypes: ["integer", "text"],
+      },
+      routineArgs: [{ value: "1" }, { value: "x" }],
+    };
+
+    const resolved = await resolveDebugConfiguration(config, cm, ui, noSqlTarget, out);
+
+    expect(cm.connectServer).toHaveBeenCalledWith(server.id);
+    expect(resolved).toMatchObject({
+      type: "postgresql-workbench",
+      request: "launch",
+      host: server.host,
+      port: server.port,
+      database: server.database,
+      user: server.user,
+      password: "secret",
+      ssl: "require",
+    });
+  });
+
+  it("picks a server when no Connexion is selected", async () => {
+    const server = makeServer();
+    const ui: DebugConfigUi = { showErrorMessage: vi.fn() };
+    let connectedIds: readonly string[] = [];
+    const pickedManager: DebugConfigConnectionManager = {
+      ...makeManager(server),
+      get connectedServerIds() {
+        return connectedIds;
+      },
+      commands: {
+        pickConnection: vi.fn(async function (this: void) {
+          connectedIds = [server.id];
+          return server.id;
+        }),
+      },
+      isServerConnected: vi.fn(() => true),
+    };
+    const config: DebugConfigurationLike = {
+      routine: {
+        schema: "public",
+        name: "test_simple",
+        kind: "function",
+        argTypes: ["integer"],
+      },
+      routineArgs: [{ value: "1" }],
+    };
+
+    const resolved = await resolveDebugConfiguration(config, pickedManager, ui, noSqlTarget);
+
+    expect(pickedManager.commands.pickConnection).toHaveBeenCalledOnce();
+    expect(resolved?.host).toBe(server.host);
+  });
+
+  it("uses the exact picked Connexion when several Connexions are already connected", async () => {
+    const first = makeServer({ id: "first", host: "first.example" });
+    const second = makeServer({ id: "second", host: "second.example" });
+    const ui: DebugConfigUi = { showErrorMessage: vi.fn() };
+    const servers = new Map([
+      [first.id, first],
+      [second.id, second],
+    ]);
+    const cm: DebugConfigConnectionManager = {
+      ...makeManager(undefined),
+      store: { get: vi.fn((id: string) => servers.get(id)) },
+      connectedServerIds: [first.id, second.id],
+      commands: { pickConnection: vi.fn(async () => second.id) },
+      isServerConnected: vi.fn(() => true),
+    };
+    const config: DebugConfigurationLike = { sql: "SELECT public.test_simple(1)" };
+
+    const resolved = await resolveDebugConfiguration(config, cm, ui, noSqlTarget);
+
+    expect(cm.commands.pickConnection).toHaveBeenCalledOnce();
+    expect(resolved?.host).toBe(second.host);
+    expect(resolved?.server).toBe(second.id);
+  });
+
+  it("never falls back to another connection when the associated server is gone", async () => {
+    const other = makeServer();
+    const ui: DebugConfigUi = { showErrorMessage: vi.fn() };
+    const cm = makeManager(other, {
+      commands: { pickConnection: vi.fn(async () => other.id) },
+    });
+    const config: DebugConfigurationLike = {
+      server: "missing-server-id",
+      sql: "SELECT public.test_simple(1)",
+    };
+
+    const resolved = await resolveDebugConfiguration(config, cm, ui, noSqlTarget);
+
+    expect(resolved).toBeUndefined();
+    expect(cm.commands.pickConnection).not.toHaveBeenCalled();
+    expect(ui.showErrorMessage).toHaveBeenCalledWith(expect.stringContaining("no longer exists"));
+  });
+
+  it("aborts when connection fails", async () => {
+    const server = makeServer();
+    const ui: DebugConfigUi = { showErrorMessage: vi.fn() };
+    const cm = makeManager(server, {
+      isServerConnected: vi.fn(() => false),
+      connectServer: vi.fn(async () => false),
+    });
+
+    const resolved = await resolveDebugConfiguration(
+      {
+        routine: {
+          schema: "public",
+          name: "test_simple",
+          kind: "function",
+          argTypes: ["integer", "text"],
+        },
+        routineArgs: [{ value: "1" }, { value: "x" }],
+      },
+      cm,
+      ui,
+      noSqlTarget,
+    );
+
+    expect(resolved).toBeUndefined();
+    expect(cm.connectServer).toHaveBeenCalledWith(server.id);
+  });
+
+  it("rejects a debug launch before DAP startup when the exact Connexion lacks pldbgapi", async () => {
+    const server = makeServer();
+    const ui: DebugConfigUi = { showErrorMessage: vi.fn() };
+    const cm = makeManager(server, {
+      refreshDebugCapability: vi.fn(async () => ({
+        available: false,
+        error: 'pldbgapi extension not installed on "testdb".',
+      })),
+    });
+
+    const resolved = await resolveDebugConfiguration(
+      {
+        sql: "SELECT public.test_simple(1, 'x')",
+        server: server.id,
+      },
+      cm,
+      ui,
+      noSqlTarget,
+    );
+
+    expect(resolved).toBeUndefined();
+    expect(cm.refreshDebugCapability).toHaveBeenCalledWith(server.id);
+    expect(ui.showErrorMessage).toHaveBeenCalledWith(
+      expect.stringContaining("PL/pgSQL debugging is unavailable"),
+    );
+  });
+
+  it("uses the explicitly associated Connexion", async () => {
+    const server = makeServer();
+    const ui: DebugConfigUi = { showErrorMessage: vi.fn() };
+    const cm = makeManager(server, {
+      isServerConnected: vi.fn(() => true),
+      connectServer: vi.fn(async () => {
+        throw new Error("must not switch context");
+      }),
+    });
+
+    const resolved = await resolveDebugConfiguration(
+      {
+        sql: "SELECT public.test_simple(1, 'x')",
+        server: server.id,
+      },
+      cm,
+      ui,
+      noSqlTarget,
+    );
+
+    expect(cm.connectServer).not.toHaveBeenCalled();
+    expect(resolved).toMatchObject({
+      host: server.host,
+      database: server.database,
+    });
+  });
+});

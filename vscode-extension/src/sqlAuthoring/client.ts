@@ -6,28 +6,14 @@ import {
   type ServerOptions,
   TransportKind,
 } from "vscode-languageclient/node";
-import type { SyntaxNode } from "../../../src/analysis/syntaxTree.js";
-import type { ConnectionManager } from "../connectionManager.js";
-import { PlpgsqlSemanticTokensProvider } from "../plpgsqlSemanticTokens.js";
-import { getConnectionName } from "../serverStore.js";
-import {
-  resolveScratchpadAssociation,
-  SQL_NOTEBOOK_TYPE,
-  type SqlNotebookMetadata,
-} from "../sqlNotebookModel.js";
-import type { WorkbenchIndexController } from "../workbenchIndexController.js";
-import { sqlAuthoringEditStillApplies } from "./composeRequest.js";
-import {
-  canonicalSqlIdentifier,
-  POSTGRES_IDENTIFIER_PATTERN,
-  splitSqlQualifiedIdentifier,
-  sqlAliasAfterRelation,
-} from "./identifiers.js";
+import type { SyntaxNode, SyntaxParser } from "../../../packages/sql/src/analysis/syntaxTree.js";
+import { sqlAuthoringEditStillApplies } from "../../../packages/sql/src/authoring/composeRequest.js";
+import { canonicalSqlIdentifier } from "../../../packages/sql/src/authoring/identifiers.js";
 import {
   type SqlAuthoringScope,
   sqlAuthoringLanguageStatus,
   sqlAuthoringRejectionAction,
-} from "./languageStatus.js";
+} from "../../../packages/sql/src/authoring/languageStatus.js";
 import {
   DEFAULT_SQL_AUTHORING_SETTINGS,
   decodeSemanticTokenData,
@@ -46,8 +32,24 @@ import {
   type SqlAuthoringSettings,
   type SqlAuthoringSyntaxResult,
   sqlAuthoringContextMatchesToken,
-} from "./protocol.js";
-import { postgresPlpgsqlRanges, scanPostgresSql } from "./sqlLexing.js";
+} from "../../../packages/sql/src/authoring/protocol.js";
+import { analyzeSqlQuery } from "../../../packages/sql/src/authoring/query/analysis.js";
+import {
+  documentRelations,
+  type SqlColumnMention,
+  type SqlRelationMention,
+  type SqlRoutineMention,
+} from "../../../packages/sql/src/authoring/query/relations.js";
+import { sqlStatementSlices } from "../../../packages/sql/src/authoring/sqlLexing.js";
+import type { ConnectionManager } from "../connection/index.js";
+import { getConnectionName } from "../connection/index.js";
+import { PlpgsqlSemanticTokensProvider } from "../plpgsql/index.js";
+import {
+  resolveScratchpadAssociation,
+  SQL_NOTEBOOK_TYPE,
+  type SqlNotebookMetadata,
+} from "../scratchpad/index.js";
+import type { WorkbenchIndexController } from "../workbench/index.js";
 
 const SQL_DOCUMENT_SELECTOR = [
   { language: "sql", scheme: "file" },
@@ -69,13 +71,21 @@ export interface SqlAuthoringNavigationTarget {
   serverId: string;
 }
 
+/** The running SQL authoring server: every consumer composes through it, never through the engine. */
+export interface SqlAuthoringRegistration extends vscode.Disposable {
+  compose(
+    request: SqlAuthoringComposeRequest,
+    token?: vscode.CancellationToken,
+  ): Promise<SqlAuthoringComposeResult>;
+}
+
 export async function registerSqlAuthoring(
   context: vscode.ExtensionContext,
   connections: ConnectionManager,
   index: WorkbenchIndexController,
   navigate?: (target: SqlAuthoringNavigationTarget) => Promise<boolean>,
   documentAssociation?: (uri: string) => string | undefined,
-): Promise<vscode.Disposable> {
+): Promise<SqlAuthoringRegistration> {
   const module = context.asAbsolutePath(join("dist", "sql-authoring-server.js"));
   const serverOptions: ServerOptions = {
     run: { module, transport: TransportKind.ipc },
@@ -120,11 +130,30 @@ export async function registerSqlAuthoring(
   );
   client.onRequest(
     SQL_AUTHORING_SYNTAX_REQUEST,
-    async ({ uri, source }: { uri: string; source: string }): Promise<SqlAuthoringSyntaxResult> => {
+    async ({
+      uri,
+      source,
+      caret,
+    }: {
+      uri: string;
+      source: string;
+      /** Offset being typed: a placeholder is inserted there so an unfinished statement parses. */
+      caret?: number;
+    }): Promise<SqlAuthoringSyntaxResult> => {
       const parser = await index.syntaxParser();
       const settings = resolveSqlAuthoringSettings(uri);
+      const {
+        source: parsedSource,
+        relations,
+        caretRole,
+      } = await documentRelations(parser, source, {
+        uri,
+        maxDepth: settings.syntaxMaxDepth,
+        maxNodes: settings.syntaxMaxNodes,
+        ...(caret === undefined ? {} : { caret }),
+      });
       const budget = {
-        source,
+        source: parsedSource,
         uri,
         maxDepth: settings.syntaxMaxDepth,
         maxNodes: settings.syntaxMaxNodes,
@@ -132,7 +161,22 @@ export async function registerSqlAuthoring(
       };
       const syntax = await parser.parse({ language: "sql", ...budget });
       if (!syntax.hasError || syntax.truncated) {
-        return { hasError: syntax.hasError, truncated: syntax.truncated };
+        // The composition engine rewrites from this analysis; it never scans the text itself.
+        const analyzed = syntax.truncated
+          ? undefined
+          : await analyzeSqlQuery(source, parser, {
+              uri,
+              maxDepth: settings.syntaxMaxDepth,
+              maxNodes: settings.syntaxMaxNodes,
+            });
+        return {
+          hasError: syntax.hasError,
+          truncated: syntax.truncated,
+          ...(analyzed?.status === "ok" ? { analysis: analyzed.analysis } : {}),
+          ...(analyzed?.shape === undefined ? {} : { shape: analyzed.shape }),
+          relations,
+          ...(caretRole === undefined ? {} : { caretRole }),
+        };
       }
       const languageId = vscode.workspace.textDocuments.find(
         (candidate) => candidate.uri.toString() === uri,
@@ -146,6 +190,8 @@ export async function registerSqlAuthoring(
         truncated: false,
         ...(errorLine === undefined ? {} : { errorLine }),
         ...(plpgsqlBody ? { plpgsqlBody } : {}),
+        relations,
+        ...(caretRole === undefined ? {} : { caretRole }),
       };
     },
   );
@@ -274,7 +320,7 @@ export async function registerSqlAuthoring(
   const hovers = vscode.languages.registerHoverProvider(
     [...SQL_DOCUMENT_SELECTOR] satisfies vscode.DocumentSelector,
     {
-      provideHover(document, position) {
+      async provideHover(document, position) {
         const context = resolveDocumentContext(
           document.uri.toString(),
           connections,
@@ -282,9 +328,13 @@ export async function registerSqlAuthoring(
           documentAssociation,
         );
         if (context.status !== "available" || context.snapshot.status !== "available") return;
-        const reference = sqlReferences(document, context.snapshot).find(({ range }) =>
-          range.contains(position),
+        const references = await sqlReferences(
+          document,
+          context.snapshot,
+          await index.syntaxParser(),
+          resolveSqlAuthoringSettings(document.uri.toString()),
         );
+        const reference = references.find(({ range }) => range.contains(position));
         if (!reference) return;
         const command = `command:${REVEAL_SQL_REFERENCE_COMMAND}?${encodeURIComponent(
           JSON.stringify([reference.target]),
@@ -328,7 +378,7 @@ export async function registerSqlAuthoring(
     }),
   );
 
-  return vscode.Disposable.from(
+  const subscriptions = vscode.Disposable.from(
     dropProvider,
     hovers,
     revealReference,
@@ -339,6 +389,17 @@ export async function registerSqlAuthoring(
       dispose: () => void client.stop(),
     },
   );
+  return {
+    dispose: () => subscriptions.dispose(),
+    compose: (request, token) =>
+      token
+        ? client.sendRequest<SqlAuthoringComposeResult>(
+            SQL_AUTHORING_COMPOSE_REQUEST,
+            request,
+            token,
+          )
+        : client.sendRequest<SqlAuthoringComposeResult>(SQL_AUTHORING_COMPOSE_REQUEST, request),
+  };
 }
 
 interface SqlReference {
@@ -347,122 +408,121 @@ interface SqlReference {
   target: SqlAuthoringNavigationTarget;
 }
 
-export function sqlReferences(
+export async function sqlReferences(
   document: vscode.TextDocument,
   snapshot: Extract<SqlAuthoringDocumentContext, { status: "available" }>["snapshot"],
-): SqlReference[] {
+  parser: SyntaxParser,
+  settings: SqlAuthoringSettings = DEFAULT_SQL_AUTHORING_SETTINGS,
+): Promise<SqlReference[]> {
   const source = document.getText();
-  const separators = scanPostgresSql(source).statementSeparators;
-  const boundaries = [...separators.map((offset) => offset + 1), source.length];
+  const { relations, columns, routines } = await documentRelations(parser, source, {
+    uri: document.uri.toString(),
+    maxDepth: settings.syntaxMaxDepth,
+    maxNodes: settings.syntaxMaxNodes,
+  });
   const references: SqlReference[] = [];
-  let start = 0;
-  for (const end of boundaries) {
-    references.push(...sqlStatementReferences(document, source.slice(start, end), start, snapshot));
-    start = end;
-  }
-  for (const range of postgresPlpgsqlRanges(source)) {
+  // Aliases are scoped to their Statement: the same name may denote another relation further down.
+  for (const statement of sqlStatementSlices(source)) {
+    const within = <T extends { nameRange: { start: number; end: number } }>(
+      mentions: readonly T[],
+    ) =>
+      mentions.filter(
+        (mention) =>
+          mention.nameRange.start >= statement.start && mention.nameRange.end <= statement.end,
+      );
     references.push(
-      ...sqlStatementReferences(
+      ...statementReferences(
         document,
-        source.slice(range.start, range.end),
-        range.start,
         snapshot,
+        within(relations),
+        within(columns),
+        within(routines),
       ),
     );
   }
   return references;
 }
 
-function sqlStatementReferences(
+/** References of one Statement, with its own alias scope. */
+function statementReferences(
   document: vscode.TextDocument,
-  source: string,
-  documentOffset: number,
   snapshot: Extract<SqlAuthoringDocumentContext, { status: "available" }>["snapshot"],
+  relations: readonly SqlRelationMention[],
+  columns: readonly SqlColumnMention[],
+  routines: readonly SqlRoutineMention[],
 ): SqlReference[] {
-  const maskedSource = scanPostgresSql(source).maskedSource;
-  const identifier = POSTGRES_IDENTIFIER_PATTERN;
-  const relationPattern = new RegExp(
-    String.raw`\b(?:FROM|INTO|UPDATE|USING|(?:NATURAL\s+)?(?:(?:LEFT|RIGHT|FULL)(?:\s+OUTER)?\s+|(?:INNER|CROSS)\s+)?JOIN)\s+(${identifier}\.${identifier})`,
-    "giu",
-  );
-  const aliases = new Map<string, (typeof snapshot.objects)[number]>();
   const references: SqlReference[] = [];
-  for (const match of maskedSource.matchAll(relationPattern)) {
-    const relationOffset = (match.index ?? 0) + match[0].indexOf(match[1]);
-    const relation = source.slice(relationOffset, relationOffset + match[1].length);
-    const parts = splitSqlQualifiedIdentifier(relation);
-    if (parts.length !== 2) continue;
-    const object = snapshot.objects.find(
+  const aliases = new Map<string, (typeof snapshot.objects)[number]>();
+  for (const relation of relations) {
+    if (relation.schema === undefined) continue;
+    // A relation position names a table or a view; only when no relation carries that name does
+    // it name a routine, as in `CALL shop.move_inventory(…)`. Homonyms resolve to the relation.
+    const named = snapshot.objects.filter(
       (candidate) =>
-        (candidate.kind === "table" || candidate.kind === "view") &&
-        candidate.schema === canonicalSqlIdentifier(parts[0]) &&
-        candidate.name === canonicalSqlIdentifier(parts[1]),
+        candidate.schema === canonicalSqlIdentifier(relation.schema ?? "") &&
+        candidate.name === canonicalSqlIdentifier(relation.name),
     );
+    const object =
+      named.find((candidate) => candidate.kind === "table" || candidate.kind === "view") ??
+      named.find((candidate) => candidate.kind === "function" || candidate.kind === "procedure");
     if (!object) continue;
-    const nameOffset = relationOffset + relation.lastIndexOf(parts[1]);
-    references.push(sqlReference(document, documentOffset + nameOffset, parts[1].length, object));
-    const alias = sqlAliasAfterRelation(source, maskedSource, relationOffset + match[1].length);
-    aliases.set(canonicalSqlIdentifier(alias ?? parts[1]), object);
+    const nameLength = relation.name.length;
+    references.push(
+      sqlReference(document, relation.nameRange.end - nameLength, nameLength, object),
+    );
+    if (object.kind === "table" || object.kind === "view") {
+      aliases.set(canonicalSqlIdentifier(relation.reference), object);
+    }
   }
-
-  const routinePattern = new RegExp(
-    String.raw`\b(?:CALL\s+)?(${identifier}\.${identifier})\s*(?=\()`,
-    "giu",
-  );
-  for (const match of maskedSource.matchAll(routinePattern)) {
-    const routineOffset = (match.index ?? 0) + match[0].indexOf(match[1]);
-    const routineReference = source.slice(routineOffset, routineOffset + match[1].length);
-    const parts = splitSqlQualifiedIdentifier(routineReference);
-    if (parts.length !== 2) continue;
+  for (const routine of routines) {
+    if (routine.schema === undefined) continue;
     const object = snapshot.objects.find(
       (candidate) =>
         (candidate.kind === "function" || candidate.kind === "procedure") &&
-        candidate.schema === canonicalSqlIdentifier(parts[0]) &&
-        candidate.name === canonicalSqlIdentifier(parts[1]),
+        candidate.schema === canonicalSqlIdentifier(routine.schema ?? "") &&
+        candidate.name === canonicalSqlIdentifier(routine.name),
     );
     if (!object) continue;
-    const nameOffset = routineOffset + routineReference.lastIndexOf(parts[1]);
-    references.push(sqlReference(document, documentOffset + nameOffset, parts[1].length, object));
-  }
-
-  const qualified = new RegExp(String.raw`(${identifier})\s*\.\s*(${identifier})`, "gu");
-  for (const match of maskedSource.matchAll(qualified)) {
-    const matchOffset = match.index ?? 0;
-    const ownerOffset = matchOffset + match[0].indexOf(match[1]);
-    const columnOffset = matchOffset + match[0].lastIndexOf(match[2]);
-    const owner = source.slice(ownerOffset, ownerOffset + match[1].length);
-    const column = source.slice(columnOffset, columnOffset + match[2].length);
-    const object = aliases.get(canonicalSqlIdentifier(owner));
-    const columnName = canonicalSqlIdentifier(column);
-    if (!object?.columns.some((candidate) => candidate.name === columnName)) continue;
     references.push(
-      sqlReference(document, documentOffset + columnOffset, match[2].length, object, columnName),
+      sqlReference(
+        document,
+        routine.nameRange.start,
+        routine.nameRange.end - routine.nameRange.start,
+        object,
+      ),
     );
   }
-  const unqualified = new RegExp(identifier, "gu");
-  for (const match of maskedSource.matchAll(unqualified)) {
-    const offset = match.index ?? 0;
-    if (hasAdjacentDot(source, offset, match[0].length)) continue;
-    const name = canonicalSqlIdentifier(source.slice(offset, offset + match[0].length));
-    const owners = new Map(
-      [...aliases.values()]
-        .filter((object) => object.columns.some((column) => column.name === name))
-        .map((object) => [object.oid, object]),
+  for (const column of columns) {
+    const name = canonicalSqlIdentifier(column.name);
+    const owner =
+      column.qualifier === undefined
+        ? soleOwnerOf(name, aliases)
+        : aliases.get(canonicalSqlIdentifier(column.qualifier));
+    if (!owner?.columns.some((candidate) => candidate.name === name)) continue;
+    references.push(
+      sqlReference(
+        document,
+        column.nameRange.start,
+        column.nameRange.end - column.nameRange.start,
+        owner,
+        name,
+      ),
     );
-    if (owners.size !== 1) continue;
-    const object = [...owners.values()][0];
-    references.push(sqlReference(document, documentOffset + offset, match[0].length, object, name));
   }
   return references;
 }
 
-function hasAdjacentDot(source: string, offset: number, length: number): boolean {
-  let before = offset - 1;
-  while (before >= 0 && /\s/u.test(source[before])) before -= 1;
-  if (source[before] === ".") return true;
-  let after = offset + length;
-  while (after < source.length && /\s/u.test(source[after])) after += 1;
-  return source[after] === ".";
+/** The only relation of the query that has this column, when exactly one does. */
+function soleOwnerOf<T extends { oid: number; columns: readonly { name: string }[] }>(
+  name: string,
+  aliases: ReadonlyMap<string, T>,
+): T | undefined {
+  const owners = new Map(
+    [...aliases.values()]
+      .filter((object) => object.columns.some((column) => column.name === name))
+      .map((object) => [object.oid, object]),
+  );
+  return owners.size === 1 ? [...owners.values()][0] : undefined;
 }
 
 function sqlReference(

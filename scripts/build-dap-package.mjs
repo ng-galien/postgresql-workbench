@@ -5,7 +5,7 @@ import { build } from "esbuild";
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = resolve(scriptDirectory, "..");
-const packageRoot = resolve(repositoryRoot, "packages", "postgresql-dap");
+const packageRoot = resolve(repositoryRoot, "packages", "dap");
 const manifest = JSON.parse(readFileSync(resolve(packageRoot, "package.json"), "utf8"));
 const outputDirectory = resolve(packageRoot, "dist");
 const outputFile = resolve(outputDirectory, "postgresql-dap.js");
@@ -14,7 +14,7 @@ rmSync(outputDirectory, { recursive: true, force: true });
 mkdirSync(outputDirectory, { recursive: true });
 
 const result = await build({
-  entryPoints: [resolve(repositoryRoot, "src", "main.ts")],
+  entryPoints: [resolve(repositoryRoot, "packages", "dap", "src", "main.ts")],
   outfile: outputFile,
   bundle: true,
   packages: "external",
@@ -32,7 +32,7 @@ const result = await build({
 });
 
 const forbiddenInputs = Object.keys(result.metafile.inputs).filter((input) =>
-  input.replaceAll("\\", "/").includes("src/workbench/"),
+  input.replaceAll("\\", "/").includes("packages/catalog/src/"),
 );
 if (forbiddenInputs.length > 0) {
   throw new Error(

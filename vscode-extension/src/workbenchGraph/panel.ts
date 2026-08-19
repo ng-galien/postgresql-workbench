@@ -1,6 +1,9 @@
 import { randomBytes } from "node:crypto";
 import * as vscode from "vscode";
-import type { WorkbenchGraphHostMessage, WorkbenchGraphWebviewMessage } from "./protocol.js";
+import type {
+  WorkbenchGraphHostMessage,
+  WorkbenchGraphWebviewMessage,
+} from "../../../packages/views/src/cockpit/protocol.js";
 
 export class WorkbenchGraphPanel implements vscode.Disposable {
   private panel?: vscode.WebviewPanel;

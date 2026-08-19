@@ -3,7 +3,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
-const packageRoot = resolve(scriptDirectory, "..", "packages", "postgresql-dap");
+const packageRoot = resolve(scriptDirectory, "..", "packages", "dap");
 const manifest = JSON.parse(readFileSync(resolve(packageRoot, "package.json"), "utf8"));
 const binary = resolve(packageRoot, manifest.bin["postgresql-dap"]);
 

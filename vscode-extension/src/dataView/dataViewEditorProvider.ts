@@ -1,9 +1,12 @@
 import { randomBytes } from "node:crypto";
 import * as vscode from "vscode";
+import type {
+  DataViewRequest,
+  DataViewSource,
+} from "../../../packages/views/src/dataView/protocol.js";
 import { DataViewDocument } from "./dataViewDocument.js";
 import { DATA_VIEW_EDITOR_VIEW_TYPE, dataViewUri, parseDataViewUri } from "./dataViewUri.js";
 import { type DataViewHostServices, errorMessage } from "./hostServices.js";
-import type { DataViewRequest, DataViewSource } from "./protocol.js";
 
 /**
  * VS Code integration of Data Views: the custom editor (one tab per source), its webview HTML,
@@ -19,6 +22,8 @@ export class DataViewEditorProvider
   >();
   readonly onDidChangeCustomDocument = this._onDidChangeCustomDocument.event;
   private readonly documents = new Map<string, DataViewDocument>();
+  /** Edit subscriptions, released with their tab so a closed Data View keeps no rows alive. */
+  private readonly edits = new Map<DataViewDocument, vscode.Disposable>();
   private readonly disposables: vscode.Disposable[] = [];
 
   constructor(private readonly services: DataViewHostServices) {
@@ -30,6 +35,13 @@ export class DataViewEditorProvider
     this.disposables.push(
       vscode.workspace.onDidChangeTextDocument((event) => refresh(event.document.uri)),
       vscode.workspace.onDidSaveTextDocument((document) => refresh(document.uri)),
+      services.onConnectionsChanged((serverIds) => {
+        for (const document of this.documents.values()) {
+          if (serverIds.length === 0 || serverIds.includes(document.source.serverId)) {
+            document.refreshQueryState();
+          }
+        }
+      }),
     );
   }
 
@@ -55,7 +67,8 @@ export class DataViewEditorProvider
     if (!source) throw new Error("This Data View link is not valid.");
     const document = new DataViewDocument(uri, source, this.services, usesNativeDirtyTracking);
     this.documents.set(uri.toString(), document);
-    this.disposables.push(
+    this.edits.set(
+      document,
       document.onDidEdit((edit) => this._onDidChangeCustomDocument.fire({ document, ...edit })),
     );
     return document;
@@ -106,6 +119,8 @@ export class DataViewEditorProvider
     panel.onDidDispose(() => {
       attachment.dispose();
       messages.dispose();
+      this.edits.get(document)?.dispose();
+      this.edits.delete(document);
       if (this.documents.get(document.uri.toString()) === document) {
         this.documents.delete(document.uri.toString());
       }
@@ -136,6 +151,8 @@ export class DataViewEditorProvider
   dispose(): void {
     for (const document of this.documents.values()) document.dispose();
     this.documents.clear();
+    for (const subscription of this.edits.values()) subscription.dispose();
+    this.edits.clear();
     for (const disposable of this.disposables) disposable.dispose();
     this._onDidChangeCustomDocument.dispose();
   }
