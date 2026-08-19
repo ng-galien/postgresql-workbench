@@ -42,7 +42,7 @@
     "registry": "https://registry.npmjs.org/"
   },
   "scripts": {
-    "prepack": "node ../../scripts/build-dap-package.mjs && node ../../scripts/verify-dap-package.mjs"
+    "prepack": "node ../../scripts/dap/build-package.mjs && node ../../scripts/dap/verify-package.mjs"
   },
   "dependencies": {
     "@code-moniker/client": "0.6.1",

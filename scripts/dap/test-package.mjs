@@ -24,7 +24,9 @@ try {
     cwd: repositoryRoot,
     encoding: "utf8",
   });
-  const packed = JSON.parse(packOutput)[0];
+  // `npm pack --json` reports an array on npm 10 and an object keyed by package name on npm 11.
+  const packReport = JSON.parse(packOutput);
+  const packed = Array.isArray(packReport) ? packReport[0] : Object.values(packReport)[0];
   const expectedFiles = new Set(["LICENSE", "README.md", "dist/postgresql-dap.js", "package.json"]);
   const actualFiles = new Set(packed.files.map((file) => file.path));
   if (
