@@ -160,6 +160,39 @@ describe("ScratchpadTransactionManager", () => {
     ).resolves.toBe("after");
   });
 
+  it("rolls back the Transaction of a closed Scratchpad once the user is warned", async () => {
+    const { queries, transactions } = fixture();
+    await transactions.execute("scratchpad:1", "Scratch 1", association, async () => "done");
+    vi.mocked(vscode.window.showWarningMessage).mockResolvedValue("Roll Back" as never);
+
+    await transactions.resolveClosedScratchpad("scratchpad:1");
+
+    expect(vscode.window.showWarningMessage).toHaveBeenCalledWith(
+      expect.stringContaining("Closing the Scratchpad rolls it back"),
+      { modal: true },
+      "Roll Back",
+    );
+    expect(queries).toContain("ROLLBACK");
+  });
+
+  it("keeps the Transaction of a closed Scratchpad when the warning is cancelled", async () => {
+    const { queries, transactions } = fixture();
+    await transactions.execute("scratchpad:1", "Scratch 1", association, async () => "done");
+    vi.mocked(vscode.window.showWarningMessage).mockResolvedValue(undefined as never);
+
+    await transactions.resolveClosedScratchpad("scratchpad:1");
+
+    // A reopened Scratchpad finds its Transaction where it left it.
+    expect(queries).not.toContain("ROLLBACK");
+    expect(queries).not.toContain("COMMIT");
+  });
+
+  it("says nothing when a Scratchpad without a Transaction closes", async () => {
+    const { transactions } = fixture();
+    await transactions.resolveClosedScratchpad("scratchpad:1");
+    expect(vscode.window.showWarningMessage).not.toHaveBeenCalled();
+  });
+
   it("holds a Scratchpad barrier through its mutation", async () => {
     const { transactions } = fixture();
     await transactions.execute("scratchpad:1", "Scratch 1", association, async () => "done");

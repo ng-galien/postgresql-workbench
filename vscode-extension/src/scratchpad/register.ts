@@ -747,6 +747,26 @@ function scratchpadAssociationLabel(metadata: SqlNotebookMetadata): string | und
   return metadata.serverName ?? metadata.database;
 }
 
+/** The Scratchpads whose last tab just closed, in the order VS Code reported them. */
+function closedScratchpadUris(closed: readonly vscode.Tab[]): string[] {
+  const open = new Set(
+    vscode.window.tabGroups.all.flatMap((group) =>
+      group.tabs.flatMap((tab) =>
+        tab.input instanceof vscode.TabInputNotebook ? [tab.input.uri.toString()] : [],
+      ),
+    ),
+  );
+  const uris: string[] = [];
+  for (const tab of closed) {
+    const input = tab.input;
+    if (!(input instanceof vscode.TabInputNotebook)) continue;
+    if (input.notebookType !== SQL_NOTEBOOK_TYPE) continue;
+    const uri = input.uri.toString();
+    if (!open.has(uri) && !uris.includes(uri)) uris.push(uri);
+  }
+  return uris;
+}
+
 export class SqlNotebookSerializer implements vscode.NotebookSerializer {
   deserializeNotebook(content: Uint8Array): vscode.NotebookData {
     const file = parseSqlNotebookFile(new TextDecoder().decode(content));
@@ -824,6 +844,13 @@ class SqlNotebookController implements vscode.Disposable {
       vscode.workspace.onDidCloseNotebookDocument((notebook) => {
         this.scratchpadAssociations.delete(notebook.uri.toString());
         void this.resultHost.closeNotebook(notebook.uri.toString());
+      }),
+      // Closing the Scratchpad is closing its last tab: VS Code keeps the notebook document alive
+      // after that, so the document event never tells us the user is done with it.
+      vscode.window.tabGroups.onDidChangeTabs(({ closed }) => {
+        for (const uri of closedScratchpadUris(closed)) {
+          void this.transactions.resolveClosedScratchpad(uri);
+        }
       }),
       vscode.workspace.onDidChangeNotebookDocument(({ notebook }) => {
         if (notebook.notebookType !== SQL_NOTEBOOK_TYPE) return;

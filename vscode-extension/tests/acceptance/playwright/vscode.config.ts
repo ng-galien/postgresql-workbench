@@ -31,17 +31,19 @@ export function defineVSCodePlaywrightConfig(
     retries: 0,
     projects: [{ name: options.lane }],
     reporter: process.env.CI ? [["list"], ["junit", { outputFile: options.junitFile }]] : "list",
-    use: richDiagnostics
-      ? {
-          trace: "retain-on-failure",
-          screenshot: "only-on-failure",
-          video: "retain-on-failure",
-        }
-      : {
-          trace: "off",
-          screenshot: "off",
-          video: "off",
-        },
+    use: {
+      // A stuck action is a failure, not a wait: bound it well under the test timeout so the
+      // evidence arrives while the lane still has time for the scenarios behind it.
+      actionTimeout: 10_000,
+      navigationTimeout: 10_000,
+      ...(richDiagnostics
+        ? {
+            trace: "retain-on-failure" as const,
+            screenshot: "only-on-failure" as const,
+            video: "retain-on-failure" as const,
+          }
+        : { trace: "off" as const, screenshot: "off" as const, video: "off" as const }),
+    },
     outputDir: options.outputDir,
   });
 }

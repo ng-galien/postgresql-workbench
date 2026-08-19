@@ -33,6 +33,7 @@ const REMOVE_SERVER_COMMAND = "postgresql-workbench.acceptance.removeServer";
 const RESET_WORKBENCH_COMMAND = "postgresql-workbench.acceptance.resetWorkbench";
 const OPEN_WORKSPACE_FILE_COMMAND = "postgresql-workbench.acceptance.openWorkspaceFile";
 const OPEN_SQL_DOCUMENT_COMMAND = "postgresql-workbench.acceptance.openSqlDocument";
+const CLOSE_ACTIVE_EDITOR_COMMAND = "postgresql-workbench.acceptance.closeActiveEditor";
 const ACCEPTANCE_COMMANDS = new Set([
   RELOAD_WINDOW_COMMAND,
   SAVE_ALL_COMMAND,
@@ -61,6 +62,7 @@ const ACCEPTANCE_COMMANDS = new Set([
   RESET_WORKBENCH_COMMAND,
   OPEN_WORKSPACE_FILE_COMMAND,
   OPEN_SQL_DOCUMENT_COMMAND,
+  CLOSE_ACTIVE_EDITOR_COMMAND,
 ]);
 
 export interface AcceptanceControl extends vscode.Disposable {
@@ -233,6 +235,14 @@ export function registerAcceptanceControl(
           }
           await options.removeServer(serverId);
           markReady(instruction.nonce);
+          return;
+        }
+        if (instruction.command === CLOSE_ACTIVE_EDITOR_COMMAND) {
+          // Closing through the tab API rather than the tab's chrome: the close control is not
+          // what any scenario verifies, and its markup moves between VS Code versions.
+          const active = vscode.window.tabGroups.activeTabGroup.activeTab;
+          if (active) await vscode.window.tabGroups.close(active, false);
+          markReady(instruction.nonce, { closed: Boolean(active) });
           return;
         }
         if (instruction.command === RESET_WORKBENCH_COMMAND) {

@@ -1,5 +1,6 @@
 import { writeFile } from "node:fs/promises";
 import { test as base, type TestInfo } from "@playwright/test";
+import { startWorkbench } from "../journeys/startup";
 import { CockpitPage } from "../pages/CockpitPage";
 import { DebuggerPage } from "../pages/DebuggerPage";
 import { NotebookPage } from "../pages/NotebookPage";
@@ -7,6 +8,7 @@ import { SqlEditorPage } from "../pages/SqlEditorPage";
 import { WorkbenchPage } from "../pages/WorkbenchPage";
 import {
   type DemoDatabase,
+  demoConnectionId,
   demoConnectionUrl,
   demoConnexionTreeItem as demoConnexion,
   demoDatabaseTreeItem as demoDatabase,
@@ -97,9 +99,13 @@ export const test = base.extend<AcceptanceFixtures, AcceptanceWorkerFixtures>({
     );
     await workbench.reset();
     await workbench.scratchpads.collapseAll();
-    // Every scenario starts on the index the worker built once: settled, not rebuilt. Asking the
-    // runtime rather than the tree keeps this out of the UI's timing.
-    await workbench.expectFreshIndexRuntime({ database: demoDatabase });
+    // Every scenario begins where the bootstrap scenario leaves a first-time workbench.
+    await startWorkbench(workbench, vscode.inspectWorkbenchState, {
+      connectionUrl: demoConnectionUrl,
+      connectionId: demoConnectionId,
+      server: demoConnexion,
+      database: demoDatabase,
+    });
     let cleanupError: Error | undefined;
     try {
       await use(workbench);
@@ -147,7 +153,13 @@ export const test = base.extend<AcceptanceFixtures, AcceptanceWorkerFixtures>({
     );
   },
   notebook: async ({ vscode }, use) => {
-    await use(new NotebookPage(() => vscode.page, vscode.inspectActiveNotebook));
+    await use(
+      new NotebookPage(
+        () => vscode.page,
+        vscode.inspectActiveNotebook,
+        () => vscode.executeCommand("postgresql-workbench.acceptance.closeActiveEditor"),
+      ),
+    );
   },
   sqlEditor: async ({ vscode }, use) => {
     await use(

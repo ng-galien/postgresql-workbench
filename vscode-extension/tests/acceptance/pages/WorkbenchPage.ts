@@ -91,7 +91,7 @@ export class WorkbenchPage {
     if (state !== "available") {
       if (state !== "indexing" && state !== "refreshing") await schemas.click();
       await this.expectSchemasState(schemas, /^(?:indexing|refreshing|available)$/u, 5_000);
-      await this.expectSchemasState(schemas, /^available$/u, 30_000);
+      await this.expectSchemasState(schemas, /^available$/u, 10_000);
     }
     await this.tree.expandItem(schemas, SCHEMAS_TREE_ITEM);
     await this.expectFreshIndexRuntime({ database });
@@ -101,7 +101,7 @@ export class WorkbenchPage {
     const databaseItem = await this.tree.expandPath([server, database]);
     const schemas = await this.tree.findChild(databaseItem, SCHEMAS_TREE_ITEM);
     await this.expectSchemasState(schemas, /^(?:indexing|refreshing|available)$/u, 5_000);
-    await this.expectSchemasState(schemas, /^available$/u, 30_000);
+    await this.expectSchemasState(schemas, /^available$/u, 10_000);
     await this.tree.expandItem(schemas, SCHEMAS_TREE_ITEM);
     await this.expectFreshIndexRuntime({ database });
   }
@@ -147,11 +147,17 @@ export class WorkbenchPage {
           );
         },
         {
-          timeout: 30_000,
+          timeout: 10_000,
           message: "The exact Connexion index must be published and quiescent",
         },
       )
-      .toBe(true);
+      .toBe(true)
+      .catch((error: unknown) => {
+        // Say what the index was doing: a wait that only reports its own name explains nothing.
+        throw new Error(
+          `${error instanceof Error ? error.message : String(error)}\nindex: ${JSON.stringify(observed?.index)}`,
+        );
+      });
     const candidates = (observed?.index.states ?? []).filter((state) => {
       const result = state.result;
       if (!result || state.status !== "available") return false;

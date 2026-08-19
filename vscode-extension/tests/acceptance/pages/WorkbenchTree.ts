@@ -381,7 +381,9 @@ export class WorkbenchTree {
 
   async expectChildAbsent(parent: Locator, label: RegExp, timeout = 5_000): Promise<void> {
     await expect
-      .poll(() => this.hasChild(parent, label), {
+      // A branch losing a child re-renders its rows: reading a detached one is a retry, never the
+      // proof of absence this assertion owes.
+      .poll(() => this.hasChild(parent, label).catch(() => true), {
         timeout,
         message: `The ${this.accessibleName} TreeView branch must not contain ${label}`,
       })

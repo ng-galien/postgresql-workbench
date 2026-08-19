@@ -152,6 +152,13 @@ export class ScratchpadTransactionManager implements vscode.Disposable {
     });
   }
 
+  /** Rolls every open Transaction back without asking, for a workbench being reset to a clean state. */
+  async rollbackAll(): Promise<void> {
+    for (const scratchpadUri of [...this.transactions.keys()]) {
+      await this.rollback(scratchpadUri).catch(() => {});
+    }
+  }
+
   async runScratchpadChange<T>(
     scratchpadUri: string,
     action: string,
@@ -246,6 +253,27 @@ export class ScratchpadTransactionManager implements vscode.Disposable {
       }
     }
     return true;
+  }
+
+  /**
+   * A Scratchpad closed while it holds an open Transaction is told so before anything happens:
+   * confirming rolls the Transaction back, Cancel leaves it open for a Scratchpad reopened later.
+   */
+  async resolveClosedScratchpad(scratchpadUri: string): Promise<void> {
+    if (!this.acceptingOperations || !this.transactions.has(scratchpadUri)) return;
+    await this.runExclusive(scratchpadUri, undefined, async () => {
+      const transaction = this.transactions.get(scratchpadUri);
+      if (!transaction) return;
+      const choice = await vscode.window.showWarningMessage(
+        `${transaction.scratchpadName} has a ${
+          transaction.status === "failed" ? "failed Transaction" : "Transaction in progress"
+        }. Closing the Scratchpad rolls it back.`,
+        { modal: true },
+        "Roll Back",
+      );
+      if (choice !== "Roll Back") return;
+      await this.settle(transaction, "ROLLBACK").catch(() => {});
+    }).catch(() => {});
   }
 
   private async resolveOpenTransaction(scratchpadUri: string, action: string): Promise<boolean> {

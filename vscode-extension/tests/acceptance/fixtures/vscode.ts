@@ -253,6 +253,7 @@ export interface VSCodeInstance {
       | "workbench.action.debug.continue"
       | "workbench.action.debug.start"
       | "postgresql-workbench.acceptance.startDebugConfiguration"
+      | "postgresql-workbench.acceptance.closeActiveEditor"
       | "workbench.action.debug.stepInto"
       | "workbench.action.debug.stepOver"
       | "workbench.action.quickOpen"

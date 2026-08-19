@@ -6,6 +6,7 @@ export class NotebookPage {
   constructor(
     private readonly pageProvider: PageProvider,
     private readonly inspectActiveNotebook: () => Promise<ActiveNotebookSnapshot | undefined>,
+    private readonly closeActiveEditor: () => Promise<void>,
   ) {}
 
   private get page() {
@@ -58,8 +59,9 @@ export class NotebookPage {
       .and(activeGroup.locator('[aria-selected="true"]'))
       .first();
     await expect(tab).toBeVisible({ timeout: 5_000 });
-    await tab.hover();
-    await tab.locator(".codicon-close").click();
+    // The tab's own close control is not what any scenario verifies, and its markup moves between
+    // VS Code versions: the Extension Host closes the tab through the API instead.
+    await this.closeActiveEditor();
     await expect(tab).toHaveCount(0, { timeout: 5_000 });
   }
 

@@ -72,16 +72,6 @@ test.describe("Scratchpads", () => {
         .toBe(false);
     });
 
-    await test.step("leave the Transaction active when the Scratchpad editor closes", async () => {
-      await vscode.executeCommand("workbench.action.files.saveAll");
-      await notebook.closeActive();
-      await expect(
-        await workbench.scratchpads.transaction(scratchpad, "in progress"),
-      ).toContainText("3 Statements");
-      await scratchpad.click();
-      await notebook.activateLatestScratchpad();
-    });
-
     await test.step("guard a Mode change while the Transaction is active", async () => {
       await workbench.scratchpads.requestMode(scratchpad, "AUTO");
       const cancel = workbench.page.getByRole("button", { name: "Cancel", exact: true });
@@ -131,26 +121,40 @@ test.describe("Scratchpads", () => {
         )
         .toBe(false);
     });
+  });
 
-    await test.step("roll back the active Transaction on extension shutdown", async () => {
-      await workbench.scratchpads.setMode(scratchpad, "MANUAL");
-      const shutdownWork = await notebook.addCodeCell();
-      await notebook.typeInCell(
-        shutdownWork,
-        "CREATE TABLE public.acceptance_scratchpad_shutdown_rollback(id integer)",
-      );
-      await notebook.executeCode(shutdownWork);
-      await expect(
-        await workbench.scratchpads.transaction(scratchpad, "in progress"),
-      ).toContainText("1 Statement");
+  test("closes the Transaction of a Scratchpad the user closes", async ({
+    demoDatabase,
+    workbench,
+    notebook,
+    vscode,
+  }) => {
+    const table = "public.acceptance_scratchpad_closed";
+    const scratchpad = await createScratchpad(workbench, notebook, demoAssociationText);
+    await workbench.scratchpads.setMode(scratchpad, "MANUAL");
+
+    const code = notebook.cell(0);
+    await notebook.typeInCell(code, `CREATE TABLE ${table}(id integer)`);
+    await notebook.executeCode(code);
+    await expect(await workbench.scratchpads.transaction(scratchpad, "in progress")).toContainText(
+      "1 Statement",
+    );
+
+    await test.step("warn that closing the Scratchpad closes its Transaction", async () => {
       await vscode.executeCommand("workbench.action.files.saveAll");
+      await notebook.closeActive();
+      const rollBack = workbench.page.getByRole("button", { name: "Roll Back", exact: true });
+      await expect(rollBack).toBeVisible({ timeout: 5_000 });
+      await rollBack.click();
+    });
 
-      await vscode.executeInfrastructureCommand("workbench.action.reloadWindow");
+    await test.step("leave no Transaction and no work behind", async () => {
+      await workbench.scratchpads.expectNoTransaction(scratchpad);
+
       await expect
         .poll(
           async () =>
-            (await demoDatabase.inspectTable("public", "acceptance_scratchpad_shutdown_rollback"))
-              .exists,
+            (await demoDatabase.inspectTable("public", "acceptance_scratchpad_closed")).exists,
         )
         .toBe(false);
     });

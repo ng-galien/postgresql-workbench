@@ -4,4 +4,5 @@
 // index instead of racing the rebuild they leave behind.
 import "./workbench/indexing-feedback.spec.js";
 import "./workbench/scratchpad-association.spec.js";
+import "./workbench/scratchpad-shutdown.spec.js";
 import "./workbench/source-tab-cleanup.spec.js";

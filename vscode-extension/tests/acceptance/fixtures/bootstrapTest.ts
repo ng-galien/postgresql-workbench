@@ -1,11 +1,34 @@
 import { test as base } from "@playwright/test";
+import { WorkbenchPage } from "../pages/WorkbenchPage";
+import { type DemoDatabase, startDemoDatabase } from "./demoDatabase";
 import { launchVSCode, type VSCodeInstance } from "./vscode";
 
 interface BootstrapFixtures {
   vscode: VSCodeInstance;
+  workbench: WorkbenchPage;
 }
 
-export const test = base.extend<BootstrapFixtures>({
+interface BootstrapWorkerFixtures {
+  demoDatabase: DemoDatabase;
+}
+
+/**
+ * The lane that starts from nothing: a fresh VS Code profile, no configured Connexion, no index.
+ * Nothing here is prepared for the scenarios, because what they verify is the preparation itself.
+ */
+export const test = base.extend<BootstrapFixtures, BootstrapWorkerFixtures>({
+  demoDatabase: [
+    // biome-ignore lint/correctness/noEmptyPattern: Playwright requires fixture arguments to use object destructuring.
+    async ({}, use) => {
+      const demo = startDemoDatabase();
+      try {
+        await use(demo);
+      } finally {
+        demo.stop();
+      }
+    },
+    { scope: "worker" },
+  ],
   // biome-ignore lint/correctness/noEmptyPattern: Playwright requires fixture arguments to use object destructuring.
   vscode: async ({}, use) => {
     const instance = await launchVSCode({
@@ -18,6 +41,16 @@ export const test = base.extend<BootstrapFixtures>({
     } finally {
       await instance.dispose();
     }
+  },
+  workbench: async ({ vscode }, use) => {
+    await use(
+      new WorkbenchPage(
+        () => vscode.page,
+        vscode.resizeWindow,
+        vscode.resetWorkbenchUI,
+        vscode.inspectWorkbenchState,
+      ),
+    );
   },
 });
 

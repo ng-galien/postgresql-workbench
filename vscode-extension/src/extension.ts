@@ -646,6 +646,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
   }
   acceptanceProbes.resetWorkbench = async () => {
     await vscode.commands.executeCommand("workbench.action.closeQuickOpen");
+    // Before the tabs close: a Scratchpad closed with an open Transaction warns the user, and a
+    // reset owes the next scenario a clean workbench rather than a dialog.
+    await scratchpads.transactions.rollbackAll();
     await workbenchIndex.settleAcceptanceOperations();
     const debugSession = vscode.debug.activeDebugSession;
     if (debugSession?.type === "postgresql-workbench") {
