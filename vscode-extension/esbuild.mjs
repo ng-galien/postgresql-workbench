@@ -69,7 +69,7 @@ const dapServerConfig = {
 
 /** @type {import('esbuild').BuildOptions} */
 const sqlAuthoringServerConfig = {
-  entryPoints: ["../packages/sql/src/authoring/server.ts"],
+  entryPoints: ["../packages/sql/src/languageServer/server.ts"],
   bundle: true,
   outfile: "dist/sql-authoring-server.js",
   format: "cjs",

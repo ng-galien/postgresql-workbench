@@ -4,7 +4,7 @@ import type { SyntaxParser } from "../../sql/src/analysis/syntaxTree.js";
 import type {
   SqlAuthoringSnapshot,
   SqlAuthoringTrigger,
-} from "../../sql/src/authoring/protocol.js";
+} from "../../sql/src/authoring/snapshot.js";
 import {
   type CodeMonikerClient,
   type CodeMonikerGraphResult,

@@ -1,7 +1,7 @@
 import { planSqlResultExecution } from "../analysis/sqlStatements.js";
 import { canonicalSqlTypeName } from "../analysis/syntaxNodes.js";
 import type { SyntaxParser } from "../analysis/syntaxTree.js";
-import type { SqlAuthoringSnapshot } from "../authoring/protocol.js";
+import type { SqlAuthoringSnapshot } from "../authoring/snapshot.js";
 import { parseSqlDefinitions } from "../callParser.js";
 
 export interface ManagedRoutineBinding {

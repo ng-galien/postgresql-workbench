@@ -1,3 +1,7 @@
+import type {
+  SqlAuthoringComposeRequest,
+  SqlAuthoringComposeResult,
+} from "../languageServer/protocol.js";
 import { quoteSqlIdentifierIfNeeded } from "./completion.js";
 import { formatPostgresSql } from "./format.js";
 import {
@@ -6,18 +10,16 @@ import {
   splitSqlQualifiedIdentifier,
 } from "./identifiers.js";
 import { type JoinPlan, planJoinPaths, shortestJoinPlans } from "./joinPlanner.js";
+import type { SqlQueryAnalysis } from "./query/analysis.js";
+import { relationsFromAnalysis, type TableReference } from "./query/relations.js";
+import type { SqlQueryShape } from "./queryShape.js";
 import type {
-  SqlAuthoringComposeRequest,
-  SqlAuthoringComposeResult,
   SqlAuthoringForeignKey,
   SqlAuthoringObject,
   SqlAuthoringSnapshot,
   SqlAuthoringTrigger,
-} from "./protocol.js";
-import { DEFAULT_SQL_AUTHORING_SETTINGS, type SqlAuthoringSettings } from "./protocol.js";
-import type { SqlQueryAnalysis } from "./query/analysis.js";
-import { relationsFromAnalysis, type TableReference } from "./query/relations.js";
-import type { SqlQueryShape } from "./queryShape.js";
+} from "./snapshot.js";
+import { DEFAULT_SQL_AUTHORING_SETTINGS, type SqlAuthoringSettings } from "./snapshot.js";
 import { scanPostgresSql, sqlStatementAtOffset } from "./sqlLexing.js";
 
 export function composePostgresSql(

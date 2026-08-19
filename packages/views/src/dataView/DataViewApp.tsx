@@ -8,6 +8,11 @@ import {
   useState,
 } from "react";
 import type { DebugResultCell } from "../../../dap/src/debugger/launch/index.js";
+import {
+  dataViewColumnKeys,
+  dataViewRowKey,
+  dataViewSourceTitle,
+} from "../../../rows/src/dataView.js";
 import { hasWorkbenchTreeDrag } from "../cockpit/dragAndDrop.js";
 import type { GridEditing } from "../results/CellEditor.js";
 import { type GridLayout, ResultGrid } from "../results/ResultGrid.js";
@@ -20,7 +25,6 @@ import type {
   DataViewResponse,
   DataViewState,
 } from "./protocol.js";
-import { dataViewColumnKeys, dataViewRowKey, dataViewSourceTitle } from "./protocol.js";
 
 export interface DataViewMessaging {
   post(message: DataViewRequest): void;

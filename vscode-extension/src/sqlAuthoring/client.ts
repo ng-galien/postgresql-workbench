@@ -7,20 +7,31 @@ import {
   TransportKind,
 } from "vscode-languageclient/node";
 import type { SyntaxNode, SyntaxParser } from "../../../packages/sql/src/analysis/syntaxTree.js";
-import { sqlAuthoringEditStillApplies } from "../../../packages/sql/src/authoring/composeRequest.js";
 import { canonicalSqlIdentifier } from "../../../packages/sql/src/authoring/identifiers.js";
 import {
   type SqlAuthoringScope,
   sqlAuthoringLanguageStatus,
   sqlAuthoringRejectionAction,
 } from "../../../packages/sql/src/authoring/languageStatus.js";
+import { analyzeSqlQuery } from "../../../packages/sql/src/authoring/query/analysis.js";
+import {
+  documentRelations,
+  type SqlColumnMention,
+  type SqlRelationMention,
+  type SqlRoutineMention,
+} from "../../../packages/sql/src/authoring/query/relations.js";
 import {
   DEFAULT_SQL_AUTHORING_SETTINGS,
-  decodeSemanticTokenData,
   parseSqlAuthoringDrag,
+  SQL_AUTHORING_OBJECT_MIME,
+  type SqlAuthoringSettings,
+} from "../../../packages/sql/src/authoring/snapshot.js";
+import { sqlStatementSlices } from "../../../packages/sql/src/authoring/sqlLexing.js";
+import { sqlAuthoringEditStillApplies } from "../../../packages/sql/src/languageServer/composeRequest.js";
+import {
+  decodeSemanticTokenData,
   SQL_AUTHORING_COMPOSE_REQUEST,
   SQL_AUTHORING_CONTEXT_REQUEST,
-  SQL_AUTHORING_OBJECT_MIME,
   SQL_AUTHORING_PLPGSQL_TOKENS_REQUEST,
   SQL_AUTHORING_SEMANTIC_TOKENS_CHANGED,
   SQL_AUTHORING_SETTINGS_REQUEST,
@@ -29,18 +40,9 @@ import {
   type SqlAuthoringComposeResult,
   type SqlAuthoringDocumentContext,
   type SqlAuthoringPlpgsqlTokensResult,
-  type SqlAuthoringSettings,
   type SqlAuthoringSyntaxResult,
   sqlAuthoringContextMatchesToken,
-} from "../../../packages/sql/src/authoring/protocol.js";
-import { analyzeSqlQuery } from "../../../packages/sql/src/authoring/query/analysis.js";
-import {
-  documentRelations,
-  type SqlColumnMention,
-  type SqlRelationMention,
-  type SqlRoutineMention,
-} from "../../../packages/sql/src/authoring/query/relations.js";
-import { sqlStatementSlices } from "../../../packages/sql/src/authoring/sqlLexing.js";
+} from "../../../packages/sql/src/languageServer/protocol.js";
 import type { ConnectionManager } from "../connection/index.js";
 import { getConnectionName } from "../connection/index.js";
 import { PlpgsqlSemanticTokensProvider } from "../plpgsql/index.js";

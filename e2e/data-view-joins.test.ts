@@ -18,16 +18,16 @@ import {
 } from "../packages/sql/src/authoring/composition.js";
 import { planJoinPaths } from "../packages/sql/src/authoring/joinPlanner.js";
 import {
-  DEFAULT_SQL_AUTHORING_SETTINGS,
-  type SqlAuthoringSnapshot,
-} from "../packages/sql/src/authoring/protocol.js";
-import {
   analyzeSqlQuery,
   formatSqlQuery,
   removeRelation,
   setSort,
   setWhere,
 } from "../packages/sql/src/authoring/query/analysis.js";
+import {
+  DEFAULT_SQL_AUTHORING_SETTINGS,
+  type SqlAuthoringSnapshot,
+} from "../packages/sql/src/authoring/snapshot.js";
 import { type CodeMonikerTestRuntime, startCodeMonikerTestRuntime } from "./codeMonikerRuntime.js";
 
 const CONNECTION = {

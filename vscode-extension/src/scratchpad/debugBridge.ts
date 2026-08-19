@@ -7,7 +7,7 @@ import {
 import type {
   SqlAuthoringObject,
   SqlAuthoringSnapshot,
-} from "../../../packages/sql/src/authoring/protocol.js";
+} from "../../../packages/sql/src/authoring/snapshot.js";
 import { type ParsedCallSite, parseSqlCalls } from "../../../packages/sql/src/callParser.js";
 import { type ConnectionManager, getConnectionName } from "../connection/index.js";
 import type { DebugSessionController } from "../debug/index.js";

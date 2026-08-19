@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { planJoinPaths, reachableJoinTargets, shortestJoinPlans } from "./joinPlanner.js";
-import type { SqlAuthoringForeignKey, SqlAuthoringSnapshot } from "./protocol.js";
+import type { SqlAuthoringForeignKey, SqlAuthoringSnapshot } from "./snapshot.js";
 
 // product(1) —brand_id→ brand(2); product_category(3) —product_id→ product, —category_id→ category(4);
 // category —parent_id→ category; address(5) ←billing/shipping— sales_order(6); orphan(7).

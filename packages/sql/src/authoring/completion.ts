@@ -5,9 +5,9 @@ import {
   requiresQuotedPostgresIdentifier,
   unquoteSqlIdentifierFragment,
 } from "./identifiers.js";
-import type { SqlAuthoringObject, SqlAuthoringSnapshot } from "./protocol.js";
 import type { SqlCaretRole, SqlRelationMention } from "./query/relations.js";
 import type { SqlQueryShape } from "./queryShape.js";
+import type { SqlAuthoringObject, SqlAuthoringSnapshot } from "./snapshot.js";
 import { postgresPlpgsqlRanges, scanPostgresSql, sqlStatementAtOffset } from "./sqlLexing.js";
 
 const MAX_COMPLETIONS = 200;

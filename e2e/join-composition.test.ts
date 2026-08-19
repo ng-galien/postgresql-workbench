@@ -6,11 +6,11 @@ import { ensureLocalCodeMonikerWorkspace } from "../packages/catalog/src/localCo
 import { createCodeMonikerSyntaxParser } from "../packages/sql/src/analysis/codeMonikerSyntax.js";
 import type { SyntaxParser } from "../packages/sql/src/analysis/syntaxTree.js";
 import { composePostgresSql } from "../packages/sql/src/authoring/composition.js";
+import { analyzeSqlQuery } from "../packages/sql/src/authoring/query/analysis.js";
 import type {
   SqlAuthoringForeignKey,
   SqlAuthoringSnapshot,
-} from "../packages/sql/src/authoring/protocol.js";
-import { analyzeSqlQuery } from "../packages/sql/src/authoring/query/analysis.js";
+} from "../packages/sql/src/authoring/snapshot.js";
 import { sqlStatementAtOffset } from "../packages/sql/src/authoring/sqlLexing.js";
 
 // product(1) —brand_id→ brand(2); product_category(3) —product_id→ product, —category_id→ category(4);

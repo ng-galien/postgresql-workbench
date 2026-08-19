@@ -1,4 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
+// biome-ignore-all lint/suspicious/noConsole: This runner reports the child process it supervises to its operator.
 import path from "node:path";
 import process from "node:process";
 

@@ -5,7 +5,7 @@ import {
   splitSqlQualifiedIdentifier,
   unquoteSqlIdentifier,
 } from "../identifiers.js";
-import type { SqlAuthoringObject } from "../protocol.js";
+import type { SqlAuthoringObject } from "../snapshot.js";
 import { postgresPlpgsqlRanges } from "../sqlLexing.js";
 import { byteToCharOffsets, type SqlQueryAnalysis } from "./analysis.js";
 

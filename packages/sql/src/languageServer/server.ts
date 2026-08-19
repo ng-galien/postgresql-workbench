@@ -8,9 +8,17 @@ import {
   TextEdit,
 } from "vscode-languageserver/node";
 import { TextDocument } from "vscode-languageserver-textdocument";
-import { postgresCompletions } from "./completion.js";
+import { postgresCompletions } from "../authoring/completion.js";
+import { formatPostgresSql } from "../authoring/format.js";
+import {
+  postgresSemanticTokens,
+  SQL_SEMANTIC_TOKEN_MODIFIERS,
+  SQL_SEMANTIC_TOKEN_TYPES,
+} from "../authoring/semanticTokens.js";
+import type { SqlAuthoringSettings } from "../authoring/snapshot.js";
+import { sqlStatementAtOffset } from "../authoring/sqlLexing.js";
 import { composeSqlAuthoringRequest } from "./composeRequest.js";
-import { formatPostgresSql } from "./format.js";
+import { formatSkippedMessage, wantsPlpgsqlSemanticTokens } from "./policy.js";
 import {
   SQL_AUTHORING_COMPOSE_REQUEST,
   SQL_AUTHORING_CONTEXT_REQUEST,
@@ -23,16 +31,8 @@ import {
   type SqlAuthoringDocumentContext,
   type SqlAuthoringPlpgsqlTokensResult,
   type SqlAuthoringSemanticToken,
-  type SqlAuthoringSettings,
   type SqlAuthoringSyntaxResult,
 } from "./protocol.js";
-import {
-  postgresSemanticTokens,
-  SQL_SEMANTIC_TOKEN_MODIFIERS,
-  SQL_SEMANTIC_TOKEN_TYPES,
-} from "./semanticTokens.js";
-import { formatSkippedMessage, wantsPlpgsqlSemanticTokens } from "./serverPolicy.js";
-import { sqlStatementAtOffset } from "./sqlLexing.js";
 
 const connection = createConnection(ProposedFeatures.all);
 const documents = new TextDocuments(TextDocument);

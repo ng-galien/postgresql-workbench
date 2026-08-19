@@ -1,13 +1,15 @@
 import type { SyntaxParser } from "../../sql/src/analysis/syntaxTree.js";
 import { reachableJoinTargets, shortestJoinPlans } from "../../sql/src/authoring/joinPlanner.js";
+import { analyzeSqlQuery, formatSqlQuery } from "../../sql/src/authoring/query/analysis.js";
 import type {
-  SqlAuthoringComposeRequest,
-  SqlAuthoringComposeResult,
   SqlAuthoringDragPayload,
   SqlAuthoringSettings,
   SqlAuthoringSnapshot,
-} from "../../sql/src/authoring/protocol.js";
-import { analyzeSqlQuery, formatSqlQuery } from "../../sql/src/authoring/query/analysis.js";
+} from "../../sql/src/authoring/snapshot.js";
+import type {
+  SqlAuthoringComposeRequest,
+  SqlAuthoringComposeResult,
+} from "../../sql/src/languageServer/protocol.js";
 import type { DataViewAddition, DataViewProjection } from "./dataView.js";
 
 /**

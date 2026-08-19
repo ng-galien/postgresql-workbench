@@ -14,11 +14,17 @@ vi.mock("vscode", () => ({
   SemanticTokensBuilder: class {},
 }));
 
-import { sqlAuthoringLanguageStatus, sqlAuthoringRejectionAction } from "./languageStatus.js";
-import { TOKEN_MODIFIERS, TOKEN_TYPES } from "./plpgsqlTokenLegend.js";
+import {
+  sqlAuthoringLanguageStatus,
+  sqlAuthoringRejectionAction,
+} from "../authoring/languageStatus.js";
+import { TOKEN_MODIFIERS, TOKEN_TYPES } from "../authoring/plpgsqlTokenLegend.js";
+import {
+  SQL_SEMANTIC_TOKEN_MODIFIERS,
+  SQL_SEMANTIC_TOKEN_TYPES,
+} from "../authoring/semanticTokens.js";
+import { formatSkippedMessage, wantsPlpgsqlSemanticTokens } from "./policy.js";
 import { decodeSemanticTokenData } from "./protocol.js";
-import { SQL_SEMANTIC_TOKEN_MODIFIERS, SQL_SEMANTIC_TOKEN_TYPES } from "./semanticTokens.js";
-import { formatSkippedMessage, wantsPlpgsqlSemanticTokens } from "./serverPolicy.js";
 
 describe("SQL authoring server policy", () => {
   it("keeps the PL/pgSQL legend as a prefix of the SQL authoring legend", () => {

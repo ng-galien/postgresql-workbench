@@ -5,7 +5,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { ensureLocalCodeMonikerWorkspace } from "../../../packages/catalog/src/localCodeMoniker.js";
 import { createCodeMonikerSyntaxParser } from "../../../packages/sql/src/analysis/codeMonikerSyntax.js";
 import type { SyntaxParser } from "../../../packages/sql/src/analysis/syntaxTree.js";
-import type { SqlAuthoringSnapshot } from "../../../packages/sql/src/authoring/protocol.js";
+import type { SqlAuthoringSnapshot } from "../../../packages/sql/src/authoring/snapshot.js";
 import type { ServerConfig } from "../connection/savedConnections.js";
 
 const vscodeMock = vi.hoisted(() => ({ notebookDocuments: [] as unknown[] }));

@@ -17,14 +17,14 @@ import { initialDataViewQuery } from "../../../packages/rows/src/initialProjecti
 import { openDataViewResult, TableAccents } from "../../../packages/rows/src/openRows.js";
 import { PendingEdits } from "../../../packages/rows/src/pendingEdits.js";
 import { quoteSqlIdentifierIfNeeded } from "../../../packages/sql/src/authoring/completion.js";
-import type {
-  SqlAuthoringDragPayload,
-  SqlAuthoringSnapshot,
-} from "../../../packages/sql/src/authoring/protocol.js";
 import {
   type QueryRewrite,
   SqlQueryModel,
 } from "../../../packages/sql/src/authoring/query/model.js";
+import type {
+  SqlAuthoringDragPayload,
+  SqlAuthoringSnapshot,
+} from "../../../packages/sql/src/authoring/snapshot.js";
 import type {
   DataViewRequest,
   DataViewResponse,

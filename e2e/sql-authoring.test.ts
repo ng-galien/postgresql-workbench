@@ -12,19 +12,19 @@ import {
 } from "../packages/sql/src/authoring/composeRequest.js";
 import { composePostgresSql } from "../packages/sql/src/authoring/composition.js";
 import { formatPostgresSql } from "../packages/sql/src/authoring/format.js";
-import {
-  parseSqlAuthoringDrag,
-  type SqlAuthoringDocumentContext,
-  type SqlAuthoringSnapshot,
-  serializeSqlAuthoringDrag,
-} from "../packages/sql/src/authoring/protocol.js";
 import { analyzeSqlQuery } from "../packages/sql/src/authoring/query/analysis.js";
 import { documentRelations } from "../packages/sql/src/authoring/query/relations.js";
+import {
+  parseSqlAuthoringDrag,
+  type SqlAuthoringSnapshot,
+  serializeSqlAuthoringDrag,
+} from "../packages/sql/src/authoring/snapshot.js";
 import {
   scanPostgresSql,
   sqlStatementAtOffset,
   sqlStatementSlices,
 } from "../packages/sql/src/authoring/sqlLexing.js";
+import type { SqlAuthoringDocumentContext } from "../packages/sql/src/languageServer/protocol.js";
 
 const snapshot: SqlAuthoringSnapshot = {
   status: "available",

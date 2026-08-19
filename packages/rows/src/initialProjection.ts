@@ -1,10 +1,10 @@
 import { tableProjection } from "../../sql/src/authoring/composition.js";
+import { stripStatementTerminator } from "../../sql/src/authoring/query/analysis.js";
 import type {
   SqlAuthoringObject,
   SqlAuthoringSettings,
   SqlAuthoringSnapshot,
-} from "../../sql/src/authoring/protocol.js";
-import { stripStatementTerminator } from "../../sql/src/authoring/query/analysis.js";
+} from "../../sql/src/authoring/snapshot.js";
 import type { DataViewSource } from "./dataView.js";
 
 /**

@@ -1,17 +1,19 @@
-import { composePostgresSql } from "./composition.js";
+import { composePostgresSql } from "../authoring/composition.js";
+import type { SqlQueryAnalysis } from "../authoring/query/analysis.js";
+import type { SqlQueryShape } from "../authoring/queryShape.js";
 import {
   DEFAULT_SQL_AUTHORING_SETTINGS,
+  type SqlAuthoringSettings,
+  sqlAuthoringSnapshotToken,
+} from "../authoring/snapshot.js";
+import { sqlStatementAtOffset } from "../authoring/sqlLexing.js";
+import {
   type SqlAuthoringComposeRequest,
   type SqlAuthoringComposeResult,
   type SqlAuthoringDocumentContext,
-  type SqlAuthoringSettings,
   type SqlAuthoringSyntaxResult,
   sqlAuthoringContextMatchesToken,
-  sqlAuthoringSnapshotToken,
 } from "./protocol.js";
-import type { SqlQueryAnalysis } from "./query/analysis.js";
-import type { SqlQueryShape } from "./queryShape.js";
-import { sqlStatementAtOffset } from "./sqlLexing.js";
 
 export const SQL_AUTHORING_SYNTAX_BUDGET_MESSAGE =
   "The SQL syntax tree reached the configured analysis budget. Increase postgresql-workbench.sqlAuthoring.syntaxMaxDepth or syntaxMaxNodes before composing.";
