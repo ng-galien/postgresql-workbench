@@ -1,5 +1,6 @@
 import type { Client, QueryResult, QueryResultRow } from "pg";
 import type { SyntaxParser } from "../../sql/src/analysis/syntaxTree.js";
+import { quoteSqlIdentifier } from "../../sql/src/authoring/identifiers.js";
 import { extractFuncDeps } from "../../sql/src/deps.js";
 import type { CoverageTestReport } from "./runner.js";
 
@@ -214,7 +215,7 @@ export async function executePgTapTest(
               ELSE false
             END AS line_truncated,
             output.ordinality > $1::int AS row_overflow
-       FROM ${quoteIdentifier(test.schema)}.${quoteIdentifier(test.name)}()
+       FROM ${quoteSqlIdentifier(test.schema)}.${quoteSqlIdentifier(test.name)}()
             WITH ORDINALITY AS output(tap_line, ordinality)
       LIMIT ($1::int + 1)`,
     [rowLimit, maxCharactersPerLine],
@@ -242,7 +243,7 @@ export async function resetPgTapState(client: PgTapQueryClient): Promise<void> {
   `);
   const schema = extension.rows[0]?.schema;
   if (!schema) throw new Error("pgTAP is not installed in the selected database.");
-  await client.query(`SELECT ${quoteIdentifier(schema)}._cleanup()`);
+  await client.query(`SELECT ${quoteSqlIdentifier(schema)}._cleanup()`);
 }
 
 export function parsePgTapOutput(lines: readonly string[]): PgTapReport {
@@ -546,10 +547,6 @@ function validatePlan(
     }
     expectedNumber++;
   }
-}
-
-function quoteIdentifier(value: string): string {
-  return `"${value.replaceAll('"', '""')}"`;
 }
 
 function globMatches(value: string, pattern: string): boolean {

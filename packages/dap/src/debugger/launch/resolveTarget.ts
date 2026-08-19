@@ -1,4 +1,5 @@
 import type { SyntaxParser } from "../../../../sql/src/analysis/syntaxTree.js";
+import { quoteSqlIdentifier } from "../../../../sql/src/authoring/identifiers.js";
 import { parseCall } from "../../../../sql/src/callParser.js";
 import type { PlApiFunctionArg, PostgresDebugger } from "../postgres/index.js";
 import type { DebugSessionRoutine } from "./debugSessionStatus.js";
@@ -30,14 +31,10 @@ interface ResolvedRoutine {
   argTypes: string[];
 }
 
-function quoteIdentifier(value: string): string {
-  return `"${value.replace(/"/g, '""')}"`;
-}
-
 function buildParameterizedCall(target: DebugLaunchRoutineTarget, argTypes: string[]): string {
   const qualified = target.schema
-    ? `${quoteIdentifier(target.schema)}.${quoteIdentifier(target.name)}`
-    : quoteIdentifier(target.name);
+    ? `${quoteSqlIdentifier(target.schema)}.${quoteSqlIdentifier(target.name)}`
+    : quoteSqlIdentifier(target.name);
   const placeholders = argTypes.map((type, index) => `$${index + 1}::${type}`);
   return target.kind === "procedure"
     ? `CALL ${qualified}(${placeholders.join(", ")})`

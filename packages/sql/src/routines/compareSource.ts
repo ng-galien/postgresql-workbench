@@ -1,12 +1,13 @@
 import type { Client } from "pg";
+import { quoteSqlIdentifier } from "../authoring/identifiers.js";
 import type { FunctionDefinition } from "../callParser.js";
 
 export type RoutineSourceComparison = "identical" | "different" | "unavailable";
 
 export function routineRegprocedureIdentity(definition: FunctionDefinition): string {
   const qualifiedName = definition.schema
-    ? `${quoteIdentifier(definition.schema)}.${quoteIdentifier(definition.name)}`
-    : quoteIdentifier(definition.name);
+    ? `${quoteSqlIdentifier(definition.schema)}.${quoteSqlIdentifier(definition.name)}`
+    : quoteSqlIdentifier(definition.name);
   return `${qualifiedName}(${definition.params.map((param) => param.type).join(", ")})`;
 }
 
@@ -59,8 +60,4 @@ function leadingIndentationLength(line: string): number {
     length += 1;
   }
   return length;
-}
-
-function quoteIdentifier(identifier: string): string {
-  return `"${identifier.replaceAll('"', '""')}"`;
 }

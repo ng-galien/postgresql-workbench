@@ -1,7 +1,7 @@
 import { Buffer } from "node:buffer";
 import { directSyntaxChild, findSyntaxNode, findSyntaxNodes } from "../../analysis/syntaxNodes.js";
 import type { SyntaxNode, SyntaxParser } from "../../analysis/syntaxTree.js";
-import { quoteIdentifier } from "../completion.js";
+import { quoteSqlIdentifierIfNeeded } from "../completion.js";
 import { formatPostgresSql } from "../format.js";
 import { splitSqlQualifiedIdentifier, unquoteSqlIdentifier } from "../identifiers.js";
 import { type SqlQueryShape, sqlQueryShape } from "../queryShape.js";
@@ -386,7 +386,7 @@ export function setSort(
   const items = sorts.flatMap((sort) => {
     const target = analysis.targets.find((candidate) => candidate.label === sort.column);
     if (!target) return [];
-    const expression = target.alias ? quoteIdentifier(target.alias) : target.expression;
+    const expression = target.alias ? quoteSqlIdentifierIfNeeded(target.alias) : target.expression;
     return [
       `${expression} ${sort.direction === "descending" ? "DESC NULLS LAST" : "ASC NULLS FIRST"}`,
     ];

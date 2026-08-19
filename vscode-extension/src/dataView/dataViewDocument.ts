@@ -6,7 +6,7 @@ import {
   composeIntoDataViewQuery,
   dataViewAdditions,
 } from "../../../packages/sql/src/authoring/additions.js";
-import { quoteIdentifier } from "../../../packages/sql/src/authoring/completion.js";
+import { quoteSqlIdentifierIfNeeded } from "../../../packages/sql/src/authoring/completion.js";
 import { initialDataViewQuery } from "../../../packages/sql/src/authoring/initialProjection.js";
 import type {
   SqlAuthoringDragPayload,
@@ -302,7 +302,7 @@ export class DataViewDocument implements vscode.CustomDocument {
     const client = await this.services.openClient(this.source.serverId);
     try {
       const probe = await client.query({
-        text: `SELECT * FROM ${quoteIdentifier(this.source.schema)}.${quoteIdentifier(this.source.name)} LIMIT 0`,
+        text: `SELECT * FROM ${quoteSqlIdentifierIfNeeded(this.source.schema)}.${quoteSqlIdentifierIfNeeded(this.source.name)} LIMIT 0`,
         rowMode: "array",
       });
       return probe.fields.map((field) => field.name);

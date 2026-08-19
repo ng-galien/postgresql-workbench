@@ -84,6 +84,15 @@ const POSTGRES_RESERVED_KEYWORDS = new Set([
 
 export const POSTGRES_IDENTIFIER_PATTERN = String.raw`(?:"(?:""|[^"\r\n])+"|[A-Za-z_][\w$]*)`;
 
+/**
+ * Quotes an identifier for SQL the Workbench executes itself. Always quoted, so a name that
+ * happens to be a keyword or to carry capitals cannot be misread. For SQL a user reads, see
+ * `quoteSqlIdentifierIfNeeded`.
+ */
+export function quoteSqlIdentifier(identifier: string): string {
+  return `"${identifier.replaceAll('"', '""')}"`;
+}
+
 export function requiresQuotedPostgresIdentifier(identifier: string): boolean {
   return POSTGRES_RESERVED_KEYWORDS.has(identifier.toLocaleLowerCase());
 }

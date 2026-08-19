@@ -1,5 +1,5 @@
 import type { SyntaxParser } from "../../analysis/syntaxTree.js";
-import { quoteIdentifier } from "../completion.js";
+import { quoteSqlIdentifierIfNeeded } from "../completion.js";
 import { unquoteSqlIdentifier } from "../identifiers.js";
 import {
   analyzeSqlQuery,
@@ -138,7 +138,7 @@ export class SqlQueryModel {
           message: "Expand `*` into explicit columns in the query before reordering.",
         };
       }
-      const expanded = `SELECT ${projectedColumns.map(quoteIdentifier).join(", ")}\nFROM (\n${text.slice(analysis.statement.start, analysis.statement.end)}\n) AS ${quoteIdentifier(this.subqueryAlias)}`;
+      const expanded = `SELECT ${projectedColumns.map(quoteSqlIdentifierIfNeeded).join(", ")}\nFROM (\n${text.slice(analysis.statement.start, analysis.statement.end)}\n) AS ${quoteSqlIdentifierIfNeeded(this.subqueryAlias)}`;
       text = `${text.slice(0, analysis.statement.start)}${expanded}${text.slice(analysis.statement.end)}`;
       const reanalyzed = await analyzeSqlQuery(text, await this.parser(), this.options.budget?.());
       if (reanalyzed.status !== "ok") return { status: "rejected", message: reanalyzed.message };

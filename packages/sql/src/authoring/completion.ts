@@ -97,7 +97,8 @@ export function postgresCompletions(
   return boundedCompletions(items, completionFragment(before));
 }
 
-export function quoteIdentifier(identifier: string): string {
+/** Quotes only where PostgreSQL requires it, for the SQL a user reads in the editor. */
+export function quoteSqlIdentifierIfNeeded(identifier: string): string {
   if (SIMPLE_IDENTIFIER.test(identifier) && !requiresQuotedPostgresIdentifier(identifier)) {
     return identifier;
   }
@@ -149,8 +150,8 @@ function objectCompletion(object: SqlAuthoringObject, qualified = true): Complet
         : CompletionItemKind.Class,
     detail: `${object.kind} ${object.schema}.${object.name}${object.signature ? ` · ${object.signature}` : ""}`,
     insertText: callable
-      ? `${qualified ? `${quoteIdentifier(object.schema)}.` : ""}${quoteIdentifier(object.name)}(${parameters.join(", ")})`
-      : `${qualified ? `${quoteIdentifier(object.schema)}.` : ""}${quoteIdentifier(object.name)}`,
+      ? `${qualified ? `${quoteSqlIdentifierIfNeeded(object.schema)}.` : ""}${quoteSqlIdentifierIfNeeded(object.name)}(${parameters.join(", ")})`
+      : `${qualified ? `${quoteSqlIdentifierIfNeeded(object.schema)}.` : ""}${quoteSqlIdentifierIfNeeded(object.name)}`,
     insertTextFormat: callable ? InsertTextFormat.Snippet : InsertTextFormat.PlainText,
     filterText: `${object.name} ${object.schema}.${object.name}`,
   };
@@ -162,8 +163,8 @@ function columnCompletions(object: SqlAuthoringObject, reference?: string): Comp
     kind: CompletionItemKind.Field,
     detail: `${column.type} · ${object.schema}.${object.name}`,
     insertText: reference
-      ? `${reference}.${quoteIdentifier(column.name)}`
-      : quoteIdentifier(column.name),
+      ? `${reference}.${quoteSqlIdentifierIfNeeded(column.name)}`
+      : quoteSqlIdentifierIfNeeded(column.name),
     filterText: column.name,
   }));
 }

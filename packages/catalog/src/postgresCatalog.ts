@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { quoteSqlIdentifier } from "../../sql/src/authoring/identifiers.js";
 
 export interface CatalogQueryClient {
   query(sql: string): Promise<{ rows: Record<string, unknown>[] }>;
@@ -743,7 +744,7 @@ function buildDocuments(
   const documents: VirtualSqlDocument[] = catalog.schemas.map((schema) => ({
     uri: postgresDocumentUri(identity, schema.schemaName, "schema", schema.schemaName),
     language: "sql",
-    content: `CREATE SCHEMA ${quoteIdentifier(schema.schemaName)};\n`,
+    content: `CREATE SCHEMA ${quoteSqlIdentifier(schema.schemaName)};\n`,
     postgres: descriptor(identity, schema.schemaName, "schema", schema.oid, schema.schemaName),
   }));
 
@@ -827,7 +828,7 @@ function renderTable(table: TableDefinition): string {
       .sort((left, right) => left.constraintOid.localeCompare(right.constraintOid))
       .map(
         (constraint) =>
-          `CONSTRAINT ${quoteIdentifier(constraint.constraintName)} ${constraint.definition}`,
+          `CONSTRAINT ${quoteSqlIdentifier(constraint.constraintName)} ${constraint.definition}`,
       ),
   ];
   return (
@@ -838,7 +839,7 @@ function renderTable(table: TableDefinition): string {
 }
 
 function renderColumn(column: TableColumnRow): string {
-  let definition = `${quoteIdentifier(column.columnName)} ${column.dataType}`;
+  let definition = `${quoteSqlIdentifier(column.columnName)} ${column.dataType}`;
   if (column.identityKind === "a") {
     definition += " GENERATED ALWAYS AS IDENTITY";
   } else if (column.identityKind === "d") {
@@ -893,11 +894,7 @@ function descriptor(
 }
 
 function qualifiedName(schemaName: string, objectName: string): string {
-  return `${quoteIdentifier(schemaName)}.${quoteIdentifier(objectName)}`;
-}
-
-function quoteIdentifier(identifier: string): string {
-  return `"${identifier.replaceAll('"', '""')}"`;
+  return `${quoteSqlIdentifier(schemaName)}.${quoteSqlIdentifier(objectName)}`;
 }
 
 function ensureStatement(sql: string): string {

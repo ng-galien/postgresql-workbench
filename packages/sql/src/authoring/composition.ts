@@ -1,4 +1,4 @@
-import { quoteIdentifier } from "./completion.js";
+import { quoteSqlIdentifierIfNeeded } from "./completion.js";
 import { formatPostgresSql } from "./format.js";
 import {
   canonicalSqlIdentifier,
@@ -207,7 +207,7 @@ function composeRoutine(
 
 function functionSelect(routine: SqlAuthoringObject, tabSize: number): string {
   const indent = " ".repeat(tabSize);
-  const qualified = `${quoteIdentifier(routine.schema)}.${quoteIdentifier(routine.name)}`;
+  const qualified = `${quoteSqlIdentifierIfNeeded(routine.schema)}.${quoteSqlIdentifierIfNeeded(routine.name)}`;
   if (routine.parameters.length === 0) return `SELECT *\nFROM ${qualified}();\n`;
   const argumentsSql = routine.parameters
     .map((parameter, index) => {
@@ -220,7 +220,7 @@ function functionSelect(routine: SqlAuthoringObject, tabSize: number): string {
 
 function procedureBlock(routine: SqlAuthoringObject, tabSize: number): string {
   const indent = " ".repeat(tabSize);
-  const qualified = `${quoteIdentifier(routine.schema)}.${quoteIdentifier(routine.name)}`;
+  const qualified = `${quoteSqlIdentifierIfNeeded(routine.schema)}.${quoteSqlIdentifierIfNeeded(routine.name)}`;
   const variables = routineVariableNames(routine.parameters);
   const declarations = routine.parameters
     .map((parameter, index) => `${indent}${variables[index]} ${parameter.type || "text"} := NULL;`)
@@ -261,7 +261,7 @@ function triggerFunctionBlock(
   );
   if (!event || !relation) return undefined;
   const indent = " ".repeat(tabSize);
-  const relationSql = `${quoteIdentifier(relation.schema)}.${quoteIdentifier(relation.name)}`;
+  const relationSql = `${quoteSqlIdentifierIfNeeded(relation.schema)}.${quoteSqlIdentifierIfNeeded(relation.name)}`;
   const idColumn = relation.columns.find((column) => canonicalSqlIdentifier(column.name) === "id");
   const requestedColumns = event.columns
     .map((name) =>
@@ -289,11 +289,11 @@ function triggerFunctionBlock(
       const assignments = eventColumns
         .map(
           (column) =>
-            `${indent}${indent}${quoteIdentifier(column.name)} = ${variableNames.get(column.name)}`,
+            `${indent}${indent}${quoteSqlIdentifierIfNeeded(column.name)} = ${variableNames.get(column.name)}`,
         )
         .join(",\n");
       const predicate = idColumn
-        ? `${quoteIdentifier(idColumn.name)} = ${variableNames.get(idColumn.name)}`
+        ? `${quoteSqlIdentifierIfNeeded(idColumn.name)} = ${variableNames.get(idColumn.name)}`
         : "FALSE /* replace with the target row predicate */";
       statement = `${indent}UPDATE ${relationSql}\n${indent}SET\n${assignments}\n${indent}WHERE ${predicate};`;
       break;
@@ -308,7 +308,7 @@ function triggerFunctionBlock(
         .map((column, index) => `${indent}${insertVariables[index]} ${column.type} := NULL;`)
         .join("\n");
       const names = columns
-        .map((column) => `${indent}${indent}${quoteIdentifier(column.name)}`)
+        .map((column) => `${indent}${indent}${quoteSqlIdentifierIfNeeded(column.name)}`)
         .join(",\n");
       const values = insertVariables.map((variable) => `${indent}${indent}${variable}`).join(",\n");
       declarations = insertDeclarations;
@@ -324,7 +324,7 @@ function triggerFunctionBlock(
     }
     case "DELETE": {
       const predicate = idColumn
-        ? `${quoteIdentifier(idColumn.name)} = ${variableNames.get(idColumn.name)}`
+        ? `${quoteSqlIdentifierIfNeeded(idColumn.name)} = ${variableNames.get(idColumn.name)}`
         : "FALSE /* replace with the target row predicate */";
       statement = `${indent}DELETE FROM ${relationSql}\n${indent}WHERE ${predicate};`;
       break;
@@ -396,7 +396,7 @@ function triggerSummary(trigger: SqlAuthoringTrigger): string {
 
 function routineArgument(name: string, value: string, index: number): string {
   return /^[A-Za-z_][\w$]*$/u.test(name) && !name.startsWith("$")
-    ? `${quoteIdentifier(name)} => ${value}`
+    ? `${quoteSqlIdentifierIfNeeded(name)} => ${value}`
     : value || `$${index + 1}`;
 }
 
@@ -416,7 +416,7 @@ function routineVariableNames(parameters: readonly { name: string }[]): string[]
 
 function safeVariableName(name: string, index: number): string {
   const stem = name.replace(/^\$/u, "arg_").replace(/[^\p{L}\p{N}_$]/gu, "_");
-  return quoteIdentifier(`v_${stem || `arg_${index + 1}`}`);
+  return quoteSqlIdentifierIfNeeded(`v_${stem || `arg_${index + 1}`}`);
 }
 
 function appendGeneratedStatement(source: string, generated: string): string {
@@ -456,7 +456,7 @@ function composeColumn(
     };
   }
   const [reference] = matchingReferences;
-  const expression = `${reference.reference}.${quoteIdentifier(payload.name)}`;
+  const expression = `${reference.reference}.${quoteSqlIdentifierIfNeeded(payload.name)}`;
   if (analysis.distinct?.on) {
     return {
       status: "rejected",
@@ -671,7 +671,7 @@ function joinedProjectionAdditions(
   }
   if (analysis.targets.some((projected) => projected.callsFunction)) return undefined;
   return target.columns
-    .map((column) => `${targetReference}.${quoteIdentifier(column.name)}`)
+    .map((column) => `${targetReference}.${quoteSqlIdentifierIfNeeded(column.name)}`)
     .join(", ");
 }
 
@@ -681,10 +681,12 @@ export function tableProjection(
   settings: SqlAuthoringSettings,
 ): string {
   const alias = generatedRelationAlias(object.name, settings.aliasStyle);
-  const columns = object.columns.map((column) => `${alias}.${quoteIdentifier(column.name)}`);
+  const columns = object.columns.map(
+    (column) => `${alias}.${quoteSqlIdentifierIfNeeded(column.name)}`,
+  );
   const projection = columns.length > 0 ? columns.join(", ") : "*";
   return formatPostgresSql(
-    `SELECT ${projection} FROM ${quoteIdentifier(object.schema)}.${quoteIdentifier(object.name)} AS ${alias};`,
+    `SELECT ${projection} FROM ${quoteSqlIdentifierIfNeeded(object.schema)}.${quoteSqlIdentifierIfNeeded(object.name)} AS ${alias};`,
     settings.tabSize,
   );
 }
@@ -705,7 +707,7 @@ function joinTargetReference(
   references: readonly TableReference[],
   aliasStyle: SqlAuthoringSettings["aliasStyle"],
 ): { correlation: string; relation: string } {
-  const relation = `${quoteIdentifier(target.schema)}.${quoteIdentifier(target.name)}`;
+  const relation = `${quoteSqlIdentifierIfNeeded(target.schema)}.${quoteSqlIdentifierIfNeeded(target.name)}`;
   const occupied = new Set(references.map(({ correlationName }) => correlationName));
   let collisionIndex: number | undefined;
   let alias = generatedRelationAlias(target.name, aliasStyle);
@@ -729,7 +731,7 @@ function generatedRelationAlias(
       : aliasStyle === "initial"
         ? collisionIndex
         : `_${collisionIndex}`;
-  return quoteIdentifier(`${base}${suffix}`);
+  return quoteSqlIdentifierIfNeeded(`${base}${suffix}`);
 }
 
 function joinConditions(
@@ -742,7 +744,7 @@ function joinConditions(
   const targetColumns = currentIsSource ? foreignKey.targetColumns : foreignKey.sourceColumns;
   return currentColumns.map(
     (column, index) =>
-      `${current.reference}.${quoteIdentifier(column)} = ${targetReference}.${quoteIdentifier(targetColumns[index])}`,
+      `${current.reference}.${quoteSqlIdentifierIfNeeded(column)} = ${targetReference}.${quoteSqlIdentifierIfNeeded(targetColumns[index])}`,
   );
 }
 

@@ -1,3 +1,5 @@
+import { quoteSqlIdentifier } from "../../sql/src/authoring/identifiers.js";
+
 export const WORKBENCH_DDL_CHANNEL = "plpgsql_workbench_ddl";
 export const WORKBENCH_DDL_PAYLOAD_VERSION = 1;
 
@@ -125,7 +127,7 @@ export function coalescePostgresDdlNotifications(
 }
 
 export function buildWorkbenchDdlProvisioningSql(supportSchema: string): string {
-  const schema = quoteIdentifier(validateSupportSchema(supportSchema));
+  const schema = quoteSqlIdentifier(validateSupportSchema(supportSchema));
   const ddlFunction = `${schema}.notify_ddl_command_end`;
   const dropFunction = `${schema}.notify_sql_drop`;
   return `
@@ -309,7 +311,7 @@ COMMIT;
 
 export function buildWorkbenchDdlRemovalSql(supportSchema: string): string {
   const rawSchema = validateSupportSchema(supportSchema);
-  const schema = quoteIdentifier(rawSchema);
+  const schema = quoteSqlIdentifier(rawSchema);
   return `
 BEGIN;
 SELECT pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtext('postgresql-workbench-schema-sync'));
@@ -417,10 +419,6 @@ function postgresResourceKind(value: unknown): PostgresDdlResourceKind | undefin
     return value;
   }
   return undefined;
-}
-
-function quoteIdentifier(identifier: string): string {
-  return `"${identifier.replaceAll('"', '""')}"`;
 }
 
 function sqlLiteral(value: string): string {

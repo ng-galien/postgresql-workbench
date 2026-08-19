@@ -1,4 +1,4 @@
-import { quoteIdentifier } from "../../sql/src/authoring/completion.js";
+import { quoteSqlIdentifierIfNeeded } from "../../sql/src/authoring/completion.js";
 
 import type { DataViewEdit, DataViewEditability } from "../../views/src/dataView/protocol.js";
 import { sameDataViewRow } from "../../views/src/dataView/protocol.js";
@@ -37,21 +37,21 @@ export function buildRowUpdates(
     const assignments = rowEdits.map((edit) => {
       const policy = editability.columns[edit.ordinal];
       if (!policy?.editable) throw new Error(`Column ${edit.column} is not editable.`);
-      return `${quoteIdentifier(edit.column)} = ${bind(edit.value, policy.dataType)}`;
+      return `${quoteSqlIdentifierIfNeeded(edit.column)} = ${bind(edit.value, policy.dataType)}`;
     });
     const identity = table.keyColumns.map((column, index) => {
       const value = first.key[index] ?? null;
       const type = table.keyTypes[index] ?? "text";
       return value === null
-        ? `${quoteIdentifier(column)} IS NULL`
-        : `${quoteIdentifier(column)} = ${bind(value, type)}`;
+        ? `${quoteSqlIdentifierIfNeeded(column)} IS NULL`
+        : `${quoteSqlIdentifierIfNeeded(column)} = ${bind(value, type)}`;
     });
     const guards = rowEdits.map((edit) => {
       const policy = editability.columns[edit.ordinal];
       if (!policy?.editable) throw new Error(`Column ${edit.column} is not editable.`);
-      return `${quoteIdentifier(edit.column)} IS NOT DISTINCT FROM ${bind(edit.original, policy.dataType)}`;
+      return `${quoteSqlIdentifierIfNeeded(edit.column)} IS NOT DISTINCT FROM ${bind(edit.original, policy.dataType)}`;
     });
-    const text = `UPDATE ${quoteIdentifier(table.schema)}.${quoteIdentifier(table.name)}\nSET ${assignments.join(", ")}\nWHERE ${[...identity, ...guards].join("\n  AND ")}`;
+    const text = `UPDATE ${quoteSqlIdentifierIfNeeded(table.schema)}.${quoteSqlIdentifierIfNeeded(table.name)}\nSET ${assignments.join(", ")}\nWHERE ${[...identity, ...guards].join("\n  AND ")}`;
     const target = `${table.schema}.${table.name} (${table.keyColumns
       .map((column, index) => `${column} = ${first.key[index] ?? "NULL"}`)
       .join(", ")})`;
