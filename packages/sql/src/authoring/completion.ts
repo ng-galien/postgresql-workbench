@@ -117,9 +117,9 @@ function queryAliases(
 ): Map<string, QueryAlias> {
   const aliases = new Map<string, QueryAlias>();
   for (const relation of relations) {
-    if (relation.schema === undefined) continue;
-    const schema = canonicalSqlIdentifier(relation.schema);
-    const name = canonicalSqlIdentifier(relation.name);
+    if (relation.catalogSchema === undefined) continue;
+    const schema = relation.catalogSchema;
+    const name = relation.catalogName;
     const candidates = objects.filter(
       (candidate) =>
         candidate.name === name &&

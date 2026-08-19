@@ -11,11 +11,8 @@
 import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { readPostgresCatalog } from "../packages/catalog/src/postgresCatalog.js";
-import {
-  composePostgresSql,
-  tableProjection,
-  tableReferences,
-} from "../packages/sql/src/authoring/composition.js";
+import { composePostgresSql, tableProjection } from "../packages/sql/src/authoring/composition.js";
+import { canonicalSqlIdentifier } from "../packages/sql/src/authoring/identifiers.js";
 import { planJoinPaths } from "../packages/sql/src/authoring/joinPlanner.js";
 import {
   analyzeSqlQuery,
@@ -111,8 +108,11 @@ describe("Data View JOIN composition on PostgreSQL", () => {
     return analyzed.analysis;
   };
 
+  /** Composes as the SQL authoring server does: the statement is analyzed, then the engine runs. */
   const compose = async (text: string, target: SqlAuthoringSnapshot["objects"][number]) => {
-    const analysis = await analyze(text);
+    const analyzed = await analyzeSqlQuery(text, codeMoniker.parser);
+    if (analyzed.status !== "ok") throw new Error(`${analyzed.message}\n${text}`);
+    const analysis = analyzed.analysis;
     const request = {
       uri: "data-view.sql",
       text,
@@ -126,12 +126,20 @@ describe("Data View JOIN composition on PostgreSQL", () => {
         name: target.name,
       },
     };
-    let result = composePostgresSql(request, snapshot, DEFAULT_SQL_AUTHORING_SETTINGS);
+    let result = composePostgresSql(
+      request,
+      snapshot,
+      DEFAULT_SQL_AUTHORING_SETTINGS,
+      analysis,
+      analyzed.shape,
+    );
     if (result.status === "ambiguous") {
       result = composePostgresSql(
         { ...request, relationChoice: 0 },
         snapshot,
         DEFAULT_SQL_AUTHORING_SETTINGS,
+        analysis,
+        analyzed.shape,
       );
     }
     return result;
@@ -165,13 +173,19 @@ describe("Data View JOIN composition on PostgreSQL", () => {
       let joined = 0;
       for (const target of snapshot.objects) {
         if (joined >= 3 || present.includes(target.oid)) continue;
-        const references = tableReferences(text, snapshot.objects);
-        const plans = planJoinPaths(
-          snapshot,
-          references.map((reference) => reference.object.oid),
-          target.oid,
-          { maxHops: 2 },
-        );
+        // The relations the query names, read from the syntax tree and resolved on the snapshot.
+        const joinedAnalysis = await analyze(text);
+        const referencedOids = joinedAnalysis.relations.flatMap((relation) => {
+          const object = snapshot.objects.find(
+            (candidate) =>
+              canonicalSqlIdentifier(candidate.name) === canonicalSqlIdentifier(relation.name) &&
+              (relation.schema === undefined ||
+                canonicalSqlIdentifier(candidate.schema) ===
+                  canonicalSqlIdentifier(relation.schema)),
+          );
+          return object ? [object.oid] : [];
+        });
+        const plans = planJoinPaths(snapshot, referencedOids, target.oid, { maxHops: 2 });
         if (plans.length === 0) continue;
         const result = await compose(text, target);
         expect(result.status, `${base.name} + ${target.name}`).toBe("edit");
@@ -215,7 +229,9 @@ describe("Data View JOIN composition on PostgreSQL", () => {
     await runs(viaMapping.text);
 
     const orderText = tableProjection(order, DEFAULT_SQL_AUTHORING_SETTINGS).replace(/;\s*$/u, "");
-    const analysis = await analyze(orderText);
+    const analyzedOrder = await analyzeSqlQuery(orderText, codeMoniker.parser);
+    if (analyzedOrder.status !== "ok") throw new Error(analyzedOrder.message);
+    const analysis = analyzedOrder.analysis;
     const ambiguous = composePostgresSql(
       {
         uri: "data-view.sql",
@@ -232,6 +248,8 @@ describe("Data View JOIN composition on PostgreSQL", () => {
       },
       snapshot,
       DEFAULT_SQL_AUTHORING_SETTINGS,
+      analysis,
+      analyzedOrder.shape,
     );
     expect(ambiguous.status).toBe("ambiguous");
     if (ambiguous.status !== "ambiguous") return;

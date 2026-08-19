@@ -6,10 +6,6 @@ import { ensureLocalCodeMonikerWorkspace } from "../packages/catalog/src/localCo
 import { createCodeMonikerSyntaxParser } from "../packages/sql/src/analysis/codeMonikerSyntax.js";
 import type { SyntaxParser } from "../packages/sql/src/analysis/syntaxTree.js";
 import { postgresCompletions } from "../packages/sql/src/authoring/completion.js";
-import {
-  composeSqlAuthoringRequest,
-  sqlAuthoringEditStillApplies,
-} from "../packages/sql/src/authoring/composeRequest.js";
 import { composePostgresSql } from "../packages/sql/src/authoring/composition.js";
 import { formatPostgresSql } from "../packages/sql/src/authoring/format.js";
 import { analyzeSqlQuery } from "../packages/sql/src/authoring/query/analysis.js";
@@ -24,6 +20,10 @@ import {
   sqlStatementAtOffset,
   sqlStatementSlices,
 } from "../packages/sql/src/authoring/sqlLexing.js";
+import {
+  composeSqlAuthoringRequest,
+  sqlAuthoringEditStillApplies,
+} from "../packages/sql/src/languageServer/composeRequest.js";
 import type { SqlAuthoringDocumentContext } from "../packages/sql/src/languageServer/protocol.js";
 
 const snapshot: SqlAuthoringSnapshot = {

@@ -157,6 +157,12 @@ export const CARET_PLACEHOLDER = "sql_authoring_caret";
 export interface SqlRelationMention {
   schema?: string;
   name: string;
+  /**
+   * The name and schema as PostgreSQL stores them: what was quoted keeps its case, what was not is
+   * folded. Computed from the text as written, so it must never be canonicalised a second time.
+   */
+  catalogName: string;
+  catalogSchema?: string;
   alias?: string;
   /** How columns qualify it, as written: its alias, or its name. */
   reference: string;
@@ -251,12 +257,17 @@ export function relationMentions(
           part.trim(),
         );
         const parts = written.map((part) => unquoteSqlIdentifier(part));
+        const catalogParts = written.map((part) => canonicalSqlIdentifier(part));
         const name = parts[parts.length - 1] ?? "";
         const alias = aliasOf(node, parent, slice);
         const aliasNode = aliasNodeOf(node, parent);
         mentions.push({
           ...(parts.length > 1 ? { schema: parts[parts.length - 2] } : {}),
           name,
+          catalogName: catalogParts[catalogParts.length - 1] ?? "",
+          ...(catalogParts.length > 1
+            ? { catalogSchema: catalogParts[catalogParts.length - 2] }
+            : {}),
           ...(alias === undefined ? {} : { alias: unquoteSqlIdentifier(alias) }),
           reference: alias ?? written[written.length - 1] ?? name,
           qualifiedText: text.slice(
@@ -334,9 +345,9 @@ export function relationsFromAnalysis(
     if (relation.join && /\b(?:RIGHT|FULL)\b/u.test(relation.join.type)) {
       for (const reference of references) reference.nullExtended = true;
     }
-    if (relation.schema === undefined) continue;
-    const schema = canonicalSqlIdentifier(relation.schema);
-    const name = canonicalSqlIdentifier(relation.name);
+    if (relation.catalogSchema === undefined) continue;
+    const schema = relation.catalogSchema;
+    const name = relation.catalogName;
     const candidates = objects.filter(
       (candidate) =>
         candidate.schema === schema &&

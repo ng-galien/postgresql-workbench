@@ -3,7 +3,11 @@ import { directSyntaxChild, findSyntaxNode, findSyntaxNodes } from "../../analys
 import type { SyntaxNode, SyntaxParser } from "../../analysis/syntaxTree.js";
 import { quoteSqlIdentifierIfNeeded } from "../completion.js";
 import { formatPostgresSql } from "../format.js";
-import { splitSqlQualifiedIdentifier, unquoteSqlIdentifier } from "../identifiers.js";
+import {
+  canonicalSqlIdentifier,
+  splitSqlQualifiedIdentifier,
+  unquoteSqlIdentifier,
+} from "../identifiers.js";
 import { type SqlQueryShape, sqlQueryShape } from "../queryShape.js";
 
 /** Removes trailing statement terminators so the SQL can be used as a subquery. */
@@ -51,6 +55,12 @@ export interface SqlQuerySortItem {
 export interface SqlQueryRelation {
   schema?: string;
   name: string;
+  /**
+   * The name and schema as PostgreSQL stores them: what was quoted keeps its case, what was not is
+   * folded. Computed from the text as written, so it must never be canonicalised a second time.
+   */
+  catalogName: string;
+  catalogSchema?: string;
   alias?: string;
   /** The `table_ref` text range (relation and alias). */
   ref: TextRange;
@@ -224,6 +234,7 @@ export async function analyzeSqlQuery(
     if (!qualified) return;
     const written = splitSqlQualifiedIdentifier(slice(qualified).trim()).map((part) => part.trim());
     const parts = written.map((part) => unquoteSqlIdentifier(part));
+    const catalogParts = written.map((part) => canonicalSqlIdentifier(part));
     const aliasNode = directSyntaxChild(tableRef, "opt_alias_clause");
     const writtenAlias = aliasNode
       ? slice(aliasNode)
@@ -236,6 +247,8 @@ export async function analyzeSqlQuery(
     relations.push({
       ...(parts.length > 1 ? { schema: parts[parts.length - 2] } : {}),
       name,
+      catalogName: catalogParts[catalogParts.length - 1] ?? "",
+      ...(catalogParts.length > 1 ? { catalogSchema: catalogParts[catalogParts.length - 2] } : {}),
       ...(alias ? { alias } : {}),
       ref: range(tableRef),
       reference: writtenAlias || (written[written.length - 1] ?? name),
