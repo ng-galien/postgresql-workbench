@@ -55,9 +55,8 @@ vi.mock("vscode", () => {
   };
 });
 
-vi.mock("../../../packages/catalog/src/postgresCatalog.js", async (importOriginal) => {
-  const actual =
-    await importOriginal<typeof import("../../../packages/catalog/src/postgresCatalog.js")>();
+vi.mock("./postgresCatalog.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./postgresCatalog.js")>();
   return {
     ...actual,
     readPostgresCatalog: vi.fn(actual.readPostgresCatalog),

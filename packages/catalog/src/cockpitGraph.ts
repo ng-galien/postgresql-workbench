@@ -2,23 +2,72 @@ import type {
   CodeMonikerGraphResult,
   CodeMonikerIdentityGraphResult,
   CodeMonikerSymbol,
-} from "../../../packages/catalog/src/localCodeMoniker.js";
+} from "./localCodeMoniker.js";
 import {
   buildWorkbenchObjects,
   buildWorkbenchTableMembers,
   type WorkbenchDatabaseIdentity,
   type WorkbenchObjectModel,
   workbenchObjectFromSymbol,
-} from "../../../packages/catalog/src/objectModel.js";
-import type {
-  CockpitNeighbor,
-  CockpitNeighborhood,
-  WorkbenchGraphBreadcrumb,
-  WorkbenchGraphIdentityPresentation,
-  WorkbenchGraphSearchResult,
-  WorkbenchGraphSourcePreview,
-} from "../../../packages/views/src/cockpit/protocol.js";
+} from "./objectModel.js";
 import { buildWorkbenchRelationGroups } from "./relations.js";
+
+/**
+ * The graph the Cockpit renders, as the catalog produces it: a focused symbol, who calls it and
+ * what it calls, and the labels a reader needs to recognise them.
+ */
+export type CockpitDirection = "incoming" | "outgoing";
+
+export interface WorkbenchGraphIdentityPresentation {
+  label: string;
+  kind: string;
+  origin?: string;
+  hasCockpitActions?: boolean;
+}
+
+export interface WorkbenchGraphBreadcrumb {
+  prefix: string;
+  label: string;
+}
+
+export interface CockpitNeighbor {
+  direction: CockpitDirection;
+  symbol: CodeMonikerSymbol;
+  count: number;
+  kinds: string[];
+  score: number;
+}
+
+export interface CockpitNeighborhood {
+  focus: CodeMonikerSymbol;
+  incoming: CockpitNeighbor[];
+  outgoing: CockpitNeighbor[];
+  totals: { incoming: number; outgoing: number };
+  unresolved: number;
+  limited: boolean;
+}
+
+export interface WorkbenchGraphSearchResult {
+  symbolUri: string;
+  label: string;
+  schema: string;
+  kind: string;
+  detail: string;
+  resultType: "schema" | "object" | "member";
+  incoming?: number;
+  outgoing?: number;
+  countStatus: "loading" | "available" | "unavailable";
+}
+
+export interface WorkbenchGraphSourcePreview {
+  symbolUri: string;
+  title: string;
+  kind: string;
+  file: string;
+  firstLine: number;
+  lastLine: number;
+  lines: Array<{ number: number; text: string }>;
+}
 
 export const COCKPIT_BATCH_SIZE = 3;
 export const COCKPIT_DOM_BUDGET = 60;

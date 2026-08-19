@@ -1,58 +1,29 @@
+import type {
+  CockpitDirection,
+  CockpitNeighbor,
+  CockpitNeighborhood,
+  WorkbenchGraphBreadcrumb,
+  WorkbenchGraphIdentityPresentation,
+  WorkbenchGraphSearchResult,
+  WorkbenchGraphSourcePreview,
+} from "../../../catalog/src/cockpitGraph.js";
 import type { CodeMonikerSymbol } from "../../../catalog/src/localCodeMoniker.js";
 import type { WorkbenchGraphDragPayload } from "./dragAndDrop.js";
 
-export type CockpitDirection = "incoming" | "outgoing";
-
-export interface WorkbenchGraphIdentityPresentation {
-  label: string;
-  kind: string;
-  origin?: string;
-  hasCockpitActions?: boolean;
-}
-
-export interface WorkbenchGraphBreadcrumb {
-  prefix: string;
-  label: string;
-}
-
-export interface CockpitNeighbor {
-  direction: CockpitDirection;
-  symbol: CodeMonikerSymbol;
-  count: number;
-  kinds: string[];
-  score: number;
-}
-
-export interface CockpitNeighborhood {
-  focus: CodeMonikerSymbol;
-  incoming: CockpitNeighbor[];
-  outgoing: CockpitNeighbor[];
-  totals: { incoming: number; outgoing: number };
-  unresolved: number;
-  limited: boolean;
-}
-
-export interface WorkbenchGraphSearchResult {
-  symbolUri: string;
-  label: string;
-  schema: string;
-  kind: string;
-  detail: string;
-  resultType: "schema" | "object" | "member";
-  incoming?: number;
-  outgoing?: number;
-  countStatus: "loading" | "available" | "unavailable";
-}
-
-export interface WorkbenchGraphSourcePreview {
-  symbolUri: string;
-  title: string;
-  kind: string;
-  file: string;
-  firstLine: number;
-  lastLine: number;
-  lines: Array<{ number: number; text: string }>;
-}
+/**
+ * What the Cockpit webview and the Extension Host exchange. The graph itself — a neighbourhood,
+ * its breadcrumbs, a search result, a source preview — is what the catalog produces, and is
+ * re-exported here so a view names one import for the whole contract.
+ */
+export type {
+  CockpitDirection,
+  CockpitNeighbor,
+  CockpitNeighborhood,
+  WorkbenchGraphBreadcrumb,
+  WorkbenchGraphIdentityPresentation,
+  WorkbenchGraphSearchResult,
+  WorkbenchGraphSourcePreview,
+};
 
 export interface CockpitPerspectiveState {
   focusIdentity: string;

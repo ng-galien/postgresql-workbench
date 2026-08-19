@@ -1,0 +1,13 @@
+fragment = "catalog"
+enabled = true
+
+[aliases]
+catalog_package_source = "source ~ '**/dir:packages/dir:catalog/**'"
+catalog_package_allowed = "target ~ '**/dir:packages/dir:catalog/**' OR target ~ '**/dir:packages/dir:sql/**'"
+
+[[ts.refs.where]]
+id = "package-depends-only-on-what-it-reads"
+severity = "error"
+expr = "$catalog_package_source AND $architectural_dependency AND ($workbench_package_target OR $extension_local_target) => $catalog_package_allowed"
+message = "packages/catalog reads PostgreSQL and indexes its sources through the SQL analysis layer; it depends on that package and nothing else."
+rationale = "The catalog answers what a database contains. Reading rows, measuring coverage, debugging and rendering are what consume that answer, so a dependency on them would invert the direction the Workbench Index is built in."

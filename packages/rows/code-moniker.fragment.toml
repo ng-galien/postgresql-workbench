@@ -1,0 +1,13 @@
+fragment = "rows"
+enabled = true
+
+[aliases]
+rows_package_source = "source ~ '**/dir:packages/dir:rows/**'"
+rows_package_allowed = "target ~ '**/dir:packages/dir:rows/**' OR target ~ '**/dir:packages/dir:sql/**' OR target ~ '**/dir:packages/dir:dap/**'"
+
+[[ts.refs.where]]
+id = "package-depends-only-on-what-it-reads"
+severity = "error"
+expr = "$rows_package_source AND $architectural_dependency AND ($workbench_package_target OR $extension_local_target) => $rows_package_allowed"
+message = "packages/rows reads and edits result rows: it depends on the SQL analysis layer and the DAP result shapes, and on nothing else."
+rationale = "A result is produced by a query the SQL layer understands or by a debugged call the DAP layer captured. The catalog and the views consume rows; depending on either would close a cycle around the thing every result view renders."

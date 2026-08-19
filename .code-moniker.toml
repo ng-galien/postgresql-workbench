@@ -15,6 +15,7 @@ code_moniker_syntax_factory = "kind = 'imports_symbol' AND target.segment('modul
 code_moniker_daemon_lifecycle = "kind = 'imports_symbol' AND target.segment('module') = 'localCodeMoniker' AND (target.segment('path') = 'connectLocalCodeMoniker' OR target.segment('path') = 'ensureLocalCodeMonikerWorkspace')"
 syntax_provider_owner = "source.segment('module') = 'localCodeMonikerSyntax' OR source.segment('module') = 'indexController' OR source ~ '**/dir:e2e/**' OR source.segment('module') = 'codeMonikerSyntax.test' OR source.segment('module') = 'localCodeMoniker.test'"
 architectural_dependency = "kind = 'imports_symbol' OR kind = 'imports_module' OR kind = 'uses_type' OR kind = 'calls' OR kind = 'method_call' OR kind = 'instantiates' OR kind = 'extends' OR kind = 'implements'"
+workbench_package_target = "target ~ '**/dir:packages/**'"
 extension_local_target = "target ~ '**/dir:vscode-extension/dir:src/**'"
 workbench_webview_source = "source ~ '**/dir:vscode-extension/dir:src/dir:workbenchGraph/dir:webview/**'"
 workbench_webview_target = "target ~ '**/dir:vscode-extension/dir:src/dir:workbenchGraph/dir:webview/**'"
@@ -46,9 +47,11 @@ enable = [
   "postgres-ddl-sync-core-remains-pure",
   "analysis-does-not-depend-on-workbench-runtime",
   "shared-dap-does-not-depend-on-workbench-runtime",
-  # declared by the sql package fragment
+  # declared by the package fragments
   "language-server-features-stay-behind-the-server",
   "query-engine-does-not-depend-on-the-language-server",
+  "package-is-the-leaf-of-the-graph",
+  "package-depends-only-on-what-it-reads",
 ]
 
 [profiles.dap]

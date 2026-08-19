@@ -1,9 +1,4 @@
 import { describe, expect, it } from "vitest";
-import type {
-  CodeMonikerGraphResult,
-  CodeMonikerSymbol,
-} from "../../../packages/catalog/src/localCodeMoniker.js";
-import type { PostgresDocumentDescriptor } from "../../../packages/catalog/src/postgresCatalog.js";
 import {
   COCKPIT_BATCH_SIZE,
   initialCockpitGraph,
@@ -13,6 +8,8 @@ import {
   searchGraphObjects,
   sourcePreviewPresentation,
 } from "./cockpitGraph.js";
+import type { CodeMonikerGraphResult, CodeMonikerSymbol } from "./localCodeMoniker.js";
+import type { PostgresDocumentDescriptor } from "./postgresCatalog.js";
 
 const database = { serverId: "localhost:5433/testdb:postgres", database: "testdb" };
 const databasePrefix =

@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type {
-  CodeMonikerGraphResult,
-  CodeMonikerSymbol,
-} from "../../../packages/catalog/src/localCodeMoniker.js";
+import type { CodeMonikerGraphResult, CodeMonikerSymbol } from "./localCodeMoniker.js";
 import {
   buildWorkbenchRelationGroups,
   classifyWorkbenchRelationFailure,
