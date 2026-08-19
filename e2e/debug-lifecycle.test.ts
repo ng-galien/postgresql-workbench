@@ -20,7 +20,7 @@ import {
   runPacedDebugAction,
 } from "./debugTestTiming.js";
 
-const DAP_SERVER = path.resolve(__dirname, "../dist/main.js");
+const DAP_SERVER = path.resolve(__dirname, "../dist/dap/src/main.js");
 const LAUNCH_ARGS = {
   host: "localhost",
   port: 5433,

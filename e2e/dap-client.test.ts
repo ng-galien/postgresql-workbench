@@ -20,7 +20,7 @@ import {
 
 const DAP_SERVER = process.env.POSTGRESQL_DAP_SERVER
   ? path.resolve(process.env.POSTGRESQL_DAP_SERVER)
-  : path.resolve(__dirname, "../dist/main.js");
+  : path.resolve(__dirname, "../dist/dap/src/main.js");
 const LAUNCH_ARGS = {
   host: "localhost",
   port: 5433,

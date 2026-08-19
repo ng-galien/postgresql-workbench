@@ -14,7 +14,7 @@
   "engines": {
     "node": ">=22.0.0"
   },
-  "main": "dist/main.js",
+  "main": "dist/dap/src/main.js",
   "scripts": {
     "build": "npm run build:dap && npm --prefix vscode-extension run compile && npm run build:ext",
     "build:dap": "node scripts/dap/clean.mjs && tsc",
@@ -22,7 +22,7 @@
     "build:ext": "npm --prefix vscode-extension run build",
     "typecheck": "tsc --noEmit && tsc -p packages/views/tsconfig.json && npm --prefix vscode-extension run compile",
     "watch": "node scripts/dap/clean.mjs && tsc -w",
-    "start": "node dist/main.js",
+    "start": "node dist/dap/src/main.js",
     "check": "node scripts/issues/check-templates.mjs && biome check packages/ vscode-extension/src/ vscode-extension/tests/ e2e/ site/ scripts/",
     "check:fix": "node scripts/issues/check-templates.mjs && biome check --write packages/ vscode-extension/src/ vscode-extension/tests/ e2e/ site/ scripts/",
     "test": "vitest run --exclude e2e/ --exclude vscode-extension/tests/acceptance/specs/ --exclude vscode-extension/tests/vscode/ --exclude '.worktrees/**' --exclude '**/.vscode-test/**'",
