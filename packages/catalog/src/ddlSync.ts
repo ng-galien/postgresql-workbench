@@ -1,5 +1,4 @@
 import type { Client, Notification } from "pg";
-import { getConnectionName, type ServerConfig } from "../../connection/src/savedConnection.js";
 import {
   classifyWorkbenchDdlSyncFailure,
   resolveWorkbenchDdlSyncConfiguration,
@@ -17,6 +16,7 @@ import {
   WORKBENCH_DDL_CHANNEL,
   workbenchDdlProvisioningStatusSql,
 } from "./postgresDdlSync.js";
+import { getConnectionName, type ServerConfig } from "./savedConnection.js";
 
 /** What the DDL listener needs from the open Connections; `ConnectionManager` satisfies it. */
 export interface DdlSyncConnections {

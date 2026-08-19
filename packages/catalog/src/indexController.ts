@@ -1,5 +1,4 @@
 import type { Client } from "pg";
-import type { ServerConfig } from "../../connection/src/savedConnection.js";
 import { createCodeMonikerSyntaxParser } from "../../sql/src/analysis/codeMonikerSyntax.js";
 import type { SyntaxParser } from "../../sql/src/analysis/syntaxTree.js";
 import type {
@@ -51,6 +50,7 @@ import {
   mergeWorkbenchRelationGroups,
   type WorkbenchRelationGroup,
 } from "./relations.js";
+import type { ServerConfig } from "./savedConnection.js";
 /** What indexing needs from the open Connections; `IndexConnections` satisfies it. */
 export interface IndexConnections {
   readonly store: { get(serverId: string): ServerConfig | undefined };

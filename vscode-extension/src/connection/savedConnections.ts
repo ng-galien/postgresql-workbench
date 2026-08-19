@@ -7,7 +7,7 @@ export {
   type ServerConfig,
   type SslMode,
   sameConnectionIdentity,
-} from "../../../packages/connection/src/savedConnection.js";
+} from "../../../packages/catalog/src/savedConnection.js";
 
 import {
   getConnectionName,
@@ -15,7 +15,7 @@ import {
   getCustomConnectionName,
   type ServerConfig,
   sameConnectionIdentity,
-} from "../../../packages/connection/src/savedConnection.js";
+} from "../../../packages/catalog/src/savedConnection.js";
 
 const SERVERS_KEY = "postgresql-workbench.servers";
 const PASSWORD_PREFIX = "postgresql-workbench.pw.";

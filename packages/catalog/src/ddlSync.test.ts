@@ -10,13 +10,12 @@ function testHost() {
   };
 }
 
-import type { ServerConfig } from "../../connection/src/savedConnection.js";
-
 import {
   type DdlSyncConnections,
   type DdlSyncIndex,
   WorkbenchDdlSyncController,
 } from "./ddlSync.js";
+import type { ServerConfig } from "./savedConnection.js";
 
 /** The change the Connections publish; only the two fields the listener reads. */
 type ConnectionChange = {

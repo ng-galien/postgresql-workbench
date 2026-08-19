@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { ServerConfig } from "../../connection/src/savedConnection.js";
 import {
   classifyWorkbenchDdlSyncFailure,
   resolveWorkbenchDdlSyncConfiguration,
 } from "./ddlSyncSettings.js";
+import type { ServerConfig } from "./savedConnection.js";
 
 const SERVER: ServerConfig = {
   id: "local:5432/app:postgres",
