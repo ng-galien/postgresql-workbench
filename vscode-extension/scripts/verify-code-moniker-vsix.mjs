@@ -59,7 +59,7 @@ const forbidden = [...entries].filter(
   (entry) =>
     /(^|\/)node_modules\//.test(entry) ||
     /(^|\/)media\/marketplace\/raw\//.test(entry) ||
-    /(^|\/)test-workspace\//.test(entry) ||
+    /(^|\/)tests\//.test(entry) ||
     /\.wasm$/i.test(entry) ||
     /\.sha256$/i.test(entry) ||
     /\.ts$/i.test(entry) ||

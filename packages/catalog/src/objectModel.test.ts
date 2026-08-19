@@ -58,7 +58,9 @@ function symbol(
 
 describe("Workbench tree model", () => {
   it("contributes separate database and Scratchpads trees", () => {
-    const manifest = JSON.parse(readFileSync(join(__dirname, "../../../vscode-extension/package.json"), "utf8")) as {
+    const manifest = JSON.parse(
+      readFileSync(join(__dirname, "../../../vscode-extension/package.json"), "utf8"),
+    ) as {
       contributes: {
         views: Record<string, Array<{ id: string; name: string }>>;
         commands: Array<{ command: string; icon?: string }>;

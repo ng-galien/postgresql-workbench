@@ -1,16 +1,8 @@
 .vscode/**
 .vscode-test*
-.vscode-smoke.mjs
 .vscode-showcase.mjs
-acceptance/**
-playwright.acceptance.config.ts
-playwright.bootstrap.config.ts
-playwright.schema-sync.config.ts
-playwright.vscode.config.ts
-Dockerfile.playwright-ci
-docker-compose.playwright-ci.yml
+tests/**
 test-results/**
-test-workspace/**
 src/**
 node_modules/**
 tsconfig.json
@@ -29,3 +21,7 @@ media/marketplace/.gitignore
 dist/**/*.map
 dist/**/*.d.ts
 dist/**/showcase/**
+# tsc emits the test trees under dist for the VS Code runner; the extension ships the bundle only.
+dist/packages/**
+dist/vscode-extension/**
+dist/smoke/**

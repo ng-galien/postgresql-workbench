@@ -1,8 +1,4 @@
-import {
-  directSyntaxChild,
-  findSyntaxNode,
-  findSyntaxNodes,
-} from "../../analysis/syntaxNodes.js";
+import { directSyntaxChild, findSyntaxNode, findSyntaxNodes } from "../../analysis/syntaxNodes.js";
 import type { SyntaxNode, SyntaxParser } from "../../analysis/syntaxTree.js";
 import {
   canonicalSqlIdentifier,
@@ -271,6 +267,14 @@ export function relationMentions(
             start: charOffset(qualified.byteRange[0]),
             end: charOffset(qualified.byteRange[1]),
           },
+          ...(aliasNode
+            ? {
+                aliasRange: {
+                  start: charOffset(aliasNode.byteRange[0]),
+                  end: charOffset(aliasNode.byteRange[1]),
+                },
+              }
+            : {}),
         });
       }
     }

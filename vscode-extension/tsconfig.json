@@ -13,6 +13,6 @@
     "declaration": true,
     "sourceMap": true
   },
-  "include": ["src/**/*"],
+  "include": ["src/**/*", "tests/vscode/**/*"],
   "exclude": ["node_modules", "dist"]
 }

@@ -1,7 +1,4 @@
-import type {
-  CodeMonikerGraphResult,
-  CodeMonikerSymbol,
-} from "./localCodeMoniker.js";
+import type { CodeMonikerGraphResult, CodeMonikerSymbol } from "./localCodeMoniker.js";
 import {
   buildWorkbenchObjects,
   isWorkbenchDatabaseSymbol,

@@ -11,17 +11,14 @@ function testHost() {
       Boolean(process.env.POSTGRESQL_WORKBENCH_ACCEPTANCE_CONTROL_FILE),
   };
 }
+
 import type { LocalCodeMonikerSession } from "./localCodeMoniker.js";
-import type {
-  PostgresCatalogSnapshot,
-  VirtualSqlSourceSet,
-} from "./postgresCatalog.js";
+import type { PostgresCatalogSnapshot, VirtualSqlSourceSet } from "./postgresCatalog.js";
 import {
   postgresDatabaseDocumentRoot,
   postgresDocumentUri,
   postgresSourceSetName,
 } from "./postgresCatalog.js";
-import type { ServerConfig } from "../../connection/src/savedConnection.js";
 
 const SCOPE_A = postgresDatabaseDocumentRoot({ serverId: "server-a", database: "database-a" });
 const SCOPE_B = postgresDatabaseDocumentRoot({ serverId: "server-b", database: "database-b" });
@@ -67,11 +64,9 @@ vi.mock("../../../packages/catalog/src/postgresCatalog.js", async (importOrigina
   };
 });
 
-import { readPostgresCatalog } from "./postgresCatalog.js";
 import type { WorkbenchIndexResult } from "./indexController.js";
-import { WorkbenchIndexController,
-  type IndexConnections,
-} from "./indexController.js";
+import { type IndexConnections, WorkbenchIndexController } from "./indexController.js";
+import { readPostgresCatalog } from "./postgresCatalog.js";
 
 function state(controller: WorkbenchIndexController, serverId = "server-a") {
   return controller.databaseState({
@@ -824,10 +819,7 @@ function tableRegistry(result: WorkbenchIndexResult) {
 }
 
 function newController(connections: FakeConnections): WorkbenchIndexController {
-  return new WorkbenchIndexController(
-    testHost(),
-    connections as unknown as IndexConnections,
-  );
+  return new WorkbenchIndexController(testHost(), connections as unknown as IndexConnections);
 }
 
 describe("WorkbenchIndexController SQL authoring snapshot", () => {

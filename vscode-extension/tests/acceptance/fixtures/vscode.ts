@@ -16,7 +16,7 @@ import { _electron as electron } from "playwright";
 import { preparedAcceptanceVSCode } from "./vscodeDownload";
 
 const extensionRoot = resolve(__dirname, "../..");
-const workspace = resolve(extensionRoot, "test-workspace");
+const workspace = resolve(extensionRoot, "tests", "workspace");
 const artifactsRoot = resolve(
   extensionRoot,
   "test-results",

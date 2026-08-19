@@ -1,8 +1,6 @@
+import type { DataViewAddition, DataViewProjection } from "../../../views/src/dataView/protocol.js";
 import type { SyntaxParser } from "../analysis/syntaxTree.js";
-import {
-  reachableJoinTargets,
-  shortestJoinPlans,
-} from "./joinPlanner.js";
+import { reachableJoinTargets, shortestJoinPlans } from "./joinPlanner.js";
 import type {
   SqlAuthoringComposeRequest,
   SqlAuthoringComposeResult,
@@ -10,14 +8,7 @@ import type {
   SqlAuthoringSettings,
   SqlAuthoringSnapshot,
 } from "./protocol.js";
-import {
-  analyzeSqlQuery,
-  formatSqlQuery,
-} from "./query/analysis.js";
-import type {
-  DataViewAddition,
-  DataViewProjection,
-} from "../../../views/src/dataView/protocol.js";
+import { analyzeSqlQuery, formatSqlQuery } from "./query/analysis.js";
 
 /**
  * Everything the composition engine can add to a query, grouped by table already present

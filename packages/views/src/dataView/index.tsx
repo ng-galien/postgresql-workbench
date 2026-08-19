@@ -2,9 +2,9 @@ import codiconStyles from "@vscode/codicons/dist/codicon.css";
 import codiconFont from "@vscode/codicons/dist/codicon.ttf";
 import { createRoot } from "react-dom/client";
 import gridStyles from "../results/styles.css";
-import type { DataViewRequest, DataViewResponse } from "./protocol.js";
 import { DataViewApp, type DataViewMessaging } from "./DataViewApp.js";
 import dataViewStyles from "./dataView.css";
+import type { DataViewRequest, DataViewResponse } from "./protocol.js";
 
 declare function acquireVsCodeApi(): {
   postMessage(message: unknown): void;

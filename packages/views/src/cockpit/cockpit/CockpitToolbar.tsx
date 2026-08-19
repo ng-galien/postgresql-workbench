@@ -1,6 +1,6 @@
 import { Fragment } from "react";
-import type { CockpitDirection } from "../protocol.js";
 import { relationClass, relationLabel } from "../graph/relationPresentation.js";
+import type { CockpitDirection } from "../protocol.js";
 import { vscode } from "../vscodeApi.js";
 import { CockpitSearch } from "./CockpitSearch.js";
 import { useCockpitStore } from "./store.js";

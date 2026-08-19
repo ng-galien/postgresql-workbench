@@ -9,10 +9,8 @@ function testHost() {
     onSettingsChanged: () => ({ dispose: () => {} }),
   };
 }
-import type {
-  ServerConfig,
-} from "../../connection/src/savedConnection.js";
 
+import type { ServerConfig } from "../../connection/src/savedConnection.js";
 
 import {
   type DdlSyncConnections,
@@ -232,9 +230,7 @@ describe("WorkbenchDdlSyncController", () => {
     const connections = {
       servers: [SERVER],
       store: { get: (serverId: string) => (serverId === SERVER.id ? SERVER : undefined) },
-      onChanged(
-        callback: (change: { serverIds: string[]; rootsChanged: boolean }) => void,
-      ) {
+      onChanged(callback: (change: { serverIds: string[]; rootsChanged: boolean }) => void) {
         connectionListeners.add(callback);
         return { dispose: () => connectionListeners.delete(callback) };
       },
@@ -335,9 +331,7 @@ describe("WorkbenchDdlSyncController", () => {
         return [server];
       },
       store: { get: (serverId: string) => (serverId === server.id ? server : undefined) },
-      onChanged(
-        callback: (change: { serverIds: string[]; rootsChanged: boolean }) => void,
-      ) {
+      onChanged(callback: (change: { serverIds: string[]; rootsChanged: boolean }) => void) {
         connectionListeners.add(callback);
         return { dispose: () => connectionListeners.delete(callback) };
       },
@@ -395,9 +389,7 @@ describe("WorkbenchDdlSyncController", () => {
         return [server];
       },
       store: { get: (serverId: string) => (serverId === server.id ? server : undefined) },
-      onChanged(
-        callback: (change: { serverIds: string[]; rootsChanged: boolean }) => void,
-      ) {
+      onChanged(callback: (change: { serverIds: string[]; rootsChanged: boolean }) => void) {
         connectionListeners.add(callback);
         return { dispose: () => connectionListeners.delete(callback) };
       },
@@ -461,9 +453,7 @@ describe("WorkbenchDdlSyncController", () => {
         return [server];
       },
       store: { get: (serverId: string) => (serverId === server.id ? server : undefined) },
-      onChanged(
-        callback: (change: { serverIds: string[]; rootsChanged: boolean }) => void,
-      ) {
+      onChanged(callback: (change: { serverIds: string[]; rootsChanged: boolean }) => void) {
         connectionListeners.add(callback);
         return { dispose: () => connectionListeners.delete(callback) };
       },
@@ -711,9 +701,7 @@ describe("WorkbenchDdlSyncController", () => {
         return [server];
       },
       store: { get: (serverId: string) => (serverId === server.id ? server : undefined) },
-      onChanged(
-        callback: (change: { serverIds: string[]; rootsChanged: boolean }) => void,
-      ) {
+      onChanged(callback: (change: { serverIds: string[]; rootsChanged: boolean }) => void) {
         connectionListeners.add(callback);
         return { dispose: () => connectionListeners.delete(callback) };
       },
@@ -814,9 +802,7 @@ describe("WorkbenchDdlSyncController", () => {
         return server ? [server] : [];
       },
       store: { get: (serverId: string) => (serverId === SERVER.id ? server : undefined) },
-      onChanged(
-        callback: (change: { serverIds: string[]; rootsChanged: boolean }) => void,
-      ) {
+      onChanged(callback: (change: { serverIds: string[]; rootsChanged: boolean }) => void) {
         connectionListeners.add(callback);
         return { dispose: () => connectionListeners.delete(callback) };
       },
@@ -883,9 +869,7 @@ describe("WorkbenchDdlSyncController", () => {
         return server ? [server] : [];
       },
       store: { get: (serverId: string) => (serverId === SERVER.id ? server : undefined) },
-      onChanged(
-        callback: (change: { serverIds: string[]; rootsChanged: boolean }) => void,
-      ) {
+      onChanged(callback: (change: { serverIds: string[]; rootsChanged: boolean }) => void) {
         connectionListeners.add(callback);
         return { dispose: () => connectionListeners.delete(callback) };
       },
@@ -953,9 +937,7 @@ describe("WorkbenchDdlSyncController", () => {
         return [server];
       },
       store: { get: (serverId: string) => (serverId === SERVER.id ? server : undefined) },
-      onChanged(
-        callback: (change: { serverIds: string[]; rootsChanged: boolean }) => void,
-      ) {
+      onChanged(callback: (change: { serverIds: string[]; rootsChanged: boolean }) => void) {
         connectionListeners.add(callback);
         return { dispose: () => connectionListeners.delete(callback) };
       },
@@ -1014,9 +996,7 @@ function connectionsWithClients(clients: FakeClient[]) {
     value: {
       servers: [SERVER],
       store: { get: (serverId: string) => (serverId === SERVER.id ? SERVER : undefined) },
-      onChanged(
-        callback: (change: { serverIds: string[]; rootsChanged: boolean }) => void,
-      ) {
+      onChanged(callback: (change: { serverIds: string[]; rootsChanged: boolean }) => void) {
         connectionListeners.add(callback);
         return { dispose: () => connectionListeners.delete(callback) };
       },

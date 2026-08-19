@@ -128,10 +128,21 @@ The `vscode-extension/` is a full-featured VS Code extension:
 - Upstream omits `PLPGSQL_DTYPE_REC`, `ROW`, and `RECFIELD`; this is supported degradation, not a failure
 - The contract requires scalar inspection and stepping to remain functional and unsupported composites to return cleanly without DAP errors
 
-### VS Code extension tests (`vscode-extension/src/test/`)
-- Uses `@vscode/test-cli` + `@vscode/test-electron` — runs tests inside a real VS Code instance
-- Config: `vscode-extension/.vscode-test.mjs`, Mocha TDD UI (`suite`/`test`/`suiteSetup`/`teardown`, NOT `describe`/`it`/`beforeEach`/`afterEach`)
-- `vscode.debug.startDebugging()` returns false if `resolveDebugConfiguration` returns undefined
+### Where the tests live
+
+Unit tests sit next to the code they cover, in `packages/**` and `vscode-extension/src/**`, and run
+under vitest. Everything that needs more than a module lives in one place per runner:
+
+- `e2e/` — vitest against a real PostgreSQL (Docker) or a real Code Moniker parser
+- `vscode-extension/tests/vscode/` — `@vscode/test-cli` inside a real VS Code: `integration/` (the
+  suite) and `smoke/` (activation only), each with its runner config beside it
+- `vscode-extension/tests/acceptance/` — Playwright driving VS Code; `playwright/` holds the lane
+  configs, `specs/` the journeys, and the CI image sits with them
+- `vscode-extension/tests/workspace/` — the workspace both VS Code runners open
+
+Mocha TDD UI in the `tests/vscode/` suites (`suite`/`test`/`suiteSetup`/`teardown`, NOT
+`describe`/`it`). `vscode.debug.startDebugging()` returns false if `resolveDebugConfiguration`
+returns undefined.
 
 ## Important Notes
 

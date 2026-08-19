@@ -1,9 +1,5 @@
 import { Buffer } from "node:buffer";
-import {
-  directSyntaxChild,
-  findSyntaxNode,
-  findSyntaxNodes,
-} from "../../analysis/syntaxNodes.js";
+import { directSyntaxChild, findSyntaxNode, findSyntaxNodes } from "../../analysis/syntaxNodes.js";
 import type { SyntaxNode, SyntaxParser } from "../../analysis/syntaxTree.js";
 import { quoteIdentifier } from "../completion.js";
 import { formatPostgresSql } from "../format.js";

@@ -1,7 +1,11 @@
 import type { Client } from "pg";
 import type { ServerConfig } from "../../connection/src/savedConnection.js";
-import { mkdirSync } from "node:fs";
-import { resolve } from "node:path";
+import { createCodeMonikerSyntaxParser } from "../../sql/src/analysis/codeMonikerSyntax.js";
+import type { SyntaxParser } from "../../sql/src/analysis/syntaxTree.js";
+import type {
+  SqlAuthoringSnapshot,
+  SqlAuthoringTrigger,
+} from "../../sql/src/authoring/protocol.js";
 import {
   type CodeMonikerClient,
   type CodeMonikerGraphResult,
@@ -47,12 +51,6 @@ import {
   mergeWorkbenchRelationGroups,
   type WorkbenchRelationGroup,
 } from "./relations.js";
-import { createCodeMonikerSyntaxParser } from "../../sql/src/analysis/codeMonikerSyntax.js";
-import type { SyntaxParser } from "../../sql/src/analysis/syntaxTree.js";
-import type {
-  SqlAuthoringSnapshot,
-  SqlAuthoringTrigger,
-} from "../../sql/src/authoring/protocol.js";
 /** What indexing needs from the open Connections; `IndexConnections` satisfies it. */
 export interface IndexConnections {
   readonly store: { get(serverId: string): ServerConfig | undefined };
@@ -299,7 +297,6 @@ export class WorkbenchIndexController {
   constructor(
     private readonly host: WorkbenchIndexHost,
     private readonly connections: IndexConnections,
-
   ) {
     this.connectionSubscription = connections.onChanged((change) =>
       this.observeConnections(change.serverIds),
@@ -482,12 +479,7 @@ export class WorkbenchIndexController {
         .flatMap((symbol) =>
           symbol.postgres?.serverId === serverId &&
           (symbol.kind === "function" || symbol.kind === "procedure")
-            ? [
-                [
-                  String(symbol.postgres.oid),
-                  symbol.uri,
-                ],
-              ]
+            ? [[String(symbol.postgres.oid), symbol.uri]]
             : [],
         ),
     );

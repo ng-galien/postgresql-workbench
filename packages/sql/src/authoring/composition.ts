@@ -431,7 +431,6 @@ function composeColumn(
   snapshot: SqlAuthoringSnapshot,
   settings: SqlAuthoringSettings,
   analysis?: SqlQueryAnalysis,
-  shape?: SqlQueryShape,
 ): SqlAuthoringComposeResult {
   const payload = request.payload;
   if (payload.kind !== "column") throw new Error("Expected a column payload");

@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  isPostgresSqlLanguage,
-  postgresSourceLanguageId,
-} from "./documentLanguage.js";
+import { isPostgresSqlLanguage, postgresSourceLanguageId } from "./documentLanguage.js";
 
 describe("PostgreSQL source document languages", () => {
   it.each([

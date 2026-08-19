@@ -14,7 +14,7 @@ test("marks only the compiled test trees as ES modules", async () => {
   const output = await mkdtemp(path.join(tmpdir(), "postgresql-workbench-esm-"));
   try {
     await execute(process.execPath, [script, output]);
-    for (const directory of ["src", "vscode-extension"]) {
+    for (const directory of ["packages", "vscode-extension"]) {
       const manifest = JSON.parse(
         await readFile(path.join(output, directory, "package.json"), "utf8"),
       );

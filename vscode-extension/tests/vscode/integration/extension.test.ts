@@ -1,13 +1,13 @@
 import * as assert from "node:assert";
 import * as vscode from "vscode";
-import { analyzePlpgsqlDocument } from "../../../packages/sql/src/routines/documentAnalysis.js";
+import { analyzePlpgsqlDocument } from "../../../../packages/sql/src/routines/documentAnalysis.js";
 import {
   PlpgsqlInlineValuesProvider,
   PlpgsqlSemanticTokensProvider,
   TOKEN_MODIFIERS,
   TOKEN_TYPES,
-} from "../plpgsql/index.js";
-import { CodeMonikerContentProvider } from "../sources/index.js";
+} from "../../../src/plpgsql/index.js";
+import { CodeMonikerContentProvider } from "../../../src/sources/index.js";
 import { EXT_ID } from "./testUtils.js";
 
 async function extensionSyntaxParser() {

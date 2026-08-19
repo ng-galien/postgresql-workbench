@@ -1,4 +1,4 @@
-import { DEBUG_PLAYWRIGHT_TEST_TIMEOUT_MS } from "../../../../e2e/debugTestTiming.js";
+import { DEBUG_PLAYWRIGHT_TEST_TIMEOUT_MS } from "../../../../../e2e/debugTestTiming.js";
 import {
   demoConnexionQuickPickItem as connectionChoice,
   demoDatabaseTreeItem as database,

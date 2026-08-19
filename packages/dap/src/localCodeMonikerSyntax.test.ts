@@ -3,13 +3,13 @@ import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { TIMEOUTS } from "./debugger/session/PlpgsqlDebugSession.js";
 import {
   SYNTAX_WORKER_SHUTDOWN_BUDGET_MS,
   stopSyntaxWorker,
   syntaxReadArguments,
   syntaxTreeFromToolResult,
 } from "../../sql/src/localCodeMonikerSyntax.js";
+import { TIMEOUTS } from "./debugger/session/PlpgsqlDebugSession.js";
 
 describe("stateless Code Moniker syntax boundary", () => {
   it("keeps the process hard-exit budget above every bounded teardown path", () => {

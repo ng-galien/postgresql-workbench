@@ -1,8 +1,8 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { PlpgsqlDebugSession, TIMEOUTS } from "./debugger/index.js";
 import { StatelessCodeMonikerSyntaxRuntime } from "../../sql/src/localCodeMonikerSyntax.js";
+import { PlpgsqlDebugSession, TIMEOUTS } from "./debugger/index.js";
 
 export function statelessSyntaxRuntimeFromEnvironment(
   environment: NodeJS.ProcessEnv = process.env,

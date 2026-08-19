@@ -1,6 +1,6 @@
 import type { Locator, Page } from "@playwright/test";
 import { describe, expect, it, vi } from "vitest";
-import { WorkbenchTree } from "../acceptance/pages/WorkbenchTree.js";
+import { WorkbenchTree } from "./WorkbenchTree.js";
 
 describe("acceptance Page providers", () => {
   it("resolves the current VS Code window after the canonical Page changes", () => {

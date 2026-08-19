@@ -8,11 +8,11 @@ import {
   useState,
 } from "react";
 import type { DebugResultCell } from "../../../dap/src/debugger/launch/index.js";
+import { hasWorkbenchTreeDrag } from "../cockpit/dragAndDrop.js";
 import type { GridEditing } from "../results/CellEditor.js";
 import { type GridLayout, ResultGrid } from "../results/ResultGrid.js";
 import { nextResultSort, resultAsTsv } from "../results/resultFormatting.js";
 import { resultRowSummary } from "../results/SqlResultView.js";
-import { hasWorkbenchTreeDrag } from "../cockpit/dragAndDrop.js";
 import type {
   DataViewAddition,
   DataViewCompletion,

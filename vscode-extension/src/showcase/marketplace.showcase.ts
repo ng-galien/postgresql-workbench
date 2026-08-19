@@ -10,10 +10,15 @@ import {
   type WorkbenchObjectModel,
 } from "../../../packages/catalog/src/objectModel.js";
 import type { WorkbenchGraphWebviewMessage } from "../../../packages/views/src/cockpit/protocol.js";
+import {
+  delay,
+  EXT_ID,
+  stopActivePlpgsqlSession,
+  waitForSessionStart,
+} from "../../tests/vscode/integration/testUtils.js";
 import type { PgTapCoverageSnapshot } from "../coverage/index.js";
 import type { PlpgsqlExtensionApi } from "../extension.js";
 import { NEW_SQL_NOTEBOOK_COMMAND, SQL_NOTEBOOK_RESULT_MIME } from "../scratchpad/index.js";
-import { delay, EXT_ID, stopActivePlpgsqlSession, waitForSessionStart } from "../test/testUtils.js";
 
 const SCENE = process.env.POSTGRESQL_WORKBENCH_SHOWCASE_SCENE;
 const CONTROL_DIR = process.env.POSTGRESQL_WORKBENCH_SHOWCASE_CONTROL_DIR;

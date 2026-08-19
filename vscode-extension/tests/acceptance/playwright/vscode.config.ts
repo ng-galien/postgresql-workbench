@@ -21,7 +21,7 @@ export function defineVSCodePlaywrightConfig(
   return defineConfig({
     testDir: options.testDir,
     testMatch: options.testMatch,
-    globalSetup: "./acceptance/globalSetup.ts",
+    globalSetup: "../globalSetup.ts",
     fullyParallel: false,
     workers: 1,
     maxFailures: 1,
@@ -30,9 +30,7 @@ export function defineVSCodePlaywrightConfig(
     forbidOnly: options.forbidOnly ?? Boolean(process.env.CI),
     retries: 0,
     projects: [{ name: options.lane }],
-    reporter: process.env.CI
-      ? [["list"], ["junit", { outputFile: options.junitFile }]]
-      : "list",
+    reporter: process.env.CI ? [["list"], ["junit", { outputFile: options.junitFile }]] : "list",
     use: richDiagnostics
       ? {
           trace: "retain-on-failure",

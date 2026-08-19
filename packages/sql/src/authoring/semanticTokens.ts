@@ -171,6 +171,8 @@ export function postgresSemanticTokens(
     }
     for (const token of tokens) {
       if (occupied.has(`${token.offset}:${token.length}`)) continue;
+      // A semantic token addresses one line: a quoted identifier written across two produces none.
+      if (source.slice(token.offset, token.offset + token.length).includes("\n")) continue;
       encoded.push({
         length: token.length,
         offset: token.offset,

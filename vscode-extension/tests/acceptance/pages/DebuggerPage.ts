@@ -1,5 +1,8 @@
 import { expect, type Frame, type Locator } from "@playwright/test";
-import { DEBUG_DAP_EVENT_TIMEOUT_MS, runPacedDebugAction } from "../../../e2e/debugTestTiming.js";
+import {
+  DEBUG_DAP_EVENT_TIMEOUT_MS,
+  runPacedDebugAction,
+} from "../../../../e2e/debugTestTiming.js";
 import type { DebugStateSnapshot } from "../fixtures/vscode";
 import { currentPage, type PageProvider } from "./PageProvider";
 import { QuickInput } from "./QuickInput";

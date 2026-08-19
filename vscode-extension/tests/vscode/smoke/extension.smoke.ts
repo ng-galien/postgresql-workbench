@@ -1,6 +1,6 @@
 import * as assert from "node:assert";
 import * as vscode from "vscode";
-import type { PlpgsqlExtensionApi } from "../extension.js";
+import type { PlpgsqlExtensionApi } from "../../../src/extension.js";
 
 const EXTENSION_ID = "ng-galien.postgresql-workbench";
 

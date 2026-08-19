@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { postgresVisual } from "../presentation.js";
-import type { WorkbenchGraphSourcePreview } from "./protocol.js";
 import {
   type HighlightedPostgresSource,
   highlightPostgresSource,
   plainPostgresSource,
 } from "./highlight.js";
 import { PostgresSourceView } from "./PostgresSourceView.js";
+import type { WorkbenchGraphSourcePreview } from "./protocol.js";
 import { vscode } from "./vscodeApi.js";
 
 function SourceInspector({

@@ -8,7 +8,7 @@ if [[ $(uname -s) == "Darwin" && -d $docker_desktop_bin ]]; then
 fi
 
 extension_root=$(cd "$(dirname "$0")/.." && pwd)
-compose_file="$extension_root/docker-compose.playwright-ci.yml"
+compose_file="$extension_root/tests/acceptance/docker-compose.playwright-ci.yml"
 requested_lane=${1:-all}
 if [[ $# -gt 0 ]]; then
   shift

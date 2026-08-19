@@ -3,7 +3,6 @@ import { CompletionItemKind, InsertTextFormat } from "vscode-languageserver/node
 import {
   canonicalSqlIdentifier,
   requiresQuotedPostgresIdentifier,
-  splitSqlQualifiedIdentifier,
   unquoteSqlIdentifierFragment,
 } from "./identifiers.js";
 import type { SqlAuthoringObject, SqlAuthoringSnapshot } from "./protocol.js";

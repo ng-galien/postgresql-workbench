@@ -2,7 +2,7 @@ import { build } from "esbuild";
 
 await build({
   bundle: true,
-  entryPoints: ["src/smoke/extension.smoke.ts"],
+  entryPoints: ["tests/vscode/smoke/extension.smoke.ts"],
   external: ["vscode"],
   format: "cjs",
   logLevel: "info",

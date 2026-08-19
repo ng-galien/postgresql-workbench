@@ -6,15 +6,14 @@ import {
   dataViewColumnKeys,
 } from "../../views/src/dataView/protocol.js";
 import type { ScratchpadAssociationSnapshot } from "../../views/src/results/payload.js";
+import { loadDataViewCatalog } from "./catalogFacts.js";
 import {
   PostgresCursorReader,
-  type SqlCursorTypes,
   postgresCursorSafetyTimeoutMs,
+  type SqlCursorTypes,
   SqlResultSession,
 } from "./cursor.js";
-import { loadDataViewCatalog } from "./catalogFacts.js";
 import { READ_ONLY_REASONS, resolveDataViewEditability } from "./editability.js";
-
 
 /**
  * Data View cursors keep every value as PostgreSQL text except booleans and binary values, so
@@ -55,7 +54,6 @@ export interface OpenedDataViewResult {
   technicalKeys: string[];
   idleTimeoutMs: number;
 }
-
 
 /** How much of a relation a Data View reads at a time, and how long its cursor may idle. */
 export interface DataViewResultSettings {

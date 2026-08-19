@@ -10,8 +10,8 @@ import {
   useState,
 } from "react";
 import type { DebugResultCell } from "../../../dap/src/debugger/launch/index.js";
-import type { SqlNotebookResultPayload } from "./payload.js";
 import { CellEditor, type GridEditing } from "./CellEditor.js";
+import type { SqlNotebookResultPayload } from "./payload.js";
 import {
   columnWidthsCh,
   formattedCellValue,

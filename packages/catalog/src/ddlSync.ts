@@ -1,4 +1,11 @@
 import type { Client, Notification } from "pg";
+import { getConnectionName, type ServerConfig } from "../../connection/src/savedConnection.js";
+import {
+  classifyWorkbenchDdlSyncFailure,
+  resolveWorkbenchDdlSyncConfiguration,
+  type WorkbenchDdlSyncConfiguration,
+} from "./ddlSyncSettings.js";
+import type { CatalogQueryClient } from "./postgresCatalog.js";
 import {
   buildWorkbenchDdlProvisioningSql,
   buildWorkbenchDdlRemovalSql,
@@ -10,18 +17,6 @@ import {
   WORKBENCH_DDL_CHANNEL,
   workbenchDdlProvisioningStatusSql,
 } from "./postgresDdlSync.js";
-import {
-  getConnectionName,
-  type ServerConfig,
-} from "../../connection/src/savedConnection.js";
-import {
-  classifyWorkbenchDdlSyncFailure,
-  resolveWorkbenchDdlSyncConfiguration,
-  type WorkbenchDdlSyncConfiguration,
-} from "./ddlSyncSettings.js";
-import type { CatalogQueryClient } from "./postgresCatalog.js";
-
-
 
 /** What the DDL listener needs from the open Connections; `ConnectionManager` satisfies it. */
 export interface DdlSyncConnections {
@@ -30,7 +25,9 @@ export interface DdlSyncConnections {
   createDedicatedClient(serverId: string): Promise<Client>;
   setSchemaSyncOverride(serverId: string, override: ServerConfig["schemaSync"]): Promise<void>;
   refreshDebugCapability(serverId: string): Promise<unknown>;
-  onChanged(listener: (change: { serverIds: readonly string[]; debugCapabilityOnly?: boolean }) => void): {
+  onChanged(
+    listener: (change: { serverIds: readonly string[]; debugCapabilityOnly?: boolean }) => void,
+  ): {
     dispose(): void;
   };
 }
@@ -1116,9 +1113,7 @@ export class WorkbenchDdlSyncController {
   }
 }
 
-function ddlObjectSummary(
-  objects: readonly PostgresDdlObject[],
-): string {
+function ddlObjectSummary(objects: readonly PostgresDdlObject[]): string {
   if (objects.length === 0) return "none";
   const counts = new Map<string, number>();
   for (const object of objects) {
