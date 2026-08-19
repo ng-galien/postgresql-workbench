@@ -2,8 +2,8 @@ import {
   analyzePlpgsqlSource,
   type ParsedPlpgsqlRoutine,
   type PlpgsqlRoutineVariable,
-} from "../../../packages/sql/src/analysis/plpgsqlDocument.js";
-import type { SyntaxParser } from "../../../packages/sql/src/analysis/syntaxTree.js";
+} from "../analysis/plpgsqlDocument.js";
+import type { SyntaxParser } from "../analysis/syntaxTree.js";
 
 const analysisCache = new Map<string, { version: number; routines: ParsedPlpgsqlRoutine[] }>();
 

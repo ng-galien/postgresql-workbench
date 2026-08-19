@@ -1,5 +1,5 @@
 import type { Client } from "pg";
-import type { FunctionDefinition } from "../../../packages/sql/src/callParser.js";
+import type { FunctionDefinition } from "../callParser.js";
 
 export type RoutineSourceComparison = "identical" | "different" | "unavailable";
 

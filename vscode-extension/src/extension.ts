@@ -20,6 +20,10 @@ import {
   planSqlResultExecution,
 } from "../../packages/sql/src/analysis/sqlStatements.js";
 import type { SyntaxParser } from "../../packages/sql/src/analysis/syntaxTree.js";
+import {
+  POSTGRES_SOURCE_LANGUAGE_IDS,
+  postgresSourceLanguageId,
+} from "../../packages/sql/src/authoring/documentLanguage.js";
 import type {
   SqlAuthoringObject,
   SqlAuthoringSnapshot,
@@ -32,6 +36,8 @@ import {
   parseSqlCalls,
 } from "../../packages/sql/src/callParser.js";
 import { registerAcceptanceControl } from "./acceptanceControl.js";
+import { registerWorkbenchGraphDropBridge, WorkbenchGraphView } from "./cockpit/index.js";
+import { WorkbenchGraphTreeSync } from "./cockpit/treeSync.js";
 import {
   type CommandCallSite,
   type CommandFunctionDefinition,
@@ -75,8 +81,6 @@ import {
   LEGEND,
   PlpgsqlInlineValuesProvider,
   PlpgsqlSemanticTokensProvider,
-  POSTGRES_SOURCE_LANGUAGE_IDS,
-  postgresSourceLanguageId,
 } from "./plpgsql/index.js";
 import type { SqlNotebookWorkspace } from "./scratchpad/index.js";
 import {
@@ -104,11 +108,9 @@ import {
   buildWorkbenchTableMembers,
   FunctionItem,
   type PlpgsqlTreeItem,
-  registerWorkbenchGraphDropBridge,
   type ServerItem,
   WorkbenchDdlSyncController,
   type WorkbenchDdlSyncItem,
-  WorkbenchGraphView,
   WorkbenchIndexController,
   type WorkbenchIndexPhase,
   type WorkbenchObjectAction,
@@ -120,7 +122,6 @@ import {
   WorkbenchTreeDragAndDropController,
   WorkbenchTreeProvider,
 } from "./workbench/index.js";
-import { WorkbenchGraphTreeSync } from "./workbenchGraph/treeSync.js";
 
 const out = vscode.window.createOutputChannel("PostgreSQL Workbench");
 

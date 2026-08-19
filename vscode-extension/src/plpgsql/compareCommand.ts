@@ -2,14 +2,14 @@ import * as vscode from "vscode";
 import type {} from "../../../packages/catalog/src/objectModel.js";
 import { buildWorkbenchObjects } from "../../../packages/catalog/src/objectModel.js";
 import { parseSqlDefinitions } from "../../../packages/sql/src/callParser.js";
-import type { CommandFunctionDefinition } from "../codeLens/index.js";
-import type { ConnectionManager } from "../connection/index.js";
-import type { WorkbenchIndexController } from "../workbench/index.js";
 import {
   compareRoutineSource,
   resolveRoutineOid,
   routineRegprocedureIdentity,
-} from "./compareSource.js";
+} from "../../../packages/sql/src/routines/compareSource.js";
+import type { CommandFunctionDefinition } from "../codeLens/index.js";
+import type { ConnectionManager } from "../connection/index.js";
+import type { WorkbenchIndexController } from "../workbench/index.js";
 
 export function createRoutineComparisonHandler(
   connections: ConnectionManager,

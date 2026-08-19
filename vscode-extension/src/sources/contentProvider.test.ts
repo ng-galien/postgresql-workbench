@@ -18,7 +18,7 @@ vi.mock("../coverage/index.js", () => ({
   openCoverageClient: deploymentState.openClient,
 }));
 
-vi.mock("../plpgsql/deployRoutine.js", () => ({
+vi.mock("../../../packages/sql/src/routines/validateDeployment.js", () => ({
   validateManagedRoutineDeployment: vi.fn(async () => ({ status: "valid" })),
 }));
 

@@ -39,6 +39,13 @@ import {
   directPostgresDocumentUris,
   type IndexedPostgresResource,
 } from "../../../packages/catalog/src/postgresSourceProvider.js";
+import {
+  buildWorkbenchRelationGroups,
+  classifyWorkbenchRelationFailure,
+  isWorkbenchRelationSnapshotCurrent,
+  mergeWorkbenchRelationGroups,
+  type WorkbenchRelationGroup,
+} from "../../../packages/catalog/src/relations.js";
 import { createCodeMonikerSyntaxParser } from "../../../packages/sql/src/analysis/codeMonikerSyntax.js";
 import type { SyntaxParser } from "../../../packages/sql/src/analysis/syntaxTree.js";
 import type {
@@ -51,13 +58,6 @@ import {
   codeMonikerIdentityUri,
   codeMonikerUri,
 } from "../sources/index.js";
-import {
-  buildWorkbenchRelationGroups,
-  classifyWorkbenchRelationFailure,
-  isWorkbenchRelationSnapshotCurrent,
-  mergeWorkbenchRelationGroups,
-  type WorkbenchRelationGroup,
-} from "./relations.js";
 
 export type WorkbenchIndexStatus =
   | "not-indexed"

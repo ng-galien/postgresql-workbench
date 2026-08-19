@@ -1,8 +1,8 @@
-import { planSqlResultExecution } from "../../../packages/sql/src/analysis/sqlStatements.js";
-import { canonicalSqlTypeName } from "../../../packages/sql/src/analysis/syntaxNodes.js";
-import type { SyntaxParser } from "../../../packages/sql/src/analysis/syntaxTree.js";
-import type { SqlAuthoringSnapshot } from "../../../packages/sql/src/authoring/protocol.js";
-import { parseSqlDefinitions } from "../../../packages/sql/src/callParser.js";
+import { planSqlResultExecution } from "../analysis/sqlStatements.js";
+import { canonicalSqlTypeName } from "../analysis/syntaxNodes.js";
+import type { SyntaxParser } from "../analysis/syntaxTree.js";
+import type { SqlAuthoringSnapshot } from "../authoring/protocol.js";
+import { parseSqlDefinitions } from "../callParser.js";
 
 export interface ManagedRoutineBinding {
   serverId: string;

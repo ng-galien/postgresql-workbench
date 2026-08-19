@@ -6,7 +6,7 @@ vi.mock("vscode", () => ({
   },
 }));
 
-vi.mock("./graphDropBridge.js", () => ({
+vi.mock("../cockpit/dropBridge.js", () => ({
   workbenchGraphDropUri: () => "postgresql-workbench-graph-drop:/source/test/payload",
 }));
 

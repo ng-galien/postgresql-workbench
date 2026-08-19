@@ -1,4 +1,15 @@
 import * as vscode from "vscode";
+import {
+  cockpitBreadcrumbs,
+  databaseLandingIdentity,
+  initialCockpitGraph,
+  neighborhoodFromGraph,
+  presentationsForSymbols,
+  resolveCockpitTarget,
+  schemaLandingIdentity,
+  searchGraphObjects,
+  sourcePreviewPresentation,
+} from "../../../packages/catalog/src/cockpitGraph.js";
 import type {
   CodeMonikerGraphResult,
   CodeMonikerIdentityGraphResult,
@@ -26,20 +37,9 @@ import type {
   WorkbenchGraphWebviewMessage,
 } from "../../../packages/views/src/cockpit/protocol.js";
 import { DEFAULT_WORKBENCH_GRAPH_APPEARANCE } from "../../../packages/views/src/cockpit/protocol.js";
-import { GraphNavigation } from "../workbenchGraph/navigation.js";
-import { WorkbenchGraphPanel } from "../workbenchGraph/panel.js";
-import {
-  cockpitBreadcrumbs,
-  databaseLandingIdentity,
-  initialCockpitGraph,
-  neighborhoodFromGraph,
-  presentationsForSymbols,
-  resolveCockpitTarget,
-  schemaLandingIdentity,
-  searchGraphObjects,
-  sourcePreviewPresentation,
-} from "../workbenchGraph/sqlProjection.js";
-import type { WorkbenchIndexController, WorkbenchIndexResult } from "./indexController.js";
+import type { WorkbenchIndexController, WorkbenchIndexResult } from "../workbench/index.js";
+import { GraphNavigation } from "./navigation.js";
+import { WorkbenchGraphPanel } from "./panel.js";
 
 type WorkbenchSnapshot = Pick<
   WorkbenchIndexResult,

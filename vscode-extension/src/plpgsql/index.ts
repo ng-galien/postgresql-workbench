@@ -1,18 +1,10 @@
 /**
- * PL/pgSQL routine sources inside VS Code: recognizing the language, analyzing a routine body,
- * colouring it, showing values while debugging, deploying an edited routine, and comparing a
- * working copy with what the database holds. This file is the module's public surface for code
- * that runs inside VS Code; `documentLanguage.ts` and `compareSource.ts` are pure doors.
+ * PL/pgSQL routines inside VS Code: colouring a routine body, showing values while debugging,
+ * and comparing a working copy with the deployed source. The analysis, the deployment check and
+ * the comparison itself live in `packages/sql/src/routines`; this module only wires them to
+ * VS Code. This file is the module's public surface.
  */
-
-export {
-  isPostgresSqlLanguage,
-  POSTGRES_SOURCE_LANGUAGE_IDS,
-  postgresSourceLanguageId,
-} from "../../../packages/sql/src/authoring/documentLanguage.js";
 export { createRoutineComparisonHandler } from "./compareCommand.js";
-export { validateManagedRoutineDeployment } from "./deployRoutine.js";
-export { analyzePlpgsqlDocument } from "./documentAnalysis.js";
 export { PlpgsqlInlineValuesProvider } from "./inlineValues.js";
 export {
   LEGEND,

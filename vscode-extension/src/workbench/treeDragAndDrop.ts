@@ -11,7 +11,7 @@ import {
   WORKBENCH_GRAPH_UNSUPPORTED_MIME,
   type WorkbenchGraphDragPayload,
 } from "../../../packages/views/src/cockpit/dragAndDrop.js";
-import { workbenchGraphDropUri } from "./graphDropBridge.js";
+import { workbenchGraphDropUri } from "../cockpit/index.js";
 import type { PlpgsqlTreeItem } from "./tree.js";
 
 export class WorkbenchTreeDragAndDropController

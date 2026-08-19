@@ -9,7 +9,10 @@ import {
   TOKEN_MODIFIERS,
   TOKEN_TYPES,
 } from "../../../packages/sql/src/authoring/plpgsqlTokenLegend.js";
-import { analyzePlpgsqlDocument, findIdentifierColumns } from "./documentAnalysis.js";
+import {
+  analyzePlpgsqlDocument,
+  findIdentifierColumns,
+} from "../../../packages/sql/src/routines/documentAnalysis.js";
 
 export const LEGEND = new vscode.SemanticTokensLegend([...TOKEN_TYPES], [...TOKEN_MODIFIERS]);
 

@@ -19,7 +19,7 @@ vi.mock("vscode", () => ({
   },
 }));
 
-import { completeGraphDrop } from "./graphDropBridge.js";
+import { completeGraphDrop } from "./dropBridge.js";
 
 describe("Workbench graph drop bridge", () => {
   beforeEach(() => {

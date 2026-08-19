@@ -18,7 +18,7 @@ import type {
   WorkbenchGraphSearchResult,
   WorkbenchGraphSourcePreview,
 } from "../../../packages/views/src/cockpit/protocol.js";
-import { buildWorkbenchRelationGroups } from "../workbench/relations.js";
+import { buildWorkbenchRelationGroups } from "./relations.js";
 
 export const COCKPIT_BATCH_SIZE = 3;
 export const COCKPIT_DOM_BUDGET = 60;

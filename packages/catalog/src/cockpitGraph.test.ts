@@ -12,7 +12,7 @@ import {
   resolveCockpitTarget,
   searchGraphObjects,
   sourcePreviewPresentation,
-} from "./sqlProjection.js";
+} from "./cockpitGraph.js";
 
 const database = { serverId: "localhost:5433/testdb:postgres", database: "testdb" };
 const databasePrefix =

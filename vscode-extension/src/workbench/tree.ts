@@ -9,6 +9,12 @@ import {
   type WorkbenchRoutineParam,
   type WorkbenchTableMemberModel,
 } from "../../../packages/catalog/src/objectModel.js";
+import type {
+  WorkbenchRelationDirection,
+  WorkbenchRelationGroup,
+  WorkbenchRelationKind,
+  WorkbenchRelationTarget,
+} from "../../../packages/catalog/src/relations.js";
 import type { DebugSessionStatus } from "../../../packages/dap/src/debugger/launch/debugSessionStatus.js";
 import type {
   ConnectionChange,
@@ -34,12 +40,6 @@ import type {
   WorkbenchIndexResult,
   WorkbenchIndexState,
 } from "./indexController.js";
-import type {
-  WorkbenchRelationDirection,
-  WorkbenchRelationGroup,
-  WorkbenchRelationKind,
-  WorkbenchRelationTarget,
-} from "./relations.js";
 
 export class ServerItem extends vscode.TreeItem {
   readonly kind = "server" as const;

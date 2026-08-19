@@ -1,7 +1,7 @@
 import * as assert from "node:assert";
 import * as vscode from "vscode";
+import { analyzePlpgsqlDocument } from "../../../packages/sql/src/routines/documentAnalysis.js";
 import {
-  analyzePlpgsqlDocument,
   PlpgsqlInlineValuesProvider,
   PlpgsqlSemanticTokensProvider,
   TOKEN_MODIFIERS,

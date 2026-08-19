@@ -35,7 +35,7 @@ vi.mock("vscode", () => ({
     },
   },
 }));
-vi.mock("../workbenchGraph/panel.js", () => ({
+vi.mock("./panel.js", () => ({
   WorkbenchGraphPanel: class {
     constructor(_extensionUri: unknown, receive: (message: unknown) => void) {
       panel.receive = receive;
@@ -56,8 +56,8 @@ vi.mock("../workbenchGraph/panel.js", () => ({
   },
 }));
 
-import { WorkbenchGraphView } from "./graphView.js";
-import { WorkbenchTreeDragAndDropController } from "./treeDragAndDrop.js";
+import { WorkbenchTreeDragAndDropController } from "../workbench/treeDragAndDrop.js";
+import { WorkbenchGraphView } from "./view.js";
 
 function scopedIndex<T extends Record<string, unknown>>(index: T): T {
   return Object.assign(index, {

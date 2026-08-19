@@ -1,11 +1,11 @@
 import type * as vscode from "vscode";
 import type {
   PlpgsqlTreeItem,
-  WorkbenchGraphView,
   WorkbenchIndexController,
   WorkbenchObjectModel,
   WorkbenchTreeProvider,
 } from "../workbench/index.js";
+import type { WorkbenchGraphView } from "./view.js";
 
 export class WorkbenchGraphTreeSync {
   private readonly pendingReveals = new Set<Promise<boolean>>();

@@ -17,8 +17,6 @@ export {
   workbenchObjectFromSymbol,
 } from "../../../packages/catalog/src/objectModel.js";
 export { WorkbenchDdlSyncController } from "./ddlSync.js";
-export { registerWorkbenchGraphDropBridge } from "./graphDropBridge.js";
-export { WorkbenchGraphView } from "./graphView.js";
 export {
   WorkbenchIndexController,
   type WorkbenchIndexPhase,

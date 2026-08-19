@@ -1,6 +1,9 @@
 import * as vscode from "vscode";
 import type { SyntaxParser } from "../../../packages/sql/src/analysis/syntaxTree.js";
-import { analyzePlpgsqlDocument, findIdentifierColumns } from "./documentAnalysis.js";
+import {
+  analyzePlpgsqlDocument,
+  findIdentifierColumns,
+} from "../../../packages/sql/src/routines/documentAnalysis.js";
 
 const MAX_VALUE_LEN = 60;
 

@@ -1,14 +1,14 @@
 import type {
   CodeMonikerGraphResult,
   CodeMonikerSymbol,
-} from "../../../packages/catalog/src/localCodeMoniker.js";
+} from "./localCodeMoniker.js";
 import {
   buildWorkbenchObjects,
   isWorkbenchDatabaseSymbol,
   type WorkbenchDatabaseIdentity,
   type WorkbenchObjectModel,
   workbenchObjectFromSymbol,
-} from "../../../packages/catalog/src/objectModel.js";
+} from "./objectModel.js";
 
 export type WorkbenchRelationKind = "calls" | "reads" | "writes" | "references" | "uses_type";
 export type WorkbenchRelationDirection = "outgoing" | "incoming";

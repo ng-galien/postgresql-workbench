@@ -1,6 +1,6 @@
 import type { Client } from "pg";
 import { describe, expect, it } from "vitest";
-import type { FunctionDefinition } from "../../../packages/sql/src/callParser.js";
+import type { FunctionDefinition } from "../callParser.js";
 import {
   compareRoutineSource,
   resolveRoutineOid,
