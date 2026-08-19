@@ -1423,7 +1423,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ````
 
-## pg@8.22.0
+## pg@8.23.0
 
 License: MIT
 Source: git://github.com/brianc/node-postgres.git
@@ -1601,7 +1601,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ````
 
-## pg-protocol@1.15.0
+## pg-protocol@1.16.0
 
 License: MIT
 Source: git://github.com/brianc/node-postgres.git
