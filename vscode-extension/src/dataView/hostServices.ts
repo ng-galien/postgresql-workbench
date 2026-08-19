@@ -6,14 +6,14 @@ import type { DataViewSource } from "../../../packages/rows/src/dataView.js";
 import type { DataViewResultSettings } from "../../../packages/rows/src/openRows.js";
 import type { SyntaxParser } from "../../../packages/sql/src/analysis/syntaxTree.js";
 import type {
-  SqlAuthoringDragPayload,
-  SqlAuthoringSettings,
-  SqlAuthoringSnapshot,
-} from "../../../packages/sql/src/authoring/snapshot.js";
-import type {
   SqlAuthoringComposeRequest,
   SqlAuthoringComposeResult,
 } from "../../../packages/sql/src/languageServer/protocol.js";
+import type {
+  SqlAuthoringDragPayload,
+  SqlAuthoringSettings,
+  SqlAuthoringSnapshot,
+} from "../../../packages/sql/src/snapshot.js";
 import type { DataViewQueryFileSystem } from "./queryFileSystem.js";
 
 /** Everything a Data View needs from the Extension Host, injected so the module stays testable. */

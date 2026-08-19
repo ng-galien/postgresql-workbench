@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { stripStatementTerminator } from "../../sql/src/authoring/query/analysis.js";
+import { stripStatementTerminator } from "../../sql/src/query/analysis.js";
 import { type CatalogTable, READ_ONLY_REASONS, resolveDataViewEditability } from "./editability.js";
 import { buildRowUpdates } from "./updates.js";
 

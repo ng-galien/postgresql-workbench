@@ -1,4 +1,4 @@
-import { quoteSqlIdentifierIfNeeded } from "../../sql/src/authoring/completion.js";
+import { quoteSqlIdentifierIfNeeded } from "../../sql/src/text/identifiers.js";
 
 import type { DataViewEdit, DataViewEditability } from "./dataView.js";
 import { sameDataViewRow } from "./dataView.js";

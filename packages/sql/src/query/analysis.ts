@@ -1,14 +1,14 @@
 import { Buffer } from "node:buffer";
-import { directSyntaxChild, findSyntaxNode, findSyntaxNodes } from "../../analysis/syntaxNodes.js";
-import type { SyntaxNode, SyntaxParser } from "../../analysis/syntaxTree.js";
-import { quoteSqlIdentifierIfNeeded } from "../completion.js";
-import { formatPostgresSql } from "../format.js";
+import { directSyntaxChild, findSyntaxNode, findSyntaxNodes } from "../analysis/syntaxNodes.js";
+import type { SyntaxNode, SyntaxParser } from "../analysis/syntaxTree.js";
+import { formatPostgresSql } from "../text/format.js";
 import {
   canonicalSqlIdentifier,
+  quoteSqlIdentifierIfNeeded,
   splitSqlQualifiedIdentifier,
   unquoteSqlIdentifier,
-} from "../identifiers.js";
-import { type SqlQueryShape, sqlQueryShape } from "../queryShape.js";
+} from "../text/identifiers.js";
+import { type SqlQueryShape, sqlQueryShape } from "./shape.js";
 
 /** Removes trailing statement terminators so the SQL can be used as a subquery. */
 export function stripStatementTerminator(sql: string): string {

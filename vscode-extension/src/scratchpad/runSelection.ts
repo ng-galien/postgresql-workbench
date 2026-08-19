@@ -10,7 +10,7 @@ import {
   type DebugResultStatus,
 } from "../../../packages/dap/src/debugger/launch/index.js";
 import type { SqlStatementCount } from "../../../packages/sql/src/analysis/sqlStatements.js";
-import { isPostgresSqlLanguage } from "../../../packages/sql/src/authoring/documentLanguage.js";
+import { isPostgresSqlLanguage } from "../../../packages/sql/src/text/documentLanguage.js";
 
 export interface SqlEditorSelection {
   languageId: string;

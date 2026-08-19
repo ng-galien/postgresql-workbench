@@ -1,4 +1,4 @@
-import type { SqlAuthoringForeignKey, SqlAuthoringSnapshot } from "./snapshot.js";
+import type { SqlAuthoringForeignKey, SqlAuthoringSnapshot } from "../snapshot.js";
 
 /** One JOIN step: `from` is already in the query (or reached by the previous hop). */
 export interface JoinHop {

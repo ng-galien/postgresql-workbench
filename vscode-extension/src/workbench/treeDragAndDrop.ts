@@ -4,7 +4,7 @@ import {
   SQL_AUTHORING_OBJECT_MIME,
   type SqlAuthoringDragPayload,
   serializeSqlAuthoringDrag,
-} from "../../../packages/sql/src/authoring/snapshot.js";
+} from "../../../packages/sql/src/snapshot.js";
 import {
   serializeWorkbenchGraphDrag,
   WORKBENCH_GRAPH_OBJECT_MIME,

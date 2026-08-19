@@ -11,20 +11,20 @@
 import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { readPostgresCatalog } from "../packages/catalog/src/postgresCatalog.js";
-import { composePostgresSql, tableProjection } from "../packages/sql/src/authoring/composition.js";
-import { canonicalSqlIdentifier } from "../packages/sql/src/authoring/identifiers.js";
-import { planJoinPaths } from "../packages/sql/src/authoring/joinPlanner.js";
 import {
   analyzeSqlQuery,
   formatSqlQuery,
   removeRelation,
   setSort,
   setWhere,
-} from "../packages/sql/src/authoring/query/analysis.js";
+} from "../packages/sql/src/query/analysis.js";
+import { composePostgresSql, tableProjection } from "../packages/sql/src/query/composition.js";
+import { planJoinPaths } from "../packages/sql/src/query/joinPlanner.js";
 import {
   DEFAULT_SQL_AUTHORING_SETTINGS,
   type SqlAuthoringSnapshot,
-} from "../packages/sql/src/authoring/snapshot.js";
+} from "../packages/sql/src/snapshot.js";
+import { canonicalSqlIdentifier } from "../packages/sql/src/text/identifiers.js";
 import { type CodeMonikerTestRuntime, startCodeMonikerTestRuntime } from "./codeMonikerRuntime.js";
 
 const CONNECTION = {
@@ -108,13 +108,12 @@ describe("Data View JOIN composition on PostgreSQL", () => {
     return analyzed.analysis;
   };
 
-  /** Composes as the SQL authoring server does: the statement is analyzed, then the engine runs. */
+  /** Composes as the server does once it has the syntax: analyze the statement, then run the engine. */
   const compose = async (text: string, target: SqlAuthoringSnapshot["objects"][number]) => {
     const analyzed = await analyzeSqlQuery(text, codeMoniker.parser);
     if (analyzed.status !== "ok") throw new Error(`${analyzed.message}\n${text}`);
     const analysis = analyzed.analysis;
     const request = {
-      uri: "data-view.sql",
       text,
       offset: analysis.statement.end,
       payload: {
@@ -234,7 +233,6 @@ describe("Data View JOIN composition on PostgreSQL", () => {
     const analysis = analyzedOrder.analysis;
     const ambiguous = composePostgresSql(
       {
-        uri: "data-view.sql",
         text: orderText,
         offset: analysis.statement.end,
         payload: {

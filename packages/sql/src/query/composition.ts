@@ -1,34 +1,61 @@
 import type {
-  SqlAuthoringComposeRequest,
-  SqlAuthoringComposeResult,
-} from "../languageServer/protocol.js";
-import { quoteSqlIdentifierIfNeeded } from "./completion.js";
-import { formatPostgresSql } from "./format.js";
-import {
-  canonicalSqlIdentifier,
-  POSTGRES_IDENTIFIER_PATTERN,
-  splitSqlQualifiedIdentifier,
-} from "./identifiers.js";
-import { type JoinPlan, planJoinPaths, shortestJoinPlans } from "./joinPlanner.js";
-import type { SqlQueryAnalysis } from "./query/analysis.js";
-import { relationsFromAnalysis, type TableReference } from "./query/relations.js";
-import type { SqlQueryShape } from "./queryShape.js";
-import type {
+  SqlAuthoringDragPayload,
   SqlAuthoringForeignKey,
   SqlAuthoringObject,
   SqlAuthoringSnapshot,
   SqlAuthoringTrigger,
-} from "./snapshot.js";
-import { DEFAULT_SQL_AUTHORING_SETTINGS, type SqlAuthoringSettings } from "./snapshot.js";
-import { scanPostgresSql, sqlStatementAtOffset } from "./sqlLexing.js";
+} from "../snapshot.js";
+import { DEFAULT_SQL_AUTHORING_SETTINGS, type SqlAuthoringSettings } from "../snapshot.js";
+import { formatPostgresSql } from "../text/format.js";
+import {
+  canonicalSqlIdentifier,
+  POSTGRES_IDENTIFIER_PATTERN,
+  quoteSqlIdentifierIfNeeded,
+  splitSqlQualifiedIdentifier,
+} from "../text/identifiers.js";
+import { scanPostgresSql, sqlStatementAtOffset } from "../text/sqlLexing.js";
+import type { SqlQueryAnalysis } from "./analysis.js";
+import { type JoinPlan, planJoinPaths, shortestJoinPlans } from "./joinPlanner.js";
+import { relationsFromAnalysis, type TableReference } from "./relations.js";
+import type { SqlQueryShape } from "./shape.js";
+
+/** What to compose: the SQL the reader has, where their caret is, and what they dropped on it. */
+export interface SqlComposition {
+  text: string;
+  offset: number;
+  payload: SqlAuthoringDragPayload;
+  /** Which relation the reader picked, when a first attempt came back ambiguous. */
+  relationChoice?: number;
+}
+
+/** One way to compose, when more than one is possible. */
+export interface SqlCompositionChoice {
+  index: number;
+  label: string;
+  description: string;
+}
+
+/** Why the engine will not rewrite. The server has reasons of its own; this is the engine's. */
+export type SqlCompositionRejection = "stale";
+
+/** What composing produced: an edit to apply, a choice to make, or a reason it cannot be done. */
+export type SqlCompositionResult =
+  | { status: "edit"; text: string; title: string }
+  | {
+      status: "ambiguous";
+      choices: SqlCompositionChoice[];
+      title?: string;
+      placeHolder?: string;
+    }
+  | { status: "rejected"; message: string; reason?: SqlCompositionRejection };
 
 export function composePostgresSql(
-  request: SqlAuthoringComposeRequest,
+  request: SqlComposition,
   snapshot: SqlAuthoringSnapshot,
   settings: SqlAuthoringSettings = DEFAULT_SQL_AUTHORING_SETTINGS,
   analysis?: SqlQueryAnalysis,
   shape?: SqlQueryShape,
-): SqlAuthoringComposeResult {
+): SqlCompositionResult {
   const statement = sqlStatementAtOffset(request.text, request.offset);
   const result = composePostgresStatement(
     {
@@ -55,12 +82,12 @@ export function composePostgresSql(
 }
 
 function composePostgresStatement(
-  request: SqlAuthoringComposeRequest,
+  request: SqlComposition,
   snapshot: SqlAuthoringSnapshot,
   settings: SqlAuthoringSettings,
   analysis?: SqlQueryAnalysis,
   shape?: SqlQueryShape,
-): SqlAuthoringComposeResult {
+): SqlCompositionResult {
   const payload = request.payload;
   if (payload.serverId !== snapshot.serverId || payload.database !== snapshot.database) {
     return {
@@ -149,11 +176,11 @@ function composePostgresStatement(
 }
 
 function composeRoutine(
-  request: SqlAuthoringComposeRequest,
+  request: SqlComposition,
   snapshot: SqlAuthoringSnapshot,
   routine: SqlAuthoringObject,
   settings: SqlAuthoringSettings,
-): SqlAuthoringComposeResult {
+): SqlCompositionResult {
   let generated: string;
   if (routine.kind === "procedure") {
     generated = procedureBlock(routine, settings.tabSize);
@@ -429,11 +456,11 @@ function appendGeneratedStatement(source: string, generated: string): string {
 }
 
 function composeColumn(
-  request: SqlAuthoringComposeRequest,
+  request: SqlComposition,
   snapshot: SqlAuthoringSnapshot,
   settings: SqlAuthoringSettings,
   analysis?: SqlQueryAnalysis,
-): SqlAuthoringComposeResult {
+): SqlCompositionResult {
   const payload = request.payload;
   if (payload.kind !== "column") throw new Error("Expected a column payload");
   const table = snapshot.objects.find(
@@ -499,12 +526,12 @@ function projectedColumnIdentifiers(source: string): string[] | undefined {
 }
 
 function composeJoin(
-  request: SqlAuthoringComposeRequest,
+  request: SqlComposition,
   snapshot: SqlAuthoringSnapshot,
   target: SqlAuthoringObject,
   settings: SqlAuthoringSettings,
   analysis?: SqlQueryAnalysis,
-): SqlAuthoringComposeResult {
+): SqlCompositionResult {
   const references = analysis ? relationsFromAnalysis(analysis, snapshot.objects) : [];
   if (!analysis || references.length === 0) {
     return {

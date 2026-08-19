@@ -4,11 +4,11 @@ import {
   DEBUG_RESULT_STATUS_EVENT,
   type DebugResultEntry,
 } from "../../../packages/dap/src/debugger/launch/index.js";
+import { type ParsedCallSite, parseSqlCalls } from "../../../packages/sql/src/callParser.js";
 import type {
   SqlAuthoringObject,
   SqlAuthoringSnapshot,
-} from "../../../packages/sql/src/authoring/snapshot.js";
-import { type ParsedCallSite, parseSqlCalls } from "../../../packages/sql/src/callParser.js";
+} from "../../../packages/sql/src/snapshot.js";
 import { type ConnectionManager, getConnectionName } from "../connection/index.js";
 import type { DebugSessionController } from "../debug/index.js";
 import {

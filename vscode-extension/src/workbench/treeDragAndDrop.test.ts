@@ -13,7 +13,7 @@ vi.mock("../cockpit/dropBridge.js", () => ({
 import {
   parseSqlAuthoringDrag,
   SQL_AUTHORING_OBJECT_MIME,
-} from "../../../packages/sql/src/authoring/snapshot.js";
+} from "../../../packages/sql/src/snapshot.js";
 import {
   WORKBENCH_GRAPH_OBJECT_MIME,
   WORKBENCH_GRAPH_UNSUPPORTED_MIME,

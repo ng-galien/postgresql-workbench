@@ -1,17 +1,20 @@
 import type { CompletionItem } from "vscode-languageserver/node";
 import { CompletionItemKind, InsertTextFormat } from "vscode-languageserver/node";
+import type { SqlCaretRole, SqlRelationMention } from "../../query/relations.js";
+import type { SqlQueryShape } from "../../query/shape.js";
+import type { SqlAuthoringObject, SqlAuthoringSnapshot } from "../../snapshot.js";
 import {
   canonicalSqlIdentifier,
-  requiresQuotedPostgresIdentifier,
+  quoteSqlIdentifierIfNeeded,
   unquoteSqlIdentifierFragment,
-} from "./identifiers.js";
-import type { SqlCaretRole, SqlRelationMention } from "./query/relations.js";
-import type { SqlQueryShape } from "./queryShape.js";
-import type { SqlAuthoringObject, SqlAuthoringSnapshot } from "./snapshot.js";
-import { postgresPlpgsqlRanges, scanPostgresSql, sqlStatementAtOffset } from "./sqlLexing.js";
+} from "../../text/identifiers.js";
+import {
+  postgresPlpgsqlRanges,
+  scanPostgresSql,
+  sqlStatementAtOffset,
+} from "../../text/sqlLexing.js";
 
 const MAX_COMPLETIONS = 200;
-const SIMPLE_IDENTIFIER = /^[a-z_][a-z0-9_$]*$/u;
 export function postgresCompletions(
   source: string,
   offset: number,
@@ -95,14 +98,6 @@ export function postgresCompletions(
   }
   for (const object of snapshot.objects) items.push(objectCompletion(object));
   return boundedCompletions(items, completionFragment(before));
-}
-
-/** Quotes only where PostgreSQL requires it, for the SQL a user reads in the editor. */
-export function quoteSqlIdentifierIfNeeded(identifier: string): string {
-  if (SIMPLE_IDENTIFIER.test(identifier) && !requiresQuotedPostgresIdentifier(identifier)) {
-    return identifier;
-  }
-  return `"${identifier.replaceAll('"', '""')}"`;
 }
 
 interface QueryAlias {

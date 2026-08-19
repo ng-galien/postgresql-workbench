@@ -5,13 +5,10 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ensureLocalCodeMonikerWorkspace } from "../packages/catalog/src/localCodeMoniker.js";
 import { createCodeMonikerSyntaxParser } from "../packages/sql/src/analysis/codeMonikerSyntax.js";
 import type { SyntaxParser } from "../packages/sql/src/analysis/syntaxTree.js";
-import { composePostgresSql } from "../packages/sql/src/authoring/composition.js";
-import { analyzeSqlQuery } from "../packages/sql/src/authoring/query/analysis.js";
-import type {
-  SqlAuthoringForeignKey,
-  SqlAuthoringSnapshot,
-} from "../packages/sql/src/authoring/snapshot.js";
-import { sqlStatementAtOffset } from "../packages/sql/src/authoring/sqlLexing.js";
+import { analyzeSqlQuery } from "../packages/sql/src/query/analysis.js";
+import { composePostgresSql } from "../packages/sql/src/query/composition.js";
+import type { SqlAuthoringForeignKey, SqlAuthoringSnapshot } from "../packages/sql/src/snapshot.js";
+import { sqlStatementAtOffset } from "../packages/sql/src/text/sqlLexing.js";
 
 // product(1) —brand_id→ brand(2); product_category(3) —product_id→ product, —category_id→ category(4);
 // category —parent_id→ category; address(5) ←billing/shipping— sales_order(6); orphan(7).

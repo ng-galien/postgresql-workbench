@@ -82,6 +82,8 @@ const POSTGRES_RESERVED_KEYWORDS = new Set([
   "with",
 ]);
 
+const SIMPLE_IDENTIFIER = /^[a-z_][a-z0-9_$]*$/u;
+
 export const POSTGRES_IDENTIFIER_PATTERN = String.raw`(?:"(?:""|[^"\r\n])+"|[A-Za-z_][\w$]*)`;
 
 /**
@@ -91,6 +93,14 @@ export const POSTGRES_IDENTIFIER_PATTERN = String.raw`(?:"(?:""|[^"\r\n])+"|[A-Z
  */
 export function quoteSqlIdentifier(identifier: string): string {
   return `"${identifier.replaceAll('"', '""')}"`;
+}
+
+/** Quotes only where PostgreSQL requires it, for the SQL a user reads in the editor. */
+export function quoteSqlIdentifierIfNeeded(identifier: string): string {
+  if (SIMPLE_IDENTIFIER.test(identifier) && !requiresQuotedPostgresIdentifier(identifier)) {
+    return identifier;
+  }
+  return quoteSqlIdentifier(identifier);
 }
 
 export function requiresQuotedPostgresIdentifier(identifier: string): boolean {

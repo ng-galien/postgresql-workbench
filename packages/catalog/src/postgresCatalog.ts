@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { quoteSqlIdentifier } from "../../sql/src/authoring/identifiers.js";
+import { quoteSqlIdentifier } from "../../sql/src/text/identifiers.js";
 
 export interface CatalogQueryClient {
   query(sql: string): Promise<{ rows: Record<string, unknown>[] }>;

@@ -1,11 +1,12 @@
-import type { SqlQueryAnalysis } from "../authoring/query/analysis.js";
-import type { SqlCaretRole, SqlRelationMention } from "../authoring/query/relations.js";
-import type { SqlQueryShape } from "../authoring/queryShape.js";
+import type { SqlQueryAnalysis } from "../query/analysis.js";
 import type {
-  SqlAuthoringDragPayload,
-  SqlAuthoringSnapshot,
-  SqlAuthoringSnapshotToken,
-} from "../authoring/snapshot.js";
+  SqlComposition,
+  SqlCompositionChoice,
+  SqlCompositionRejection,
+} from "../query/composition.js";
+import type { SqlCaretRole, SqlRelationMention } from "../query/relations.js";
+import type { SqlQueryShape } from "../query/shape.js";
+import type { SqlAuthoringSnapshot, SqlAuthoringSnapshotToken } from "../snapshot.js";
 
 /**
  * The requests the SQL authoring language server answers, and the shape of each answer. The
@@ -78,30 +79,29 @@ export function decodeSemanticTokenData(data: ArrayLike<number>): SqlAuthoringSe
   return tokens;
 }
 
-export interface SqlAuthoringComposeRequest {
+/** A composition the server is asked for: what to compose, plus the document that asked. */
+export interface SqlAuthoringComposeRequest extends SqlComposition {
   uri: string;
-  text: string;
-  offset: number;
-  payload: SqlAuthoringDragPayload;
-  relationChoice?: number;
 }
 
+/** What the engine composed, plus the Index generation it was composed against. */
 export type SqlAuthoringComposeResult =
   | { status: "edit"; text: string; title: string; snapshot?: SqlAuthoringSnapshotToken }
   | {
       status: "ambiguous";
-      choices: Array<{ index: number; label: string; description: string }>;
+      choices: SqlCompositionChoice[];
       title?: string;
       placeHolder?: string;
       snapshot?: SqlAuthoringSnapshotToken;
     }
   | { status: "rejected"; message: string; reason?: SqlAuthoringRejectionReason };
 
+/** The engine's reasons, plus the ones only the server can know. */
 export type SqlAuthoringRejectionReason =
+  | SqlCompositionRejection
   | "unassociated"
   | "unavailable"
   | "not-indexed"
-  | "stale"
   | "syntax-budget"
   | "syntax-error"
   | "snapshot-changed";

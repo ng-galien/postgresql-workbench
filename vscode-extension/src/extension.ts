@@ -6,7 +6,7 @@ import type {
   DebugSessionStatus,
 } from "../../packages/dap/src/debugger/launch/index.js";
 import { planSqlResultExecution } from "../../packages/sql/src/analysis/sqlStatements.js";
-import { POSTGRES_SOURCE_LANGUAGE_IDS } from "../../packages/sql/src/authoring/documentLanguage.js";
+import { POSTGRES_SOURCE_LANGUAGE_IDS } from "../../packages/sql/src/text/documentLanguage.js";
 import { truncationReasonLabel } from "../../packages/views/src/results/resultFormatting.js";
 import { createAcceptanceProbes, registerAcceptanceControl } from "./acceptanceControl.js";
 import { registerWorkbenchGraphDropBridge, WorkbenchGraphView } from "./cockpit/index.js";

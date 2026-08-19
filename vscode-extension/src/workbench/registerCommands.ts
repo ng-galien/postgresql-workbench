@@ -6,8 +6,8 @@ import {
   DEBUG_RESULT_LIMITS,
 } from "../../../packages/dap/src/debugger/launch/index.js";
 import { classifySqlStatementCount } from "../../../packages/sql/src/analysis/sqlStatements.js";
-import { postgresSourceLanguageId } from "../../../packages/sql/src/authoring/documentLanguage.js";
-import { sqlStatementAtOffset } from "../../../packages/sql/src/authoring/sqlLexing.js";
+import { postgresSourceLanguageId } from "../../../packages/sql/src/text/documentLanguage.js";
+import { sqlStatementAtOffset } from "../../../packages/sql/src/text/sqlLexing.js";
 import type { WorkbenchGraphTreeSync, WorkbenchGraphView } from "../cockpit/index.js";
 import type {
   CommandSqlStatement,

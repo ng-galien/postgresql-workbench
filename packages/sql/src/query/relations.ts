@@ -1,12 +1,12 @@
-import { directSyntaxChild, findSyntaxNode, findSyntaxNodes } from "../../analysis/syntaxNodes.js";
-import type { SyntaxNode, SyntaxParser } from "../../analysis/syntaxTree.js";
+import { directSyntaxChild, findSyntaxNode, findSyntaxNodes } from "../analysis/syntaxNodes.js";
+import type { SyntaxNode, SyntaxParser } from "../analysis/syntaxTree.js";
+import type { SqlAuthoringObject } from "../snapshot.js";
 import {
   canonicalSqlIdentifier,
   splitSqlQualifiedIdentifier,
   unquoteSqlIdentifier,
-} from "../identifiers.js";
-import type { SqlAuthoringObject } from "../snapshot.js";
-import { postgresPlpgsqlRanges } from "../sqlLexing.js";
+} from "../text/identifiers.js";
+import { postgresPlpgsqlRanges } from "../text/sqlLexing.js";
 import { byteToCharOffsets, type SqlQueryAnalysis } from "./analysis.js";
 
 export interface DocumentRelationsOptions {

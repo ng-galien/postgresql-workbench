@@ -14,11 +14,11 @@ import {
   type DebugSessionStatus,
 } from "../../../packages/dap/src/debugger/launch/index.js";
 import type { SyntaxParser } from "../../../packages/sql/src/analysis/syntaxTree.js";
+import { type FunctionDefinition, parseCall } from "../../../packages/sql/src/callParser.js";
 import {
   POSTGRES_SOURCE_LANGUAGE_IDS,
   postgresSourceLanguageId,
-} from "../../../packages/sql/src/authoring/documentLanguage.js";
-import { type FunctionDefinition, parseCall } from "../../../packages/sql/src/callParser.js";
+} from "../../../packages/sql/src/text/documentLanguage.js";
 import type { CommandCallSite, CommandFunctionDefinition } from "../codeLens/index.js";
 import {
   type CallSiteConnectionStore,

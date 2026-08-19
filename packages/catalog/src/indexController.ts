@@ -1,10 +1,7 @@
 import type { Client } from "pg";
 import { createCodeMonikerSyntaxParser } from "../../sql/src/analysis/codeMonikerSyntax.js";
 import type { SyntaxParser } from "../../sql/src/analysis/syntaxTree.js";
-import type {
-  SqlAuthoringSnapshot,
-  SqlAuthoringTrigger,
-} from "../../sql/src/authoring/snapshot.js";
+import type { SqlAuthoringSnapshot, SqlAuthoringTrigger } from "../../sql/src/snapshot.js";
 import {
   type CodeMonikerClient,
   type CodeMonikerGraphResult,

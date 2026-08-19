@@ -1,7 +1,7 @@
 import type { Client, QueryResult, QueryResultRow } from "pg";
 import type { SyntaxParser } from "../../sql/src/analysis/syntaxTree.js";
-import { quoteSqlIdentifier } from "../../sql/src/authoring/identifiers.js";
 import { extractFuncDeps } from "../../sql/src/deps.js";
+import { quoteSqlIdentifier } from "../../sql/src/text/identifiers.js";
 import type { CoverageTestReport } from "./runner.js";
 
 export const DEFAULT_PGTAP_TEST_PATTERNS = ["*_ut.test_*", "*_it.test_*"] as const;

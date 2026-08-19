@@ -1,7 +1,4 @@
-import type {
-  SqlAuthoringDocumentContext,
-  SqlAuthoringRejectionReason,
-} from "../languageServer/protocol.js";
+import type { SqlAuthoringDocumentContext, SqlAuthoringRejectionReason } from "./protocol.js";
 
 export const INDEX_DATABASE_COMMAND = "postgresql-workbench.indexDatabase";
 export const ASSIGN_DOCUMENT_CONNECTION_COMMAND = "postgresql-workbench.assignDocumentConnection";

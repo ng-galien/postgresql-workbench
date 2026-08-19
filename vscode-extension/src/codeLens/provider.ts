@@ -1,9 +1,9 @@
 import * as vscode from "vscode";
 import { UnusableSyntaxTreeError } from "../../../packages/sql/src/analysis/syntaxNodes.js";
 import type { SyntaxParser } from "../../../packages/sql/src/analysis/syntaxTree.js";
-import { sqlStatementSlices } from "../../../packages/sql/src/authoring/sqlLexing.js";
 import type { FunctionDefinition, ParsedCallSite } from "../../../packages/sql/src/callParser.js";
 import { parseSqlFileStrict } from "../../../packages/sql/src/callParser.js";
+import { sqlStatementSlices } from "../../../packages/sql/src/text/sqlLexing.js";
 import { CODE_MONIKER_URI_SCHEME } from "../sources/index.js";
 import {
   type SqlDebugAvailability,

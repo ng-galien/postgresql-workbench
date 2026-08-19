@@ -21,15 +21,12 @@ import {
 } from "../../../packages/rows/src/navigation.js";
 import { openDataViewResult, TableAccents } from "../../../packages/rows/src/openRows.js";
 import { PendingEdits } from "../../../packages/rows/src/pendingEdits.js";
-import { quoteSqlIdentifierIfNeeded } from "../../../packages/sql/src/authoring/completion.js";
-import {
-  type QueryRewrite,
-  SqlQueryModel,
-} from "../../../packages/sql/src/authoring/query/model.js";
+import { type QueryRewrite, SqlQueryModel } from "../../../packages/sql/src/query/model.js";
 import type {
   SqlAuthoringDragPayload,
   SqlAuthoringSnapshot,
-} from "../../../packages/sql/src/authoring/snapshot.js";
+} from "../../../packages/sql/src/snapshot.js";
+import { quoteSqlIdentifierIfNeeded } from "../../../packages/sql/src/text/identifiers.js";
 import type {
   DataViewRequest,
   DataViewResponse,

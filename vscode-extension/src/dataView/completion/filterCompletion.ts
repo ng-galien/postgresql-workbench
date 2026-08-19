@@ -1,10 +1,7 @@
 import * as vscode from "vscode";
 import type { DataViewCompletion } from "../../../../packages/rows/src/dataView.js";
-import {
-  type SqlQueryAnalysis,
-  setWhere,
-} from "../../../../packages/sql/src/authoring/query/analysis.js";
-import { scanPostgresSql } from "../../../../packages/sql/src/authoring/sqlLexing.js";
+import { type SqlQueryAnalysis, setWhere } from "../../../../packages/sql/src/query/analysis.js";
+import { scanPostgresSql } from "../../../../packages/sql/src/text/sqlLexing.js";
 
 /**
  * Completions for the WHERE input: the typed condition is placed in a hidden copy of the query

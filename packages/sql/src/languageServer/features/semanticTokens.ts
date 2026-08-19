@@ -1,14 +1,14 @@
 import { SemanticTokensBuilder } from "vscode-languageserver/node";
 import type { TextDocument } from "vscode-languageserver-textdocument";
-import type { SqlAuthoringSemanticToken } from "../languageServer/protocol.js";
+import type { SqlRelationMention } from "../../query/relations.js";
+import type { SqlAuthoringObject, SqlAuthoringSnapshot } from "../../snapshot.js";
 import {
   canonicalSqlIdentifier,
   POSTGRES_IDENTIFIER_PATTERN,
   splitSqlQualifiedIdentifier,
-} from "./identifiers.js";
-import type { SqlRelationMention } from "./query/relations.js";
-import type { SqlAuthoringObject, SqlAuthoringSnapshot } from "./snapshot.js";
-import { postgresPlpgsqlRanges, scanPostgresSql } from "./sqlLexing.js";
+} from "../../text/identifiers.js";
+import { postgresPlpgsqlRanges, scanPostgresSql } from "../../text/sqlLexing.js";
+import type { SqlAuthoringSemanticToken } from "../protocol.js";
 
 export const SQL_SEMANTIC_TOKEN_TYPES = [
   "variable",

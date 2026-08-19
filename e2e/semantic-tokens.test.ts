@@ -6,12 +6,12 @@ import { TextDocument } from "vscode-languageserver-textdocument";
 import { ensureLocalCodeMonikerWorkspace } from "../packages/catalog/src/localCodeMoniker.js";
 import { createCodeMonikerSyntaxParser } from "../packages/sql/src/analysis/codeMonikerSyntax.js";
 import type { SyntaxParser } from "../packages/sql/src/analysis/syntaxTree.js";
-import { documentRelations } from "../packages/sql/src/authoring/query/relations.js";
 import {
   postgresSemanticTokens,
   SQL_SEMANTIC_TOKEN_TYPES,
-} from "../packages/sql/src/authoring/semanticTokens.js";
-import type { SqlAuthoringSnapshot } from "../packages/sql/src/authoring/snapshot.js";
+} from "../packages/sql/src/languageServer/features/semanticTokens.js";
+import { documentRelations } from "../packages/sql/src/query/relations.js";
+import type { SqlAuthoringSnapshot } from "../packages/sql/src/snapshot.js";
 
 describe("SQL authoring semantic tokens", () => {
   let parser: SyntaxParser;

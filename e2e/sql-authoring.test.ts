@@ -5,26 +5,26 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ensureLocalCodeMonikerWorkspace } from "../packages/catalog/src/localCodeMoniker.js";
 import { createCodeMonikerSyntaxParser } from "../packages/sql/src/analysis/codeMonikerSyntax.js";
 import type { SyntaxParser } from "../packages/sql/src/analysis/syntaxTree.js";
-import { postgresCompletions } from "../packages/sql/src/authoring/completion.js";
-import { composePostgresSql } from "../packages/sql/src/authoring/composition.js";
-import { formatPostgresSql } from "../packages/sql/src/authoring/format.js";
-import { analyzeSqlQuery } from "../packages/sql/src/authoring/query/analysis.js";
-import { documentRelations } from "../packages/sql/src/authoring/query/relations.js";
-import {
-  parseSqlAuthoringDrag,
-  type SqlAuthoringSnapshot,
-  serializeSqlAuthoringDrag,
-} from "../packages/sql/src/authoring/snapshot.js";
-import {
-  scanPostgresSql,
-  sqlStatementAtOffset,
-  sqlStatementSlices,
-} from "../packages/sql/src/authoring/sqlLexing.js";
 import {
   composeSqlAuthoringRequest,
   sqlAuthoringEditStillApplies,
 } from "../packages/sql/src/languageServer/composeRequest.js";
+import { postgresCompletions } from "../packages/sql/src/languageServer/features/completion.js";
 import type { SqlAuthoringDocumentContext } from "../packages/sql/src/languageServer/protocol.js";
+import { analyzeSqlQuery } from "../packages/sql/src/query/analysis.js";
+import { composePostgresSql } from "../packages/sql/src/query/composition.js";
+import { documentRelations } from "../packages/sql/src/query/relations.js";
+import {
+  parseSqlAuthoringDrag,
+  type SqlAuthoringSnapshot,
+  serializeSqlAuthoringDrag,
+} from "../packages/sql/src/snapshot.js";
+import { formatPostgresSql } from "../packages/sql/src/text/format.js";
+import {
+  scanPostgresSql,
+  sqlStatementAtOffset,
+  sqlStatementSlices,
+} from "../packages/sql/src/text/sqlLexing.js";
 
 const snapshot: SqlAuthoringSnapshot = {
   status: "available",
@@ -191,7 +191,6 @@ describe("SQL authoring language contracts", async () => {
   it("generates executable function and procedure invocations from routine drops", async () => {
     const functionResult = await compose(
       {
-        uri: "file:///query.sql",
         text: "",
         offset: 0,
         payload: {
@@ -222,7 +221,6 @@ describe("SQL authoring language contracts", async () => {
     };
     const procedureResult = await compose(
       {
-        uri: "file:///query.sql",
         text: "SELECT 1;",
         offset: 8,
         payload: {
@@ -269,7 +267,6 @@ describe("SQL authoring language contracts", async () => {
     };
     const result = await compose(
       {
-        uri: "file:///query.sql",
         text: "",
         offset: 0,
         payload: {
@@ -331,7 +328,6 @@ describe("SQL authoring language contracts", async () => {
 
     const directTrigger = await compose(
       {
-        uri: "file:///query.sql",
         text: "",
         offset: 0,
         payload: {
@@ -378,7 +374,6 @@ describe("SQL authoring language contracts", async () => {
     };
     const result = await compose(
       {
-        uri: "file:///query.sql",
         text: "",
         offset: 0,
         payload: {
@@ -701,7 +696,6 @@ SELECT broken FROM;`;
 
     const result = await compose(
       {
-        uri: "file:///query.sql",
         text: "SELECT product.id FROM shop.product JOIN shop.order_line ON product.id = order_line.product_id;",
         offset: 10,
         payload: {
@@ -748,7 +742,6 @@ SELECT broken FROM;`;
 
     const projection = await compose(
       {
-        uri: "file:///query.sql",
         text: "",
         offset: 0,
         payload: {
@@ -767,7 +760,6 @@ SELECT broken FROM;`;
 
     const duplicate = await compose(
       {
-        uri: "file:///query.sql",
         text: 'SELECT u."when" FROM shop."user" AS u;',
         offset: 10,
         payload: {
@@ -803,7 +795,6 @@ SELECT broken FROM;`;
     };
     const distinctQuotedColumn = await compose(
       {
-        uri: "file:///query.sql",
         text: "SELECT p.foo FROM shop.product AS p;",
         offset: 10,
         payload: {
@@ -824,7 +815,6 @@ SELECT broken FROM;`;
 
     const aliasedProjection = await compose(
       {
-        uri: "file:///query.sql",
         text: "SELECT p.name AS display_name FROM shop.product AS p;",
         offset: 10,
         payload: {
@@ -854,7 +844,6 @@ SELECT broken FROM;`;
     };
     const result = await compose(
       {
-        uri: "file:///query.sql",
         text: "SELECT pv.id FROM shop.product_view AS pv;",
         offset: 10,
         payload: {
@@ -875,7 +864,6 @@ SELECT broken FROM;`;
   it("rejects a dragged column when its table OID has several query references", async () => {
     const result = await compose(
       {
-        uri: "file:///query.sql",
         text: [
           "SELECT p1.id, p2.id",
           "FROM shop.product AS p1",
@@ -905,7 +893,6 @@ SELECT broken FROM;`;
     async (modifier) => {
       const result = await compose(
         {
-          uri: "file:///query.sql",
           text: `SELECT ${modifier} p.name FROM shop.product AS p;`,
           offset: 10,
           payload: {
@@ -930,7 +917,6 @@ SELECT broken FROM;`;
   it("rejects column composition conservatively for SELECT DISTINCT ON", async () => {
     const result = await compose(
       {
-        uri: "file:///query.sql",
         text: "SELECT DISTINCT ON (p.id) p.name FROM shop.product AS p;",
         offset: 30,
         payload: {
@@ -956,7 +942,6 @@ SELECT broken FROM;`;
   ])("joins without expanding an aggregate or set-sensitive projection: %s", async (text) => {
     const result = await compose(
       {
-        uri: "file:///query.sql",
         text,
         offset: text.indexOf("order_line"),
         payload: {
@@ -979,7 +964,6 @@ SELECT broken FROM;`;
   it("creates an explicit projection, extends it once, and joins only through one foreign key", async () => {
     const table = await compose(
       {
-        uri: "file:///query.sql",
         text: "",
         offset: 0,
         payload: {
@@ -1000,7 +984,6 @@ SELECT broken FROM;`;
 
     const joined = await compose(
       {
-        uri: "file:///query.sql",
         text: "SELECT ol.id FROM shop.order_line AS ol;",
         offset: 0,
         payload: {
@@ -1018,7 +1001,6 @@ SELECT broken FROM;`;
 
     const column = await compose(
       {
-        uri: "file:///query.sql",
         text: "SELECT p.id FROM shop.product AS p;",
         offset: 0,
         payload: {
@@ -1037,7 +1019,6 @@ SELECT broken FROM;`;
 
     const unaliasedColumn = await compose(
       {
-        uri: "file:///query.sql",
         text: "SELECT product.id FROM shop.product;",
         offset: 0,
         payload: {
@@ -1096,7 +1077,6 @@ SELECT broken FROM;`;
     };
     const projection = await compose(
       {
-        uri: "file:///query.sql",
         text: "",
         offset: 0,
         payload: {
@@ -1118,7 +1098,6 @@ SELECT broken FROM;`;
 
     const joined = await compose(
       {
-        uri: "file:///query.sql",
         text: curatedProjection,
         offset: curatedProjection.indexOf("shop.address"),
         payload: {
@@ -1144,7 +1123,6 @@ SELECT broken FROM;`;
   it("generates compact initial aliases when configured", async () => {
     const result = await compose(
       {
-        uri: "file:///query.sql",
         text: "",
         offset: 0,
         payload: {
@@ -1167,7 +1145,6 @@ SELECT broken FROM;`;
   it("appends an independent SELECT when no direct foreign key can form a JOIN", async () => {
     const result = await compose(
       {
-        uri: "file:///query.sql",
         text: "SELECT p.id FROM shop.product AS p;",
         offset: 10,
         payload: {
@@ -1190,7 +1167,6 @@ SELECT broken FROM;`;
   it("does not compose a JOIN from an unvalidated foreign key", async () => {
     const result = await compose(
       {
-        uri: "file:///query.sql",
         text: "SELECT p.id FROM shop.product AS p;",
         offset: 10,
         payload: {
@@ -1228,7 +1204,6 @@ SELECT broken FROM;`;
     async ({ sourceColumns, targetColumns }) => {
       const result = await compose(
         {
-          uri: "file:///query.sql",
           text: "SELECT ol.id FROM shop.order_line AS ol;",
           offset: 10,
           payload: {
@@ -1271,7 +1246,6 @@ SELECT broken FROM;`;
     } as (typeof snapshot.foreignKeys)[number];
     const result = await compose(
       {
-        uri: "file:///query.sql",
         text: "SELECT ol.id FROM shop.order_line AS ol;",
         offset: 10,
         payload: {
@@ -1314,7 +1288,6 @@ SELECT broken FROM;`;
   it("asks for an explicit relation when several foreign keys are reliable", async () => {
     const result = await compose(
       {
-        uri: "file:///query.sql",
         text: "SELECT ol.id FROM shop.order_line AS ol;",
         offset: 10,
         payload: {
@@ -1352,7 +1325,6 @@ SELECT broken FROM;`;
   it("distinguishes self-join references in the foreign-key picker", async () => {
     const result = await compose(
       {
-        uri: "file:///query.sql",
         text: [
           "SELECT p1.id, p2.id",
           "FROM shop.product AS p1",
@@ -1404,7 +1376,6 @@ SELECT broken FROM;`;
     expect(
       await compose(
         {
-          uri: "file:///query.sql",
           text: "SELECT p.id FROM product AS p;",
           offset: 10,
           payload,
@@ -1418,7 +1389,6 @@ SELECT broken FROM;`;
     expect(
       await compose(
         {
-          uri: "file:///query.sql",
           text: "WITH x AS (SELECT * FROM shop.product) SELECT * FROM x;",
           offset: 52,
           payload,
@@ -1430,7 +1400,6 @@ SELECT broken FROM;`;
     expect(
       await compose(
         {
-          uri: "file:///query.sql",
           text: nested,
           offset: nested.indexOf("AS p"),
           payload,
@@ -1453,7 +1422,6 @@ SELECT broken FROM;`;
     expect(
       await compose(
         {
-          uri: "file:///query.sql",
           text: source,
           offset: source.indexOf("shop.product"),
           payload: {
@@ -1473,7 +1441,6 @@ SELECT broken FROM;`;
   it("does not interpret USING or TABLESAMPLE as relation aliases", async () => {
     const usingColumn = await compose(
       {
-        uri: "file:///query.sql",
         text: "SELECT p.id FROM shop.product AS p JOIN shop.order_line USING (id);",
         offset: 10,
         payload: {
@@ -1494,7 +1461,6 @@ SELECT broken FROM;`;
 
     const sampledJoin = await compose(
       {
-        uri: "file:///query.sql",
         text: "SELECT * FROM shop.product TABLESAMPLE SYSTEM (10);",
         offset: 10,
         payload: {
@@ -1525,7 +1491,6 @@ SELECT broken FROM;`;
     };
     const result = await compose(
       {
-        uri: "file:///query.sql",
         text: "SELECT p.id FROM shop.product AS p JOIN shop.order_line ON p.id = shop.order_line.product_id;",
         offset: 10,
         payload: {
@@ -1563,7 +1528,6 @@ SELECT broken FROM;`;
     const source = "SELECT P.id FROM Shop.Product AS P;";
     const column = await compose(
       {
-        uri: "file:///query.sql",
         text: source,
         offset: source.indexOf("P.id"),
         payload: {
@@ -1606,7 +1570,6 @@ SELECT broken FROM;`;
     const quotedKeyword = 'SELECT "where".id FROM shop.product AS "where";';
     const quotedKeywordColumn = await compose(
       {
-        uri: "file:///query.sql",
         text: quotedKeyword,
         offset: quotedKeyword.indexOf('"where".id'),
         payload: {
@@ -1640,7 +1603,6 @@ SELECT broken FROM;`;
     };
     const result = await compose(
       {
-        uri: "file:///query.sql",
         text: "SELECT brand.id FROM shop.product AS brand;",
         offset: 10,
         payload: {
@@ -1680,7 +1642,6 @@ SELECT broken FROM;`;
     const source = `SELECT 0 AS untouched;\n${statement}`;
     const result = await compose(
       {
-        uri: "file:///query.sql",
         text: source,
         offset: source.indexOf("shop.product"),
         payload: {
@@ -1712,7 +1673,6 @@ SELECT broken FROM;`;
       expect(scanPostgresSql(source).maskedSource).toHaveLength(source.length);
       const result = await compose(
         {
-          uri: "file:///query.sql",
           text: source,
           offset: source.indexOf("shop.product"),
           payload: {
@@ -1738,7 +1698,6 @@ SELECT broken FROM;`;
       "SELECT 'FROM shop.product AS p' AS note, $$JOIN shop.product WHERE$$ AS body, \"JOIN shop.product\" AS marker FROM shop.order_line AS ol;";
     const result = await compose(
       {
-        uri: "file:///query.sql",
         text: source,
         offset: source.indexOf("shop.order_line"),
         payload: {
@@ -1760,7 +1719,6 @@ SELECT broken FROM;`;
     const filtered = "SELECT count(*) FILTER (WHERE active) FROM shop.product AS p;";
     const joined = await compose(
       {
-        uri: "file:///query.sql",
         text: filtered,
         offset: filtered.indexOf("shop.product"),
         payload: {
@@ -1784,7 +1742,6 @@ SELECT broken FROM;`;
     const substring = "SELECT substring(name FROM 1) FROM shop.product AS p;";
     const extended = await compose(
       {
-        uri: "file:///query.sql",
         text: substring,
         offset: substring.indexOf("shop.product"),
         payload: {
@@ -1808,7 +1765,6 @@ SELECT broken FROM;`;
   it("preserves optional rows with LEFT JOIN from nullability and reverse direction", async () => {
     const nullable = await compose(
       {
-        uri: "file:///query.sql",
         text: "SELECT ol.id FROM shop.order_line AS ol;",
         offset: 10,
         payload: {
@@ -1834,7 +1790,6 @@ SELECT broken FROM;`;
 
     const reverse = await compose(
       {
-        uri: "file:///query.sql",
         text: "SELECT p.id FROM shop.product AS p;",
         offset: 9,
         payload: {
@@ -1869,7 +1824,6 @@ SELECT broken FROM;`;
     async ({ clause }) => {
       const result = await compose(
         {
-          uri: "file:///query.sql",
           text: ["SELECT p.id", "FROM shop.product AS p", `${clause};`].join("\n"),
           offset: 10,
           payload: {
@@ -1906,7 +1860,6 @@ SELECT broken FROM;`;
     const source = "SELECT 1;\nSELECT ol.id FROM shop.order_line AS ol;\nSELECT 3;";
     const result = await compose(
       {
-        uri: "file:///query.sql",
         text: source,
         offset: source.indexOf("ol.id"),
         payload: {

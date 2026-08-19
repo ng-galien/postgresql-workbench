@@ -3,7 +3,7 @@ import {
   analyzeSqlQuery,
   removeRelation,
   type SqlQueryAnalysis,
-} from "../packages/sql/src/authoring/query/analysis.js";
+} from "../packages/sql/src/query/analysis.js";
 import { type CodeMonikerTestRuntime, startCodeMonikerTestRuntime } from "./codeMonikerRuntime.js";
 
 /**

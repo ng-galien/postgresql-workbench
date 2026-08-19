@@ -1,4 +1,4 @@
-import { quoteSqlIdentifier } from "../../sql/src/authoring/identifiers.js";
+import { quoteSqlIdentifier } from "../../sql/src/text/identifiers.js";
 
 export const WORKBENCH_DDL_CHANNEL = "plpgsql_workbench_ddl";
 export const WORKBENCH_DDL_PAYLOAD_VERSION = 1;

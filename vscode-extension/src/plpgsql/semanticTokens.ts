@@ -1,18 +1,15 @@
 export {
   TOKEN_MODIFIERS,
   TOKEN_TYPES,
-} from "../../../packages/sql/src/authoring/plpgsqlTokenLegend.js";
+} from "../../../packages/sql/src/text/plpgsqlTokenLegend.js";
 
 import * as vscode from "vscode";
 import type { SyntaxParser } from "../../../packages/sql/src/analysis/syntaxTree.js";
 import {
-  TOKEN_MODIFIERS,
-  TOKEN_TYPES,
-} from "../../../packages/sql/src/authoring/plpgsqlTokenLegend.js";
-import {
   analyzePlpgsqlDocument,
   findIdentifierColumns,
 } from "../../../packages/sql/src/routines/documentAnalysis.js";
+import { TOKEN_MODIFIERS, TOKEN_TYPES } from "../../../packages/sql/src/text/plpgsqlTokenLegend.js";
 
 export const LEGEND = new vscode.SemanticTokensLegend([...TOKEN_TYPES], [...TOKEN_MODIFIERS]);
 

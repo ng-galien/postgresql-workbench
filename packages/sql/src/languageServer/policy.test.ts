@@ -14,15 +14,12 @@ vi.mock("vscode", () => ({
   SemanticTokensBuilder: class {},
 }));
 
-import {
-  sqlAuthoringLanguageStatus,
-  sqlAuthoringRejectionAction,
-} from "../authoring/languageStatus.js";
-import { TOKEN_MODIFIERS, TOKEN_TYPES } from "../authoring/plpgsqlTokenLegend.js";
+import { TOKEN_MODIFIERS, TOKEN_TYPES } from "../text/plpgsqlTokenLegend.js";
 import {
   SQL_SEMANTIC_TOKEN_MODIFIERS,
   SQL_SEMANTIC_TOKEN_TYPES,
-} from "../authoring/semanticTokens.js";
+} from "./features/semanticTokens.js";
+import { sqlAuthoringLanguageStatus, sqlAuthoringRejectionAction } from "./languageStatus.js";
 import { formatSkippedMessage, wantsPlpgsqlSemanticTokens } from "./policy.js";
 import { decodeSemanticTokenData } from "./protocol.js";
 

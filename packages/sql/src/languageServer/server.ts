@@ -8,16 +8,16 @@ import {
   TextEdit,
 } from "vscode-languageserver/node";
 import { TextDocument } from "vscode-languageserver-textdocument";
-import { postgresCompletions } from "../authoring/completion.js";
-import { formatPostgresSql } from "../authoring/format.js";
+import type { SqlAuthoringSettings } from "../snapshot.js";
+import { formatPostgresSql } from "../text/format.js";
+import { sqlStatementAtOffset } from "../text/sqlLexing.js";
+import { composeSqlAuthoringRequest } from "./composeRequest.js";
+import { postgresCompletions } from "./features/completion.js";
 import {
   postgresSemanticTokens,
   SQL_SEMANTIC_TOKEN_MODIFIERS,
   SQL_SEMANTIC_TOKEN_TYPES,
-} from "../authoring/semanticTokens.js";
-import type { SqlAuthoringSettings } from "../authoring/snapshot.js";
-import { sqlStatementAtOffset } from "../authoring/sqlLexing.js";
-import { composeSqlAuthoringRequest } from "./composeRequest.js";
+} from "./features/semanticTokens.js";
 import { formatSkippedMessage, wantsPlpgsqlSemanticTokens } from "./policy.js";
 import {
   SQL_AUTHORING_COMPOSE_REQUEST,

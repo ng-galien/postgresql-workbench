@@ -1,9 +1,9 @@
 import { canonicalSqlTypeName } from "../../../packages/sql/src/analysis/syntaxNodes.js";
+import type { FunctionDefinition, ParsedCallSite } from "../../../packages/sql/src/callParser.js";
 import type {
   SqlAuthoringObject,
   SqlAuthoringSnapshot,
-} from "../../../packages/sql/src/authoring/snapshot.js";
-import type { FunctionDefinition, ParsedCallSite } from "../../../packages/sql/src/callParser.js";
+} from "../../../packages/sql/src/snapshot.js";
 
 /** Debug eligibility of one analyzed SQL entry point, with the single blocking cause. */
 export type SqlDebugAvailability =

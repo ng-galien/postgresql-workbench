@@ -1,6 +1,5 @@
-import type { SyntaxParser } from "../../analysis/syntaxTree.js";
-import { quoteSqlIdentifierIfNeeded } from "../completion.js";
-import { unquoteSqlIdentifier } from "../identifiers.js";
+import type { SyntaxParser } from "../analysis/syntaxTree.js";
+import { quoteSqlIdentifierIfNeeded, unquoteSqlIdentifier } from "../text/identifiers.js";
 import {
   analyzeSqlQuery,
   formatSqlQuery,

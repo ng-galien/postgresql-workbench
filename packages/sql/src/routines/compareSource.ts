@@ -1,6 +1,6 @@
 import type { Client } from "pg";
-import { quoteSqlIdentifier } from "../authoring/identifiers.js";
 import type { FunctionDefinition } from "../callParser.js";
+import { quoteSqlIdentifier } from "../text/identifiers.js";
 
 export type RoutineSourceComparison = "identical" | "different" | "unavailable";
 

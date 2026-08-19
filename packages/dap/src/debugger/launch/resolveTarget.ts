@@ -1,6 +1,6 @@
 import type { SyntaxParser } from "../../../../sql/src/analysis/syntaxTree.js";
-import { quoteSqlIdentifier } from "../../../../sql/src/authoring/identifiers.js";
 import { parseCall } from "../../../../sql/src/callParser.js";
+import { quoteSqlIdentifier } from "../../../../sql/src/text/identifiers.js";
 import type { PlApiFunctionArg, PostgresDebugger } from "../postgres/index.js";
 import type { DebugSessionRoutine } from "./debugSessionStatus.js";
 import {
