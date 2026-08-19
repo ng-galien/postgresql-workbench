@@ -2,6 +2,8 @@ fragment = "catalog"
 enabled = true
 
 [aliases]
+postgres_ddl_sync_core_source = "source.segment('module') = 'postgresDdlSync'"
+postgres_ddl_sync_runtime_target = "target.segment('module') = 'localCodeMoniker' OR target.segment('module') = 'codeMonikerRuntime' OR target.segment('module') = 'postgresCatalog' OR target.segment('module') = 'postgresSourceProvider'"
 catalog_package_source = "source ~ '**/dir:packages/dir:catalog/**'"
 catalog_package_allowed = "target ~ '**/dir:packages/dir:catalog/**' OR target ~ '**/dir:packages/dir:sql/**'"
 
@@ -11,3 +13,10 @@ severity = "error"
 expr = "$catalog_package_source AND $architectural_dependency AND ($workbench_package_target OR $extension_local_target) => $catalog_package_allowed"
 message = "packages/catalog reads PostgreSQL and indexes its sources through the SQL analysis layer; it depends on that package and nothing else."
 rationale = "The catalog answers what a database contains. Reading rows, measuring coverage, debugging and rendering are what consume that answer, so a dependency on them would invert the direction the Workbench Index is built in."
+
+[[ts.refs.where]]
+id = "postgres-ddl-sync-core-remains-pure"
+severity = "error"
+expr = "$postgres_ddl_sync_core_source AND $architectural_dependency => NOT $postgres_ddl_sync_runtime_target"
+message = "postgresDdlSync must remain pure DDL SQL and notification reduction; runtime orchestration belongs outside it."
+rationale = "The core DDL unit builds provisioning SQL, validates the support schema, and coalesces notifications. Catalog reads, Code Moniker publication, session lifecycle, and incremental source mutation are coordinated by postgresSourceProvider and the Extension Host controller."

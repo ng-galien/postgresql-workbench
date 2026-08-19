@@ -2,4 +2,30 @@ fragment = "vscode-extension"
 enabled = true
 
 [aliases]
-artifact = "uri ~ '**/lang:ts/dir:vscode-extension/**'"
+extension_entry_target = "target.segment('module') = 'extension'"
+extension_entry_owner = "source.segment('module') = 'extension' OR source.segment('module') = 'marketplace.showcase' OR source.segment('module') = 'extension.smoke'"
+connection_service_target = "target.segment('module') = 'connectPostgres' AND target.segment('path') = 'ConnectionService'"
+connection_service_owner = "source.segment('module') = 'openConnections' OR source.segment('module') = 'openConnections.test'"
+scratchpad_file_source = "source.segment('module') = 'notebookFile'"
+scratchpad_runtime_target = "target.segment('module') = 'register' OR target.segment('module') = 'association' OR target.segment('module') = 'resultHost' OR target.segment('module') = 'runSelection' OR target.segment('module') = 'transactions' OR target.segment('module') = 'openConnections' OR target.segment('module') = 'cursor' OR target.segment('module') = 'openRows'"
+
+[[ts.refs.where]]
+id = "connection-service-owned-by-connection-manager"
+severity = "error"
+expr = "$connection_service_target => $connection_service_owner"
+message = "Consume PostgreSQL transport through ConnectionManager; ConnectionService is its private construction adapter."
+rationale = "ConnectionManager owns the open Connexions, the connection events, the reconnect state and the dedicated-client factory. A feature controller building its own ConnectionService would create a second connection lifecycle nothing reconnects or disposes."
+
+[[ts.refs.where]]
+id = "scratchpad-file-remains-passive"
+severity = "error"
+expr = "$scratchpad_file_source AND $architectural_dependency => NOT $scratchpad_runtime_target"
+message = "notebookFile owns the Scratchpad file format and its Association value objects, not connections, execution, or result-session lifecycle."
+rationale = "Reading and writing a Scratchpad must work without a live PostgreSQL Connexion — a file opens before anything connects. Execution, transactions and result cursors belong to register, association, resultHost and the row engine."
+
+[[ts.refs.where]]
+id = "extension-entry-is-not-a-service"
+severity = "error"
+expr = "$architectural_dependency AND $extension_entry_target => $extension_entry_owner"
+message = "Product modules must not import the extension entry point; receive explicit collaborators from activation wiring."
+rationale = "extension.ts is the composition root and command-registration boundary. Importing it from a feature would turn the exported extension API into a service locator and invert the activation dependency direction."

@@ -17,22 +17,6 @@ syntax_provider_owner = "source.segment('module') = 'localCodeMonikerSyntax' OR 
 architectural_dependency = "kind = 'imports_symbol' OR kind = 'imports_module' OR kind = 'uses_type' OR kind = 'calls' OR kind = 'method_call' OR kind = 'instantiates' OR kind = 'extends' OR kind = 'implements'"
 workbench_package_target = "target ~ '**/dir:packages/**'"
 extension_local_target = "target ~ '**/dir:vscode-extension/dir:src/**'"
-workbench_webview_source = "source ~ '**/dir:vscode-extension/dir:src/dir:workbenchGraph/dir:webview/**'"
-workbench_webview_target = "target ~ '**/dir:vscode-extension/dir:src/dir:workbenchGraph/dir:webview/**'"
-workbench_graph_protocol_target = "target ~ '**/dir:vscode-extension/dir:src/dir:workbenchGraph/module:protocol' OR target ~ '**/dir:vscode-extension/dir:src/dir:workbenchGraph/module:protocol/**'"
-workbench_graph_drag_contract_target = "target.segment('module') = 'dragAndDrop' AND target ~ '**/dir:vscode-extension/dir:src/dir:workbenchGraph/**'"
-workbench_shared_presentation_target = "target.segment('module') = 'postgresPresentation' AND target.name = 'postgresVisual'"
-connection_service_target = "target.segment('module') = 'connectionService' AND target.segment('path') = 'ConnectionService'"
-connection_service_owner = "source.segment('module') = 'connectionManager' OR source.segment('module') = 'connectionManager.test'"
-extension_entry_target = "target.segment('module') = 'extension'"
-extension_entry_owner = "source.segment('module') = 'extension' OR source.segment('module') = 'marketplace.showcase' OR source.segment('module') = 'extension.smoke'"
-sql_notebook_model_source = "source.segment('module') = 'sqlNotebookModel'"
-sql_notebook_runtime_target = "target.segment('module') = 'sqlNotebook' OR target.segment('module') = 'sqlNotebookConnection' OR target.segment('module') = 'sqlNotebookResultHost' OR target.segment('module') = 'sqlResultSession' OR target.segment('module') = 'sqlSelectionExecution' OR target.segment('module') = 'connectionManager'"
-postgres_ddl_sync_core_source = "source.segment('module') = 'postgresDdlSync'"
-postgres_ddl_sync_runtime_target = "target.segment('module') = 'localCodeMoniker' OR target.segment('module') = 'codeMonikerRuntime' OR target.segment('module') = 'postgresCatalog' OR target.segment('module') = 'postgresSourceProvider'"
-analysis_source = "source ~ '**/lang:ts/dir:src/dir:analysis/**'"
-workbench_core_target = "target ~ '**/lang:ts/dir:src/dir:workbench/**' OR target ~ '**/lang:ts/dir:vscode-extension/dir:src/module:workbench*' OR target ~ '**/lang:ts/dir:vscode-extension/dir:src/module:localCodeMoniker*' OR target ~ '**/lang:ts/dir:vscode-extension/dir:src/module:codeMonikerRuntime*'"
-shared_dap_source = "source.segment('module') = 'main' OR source.segment('module') = 'stdioDapServer' OR source.segment('module') = 'dapServer' OR source.segment('module') = 'localCodeMonikerSyntax' OR source.segment('module') = 'callParser' OR source.segment('module') = 'functionSource' OR source ~ '**/lang:ts/dir:src/dir:analysis/**' OR source ~ '**/lang:ts/dir:src/dir:debugger/**'"
 
 [profiles.smells]
 enable = ["\\.smell-"]
@@ -40,71 +24,16 @@ enable = ["\\.smell-"]
 [profiles.architecture]
 enable = [
   "code-moniker-syntax-provider-owned-by-runtime-boundary",
-  "workbench-webview-stays-behind-protocol",
-  "connection-service-owned-by-connection-manager",
   "extension-entry-is-not-a-service",
-  "sql-notebook-model-remains-passive",
   "postgres-ddl-sync-core-remains-pure",
-  "analysis-does-not-depend-on-workbench-runtime",
-  "shared-dap-does-not-depend-on-workbench-runtime",
+  "connection-service-owned-by-connection-manager",
+  "scratchpad-file-remains-passive",
   # declared by the package fragments
   "language-server-features-stay-behind-the-server",
   "query-engine-does-not-depend-on-the-language-server",
   "package-is-the-leaf-of-the-graph",
   "package-depends-only-on-what-it-reads",
 ]
-
-[profiles.dap]
-enable = ["shared-dap-does-not-depend-on-workbench-runtime"]
-
-[[ts.refs.where]]
-id = "workbench-webview-stays-behind-protocol"
-severity = "error"
-expr = "$workbench_webview_source AND $architectural_dependency AND $extension_local_target => $workbench_webview_target OR $workbench_graph_protocol_target OR $workbench_graph_drag_contract_target OR $workbench_shared_presentation_target"
-message = "Workbench webview code may depend on local UI modules, the graph protocol, and postgresVisual; it must not consume Extension Host controllers."
-rationale = "The React/Zustand webview is a separate runtime. PostgreSQL connections, Code Moniker sessions, VS Code state, tree coordination, and command execution stay in the Extension Host and cross this boundary through the typed graph protocol. The drag payload contract and postgresVisual are the explicitly shared pure mappings."
-
-[[ts.refs.where]]
-id = "connection-service-owned-by-connection-manager"
-severity = "error"
-expr = "$connection_service_target => $connection_service_owner"
-message = "Consume PostgreSQL transport through ConnectionManager; ConnectionService is its private construction adapter."
-rationale = "ConnectionManager owns the active DatabaseContext, connection events, reconnect state, and dedicated-client factory. Letting feature controllers consume ConnectionService directly would create competing connection lifecycles."
-
-[[ts.refs.where]]
-id = "extension-entry-is-not-a-service"
-severity = "error"
-expr = "$architectural_dependency AND $extension_entry_target => $extension_entry_owner"
-message = "Product modules must not import the extension entry point; receive explicit collaborators from activation wiring."
-rationale = "extension.ts is the composition root and command-registration boundary. Importing it from a feature would turn the exported extension API into a service locator and invert the activation dependency direction."
-
-[[ts.refs.where]]
-id = "sql-notebook-model-remains-passive"
-severity = "error"
-expr = "$sql_notebook_model_source AND $architectural_dependency => NOT $sql_notebook_runtime_target"
-message = "sqlNotebookModel owns serialization and binding value objects, not connections, execution, or result-session lifecycle."
-rationale = "The notebook file and renderer message contract must remain usable without a live PostgreSQL connection or VS Code controller. Execution belongs to sqlNotebook, dedicated connection helpers, and result-session hosts."
-
-[[ts.refs.where]]
-id = "postgres-ddl-sync-core-remains-pure"
-severity = "error"
-expr = "$postgres_ddl_sync_core_source AND $architectural_dependency => NOT $postgres_ddl_sync_runtime_target"
-message = "postgresDdlSync must remain pure DDL SQL and notification reduction; runtime orchestration belongs outside it."
-rationale = "The core DDL unit builds provisioning SQL, validates the support schema, and coalesces notifications. Catalog reads, Code Moniker publication, session lifecycle, and incremental source mutation are coordinated by postgresSourceProvider and the Extension Host controller."
-
-[[ts.refs.where]]
-id = "analysis-does-not-depend-on-workbench-runtime"
-severity = "error"
-expr = "$analysis_source AND $architectural_dependency => NOT $workbench_core_target"
-message = "The shared analysis layer depends on the Workbench runtime; move the runtime adapter outward to restore workbench -> analysis direction."
-rationale = "SyntaxParser is the shared semantic contract consumed by Workbench and debugger features. Runtime adapters that connect Code Moniker sessions live outside analysis so the dependency direction remains workbench/runtime -> analysis."
-
-[[ts.refs.where]]
-id = "shared-dap-does-not-depend-on-workbench-runtime"
-severity = "error"
-expr = "$shared_dap_source AND $architectural_dependency => NOT $workbench_core_target"
-message = "The shared DAP library and standalone host must not depend on Workbench indexing or Code Moniker workspace lifecycle modules."
-rationale = "Both the VS Code adapter entry and the standalone executable reuse this library. It is allowed only a lazy stateless SQL/PL-pgSQL parser; workspace daemons, indexed sources, symbols, graph, usages, catalog projection, and DDL synchronization belong to the Workbench host."
 
 [[views]]
 id = "postgres-workbench-boundaries"
@@ -202,14 +131,14 @@ forbids = [
   "mandatory Code Moniker source URIs",
   "symbols, graph, usages, navigation, source-set publication, catalog projection, or DDL synchronization",
 ]
-forbid_rules = ["shared-dap-does-not-depend-on-workbench-runtime"]
+forbid_rules = ["package-depends-only-on-what-it-reads"]
 rationale = "The extension adapter and published CLI are separate hosts over the same DAP library. The CLI exposes stateless parsing through code_moniker_read on MCP stdio; neither host lets the shared debugger read or index the user's workspace. A Workbench host may provide canonical source URIs, which the DAP preserves exactly, while generic clients remain functional through sourceReference."
 symbols = [
   "module:localCodeMonikerSyntax/class:StatelessCodeMonikerSyntaxRuntime",
   "module:codeMonikerSyntax/function:createCodeMonikerSyntaxParser(client:CodeMonikerSyntaxClient)",
   "module:sourceRegistry/function:standaloneSourceUri(oid:number)",
 ]
-rules = ["shared-dap-does-not-depend-on-workbench-runtime"]
+rules = ["package-depends-only-on-what-it-reads", "package-is-the-leaf-of-the-graph"]
 
 [[views.boundaries]]
 id = "tree-and-graph"
@@ -228,7 +157,6 @@ forbids = [
   "webview dependencies on shared presentation behavior other than postgresVisual",
 ]
 forbid_rules = [
-  "workbench-webview-stays-behind-protocol",
   "code-moniker-syntax-provider-owned-by-runtime-boundary",
 ]
 rationale = "Tree and graph are projections of index snapshots. The host validates context and performs actions; the webview renders and manipulates protocol values."
@@ -240,7 +168,7 @@ symbols = [
   "module:postgresPresentation/function:postgresVisual(kind:string)",
   "module:store/interface:CockpitStore",
 ]
-rules = ["workbench-webview-stays-behind-protocol"]
+rules = ["package-depends-only-on-what-it-reads"]
 
 [[views.boundaries]]
 id = "sql-notebooks"
@@ -256,7 +184,7 @@ forbids = [
   "connection lifecycle inside the serialized notebook model",
   "semantic index ownership",
 ]
-forbid_rules = ["sql-notebook-model-remains-passive"]
+forbid_rules = ["scratchpad-file-remains-passive"]
 rationale = "Durable notebook values, VS Code orchestration, PostgreSQL execution, and result navigation have separate owners so saved scratchpads do not retain live runtime state."
 symbols = [
   "module:sqlNotebook/function:registerSqlNotebook(context:vscode.ExtensionContext,connections:ConnectionManager,classifyResult:ResultClassifier)",
@@ -266,7 +194,7 @@ symbols = [
   "module:sqlResultSession/class:SqlResultSession",
   "module:sqlNotebookResultHost/class:SqlNotebookResultHost",
 ]
-rules = ["sql-notebook-model-remains-passive"]
+rules = ["scratchpad-file-remains-passive"]
 
 [[views.boundaries]]
 id = "persistence-and-configuration"
@@ -320,7 +248,7 @@ symbols = [
   "module:localCodeMonikerSyntax/class:LocalCodeMonikerSyntaxRuntime",
   "module:localCodeMoniker/class:LocalCodeMonikerSession",
 ]
-rules = ["analysis-does-not-depend-on-workbench-runtime"]
+rules = ["package-is-the-leaf-of-the-graph"]
 check = "code_moniker_rules action=run profile=architecture report=true limit=200"
 
 [[views.gotchas]]
@@ -355,9 +283,9 @@ check = "npm test && npm run test:e2e:run"
 [[ts.function.where]]
 id = "name-camelcase"
 severity = "error"
-expr = "$camel OR $ts_callback OR ((moniker ~ '**/dir:workbenchGraph/dir:webview/**' OR moniker ~ '**/dir:sqlNotebookRenderer/**') AND name =~ ^[A-Z][A-Za-z0-9]*$)"
+expr = "$camel OR $ts_callback OR (moniker ~ '**/dir:packages/dir:views/**' AND name =~ ^[A-Z][A-Za-z0-9]*$)"
 message = "Functions use camelCase; React components in the Workbench webview use PascalCase. Rename `{name}`."
-rationale = "PascalCase is part of the React component contract and allows the hooks linter to identify stateful components without weakening naming rules outside the webview."
+rationale = "PascalCase is part of the React component contract and lets the hooks linter recognise stateful components. packages/views holds every React view, so the exemption stops exactly at that package."
 
 [[ts.shape.annotation.where]]
 id = "no-comment-inside-callable"
