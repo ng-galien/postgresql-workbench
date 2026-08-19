@@ -90,10 +90,6 @@ jobs:
           cache-dependency-path: |
             package-lock.json
             vscode-extension/package-lock.json
-      - run: sudo apt-get update
-        timeout-minutes: 5
-      - run: sudo apt-get install -y --no-install-recommends xvfb
-        timeout-minutes: 5
       - run: npm ci
       - run: npm --prefix vscode-extension ci
       - run: xvfb-run -a npm --prefix vscode-extension test
@@ -122,10 +118,6 @@ jobs:
           cache-dependency-path: |
             package-lock.json
             vscode-extension/package-lock.json
-      - run: sudo apt-get update
-        timeout-minutes: 5
-      - run: sudo apt-get install -y --no-install-recommends xvfb
-        timeout-minutes: 5
       - run: npm ci
       - run: npm --prefix vscode-extension ci
       - run: xvfb-run -a npm --prefix vscode-extension run test:min-vscode
@@ -166,10 +158,12 @@ jobs:
           cache-dependency-path: |
             package-lock.json
             vscode-extension/package-lock.json
-      - run: sudo apt-get update
-        timeout-minutes: 5
-      - run: sudo apt-get install -y --no-install-recommends scrot xvfb
-        timeout-minutes: 5
+      # Xvfb ships with the runner image. scrot only takes the diagnostic screenshot of the whole
+      # screen, and the runner script tolerates its absence, so a slow mirror never fails a lane.
+      - name: Install the screenshot tool, if the mirror allows
+        continue-on-error: true
+        timeout-minutes: 2
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends scrot
       - run: npm ci
       - run: npm --prefix vscode-extension ci
       - name: Probe VS Code and extension bootstrap
@@ -201,10 +195,12 @@ jobs:
           cache-dependency-path: |
             package-lock.json
             vscode-extension/package-lock.json
-      - run: sudo apt-get update
-        timeout-minutes: 5
-      - run: sudo apt-get install -y --no-install-recommends scrot xvfb
-        timeout-minutes: 5
+      # Xvfb ships with the runner image. scrot only takes the diagnostic screenshot of the whole
+      # screen, and the runner script tolerates its absence, so a slow mirror never fails a lane.
+      - name: Install the screenshot tool, if the mirror allows
+        continue-on-error: true
+        timeout-minutes: 2
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends scrot
       - run: npm ci
       - run: npm --prefix vscode-extension ci
       - name: Run Playwright Core lane
@@ -239,10 +235,12 @@ jobs:
           cache-dependency-path: |
             package-lock.json
             vscode-extension/package-lock.json
-      - run: sudo apt-get update
-        timeout-minutes: 5
-      - run: sudo apt-get install -y --no-install-recommends scrot xvfb
-        timeout-minutes: 5
+      # Xvfb ships with the runner image. scrot only takes the diagnostic screenshot of the whole
+      # screen, and the runner script tolerates its absence, so a slow mirror never fails a lane.
+      - name: Install the screenshot tool, if the mirror allows
+        continue-on-error: true
+        timeout-minutes: 2
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends scrot
       - run: npm ci
       - run: npm --prefix vscode-extension ci
       - name: Run Playwright Index lifecycle lane
@@ -277,10 +275,12 @@ jobs:
           cache-dependency-path: |
             package-lock.json
             vscode-extension/package-lock.json
-      - run: sudo apt-get update
-        timeout-minutes: 5
-      - run: sudo apt-get install -y --no-install-recommends scrot xvfb
-        timeout-minutes: 5
+      # Xvfb ships with the runner image. scrot only takes the diagnostic screenshot of the whole
+      # screen, and the runner script tolerates its absence, so a slow mirror never fails a lane.
+      - name: Install the screenshot tool, if the mirror allows
+        continue-on-error: true
+        timeout-minutes: 2
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends scrot
       - run: npm ci
       - run: npm --prefix vscode-extension ci
       - name: Run Playwright Schema Sync lane
@@ -358,12 +358,6 @@ jobs:
       - run: npm --prefix vscode-extension ci
       - run: npm --prefix vscode-extension run package
       - run: git diff --exit-code -- vscode-extension/THIRD_PARTY_NOTICES.md
-      - name: Install Linux display server for VS Code smoke test
-        if: runner.os == 'Linux'
-        timeout-minutes: 5
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends xvfb
       - name: Smoke-test extension activation and Code Moniker on Linux
         if: runner.os == 'Linux'
         timeout-minutes: 10
