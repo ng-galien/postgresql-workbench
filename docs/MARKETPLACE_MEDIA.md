@@ -11,7 +11,7 @@ Code and extension APIs, then exits. Each scene communicates one feature family.
 
 ## Requirements
 
-The capture workflow requires macOS, VS Code, Docker, Node.js 22+, and FFmpeg.
+The capture workflow requires macOS, VS Code, Docker, Node.js 24+, and FFmpeg.
 Install FFmpeg with Homebrew if necessary:
 
 ```bash

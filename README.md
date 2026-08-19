@@ -30,7 +30,7 @@ The DAP server communicates with PostgreSQL via `pldbgapi` (the PostgreSQL debug
 
 ## Prerequisites
 
-- Node.js 22+
+- Node.js 24+
 - PostgreSQL with [pldebugger](https://github.com/ng-galien/pldebugger) extension
 - `shared_preload_libraries = 'plugin_debugger'`
 
