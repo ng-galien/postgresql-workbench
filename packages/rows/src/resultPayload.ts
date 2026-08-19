@@ -1,4 +1,8 @@
-import type { DebugResult, DebugResultEntry } from "../../dap/src/debugger/launch/index.js";
+import type {
+  DebugResult,
+  DebugResultEntry,
+  DebugResultError,
+} from "../../dap/src/debugger/launch/index.js";
 
 /**
  * What a SQL result is: the rows PostgreSQL returned or the error it raised, the Connexion they
@@ -95,4 +99,40 @@ export interface DebugResultSummary {
 export interface DebugResultViewState {
   results: DebugResultSummary[];
   selected?: DebugResultEntry;
+}
+
+/** An error a surface shows as a result: a title, a message, and whatever PostgreSQL said. */
+export function notebookErrorPayload(
+  category: SqlNotebookErrorPayload["category"],
+  title: string,
+  message: string,
+): SqlNotebookErrorPayload {
+  return { version: 1, type: "error", category, title, message };
+}
+
+/** What a failed query tells a reader, however the failure reached the host. */
+export type SqlFailure = Pick<
+  DebugResultError,
+  "message" | "code" | "detail" | "hint" | "position"
+>;
+
+/**
+ * A failed query as a result view shows it. One conversion, so a failure raised as a thrown
+ * object and the same failure carried as a debug result agree on their category, their title,
+ * and everything PostgreSQL said — code, detail, hint and position included.
+ */
+export function sqlFailurePayload(error: SqlFailure, statement?: number): SqlNotebookErrorPayload {
+  const isPostgres = Boolean(error.code && /^[0-9A-Z]{5}$/u.test(error.code));
+  return {
+    ...notebookErrorPayload(
+      isPostgres ? "postgresql" : "execution",
+      isPostgres ? "PostgreSQL error" : "SQL execution error",
+      error.message,
+    ),
+    ...(statement ? { statement } : {}),
+    ...(error.code ? { code: error.code } : {}),
+    ...(error.detail ? { detail: error.detail } : {}),
+    ...(error.hint ? { hint: error.hint } : {}),
+    ...(error.position ? { position: error.position } : {}),
+  };
 }

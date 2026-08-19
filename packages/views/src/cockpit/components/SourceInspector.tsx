@@ -6,7 +6,7 @@ import {
   plainPostgresSource,
 } from "../graph/highlight.js";
 import type { WorkbenchGraphSourcePreview } from "../protocol.js";
-import { vscode } from "../vscodeApi.js";
+import { post } from "../vscodeApi.js";
 import { PostgresSourceView } from "./PostgresSourceView.js";
 
 function SourceInspector({
@@ -66,7 +66,7 @@ function SourceInspector({
             type="button"
             title="Open definition in the editor"
             aria-label="Open definition"
-            onClick={() => vscode.postMessage({ type: "open", symbolUri: preview.symbolUri })}
+            onClick={() => post({ type: "open", symbolUri: preview.symbolUri })}
           >
             ↗
           </button>

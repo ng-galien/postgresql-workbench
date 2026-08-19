@@ -1,11 +1,11 @@
-import type { WorkbenchGraphWebviewMessage } from "./protocol.js";
+import { webviewMessaging } from "../webviewPage.js";
+import type { WorkbenchGraphHostMessage, WorkbenchGraphWebviewMessage } from "./protocol.js";
 
-interface WebviewApi {
-  postMessage(message: WorkbenchGraphWebviewMessage): void;
-  getState(): unknown;
-  setState(state: unknown): void;
-}
-
-declare function acquireVsCodeApi(): WebviewApi;
-
-export const vscode = acquireVsCodeApi();
+/**
+ * How the Cockpit talks to the Extension Host: `post` sends, `subscribeToHost` hands out what
+ * comes back and returns how to stop listening.
+ */
+export const { post, subscribe: subscribeToHost } = webviewMessaging<
+  WorkbenchGraphWebviewMessage,
+  WorkbenchGraphHostMessage
+>();

@@ -1,9 +1,10 @@
-import { randomBytes } from "node:crypto";
 import * as vscode from "vscode";
 import type {
   WorkbenchGraphHostMessage,
   WorkbenchGraphWebviewMessage,
 } from "../../../packages/views/src/cockpit/protocol.js";
+import viewBundles from "../../../packages/views/viewBundles.json" with { type: "json" };
+import { webviewPage } from "../webviewPage.js";
 
 export class WorkbenchGraphPanel implements vscode.Disposable {
   private panel?: vscode.WebviewPanel;
@@ -68,38 +69,19 @@ export class WorkbenchGraphPanel implements vscode.Disposable {
   }
 }
 
+/** The Cockpit graph page: a linked stylesheet, and the evidence flag the acceptance suite reads. */
 function graphHtml(
   webview: vscode.Webview,
   extensionUri: vscode.Uri,
   collectRenderEvidence: boolean,
 ): string {
-  const nonce = randomBytes(16).toString("base64");
-  const scriptUri = webview.asWebviewUri(
-    vscode.Uri.joinPath(extensionUri, "dist", "workbench-graph.js"),
-  );
-  const styleUri = webview.asWebviewUri(
-    vscode.Uri.joinPath(extensionUri, "dist", "workbench-graph.css"),
-  );
-  const csp = [
-    "default-src 'none'",
-    `style-src ${webview.cspSource} 'unsafe-inline'`,
-    `font-src ${webview.cspSource}`,
-    `connect-src ${webview.cspSource}`,
-    `script-src 'nonce-${nonce}'`,
-  ].join("; ");
-  return `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="${csp}">
-  <link href="${styleUri}" rel="stylesheet">
-  <title>PostgreSQL Graph</title>
-</head>
-<body>
-  <div id="root"></div>
-  <script nonce="${nonce}">globalThis.__PLPGSQL_GRAPH_EVIDENCE__ = ${JSON.stringify(collectRenderEvidence)};</script>
-  <script nonce="${nonce}" src="${scriptUri}"></script>
-</body>
-</html>`;
+  return webviewPage({
+    webview,
+    extensionUri,
+    title: "PostgreSQL Graph",
+    script: viewBundles.cockpitGraph.script,
+    stylesheet: viewBundles.cockpitGraph.stylesheet,
+    extraCsp: [`connect-src ${webview.cspSource}`],
+    globals: { __PLPGSQL_GRAPH_EVIDENCE__: collectRenderEvidence },
+  });
 }

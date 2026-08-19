@@ -1,30 +1,30 @@
 import type { CockpitDirection, CockpitPerspectiveState } from "../protocol.js";
-import { vscode } from "../vscodeApi.js";
+import { post } from "../vscodeApi.js";
 
 let requestSequence = 0;
 
 export function focusSymbol(symbolUri: string): void {
-  vscode.postMessage({ type: "focus", prefix: symbolUri });
+  post({ type: "focus", prefix: symbolUri });
 }
 
 export function inspectSymbol(symbolUri: string): void {
-  vscode.postMessage({ type: "inspect", symbolUri });
+  post({ type: "inspect", symbolUri });
 }
 
 export function dismissSource(): void {
-  vscode.postMessage({ type: "dismissPreview" });
+  post({ type: "dismissPreview" });
 }
 
 export function openSymbol(symbolUri: string): void {
-  vscode.postMessage({ type: "open", symbolUri });
+  post({ type: "open", symbolUri });
 }
 
 export function debugSymbol(symbolUri: string): void {
-  vscode.postMessage({ type: "actions", symbolUri });
+  post({ type: "actions", symbolUri });
 }
 
 export function setPinnedSymbol(symbolUri: string, pinned: boolean): void {
-  vscode.postMessage({ type: "pin", symbolUri, pinned });
+  post({ type: "pin", symbolUri, pinned });
 }
 
 export function requestNeighborhood(
@@ -33,10 +33,10 @@ export function requestNeighborhood(
   direction?: CockpitDirection,
 ): number {
   const requestId = ++requestSequence;
-  vscode.postMessage({ type: "requestNeighborhood", requestId, symbolUri, intent, direction });
+  post({ type: "requestNeighborhood", requestId, symbolUri, intent, direction });
   return requestId;
 }
 
 export function savePerspective(state: CockpitPerspectiveState): void {
-  vscode.postMessage({ type: "savePerspective", state });
+  post({ type: "savePerspective", state });
 }

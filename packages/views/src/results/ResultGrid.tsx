@@ -10,6 +10,7 @@ import {
   useState,
 } from "react";
 import type { DebugResultCell } from "../../../dap/src/debugger/launch/index.js";
+import { clamp } from "../../../rows/src/clamp.js";
 import type { ResultTable } from "../../../rows/src/resultPayload.js";
 import { CellEditor, type GridEditing } from "./CellEditor.js";
 import {
@@ -145,7 +146,7 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
   // Focus is keyed by ordinal, like every other position in this grid, so a hidden column never
   // shifts it. Clamping on read means nothing has to reset it when the result changes.
   const focus = {
-    row: Math.min(focusCell.row, Math.max(rows.length - 1, 0)),
+    row: clamp(focusCell.row, 0, rows.length - 1),
     ordinal: columns.some(({ ordinal }) => ordinal === focusCell.ordinal)
       ? focusCell.ordinal
       : (columns[0]?.ordinal ?? 0),
@@ -156,9 +157,9 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
   };
   const step = (rowDelta: number, columnDelta: number) => {
     const index = columns.findIndex(({ ordinal }) => ordinal === focus.ordinal);
-    const column = Math.min(Math.max(index + columnDelta, 0), Math.max(columns.length - 1, 0));
+    const column = clamp(index + columnDelta, 0, columns.length - 1);
     moveTo({
-      row: Math.min(Math.max(focus.row + rowDelta, 0), Math.max(rows.length - 1, 0)),
+      row: clamp(focus.row + rowDelta, 0, rows.length - 1),
       ordinal: columns[column]?.ordinal ?? focus.ordinal,
     });
   };
@@ -284,7 +285,6 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
             // A table's implicit role is `table`; `grid` is the interactive one, and it is what
             // arrow-key navigation over these cells means. `<table role="grid">` is the pattern
             // the ARIA Authoring Practices give for a data grid.
-            // biome-ignore lint/a11y/noRedundantRoles: `grid` is not the implicit role of a table.
             // biome-ignore lint/a11y/noNoninteractiveElementToInteractiveRole: the grid is navigable.
             role="grid"
             aria-rowcount={rows.length + 1}
@@ -611,10 +611,6 @@ export function resultScrollbarGeometry(
   const thumbTop =
     maxScrollTop === 0 ? 0 : (clamp(scrollTop, 0, maxScrollTop) / maxScrollTop) * maxThumbTop;
   return { thumbHeight, thumbTop, maxScrollTop, maxThumbTop };
-}
-
-function clamp(value: number, minimum: number, maximum: number): number {
-  return Math.min(maximum, Math.max(minimum, value));
 }
 
 function SpacerRow({ height, columnCount }: { height: number; columnCount: number }) {

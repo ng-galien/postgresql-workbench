@@ -7,6 +7,7 @@ import {
   useState,
 } from "react";
 import type { DebugResultCell } from "../../../dap/src/debugger/launch/index.js";
+import { countLabel } from "../../../rows/src/countLabel.js";
 import type { DataViewAddition, DataViewCompletion } from "../../../rows/src/dataView.js";
 import {
   dataViewColumnKeys,
@@ -18,14 +19,11 @@ import type { GridEditing } from "../results/CellEditor.js";
 import { IconButton } from "../results/IconButton.js";
 import { type GridLayout, ResultGrid } from "../results/ResultGrid.js";
 import { ResultNavigation } from "../results/ResultNavigation.js";
-import { nextResultSort, resultAsTsv } from "../results/resultFormatting.js";
-import { resultRowSummary } from "../results/SqlResultView.js";
+import { nextResultSort, resultAsTsv, resultRowSummary } from "../results/resultFormatting.js";
+import type { WebviewMessaging } from "../webviewPage.js";
 import type { DataViewRequest, DataViewResponse, DataViewState } from "./protocol.js";
 
-export interface DataViewMessaging {
-  post(message: DataViewRequest): void;
-  subscribe(listener: (message: DataViewResponse) => void): () => void;
-}
+export type DataViewMessaging = WebviewMessaging<DataViewRequest, DataViewResponse>;
 
 interface Notice {
   message: string;
@@ -614,7 +612,7 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
             onAction={(action) => post({ type: "data-view/navigate", action })}
           >
             <span
-              className="toolbar-rows"
+              className="result-navigation-summary"
               title={payload?.truncated ? payload.truncationReasons.join(", ") : undefined}
             >
               {payload ? resultRowSummary(payload) : ""}
@@ -636,7 +634,7 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
             <span
               className={`toolbar-edit-count${editCount > 0 ? " pending" : ""}`}
               aria-live="polite"
-              title={`${editCount} pending change${editCount === 1 ? "" : "s"}`}
+              title={countLabel(editCount, "pending change")}
             >
               <span className="codicon codicon-edit" aria-hidden="true" />
               {editCount}

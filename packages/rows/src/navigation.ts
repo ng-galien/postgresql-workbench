@@ -40,11 +40,13 @@ export function canNavigate(
  */
 export async function navigateResult(
   session: SqlResultSession,
-  action: Exclude<ResultNavigationAction, "cancel">,
+  action: ResultNavigationAction,
   onProgress?: (loadedRowCount: number) => void,
 ): Promise<SqlNotebookResultPayload> {
   if (action === "previous") return session.previous();
   if (action === "next") return session.next();
   if (action === "load-all") return session.loadAll(onProgress);
+  // `attach` is the host's first read and `cancel` stops the running one: both answer with the
+  // rows the session already holds.
   return session.snapshot();
 }

@@ -7,7 +7,7 @@ import type {
 } from "./payload.js";
 import { ResultGrid } from "./ResultGrid.js";
 import { ResultNavigation } from "./ResultNavigation.js";
-import { resultAsTsv } from "./resultFormatting.js";
+import { resultAsTsv, resultRowSummary } from "./resultFormatting.js";
 
 export interface SqlResultViewProps {
   payload: SqlNotebookResultPayload;
@@ -106,7 +106,7 @@ export function SqlResultView({ payload, messaging }: SqlResultViewProps) {
           <span>{current.durationMs} ms</span>
           {current.truncated ? (
             <span
-              className="result-badge result-warning"
+              className="result-badge result-warning-badge"
               title={current.truncationReasons.join(", ")}
             >
               Preview truncated
@@ -170,23 +170,4 @@ export function SqlResultView({ payload, messaging }: SqlResultViewProps) {
       )}
     </section>
   );
-}
-
-export function resultRowSummary(payload: SqlNotebookResultPayload): string {
-  const navigation = payload.navigation;
-  if (!navigation) {
-    const count = payload.rowCount ?? payload.capturedRowCount;
-    if (payload.truncated && payload.rowCount !== undefined && payload.capturedRowCount < count) {
-      return `${payload.capturedRowCount} of ${count} rows`;
-    }
-    return `${count} row${count === 1 ? "" : "s"}`;
-  }
-  if (navigation.pageEnd === 0) return "0 rows";
-  if (payload.rowCount !== undefined) {
-    if (navigation.pageStart === 1 && navigation.pageEnd === payload.rowCount) {
-      return `${payload.rowCount} row${payload.rowCount === 1 ? "" : "s"}`;
-    }
-    return `Rows ${navigation.pageStart}–${navigation.pageEnd} of ${payload.rowCount}`;
-  }
-  return `Rows ${navigation.pageStart}–${navigation.pageEnd} · more available`;
 }

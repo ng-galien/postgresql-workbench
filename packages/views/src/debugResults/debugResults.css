@@ -21,44 +21,10 @@
   border: 1px solid var(--vscode-dropdown-border);
 }
 
-.meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 0;
-  padding: 5px 10px 7px;
-  color: var(--vscode-descriptionForeground);
-  border-bottom: 1px solid var(--vscode-panel-border);
-}
-
-.badge {
-  padding: 2px 6px;
-  border-radius: 8px;
-  background: var(--vscode-badge-background);
-  color: var(--vscode-badge-foreground);
-}
-
+/*
+ * How the captured result ended. `status-success` carries no declaration on purpose: a completed
+ * result wears the plain badge. The three names are the contract the acceptance suite reads.
+ */
 .status-pending {
   color: var(--vscode-charts-blue);
-}
-
-.status-error {
-  color: var(--vscode-errorForeground);
-}
-
-.warning {
-  margin: 0;
-  padding: 4px 10px;
-  color: var(--vscode-editorWarning-foreground);
-  line-height: 1.35;
-}
-
-.debug-results-empty,
-.debug-results-error {
-  margin: 0;
-  padding: 12px;
-}
-
-.debug-results-error {
-  color: var(--vscode-errorForeground);
 }

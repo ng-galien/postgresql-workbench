@@ -1,3 +1,4 @@
+import { countLabel } from "../../../../rows/src/countLabel.js";
 import { relationLabel } from "../graph/relationPresentation.js";
 import { useCockpitStore } from "../graph/store.js";
 import { inspectSymbol } from "../graph/transport.js";
@@ -22,9 +23,7 @@ export function CockpitEdgePopover() {
       </header>
       <div className="edge-summary">
         <span>{edge.kinds.map(relationLabel).join(" · ")}</span>
-        <span>
-          {edge.count} reference{edge.count === 1 ? "" : "s"}
-        </span>
+        <span>{countLabel(edge.count, "reference")}</span>
       </div>
       <button type="button" onClick={() => inspectSymbol(edge.source)}>
         Show caller DDL

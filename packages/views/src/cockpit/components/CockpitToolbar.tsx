@@ -3,7 +3,7 @@ import { relationClass, relationLabel } from "../graph/relationPresentation.js";
 import { useCockpitStore } from "../graph/store.js";
 import { focusSymbol } from "../graph/transport.js";
 import type { CockpitDirection } from "../protocol.js";
-import { vscode } from "../vscodeApi.js";
+import { post } from "../vscodeApi.js";
 import { CockpitSearch } from "./CockpitSearch.js";
 
 const RELATIONS = ["calls", "reads", "writes", "references", "uses_type"];
@@ -34,7 +34,7 @@ export function CockpitToolbar({ onRecenter }: { onRecenter: () => void }) {
             type="button"
             title="Back (Alt+Left)"
             disabled={!session?.canBack}
-            onClick={() => vscode.postMessage({ type: "back" })}
+            onClick={() => post({ type: "back" })}
           >
             ←
           </button>
@@ -42,7 +42,7 @@ export function CockpitToolbar({ onRecenter }: { onRecenter: () => void }) {
             type="button"
             title="Forward (Alt+Right)"
             disabled={!session?.canForward}
-            onClick={() => vscode.postMessage({ type: "forward" })}
+            onClick={() => post({ type: "forward" })}
           >
             →
           </button>

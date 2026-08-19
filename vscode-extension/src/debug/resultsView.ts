@@ -1,9 +1,10 @@
-import { randomBytes } from "node:crypto";
 import * as vscode from "vscode";
 import type {
   DebugResultsRequest,
   DebugResultsResponse,
 } from "../../../packages/views/src/debugResults/protocol.js";
+import viewBundles from "../../../packages/views/viewBundles.json" with { type: "json" };
+import { webviewPage } from "../webviewPage.js";
 import type { DebugResultStore } from "./capturedResults.js";
 
 export const DEBUG_RESULTS_VIEW_ID = "postgresql-workbench-results";
@@ -27,7 +28,12 @@ export class DebugResultsViewProvider implements vscode.WebviewViewProvider, vsc
       enableScripts: true,
       localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, "dist")],
     };
-    view.webview.html = debugResultsHtml(view.webview, this.extensionUri);
+    view.webview.html = webviewPage({
+      webview: view.webview,
+      extensionUri: this.extensionUri,
+      title: "Debug results",
+      script: viewBundles.debugResults.script,
+    });
     view.webview.onDidReceiveMessage(async (message: DebugResultsRequest) => {
       if (message.type === "ready") this.update();
       else if (message.type === "select") this.store.select(message.id);
@@ -83,31 +89,4 @@ export class DebugResultsViewProvider implements vscode.WebviewViewProvider, vsc
       selection: new vscode.Range(line, 0, line, 0),
     });
   }
-}
-
-/** The shell that loads the shared result grid; everything it renders lives in packages/views. */
-function debugResultsHtml(webview: vscode.Webview, extensionUri: vscode.Uri): string {
-  const nonce = randomBytes(16).toString("base64");
-  const scriptUri = webview.asWebviewUri(
-    vscode.Uri.joinPath(extensionUri, "dist", "debug-results.js"),
-  );
-  const csp = [
-    "default-src 'none'",
-    `style-src ${webview.cspSource} 'unsafe-inline'`,
-    `font-src ${webview.cspSource} data:`,
-    `script-src 'nonce-${nonce}'`,
-  ].join("; ");
-  return `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="${csp}">
-  <title>Debug results</title>
-</head>
-<body>
-  <div id="root"></div>
-  <script nonce="${nonce}" src="${scriptUri}"></script>
-</body>
-</html>`;
 }

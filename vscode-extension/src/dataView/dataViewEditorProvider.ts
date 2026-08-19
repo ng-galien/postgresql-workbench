@@ -1,7 +1,8 @@
-import { randomBytes } from "node:crypto";
 import * as vscode from "vscode";
 import type { DataViewSource } from "../../../packages/rows/src/dataView.js";
 import type { DataViewRequest } from "../../../packages/views/src/dataView/protocol.js";
+import viewBundles from "../../../packages/views/viewBundles.json" with { type: "json" };
+import { webviewPage } from "../webviewPage.js";
 import { DataViewDocument } from "./dataViewDocument.js";
 import { DATA_VIEW_EDITOR_VIEW_TYPE, dataViewUri, parseDataViewUri } from "./dataViewUri.js";
 import { type DataViewHostServices, errorMessage } from "./hostServices.js";
@@ -87,7 +88,12 @@ export class DataViewEditorProvider
       light: vscode.Uri.joinPath(this.services.extensionUri, "icons", `${iconKind}-light.svg`),
       dark: vscode.Uri.joinPath(this.services.extensionUri, "icons", `${iconKind}-dark.svg`),
     };
-    panel.webview.html = dataViewHtml(panel.webview, this.services.extensionUri);
+    panel.webview.html = webviewPage({
+      webview: panel.webview,
+      extensionUri: this.services.extensionUri,
+      title: "Data View",
+      script: viewBundles.dataView.script,
+    });
     const attachment = document.attach(panel.webview);
     const messages = panel.webview.onDidReceiveMessage((message: DataViewRequest) => {
       if (message.type === "data-view/apply") {
@@ -159,28 +165,4 @@ export class DataViewEditorProvider
 /** Native dirty/save integration is only safe when VS Code will not save on its own. */
 function usesNativeDirtyTracking(): boolean {
   return vscode.workspace.getConfiguration("files").get<string>("autoSave", "off") === "off";
-}
-
-function dataViewHtml(webview: vscode.Webview, extensionUri: vscode.Uri): string {
-  const nonce = randomBytes(16).toString("base64");
-  const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, "dist", "data-view.js"));
-  const csp = [
-    "default-src 'none'",
-    `style-src ${webview.cspSource} 'unsafe-inline'`,
-    `font-src ${webview.cspSource} data:`,
-    `script-src 'nonce-${nonce}'`,
-  ].join("; ");
-  return `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="${csp}">
-  <title>Data View</title>
-</head>
-<body>
-  <div id="root"></div>
-  <script nonce="${nonce}" src="${scriptUri}"></script>
-</body>
-</html>`;
 }

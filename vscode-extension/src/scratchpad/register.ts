@@ -5,15 +5,21 @@ import {
   DEBUG_RESULT_LIMITS,
   type DebugResult,
   type DebugResultEntry,
-  type DebugResultError,
   type DebugResultStatus,
 } from "../../../packages/dap/src/debugger/launch/index.js";
+import { countLabel } from "../../../packages/rows/src/countLabel.js";
 import type { PostgresCursorReader } from "../../../packages/rows/src/cursor.js";
 import { openBoundedCursor } from "../../../packages/rows/src/openRows.js";
+import {
+  notebookErrorPayload,
+  type SqlFailure,
+  sqlFailurePayload,
+} from "../../../packages/rows/src/resultPayload.js";
 import type {
   SqlExecutionPlan,
   SqlExecutionStatement,
 } from "../../../packages/sql/src/analysis/sqlStatements.js";
+import { resultRowSummary } from "../../../packages/views/src/results/resultFormatting.js";
 import type { ConnectionManager } from "../connection/index.js";
 import { getConnectionName, type ServerConfig } from "../connection/index.js";
 import {
@@ -1028,7 +1034,7 @@ class SqlNotebookController implements vscode.Disposable {
       }
       if ("status" in entry) {
         if (entry.status === "error") {
-          await execution.replaceOutput(errorOutput(debugResultErrorPayload(entry)));
+          await execution.replaceOutput(errorOutput(sqlFailurePayload(entry)));
         }
         execution.end(entry.status !== "error", Date.now());
         return;
@@ -1038,7 +1044,7 @@ class SqlNotebookController implements vscode.Disposable {
           ? resultOutput(sqlNotebookResultPayload(entry, association.snapshot))
           : new vscode.NotebookCellOutput([
               vscode.NotebookCellOutputItem.text(
-                `${entry.command} · ${entry.rowCount} row${entry.rowCount === 1 ? "" : "s"} · ${entry.durationMs} ms · debugged`,
+                `${entry.command} · ${countLabel(entry.rowCount, "row")} · ${entry.durationMs} ms · debugged`,
               ),
             ]),
       );
@@ -1195,11 +1201,10 @@ class SqlNotebookController implements vscode.Disposable {
             }
             const error =
               result.status === "error"
-                ? debugResultErrorPayload(
-                    result,
-                    statements.length > 1 ? index + 1 : undefined,
-                    statementTimeoutMs,
-                  )
+                ? {
+                    ...sqlFailurePayload(result, statements.length > 1 ? index + 1 : undefined),
+                    ...statementTimeoutRecovery(result.code, result.message, statementTimeoutMs),
+                  }
                 : executionErrorPayload(
                     new Error("The SQL execution plan became invalid before execution."),
                     statements.length > 1 ? index + 1 : undefined,
@@ -1599,14 +1604,8 @@ function resultOutput(payload: SqlNotebookResultPayload): vscode.NotebookCellOut
 }
 
 function resultSummary(result: SqlNotebookResultPayload): string {
-  const navigation = result.navigation;
-  const rows = navigation
-    ? navigation.pageEnd === 0
-      ? "0 rows"
-      : `rows ${navigation.pageStart}-${navigation.pageEnd}${navigation.hasNext ? " · more available" : ""}`
-    : `${result.rowCount ?? result.capturedRowCount} row${result.rowCount === 1 ? "" : "s"}`;
   const truncation = result.truncated ? " · preview truncated" : "";
-  return `${result.command} · ${rows} · ${result.durationMs} ms${truncation}`;
+  return `${result.command} · ${resultRowSummary(result)} · ${result.durationMs} ms${truncation}`;
 }
 
 function errorSummary(error: SqlNotebookErrorPayload): string {
@@ -1663,27 +1662,6 @@ function planErrorPayload(
   );
 }
 
-function debugResultErrorPayload(
-  error: DebugResultError,
-  statement?: number,
-  statementTimeoutMs?: number,
-): SqlNotebookErrorPayload {
-  const isPostgres = Boolean(error.code && /^[0-9A-Z]{5}$/u.test(error.code));
-  return {
-    version: 1,
-    type: "error",
-    category: isPostgres ? "postgresql" : "execution",
-    title: isPostgres ? "PostgreSQL error" : "SQL execution error",
-    message: error.message,
-    ...(statement ? { statement } : {}),
-    ...(error.code ? { code: error.code } : {}),
-    ...(error.detail ? { detail: error.detail } : {}),
-    ...(error.hint ? { hint: error.hint } : {}),
-    ...(error.position ? { position: error.position } : {}),
-    ...statementTimeoutRecovery(error.code, error.message, statementTimeoutMs),
-  };
-}
-
 function executionErrorPayload(
   error: unknown,
   statement?: number,
@@ -1695,21 +1673,19 @@ function executionErrorPayload(
       ...(statement ? { statement } : {}),
     };
   }
+  // A thrown object carries the same fields a debug result does; naming them is all that differs.
   const source = error && typeof error === "object" ? (error as Record<string, unknown>) : {};
-  const code = stringErrorField(source, "code");
-  const isPostgres = Boolean(code && /^[0-9A-Z]{5}$/u.test(code));
-  return {
-    version: 1,
-    type: "error",
-    category: isPostgres ? "postgresql" : "execution",
-    title: isPostgres ? "PostgreSQL error" : "SQL execution error",
-    message: errorMessage(error),
-    ...(statement ? { statement } : {}),
-    ...(code ? { code } : {}),
+  const message = errorMessage(error);
+  const failure: SqlFailure = {
+    message,
+    ...(stringErrorField(source, "code") ? { code: stringErrorField(source, "code") } : {}),
     ...optionalErrorField(source, "detail"),
     ...optionalErrorField(source, "hint"),
     ...optionalErrorField(source, "position"),
-    ...statementTimeoutRecovery(code, errorMessage(error), statementTimeoutMs),
+  };
+  return {
+    ...sqlFailurePayload(failure, statement),
+    ...statementTimeoutRecovery(failure.code, message, statementTimeoutMs),
   };
 }
 
@@ -1729,14 +1705,6 @@ function statementTimeoutRecovery(
       label: "Increase Scratchpad timeout…",
     },
   };
-}
-
-function notebookErrorPayload(
-  category: SqlNotebookErrorPayload["category"],
-  title: string,
-  message: string,
-): SqlNotebookErrorPayload {
-  return { version: 1, type: "error", category, title, message };
 }
 
 function executionCancelledPayload(): SqlNotebookErrorPayload {

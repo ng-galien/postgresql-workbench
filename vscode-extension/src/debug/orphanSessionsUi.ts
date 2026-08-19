@@ -7,6 +7,7 @@ import {
   listDebugSessions,
   terminateDebugSessions,
 } from "../../../packages/dap/src/orphanSessions.js";
+import { countLabel } from "../../../packages/rows/src/countLabel.js";
 import type { ConnectionManager } from "../connection/index.js";
 import { getConnectionName } from "../connection/index.js";
 
@@ -48,7 +49,7 @@ function sessionDescription(session: DebugSessionInfo): string {
     ? "other role · "
     : "";
   const source = session.stateSource === "adapter" ? "" : " (database-inferred)";
-  return `${session.state}${source} · ${incomplete}${foreign}${session.backends.length} backend${session.backends.length === 1 ? "" : "s"} · ${formatAge(session.startedAt)}`;
+  return `${session.state}${source} · ${incomplete}${foreign}${countLabel(session.backends.length, "backend")} · ${formatAge(session.startedAt)}`;
 }
 
 function sessionLabel(session: DebugSessionInfo): string {
@@ -133,7 +134,7 @@ export async function manageDebugSessions(
     ? " Some selected backends belong to another PostgreSQL role."
     : "";
   const confirm = await vscode.window.showWarningMessage(
-    `Terminate ${picked.length} debug session${picked.length === 1 ? "" : "s"} (${backendCount} PostgreSQL backend${backendCount === 1 ? "" : "s"})? This also stops a session that is still live.${ownershipWarning}`,
+    `Terminate ${countLabel(picked.length, "debug session")} (${countLabel(backendCount, "PostgreSQL backend")})? This also stops a session that is still live.${ownershipWarning}`,
     { modal: true },
     "Terminate",
   );
@@ -155,13 +156,13 @@ export async function manageDebugSessions(
     );
     if (failed.length > 0 || requested.length > 0) {
       vscode.window.showWarningMessage(
-        `${terminated.length} debug backend${terminated.length === 1 ? "" : "s"} terminated; ${requested.length} termination pending; ${alreadyGone.length} already gone; ${failed.length} could not be terminated.`,
+        `${countLabel(terminated.length, "debug backend")} terminated; ${requested.length} termination pending; ${alreadyGone.length} already gone; ${failed.length} could not be terminated.`,
       );
     } else if (terminated.length === 0) {
       vscode.window.showInformationMessage("The selected debug sessions had already ended.");
     } else {
       vscode.window.showInformationMessage(
-        `${terminated.length} debug backend${terminated.length === 1 ? "" : "s"} terminated${alreadyGone.length > 0 ? `; ${alreadyGone.length} already gone` : ""}.`,
+        `${countLabel(terminated.length, "debug backend")} terminated${alreadyGone.length > 0 ? `; ${alreadyGone.length} already gone` : ""}.`,
       );
     }
   } catch (error) {

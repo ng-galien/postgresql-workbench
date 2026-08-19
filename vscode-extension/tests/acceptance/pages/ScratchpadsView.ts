@@ -1,4 +1,5 @@
 import { expect, type Locator } from "@playwright/test";
+import { escapeRegExp } from "../fixtures/text.js";
 import { currentPage, type PageProvider } from "./PageProvider";
 import type { QuickInput } from "./QuickInput";
 import { WorkbenchTree } from "./WorkbenchTree";
@@ -32,7 +33,7 @@ export class ScratchpadsView {
     await expect(tab).toBeVisible({ timeout: 5_000 });
     const tabName = (await tab.getAttribute("aria-label")) ?? (await tab.innerText());
     const scratchpadName = tabName.replace(/\.pgsql-notebook$/u, "");
-    const escapedName = scratchpadName.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+    const escapedName = escapeRegExp(scratchpadName);
     const scratchpad = await this.tree.findItem(new RegExp(`^${escapedName}`, "u"));
     await expect(scratchpad).toBeVisible({ timeout: 5_000 });
     return scratchpad;

@@ -33,7 +33,7 @@ import {
   requestNeighborhood,
   setPinnedSymbol,
 } from "../graph/transport.js";
-import { vscode } from "../vscodeApi.js";
+import { post } from "../vscodeApi.js";
 import { CockpitEdge, type CockpitEdgeData } from "./CockpitEdge.js";
 import { CockpitNode, type CockpitNodeData } from "./CockpitNode.js";
 
@@ -261,7 +261,7 @@ export function CockpitCanvas({ frameRequest }: { frameRequest: string }) {
         if (payload) setDropFeedback(payload);
         if (nativeTreeDrag && !treeDragRequested.current) {
           treeDragRequested.current = true;
-          vscode.postMessage({ type: "resolveTreeDrag" });
+          post({ type: "resolveTreeDrag" });
         }
         const resolved = payload ?? treeDragPayload;
         event.dataTransfer.dropEffect = resolved?.availability === "unsupported" ? "none" : "copy";
@@ -271,7 +271,7 @@ export function CockpitCanvas({ frameRequest }: { frameRequest: string }) {
         setDropFeedback(null);
         clearTreeDrag();
         treeDragRequested.current = false;
-        vscode.postMessage({ type: "clearTreeDrag" });
+        post({ type: "clearTreeDrag" });
       }}
       onDrop={(event) => {
         event.preventDefault();
@@ -282,13 +282,13 @@ export function CockpitCanvas({ frameRequest }: { frameRequest: string }) {
         clearTreeDrag();
         treeDragRequested.current = false;
         if (payload?.availability !== "accepted") {
-          vscode.postMessage({ type: "clearTreeDrag" });
+          post({ type: "clearTreeDrag" });
           return;
         }
         if (nativeTreeDrag && !directPayload) {
-          vscode.postMessage({ type: "dropTreeSource" });
+          post({ type: "dropTreeSource" });
         } else {
-          vscode.postMessage({ type: "dropSource", payload });
+          post({ type: "dropSource", payload });
         }
       }}
     >

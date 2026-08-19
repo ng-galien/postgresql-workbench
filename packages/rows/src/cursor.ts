@@ -8,6 +8,7 @@ import {
 } from "../../dap/src/debugger/launch/boundedQueryResult.js";
 import type { DebugResultTruncationReason } from "../../dap/src/debugger/launch/debugResult.js";
 import { DEBUG_RESULT_LIMITS, type DebugResultCell } from "../../dap/src/debugger/launch/index.js";
+import { clamp } from "./clamp.js";
 import type { ScratchpadAssociationSnapshot, SqlNotebookResultPayload } from "./resultPayload.js";
 
 const LOAD_ALL_BATCH_ROWS = 5_000;
@@ -329,11 +330,6 @@ function takePayloadBoundedPage(
     payloadBytes += rowBytes;
   }
   return rows;
-}
-
-function clamp(value: number, minimum: number, maximum: number): number {
-  if (!Number.isFinite(value)) return minimum;
-  return Math.min(maximum, Math.max(minimum, Math.trunc(value)));
 }
 
 /** A cursor may idle twice its result timeout, never under a minute, before PostgreSQL closes it. */

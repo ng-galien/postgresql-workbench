@@ -1,25 +1,13 @@
-import { createRoot } from "react-dom/client";
-import { codicons } from "../results/codicons.js";
-import iconButtonStyles from "../results/iconButton.css";
-import gridStyles from "../results/styles.css";
+import { resultViewStyles } from "../results/resultStyles.js";
+import { mountWebview, webviewMessaging } from "../webviewPage.js";
 import { DebugResultsApp, useDebugResultsState } from "./DebugResultsApp.js";
 import debugResultsStyles from "./debugResults.css";
-import type { DebugResultsRequest } from "./protocol.js";
+import type { DebugResultsRequest, DebugResultsResponse } from "./protocol.js";
 
-declare function acquireVsCodeApi(): {
-  postMessage(message: unknown): void;
-};
-
-const vscode = acquireVsCodeApi();
-const post = (message: DebugResultsRequest) => vscode.postMessage(message);
+const messaging = webviewMessaging<DebugResultsRequest, DebugResultsResponse>();
 
 function DebugResults() {
-  return <DebugResultsApp post={post} state={useDebugResultsState(post)} />;
+  return <DebugResultsApp post={messaging.post} state={useDebugResultsState(messaging)} />;
 }
 
-const style = document.createElement("style");
-style.textContent = `${codicons}\n${gridStyles}\n${iconButtonStyles}\n${debugResultsStyles}`;
-document.head.append(style);
-
-const container = document.getElementById("root");
-if (container) createRoot(container).render(<DebugResults />);
+mountWebview(<DebugResults />, `${resultViewStyles}\n${debugResultsStyles}`);

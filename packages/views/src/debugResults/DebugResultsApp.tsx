@@ -1,9 +1,17 @@
 import { useEffect, useState } from "react";
-import type { DebugResult } from "../../../dap/src/debugger/launch/index.js";
 import { debugResultEntryStatus } from "../../../dap/src/debugger/launch/index.js";
-import type { DebugResultSummary, DebugResultViewState } from "../../../rows/src/resultPayload.js";
+import { countLabel } from "../../../rows/src/countLabel.js";
+import {
+  type DebugResultSummary,
+  type DebugResultViewState,
+  notebookErrorPayload,
+  sqlFailurePayload,
+} from "../../../rows/src/resultPayload.js";
 import { ResultGrid } from "../results/ResultGrid.js";
-import type { DebugResultsRequest } from "./protocol.js";
+import { resultRowSummary, truncationNotices } from "../results/resultFormatting.js";
+import { SqlErrorView } from "../results/SqlErrorView.js";
+import type { WebviewMessaging } from "../webviewPage.js";
+import type { DebugResultsRequest, DebugResultsResponse } from "./protocol.js";
 
 /**
  * The result of the debugged call: its history, and the selected result as a plain table. It is
@@ -48,7 +56,7 @@ export function DebugResultsApp({
         ) : null}
       </header>
       {selected === undefined ? (
-        <p className="debug-results-empty">Run a PL/pgSQL debug call to see its result.</p>
+        <p className="result-empty">Run a PL/pgSQL debug call to see its result.</p>
       ) : (
         <ResultDetail selected={selected} />
       )}
@@ -61,10 +69,12 @@ function ResultDetail({ selected }: { selected: NonNullable<DebugResultViewState
   if (status === "pending") {
     return (
       <>
-        <p className="meta">
-          <span className="badge status-pending">Running</span>
-        </p>
-        <p className="debug-results-empty">
+        <header className="result-toolbar">
+          <div className="result-summary">
+            <span className="result-badge status-pending">Running</span>
+          </div>
+        </header>
+        <p className="result-empty">
           Running query — the result appears when the debugged call completes.
         </p>
       </>
@@ -72,50 +82,38 @@ function ResultDetail({ selected }: { selected: NonNullable<DebugResultViewState
   }
   if (status === "error" || !("columns" in selected)) {
     return (
-      <>
-        <p className="meta">
-          <span className="badge status-error">Failed</span>
-        </p>
-        <p className="debug-results-error">
-          {"message" in selected ? selected.message : "The query failed."}
-        </p>
-      </>
+      <SqlErrorView
+        payload={
+          "message" in selected
+            ? sqlFailurePayload(selected)
+            : notebookErrorPayload("execution", "SQL execution error", "The query failed.")
+        }
+      />
     );
   }
   return (
     <>
-      <p className="meta">
-        <span className="badge status-success">Completed</span>
-        <span className="badge">{selected.command}</span>
-        <span className="badge">{rowLabel(selected.rowCount)}</span>
-        <span className="badge">{columnLabel(selected.columns.length)}</span>
-        <span className="badge">{selected.durationMs} ms</span>
-      </p>
-      {truncationWarnings(selected).map((warning) => (
-        <p className="warning" key={warning}>
-          {warning}
+      <header className="result-toolbar">
+        <div className="result-summary">
+          <span className="result-badge status-success">Completed</span>
+          <span className="result-badge">{selected.command}</span>
+          <span className="result-badge">{resultRowSummary(selected)}</span>
+          <span className="result-badge">{countLabel(selected.columns.length, "column")}</span>
+          <span className="result-badge">{selected.durationMs} ms</span>
+        </div>
+      </header>
+      {truncationNotices(selected).map((notice) => (
+        <p className="result-message result-warning" key={notice}>
+          {notice}
         </p>
       ))}
       {selected.columns.length === 0 ? (
-        <p className="debug-results-empty">{selected.command} completed with no result columns.</p>
+        <p className="result-empty">{selected.command} completed with no result columns.</p>
       ) : (
         <ResultGrid payload={selected} />
       )}
     </>
   );
-}
-
-/** The same notices the view has always given, kept word for word. */
-function truncationWarnings(result: DebugResult): string[] {
-  return result.truncationReasons.map((reason) => {
-    if (reason === "rows") {
-      return `${result.capturedRowCount} of ${result.rowCount} rows captured. Additional rows are not displayed or exported.`;
-    }
-    if (reason === "cell") {
-      return "One or more cells reached the 64 KiB value limit. Truncated cells have an amber edge.";
-    }
-    return `The 1 MiB result payload limit was reached. Only ${result.capturedRowCount} rows are available.`;
-  });
 }
 
 function historyLabel(item: DebugResultSummary): string {
@@ -133,30 +131,21 @@ function historyState(item: DebugResultSummary): string {
     case "error":
       return "failed";
     default:
-      return `${item.rowCount} rows`;
+      return countLabel(item.rowCount, "row");
   }
-}
-
-function rowLabel(count: number): string {
-  return `${count} row${count === 1 ? "" : "s"}`;
-}
-
-function columnLabel(count: number): string {
-  return `${count} column${count === 1 ? "" : "s"}`;
 }
 
 /** Subscribes the view to the Extension Host and announces it is ready to receive a state. */
 export function useDebugResultsState(
-  post: (message: DebugResultsRequest) => void,
+  messaging: WebviewMessaging<DebugResultsRequest, DebugResultsResponse>,
 ): DebugResultViewState {
   const [state, setState] = useState<DebugResultViewState>({ results: [] });
   useEffect(() => {
-    const listener = ({ data }: MessageEvent) => {
-      if (data?.type === "state") setState(data.state as DebugResultViewState);
-    };
-    window.addEventListener("message", listener);
-    post({ type: "ready" });
-    return () => window.removeEventListener("message", listener);
-  }, [post]);
+    const unsubscribe = messaging.subscribe((message) => {
+      if (message.type === "state") setState(message.state);
+    });
+    messaging.post({ type: "ready" });
+    return unsubscribe;
+  }, [messaging]);
   return state;
 }

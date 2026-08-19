@@ -7,6 +7,7 @@ import type {
 } from "../../packages/dap/src/debugger/launch/index.js";
 import { planSqlResultExecution } from "../../packages/sql/src/analysis/sqlStatements.js";
 import { POSTGRES_SOURCE_LANGUAGE_IDS } from "../../packages/sql/src/authoring/documentLanguage.js";
+import { truncationReasonLabel } from "../../packages/views/src/results/resultFormatting.js";
 import { createAcceptanceProbes, registerAcceptanceControl } from "./acceptanceControl.js";
 import { registerWorkbenchGraphDropBridge, WorkbenchGraphView } from "./cockpit/index.js";
 import { registerGraphWorkbenchCommands } from "./cockpit/registerCommands.js";
@@ -980,13 +981,7 @@ async function revealSqlAuthoringReference(
 }
 
 async function confirmIncompleteResult(result: DebugResult, action: string): Promise<boolean> {
-  const reasons = result.truncationReasons
-    .map((reason) => {
-      if (reason === "rows") return "row limit";
-      if (reason === "cell") return "truncated cell values";
-      return "payload limit";
-    })
-    .join(", ");
+  const reasons = result.truncationReasons.map(truncationReasonLabel).join(", ");
   const choice = await vscode.window.showWarningMessage(
     `${action} the captured preview? The SQL result is incomplete (${reasons}).`,
     { modal: true, detail: "NULL values are exported as \\N; empty strings remain empty." },

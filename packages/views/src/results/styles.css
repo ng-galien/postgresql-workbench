@@ -47,7 +47,7 @@
   color: var(--vscode-descriptionForeground);
 }
 
-.result-warning {
+.result-warning-badge {
   color: var(--vscode-editorWarning-foreground);
   background: var(--vscode-editorWarning-background);
 }
@@ -366,6 +366,10 @@ td.truncated {
 
 .result-error {
   color: var(--vscode-errorForeground);
+}
+
+.result-warning {
+  color: var(--vscode-editorWarning-foreground);
 }
 
 .sr-only {

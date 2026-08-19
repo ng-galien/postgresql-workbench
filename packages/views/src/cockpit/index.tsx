@@ -1,6 +1,5 @@
-import { createRoot } from "react-dom/client";
+import { mountWebview } from "../webviewPage.js";
 import { App } from "./components/App.js";
 import "./styles.css";
 
-const root = document.getElementById("root");
-if (root) createRoot(root).render(<App />);
+mountWebview(<App />);

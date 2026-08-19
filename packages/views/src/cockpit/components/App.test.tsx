@@ -15,11 +15,8 @@ const cockpit = vi.hoisted(() => ({
 }));
 
 vi.mock("../vscodeApi.js", () => ({
-  vscode: {
-    postMessage: vi.fn(),
-    getState: vi.fn(),
-    setState: vi.fn(),
-  },
+  post: vi.fn(),
+  subscribeToHost: () => () => {},
 }));
 vi.mock("../graph/store.js", () => ({
   useCockpitStore: (selector: (state: typeof cockpit) => unknown) => selector(cockpit),

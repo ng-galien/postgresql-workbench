@@ -25,6 +25,7 @@ import type {
   WorkbenchRelationTarget,
 } from "../../../packages/catalog/src/relations.js";
 import type { DebugSessionStatus } from "../../../packages/dap/src/debugger/launch/debugSessionStatus.js";
+import { countLabel } from "../../../packages/rows/src/countLabel.js";
 import type {
   ConnectionChange,
   ConnectionManager,
@@ -192,11 +193,7 @@ function indexProgressLabel(state: WorkbenchIndexState): string {
 
 function resultSummary(result: WorkbenchIndexResult): string {
   const milliseconds = Math.round(result.indexingMs);
-  return `${countLabel(result.documents, "source")}, ${countLabel(result.symbols, "symbol")}, ${milliseconds} ${milliseconds === 1 ? "millisecond" : "milliseconds"}`;
-}
-
-function countLabel(count: number, singular: string): string {
-  return `${count} ${singular}${count === 1 ? "" : "s"}`;
+  return `${countLabel(result.documents, "source")}, ${countLabel(result.symbols, "symbol")}, ${countLabel(milliseconds, "millisecond")}`;
 }
 
 function sourcesTooltip(database: string, state: WorkbenchIndexState): string {
@@ -377,7 +374,7 @@ export class ScratchpadTransactionItem extends vscode.TreeItem {
     this.id = `${transaction.scratchpadUri}:transaction`;
     this.resourceUri = vscode.Uri.parse(transaction.scratchpadUri);
     const count = transaction.statements.length;
-    this.description = `${count} Statement${count === 1 ? "" : "s"}`;
+    this.description = countLabel(count, "Statement");
     this.iconPath = new vscode.ThemeIcon(transaction.status === "failed" ? "error" : "sync");
     this.contextValue = `postgresql-workbench-scratchpad-transaction-${transaction.status}`;
   }
@@ -425,7 +422,7 @@ export class ExtensionGroupItem extends vscode.TreeItem {
     const owner = objects[0];
     this.id = `postgres-extension:${owner?.serverId ?? "unknown"}:${owner?.database ?? "unknown"}:${schema}:${extension}`;
     this.iconPath = postgresThemeIcon("extension");
-    this.description = `${objects.length} object${objects.length === 1 ? "" : "s"}`;
+    this.description = countLabel(objects.length, "object");
     this.contextValue = "postgresql-workbench-extension-objects";
     this.tooltip = `Objects owned by PostgreSQL extension ${extension}`;
   }
@@ -464,7 +461,7 @@ export class DebugSessionsItem extends vscode.TreeItem {
           ? "No PL/pgSQL debug sessions found"
           : active
             ? `${routineIdentity ?? `Session ${active.id}`} · ${active.routine ? `OID ${active.routine.oid} · ` : ""}${active.state} · ${active.backends.map((backend) => `${backend.role} PID ${backend.pid}`).join(" · ")}`
-            : `${count} PL/pgSQL debug session${count === 1 ? "" : "s"} — select sessions to inspect or terminate`;
+            : `${countLabel(count, "PL/pgSQL debug session")} — select sessions to inspect or terminate`;
     this.command = {
       command: "postgresql-workbench.manageDebugSessions",
       title: "Manage Debug Sessions",

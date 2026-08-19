@@ -7,6 +7,7 @@ import {
   writeFileSync,
 } from "fs";
 import { dirname, resolve, sep } from "path";
+import viewBundles from "../packages/views/viewBundles.json" with { type: "json" };
 
 const production = process.argv.includes("--production");
 const watch = process.argv.includes("--watch");
@@ -80,68 +81,39 @@ const sqlAuthoringServerConfig = {
   metafile: true,
 };
 
-/** @type {import('esbuild').BuildOptions} */
-const graphWebviewConfig = {
-  entryPoints: ["../packages/views/src/cockpit/index.tsx"],
-  bundle: true,
-  outfile: "dist/workbench-graph.js",
-  format: "iife",
-  platform: "browser",
-  target: "es2022",
-  jsx: "automatic",
-  define: { "process.env.NODE_ENV": '"production"' },
-  sourcemap: !production,
-  minify: production,
-  metafile: true,
-};
+/**
+ * A view bundle, from the one record that also tells the Extension Host which file to load.
+ * `styles: "inlined"` turns CSS and fonts into strings the bundle injects into the shadow root it
+ * renders in; `styles: "linked"` leaves esbuild to emit the sibling .css the page shell links.
+ */
+function viewConfig(bundle) {
+  return {
+    entryPoints: [`../packages/views/${bundle.entry}`],
+    bundle: true,
+    outfile: `dist/${bundle.script}`,
+    format: bundle.format ?? "iife",
+    platform: "browser",
+    target: "es2022",
+    jsx: "automatic",
+    ...(bundle.styles === "inlined" ? { loader: { ".css": "text", ".ttf": "dataurl" } } : {}),
+    define: { "process.env.NODE_ENV": '"production"' },
+    sourcemap: !production,
+    minify: production,
+    metafile: true,
+  };
+}
 
 /** @type {import('esbuild').BuildOptions} */
-const sqlNotebookRendererConfig = {
-  entryPoints: ["../packages/views/src/results/index.tsx"],
-  bundle: true,
-  outfile: "dist/sql-notebook-renderer.js",
-  format: "esm",
-  platform: "browser",
-  target: "es2022",
-  jsx: "automatic",
-  loader: { ".css": "text", ".ttf": "dataurl" },
-  define: { "process.env.NODE_ENV": '"production"' },
-  sourcemap: !production,
-  minify: production,
-  metafile: true,
-};
+const graphWebviewConfig = viewConfig(viewBundles.cockpitGraph);
 
 /** @type {import('esbuild').BuildOptions} */
-const dataViewWebviewConfig = {
-  entryPoints: ["../packages/views/src/dataView/index.tsx"],
-  bundle: true,
-  outfile: "dist/data-view.js",
-  format: "iife",
-  platform: "browser",
-  target: "es2022",
-  jsx: "automatic",
-  loader: { ".css": "text", ".ttf": "dataurl" },
-  define: { "process.env.NODE_ENV": '"production"' },
-  sourcemap: !production,
-  minify: production,
-  metafile: true,
-};
+const sqlNotebookRendererConfig = viewConfig(viewBundles.notebookResults);
 
 /** @type {import('esbuild').BuildOptions} */
-const debugResultsWebviewConfig = {
-  entryPoints: ["../packages/views/src/debugResults/index.tsx"],
-  bundle: true,
-  outfile: "dist/debug-results.js",
-  format: "iife",
-  platform: "browser",
-  target: "es2022",
-  jsx: "automatic",
-  loader: { ".css": "text", ".ttf": "dataurl" },
-  define: { "process.env.NODE_ENV": '"production"' },
-  sourcemap: !production,
-  minify: production,
-  metafile: true,
-};
+const dataViewWebviewConfig = viewConfig(viewBundles.dataView);
+
+/** @type {import('esbuild').BuildOptions} */
+const debugResultsWebviewConfig = viewConfig(viewBundles.debugResults);
 
 function packageRootForInput(input) {
   let current = dirname(resolve(input));

@@ -1,4 +1,5 @@
 import { expect, type Frame, type Locator } from "@playwright/test";
+import { escapeRegExp } from "../fixtures/text.js";
 
 /**
  * The result table, wherever it is shown. The Scratchpad output, the Data View and the debugger
@@ -16,7 +17,7 @@ export class ResultTable {
   cellsWithText(text: string): Locator {
     return this.root
       .locator("tbody td")
-      .filter({ hasText: new RegExp(`^${text.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}$`, "u") });
+      .filter({ hasText: new RegExp(`^${escapeRegExp(text)}$`, "u") });
   }
 
   /** The row count the navigation shows: `Rows 1–200 · more available`, `1000 rows`, and so on. */

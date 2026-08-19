@@ -3,16 +3,10 @@ import type {
   SqlNotebookOutputPayload,
   SqlNotebookResultPayload,
 } from "../../../rows/src/resultPayload.js";
-import { codicons } from "./codicons.js";
-import iconButtonStyles from "./iconButton.css";
 import type { SqlNotebookRendererRequest, SqlNotebookRendererResponse } from "./payload.js";
+import { resultViewStyles } from "./resultStyles.js";
 import { SqlErrorView } from "./SqlErrorView.js";
 import { type SqlResultMessaging, SqlResultView } from "./SqlResultView.js";
-import styles from "./styles.css";
-
-// Each output renders in its own shadow root and carries every stylesheet it needs. Built once:
-// the codicon font travels inline, and a notebook shows many outputs.
-const outputStyles = `${codicons}\n${styles}\n${iconButtonStyles}`;
 
 interface RendererOutputItem {
   id: string;
@@ -53,7 +47,7 @@ export function activate(context: RendererContext = {}): RendererApi {
       shadow.replaceChildren();
 
       const style = document.createElement("style");
-      style.textContent = outputStyles;
+      style.textContent = resultViewStyles;
       const mount = document.createElement("div");
       shadow.append(style, mount);
 

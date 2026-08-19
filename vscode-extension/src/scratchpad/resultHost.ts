@@ -193,7 +193,6 @@ export class SqlNotebookResultHost implements vscode.Disposable {
     hosted: HostedResultSession,
     request: SqlNotebookResultRequest,
   ): Promise<SqlNotebookResultPayload> {
-    if (request.action === "cancel") return hosted.session.snapshot();
     const progressPosts: Promise<unknown>[] = [];
     const payload = await navigateResult(hosted.session, request.action, (loadedRowCount) => {
       progressPosts.push(

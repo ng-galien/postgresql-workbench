@@ -9,6 +9,7 @@ import {
   type PgTapSourceRoutine,
   type PgTapTestRoutine,
 } from "../../../packages/coverage/src/index.js";
+import { countLabel } from "../../../packages/rows/src/countLabel.js";
 import type { SyntaxParser } from "../../../packages/sql/src/analysis/syntaxTree.js";
 import type { ConnectionManager } from "../connection/index.js";
 import { getConnectionName } from "../connection/index.js";
@@ -231,7 +232,7 @@ export class PgTapTestController implements vscode.Disposable {
       item.description =
         discovery.tests.length === 0
           ? "No pgTAP tests"
-          : `${discovery.tests.length} pgTAP test${discovery.tests.length === 1 ? "" : "s"}`;
+          : countLabel(discovery.tests.length, "pgTAP test");
       this.output.appendLine(
         `[pgTAP] Discovered ${discovery.tests.length} test(s) on ${item.label} with ${patterns.join(", ") || "<no patterns>"}`,
       );

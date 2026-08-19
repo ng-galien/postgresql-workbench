@@ -3,6 +3,7 @@ import {
   DEBUG_DAP_EVENT_TIMEOUT_MS,
   runPacedDebugAction,
 } from "../../../../e2e/debugTestTiming.js";
+import { escapeRegExp } from "../fixtures/text.js";
 import type { DebugStateSnapshot } from "../fixtures/vscode";
 import { currentPage, type PageProvider } from "./PageProvider";
 import { QuickInput } from "./QuickInput";
@@ -154,10 +155,10 @@ export class DebuggerPage {
     await expect(this.debugToolbar()).toBeVisible({ timeout: 5_000 });
     await this.runDebugAction("workbench.action.debug.continue");
     const results = await this.resultsFrame();
-    await expect(results.locator(".badge.status-success")).toHaveText("Completed", {
+    await expect(results.locator(".result-badge.status-success")).toHaveText("Completed", {
       timeout: DEBUG_DAP_EVENT_TIMEOUT_MS,
     });
-    await expect(results.locator(".badge.status-pending")).toHaveCount(0, {
+    await expect(results.locator(".result-badge.status-pending")).toHaveCount(0, {
       timeout: 5_000,
     });
     if (expectedResult !== undefined) {
@@ -246,8 +247,8 @@ export class DebuggerPage {
     name: string,
     value: string,
   ): Promise<void> {
-    const escapedName = name.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-    const escapedValue = value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+    const escapedName = escapeRegExp(name);
+    const escapedValue = escapeRegExp(value);
     const expected = new RegExp(
       `^(?:${escapedName}\\s*=\\s*${escapedValue}|${escapedName},\\s*value\\s+${escapedValue})$`,
       "u",

@@ -10,6 +10,7 @@ import type {
   SqlAuthoringComposeRequest,
   SqlAuthoringComposeResult,
 } from "../../sql/src/languageServer/protocol.js";
+import { countLabel } from "./countLabel.js";
 import type { DataViewAddition, DataViewProjection } from "./dataView.js";
 
 /**
@@ -69,8 +70,7 @@ export function dataViewAdditions(
             ? `${hop.foreignKey.sourceColumns.join(", ")} → ${object.name}`
             : `${object.name}.${hop.foreignKey.sourceColumns.join(", ")} → ${name(shortest.startOid)}`
           : "";
-    const more =
-      alternatives > 1 ? ` (+${alternatives - 1} other path${alternatives > 2 ? "s" : ""})` : "";
+    const more = alternatives > 1 ? ` (+${countLabel(alternatives - 1, "other path")})` : "";
     items.push({
       tableIndex: shortest.startIndex,
       kind: "table",

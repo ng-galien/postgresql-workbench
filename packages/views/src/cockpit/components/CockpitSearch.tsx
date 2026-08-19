@@ -3,7 +3,7 @@ import { applySearchFacet, searchFacetSuggestions } from "../graph/searchSuggest
 import { useCockpitStore } from "../graph/store.js";
 import { focusSymbol } from "../graph/transport.js";
 import type { WorkbenchGraphSearchResult } from "../protocol.js";
-import { vscode } from "../vscodeApi.js";
+import { post } from "../vscodeApi.js";
 
 let searchSequence = 0;
 
@@ -36,7 +36,7 @@ export function CockpitSearch() {
   useEffect(() => {
     const timer = window.setTimeout(() => {
       const next = ++searchSequence;
-      vscode.postMessage({ type: "search", requestId: next, query });
+      post({ type: "search", requestId: next, query });
     }, 120);
     return () => window.clearTimeout(timer);
   }, [query]);

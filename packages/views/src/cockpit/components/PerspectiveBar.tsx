@@ -1,6 +1,6 @@
 import { useCockpitStore } from "../graph/store.js";
 import { focusSymbol, savePerspective } from "../graph/transport.js";
-import { vscode } from "../vscodeApi.js";
+import { post } from "../vscodeApi.js";
 
 export function PerspectiveBar() {
   const session = useCockpitStore((state) => state.session);
@@ -25,7 +25,7 @@ export function PerspectiveBar() {
         <span className="perspective-item" key={perspective.name}>
           <button
             type="button"
-            onClick={() => vscode.postMessage({ type: "loadPerspective", name: perspective.name })}
+            onClick={() => post({ type: "loadPerspective", name: perspective.name })}
           >
             {perspective.name}
           </button>
@@ -33,9 +33,7 @@ export function PerspectiveBar() {
             type="button"
             className="delete-perspective"
             aria-label={`Delete perspective ${perspective.name}`}
-            onClick={() =>
-              vscode.postMessage({ type: "deletePerspective", name: perspective.name })
-            }
+            onClick={() => post({ type: "deletePerspective", name: perspective.name })}
           >
             ×
           </button>

@@ -3,6 +3,7 @@ import {
   composeIntoDataViewQuery,
   dataViewAdditions,
 } from "../../../packages/rows/src/additions.js";
+import { countLabel } from "../../../packages/rows/src/countLabel.js";
 import {
   type DataViewAddition,
   type DataViewEdit,
@@ -624,10 +625,7 @@ export class DataViewDocument implements vscode.CustomDocument {
     try {
       const applied = await this.edits.applyWith(client, this.editability);
       this.applying = false;
-      this.notify(
-        `${applied} change${applied === 1 ? "" : "s"} applied to ${this.serverName()}.`,
-        "info",
-      );
+      this.notify(`${countLabel(applied, "change")} applied to ${this.serverName()}.`, "info");
       await this.load();
     } catch (error) {
       this.applying = false;

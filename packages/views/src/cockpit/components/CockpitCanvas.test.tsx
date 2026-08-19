@@ -70,7 +70,8 @@ vi.mock("../graph/transport.js", () => ({
 }));
 
 vi.mock("../vscodeApi.js", () => ({
-  vscode: { postMessage: vi.fn() },
+  post: vi.fn(),
+  subscribeToHost: () => () => {},
 }));
 
 vi.mock("../graph/store.js", () => ({

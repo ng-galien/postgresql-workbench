@@ -141,20 +141,6 @@ body,
   white-space: pre;
 }
 
-.toolbar-rows {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0 4px;
-  color: var(--vscode-descriptionForeground);
-  font-size: 12px;
-  white-space: nowrap;
-}
-
-.toolbar-rows .codicon-warning {
-  color: var(--vscode-editorWarning-foreground);
-}
-
 .toolbar-edit-count {
   display: inline-flex;
   align-items: center;

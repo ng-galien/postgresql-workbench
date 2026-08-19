@@ -2,7 +2,7 @@ import { type CSSProperties, useCallback, useEffect, useRef, useState } from "re
 import { readCockpitEvidence } from "../graph/evidence.js";
 import { useCockpitStore } from "../graph/store.js";
 import { requestNeighborhood } from "../graph/transport.js";
-import { vscode } from "../vscodeApi.js";
+import { post, subscribeToHost } from "../vscodeApi.js";
 import { CockpitCanvas } from "./CockpitCanvas.js";
 import { CockpitEdgePopover } from "./CockpitEdgePopover.js";
 import { CockpitInspector, clampInspectorHeight, clampInspectorWidth } from "./CockpitInspector.js";
@@ -52,14 +52,14 @@ export function App() {
 
   const closePreview = useCallback(() => {
     dismissPreview();
-    vscode.postMessage({ type: "dismissPreview" });
+    post({ type: "dismissPreview" });
   }, [dismissPreview]);
 
   const setPreviewPinned = useCallback(
     (pinned: boolean) => {
       if (!preview) return;
       setSourcePinned(pinned);
-      vscode.postMessage({ type: "pinPreview", symbolUri: preview.symbolUri, pinned });
+      post({ type: "pinPreview", symbolUri: preview.symbolUri, pinned });
     },
     [preview, setSourcePinned],
   );
@@ -75,10 +75,9 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    const listener = (event: MessageEvent) => receive(event.data);
-    window.addEventListener("message", listener);
-    vscode.postMessage({ type: "ready" });
-    return () => window.removeEventListener("message", listener);
+    const unsubscribe = subscribeToHost(receive);
+    post({ type: "ready" });
+    return unsubscribe;
   }, [receive]);
 
   useEffect(() => {
@@ -116,9 +115,9 @@ export function App() {
 
   useEffect(() => {
     const listener = (event: KeyboardEvent) => {
-      if (event.altKey && event.key === "ArrowLeft") vscode.postMessage({ type: "back" });
+      if (event.altKey && event.key === "ArrowLeft") post({ type: "back" });
       else if (event.altKey && event.key === "ArrowRight") {
-        vscode.postMessage({ type: "forward" });
+        post({ type: "forward" });
       } else if ((event.metaKey || event.ctrlKey) && event.key.toLocaleLowerCase() === "z") {
         event.preventDefault();
         if (event.shiftKey) redo();
@@ -164,7 +163,7 @@ export function App() {
       .__PLPGSQL_GRAPH_EVIDENCE__;
     if (!enabled || !session || !evidenceKey) return;
     const timer = window.setTimeout(() => {
-      vscode.postMessage({
+      post({
         type: "ack",
         renderId: session.renderId,
         rendered: readCockpitEvidence(),

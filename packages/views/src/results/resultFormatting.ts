@@ -1,4 +1,5 @@
 import type { DebugResultCell } from "../../../dap/src/debugger/launch/index.js";
+import { countLabel } from "../../../rows/src/countLabel.js";
 import type { ResultTable } from "../../../rows/src/resultPayload.js";
 
 export type ResultSortDirection = "ascending" | "descending";
@@ -91,6 +92,48 @@ export function sortedResultRows(
       return compared === 0 ? left.originalIndex - right.originalIndex : compared * direction;
     })
     .map(({ row }) => row);
+}
+
+export type ResultTruncationReason = ResultTable["truncationReasons"][number];
+
+/** Why a result is incomplete, named short enough to list inside a sentence. */
+export function truncationReasonLabel(reason: ResultTruncationReason): string {
+  if (reason === "rows") return "row limit";
+  if (reason === "cell") return "truncated cell values";
+  return "payload limit";
+}
+
+/** Why a result is incomplete, spelled out with its counts: one notice per reason. */
+export function truncationNotices(result: ResultTable): string[] {
+  return result.truncationReasons.map((reason) => {
+    if (reason === "rows") {
+      return `${result.capturedRowCount} of ${result.rowCount} rows captured. Additional rows are not displayed or exported.`;
+    }
+    if (reason === "cell") {
+      return "One or more cells reached the 64 KiB value limit. Truncated cells have an amber edge.";
+    }
+    return `The 1 MiB result payload limit was reached. Only ${result.capturedRowCount} rows are available.`;
+  });
+}
+
+/** How many rows the reader is looking at, and out of how many. */
+export function resultRowSummary(payload: ResultTable): string {
+  const navigation = payload.navigation;
+  if (!navigation) {
+    const count = payload.rowCount ?? payload.capturedRowCount;
+    if (payload.truncated && payload.rowCount !== undefined && payload.capturedRowCount < count) {
+      return `${payload.capturedRowCount} of ${count} rows`;
+    }
+    return countLabel(count, "row");
+  }
+  if (navigation.pageEnd === 0) return "0 rows";
+  if (payload.rowCount !== undefined) {
+    if (navigation.pageStart === 1 && navigation.pageEnd === payload.rowCount) {
+      return countLabel(payload.rowCount, "row");
+    }
+    return `Rows ${navigation.pageStart}–${navigation.pageEnd} of ${payload.rowCount}`;
+  }
+  return `Rows ${navigation.pageStart}–${navigation.pageEnd} · more available`;
 }
 
 export function resultSortNotice(payload: ResultTable): string | undefined {

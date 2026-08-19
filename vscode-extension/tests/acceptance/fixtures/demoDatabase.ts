@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
 import { Client } from "pg";
+import { escapeRegExp } from "./text.js";
 
 const repositoryRoot = resolve(__dirname, "../../../..");
 const demoCompose = resolve(repositoryRoot, "docker", "demo", "compose.yml");
@@ -30,10 +31,6 @@ function databaseTreeItem(database: string): RegExp {
     `^${escapeRegExp(database)}(?:\\s*·?\\s*(?:preparing index|indexing|refreshing|ready|degraded|indexing paused|indexing failed))?$`,
     "u",
   );
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 }
 
 export interface DemoDatabase {
