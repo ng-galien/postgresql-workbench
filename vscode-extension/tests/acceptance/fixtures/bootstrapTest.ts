@@ -29,8 +29,10 @@ export const test = base.extend<BootstrapFixtures, BootstrapWorkerFixtures>({
     },
     { scope: "worker" },
   ],
-  // biome-ignore lint/correctness/noEmptyPattern: Playwright requires fixture arguments to use object destructuring.
-  vscode: async ({}, use) => {
+  // VS Code is launched behind the database, so the first Connexion this lane adds has something
+  // to connect to. Playwright only builds a fixture a test reaches, and no bootstrap scenario
+  // names the database directly — what it verifies is the Workbench arriving at it.
+  vscode: async ({ demoDatabase: _demoDatabase }, use) => {
     const instance = await launchVSCode({
       windowTimeout: 10_000,
       activationTimeout: 20_000,
