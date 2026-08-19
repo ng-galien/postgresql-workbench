@@ -1,7 +1,6 @@
 import {
   demoConnexionTreeItem as connexion,
   demoDatabaseTreeItem as database,
-  demoConnectionUrl,
 } from "../../fixtures/demoDatabase";
 import { expect, test } from "../../fixtures/test";
 import { SCHEMAS_TREE_ITEM } from "../../pages/WorkbenchTreeLabels";
@@ -23,8 +22,6 @@ test.describe("Acceptance cinematics", () => {
     });
 
     await test.step("navigate deep rows, virtualized siblings, sticky ancestors, and back to root", async () => {
-      await workbench.ensureServer(demoConnectionUrl, connexion);
-      await workbench.expectDatabaseIndexed(connexion, database);
       const schema = await workbench.tree.expandPath([
         connexion,
         database,

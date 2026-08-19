@@ -97,6 +97,9 @@ export const test = base.extend<AcceptanceFixtures, AcceptanceWorkerFixtures>({
     );
     await workbench.reset();
     await workbench.scratchpads.collapseAll();
+    // Every scenario starts on the index the worker built once: settled, not rebuilt. Asking the
+    // runtime rather than the tree keeps this out of the UI's timing.
+    await workbench.expectFreshIndexRuntime({ database: demoDatabase });
     let cleanupError: Error | undefined;
     try {
       await use(workbench);

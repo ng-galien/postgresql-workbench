@@ -3,7 +3,7 @@ import { defineConfig, type PlaywrightTestConfig } from "@playwright/test";
 interface VSCodePlaywrightConfigOptions {
   forbidOnly?: boolean;
   junitFile: string;
-  lane: "bootstrap" | "core" | "schema-sync";
+  lane: "bootstrap" | "core" | "index-lifecycle" | "schema-sync";
   outputDir: string;
   testDir: string;
   testMatch: string[];

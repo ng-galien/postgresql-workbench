@@ -1,6 +1,5 @@
 import {
   demoDatabaseTreeItem as database,
-  demoConnectionUrl,
   demoConnexionTreeItem as server,
 } from "../../fixtures/demoDatabase";
 import { expect, test } from "../../fixtures/test";
@@ -14,8 +13,6 @@ async function openCockpitFromTree(
   source: RegExp,
   expectedFocus: string,
 ): Promise<void> {
-  await workbench.ensureServer(demoConnectionUrl, server);
-  await workbench.expectDatabaseIndexed(server, database);
   const schema = await workbench.tree.expandPath([server, database, SCHEMAS_TREE_ITEM, /^shop/]);
   const item = await workbench.tree.findChild(schema, source);
   await expect(item).toBeVisible({ timeout: 5_000 });

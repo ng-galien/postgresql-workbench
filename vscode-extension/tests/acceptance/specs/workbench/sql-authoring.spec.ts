@@ -5,7 +5,6 @@ import {
   demoDatabaseTreeItem as database,
   demoAssociationText,
   demoConnectionId,
-  demoConnectionUrl,
   demoConnexionTreeItem as server,
 } from "../../fixtures/demoDatabase";
 import { expect, test } from "../../fixtures/test";
@@ -21,9 +20,6 @@ test.describe("SQL authoring", () => {
     workbench,
     sqlEditor,
   }) => {
-    await workbench.ensureServer(demoConnectionUrl, server);
-    await workbench.expectDatabaseIndexed(server, database);
-
     await test.step("format PostgreSQL SQL consistently through the standard editor action", async () => {
       await vscode.openSqlDocument("select id,name from shop.product where stock>0;");
       await sqlEditor.formatDocument();
@@ -204,8 +200,6 @@ test.describe("SQL authoring", () => {
     notebook,
     vscode,
   }) => {
-    await workbench.ensureServer(demoConnectionUrl, server);
-    await workbench.expectDatabaseIndexed(server, database);
     await createScratchpad(workbench, notebook, demoAssociationText);
 
     await workbench.tree.scrollToTop();
@@ -241,7 +235,6 @@ test.describe("SQL authoring", () => {
         await expect(notebook.suggestion(/^product$/)).toBeVisible({ timeout: 5_000 });
         await notebook.dismissCompletion();
       } finally {
-        await workbench.ensureDatabaseIndexed(server, database);
         await vscode.removeServer(alternateConnectionId);
         await workbench.tree.expectItemAbsent(alternateServer);
       }

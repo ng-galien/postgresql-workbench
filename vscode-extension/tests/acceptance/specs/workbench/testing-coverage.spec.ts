@@ -59,7 +59,6 @@ test.describe("pgTAP tests and coverage", () => {
   }) => {
     test.setTimeout(150_000);
     let persistedDebugConfiguration: DebugConfigurationSnapshot | undefined;
-    await workbench.expectDatabaseIndexed(server, database);
     const baseline = await vscode.inspectTestingState();
 
     await test.step("open VS Code Testing", async () => {

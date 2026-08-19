@@ -1,10 +1,4 @@
-import {
-  demoDatabaseTreeItem as database,
-  demoAssociationText,
-  demoAutomaticAssociationText,
-  demoConnectionUrl,
-  demoConnexionTreeItem as server,
-} from "../../fixtures/demoDatabase";
+import { demoAssociationText, demoAutomaticAssociationText } from "../../fixtures/demoDatabase";
 import { expect, test } from "../../fixtures/test";
 import { createScratchpad } from "../../journeys/scratchpad";
 
@@ -17,7 +11,6 @@ test.describe("Scratchpads", () => {
     notebook,
     vscode,
   }) => {
-    await workbench.ensureServer(demoConnectionUrl, server);
     const scratchpad = await createScratchpad(workbench, notebook, demoAssociationText);
 
     await test.step("show the Scratchpad once in its dedicated view with its automatic Association", async () => {
@@ -160,8 +153,6 @@ test.describe("Scratchpads", () => {
               .exists,
         )
         .toBe(false);
-      await workbench.ensureServer(demoConnectionUrl, server);
-      await workbench.ensureDatabaseIndexed(server, database);
     });
   });
 
@@ -170,7 +161,6 @@ test.describe("Scratchpads", () => {
     notebook,
   }) => {
     await test.step("create a scratchpad from its Connexion", async () => {
-      await workbench.ensureServer(demoConnectionUrl, server);
       await createScratchpad(workbench, notebook, demoAssociationText);
     });
 
@@ -237,7 +227,6 @@ test.describe("Scratchpads", () => {
     workbench,
     notebook,
   }) => {
-    await workbench.ensureServer(demoConnectionUrl, server);
     await createScratchpad(workbench, notebook, demoAssociationText);
     const code = notebook.cell(0);
     await notebook.typeInCell(
@@ -273,7 +262,6 @@ test.describe("Scratchpads", () => {
     workbench,
     notebook,
   }) => {
-    await workbench.ensureServer(demoConnectionUrl, server);
     await createScratchpad(workbench, notebook, demoAssociationText);
     const code = notebook.cell(0);
     await notebook.typeInCell(
@@ -307,7 +295,6 @@ test.describe("Scratchpads", () => {
     workbench,
     notebook,
   }) => {
-    await workbench.ensureServer(demoConnectionUrl, server);
     await createScratchpad(workbench, notebook, demoAssociationText);
     const code = notebook.cell(0);
     const projection = Array.from(
@@ -332,7 +319,6 @@ test.describe("Scratchpads", () => {
     workbench,
     notebook,
   }) => {
-    await workbench.ensureServer(demoConnectionUrl, server);
     await createScratchpad(workbench, notebook, demoAssociationText);
     const code = notebook.cell(0);
     await notebook.typeInCell(code, "SELECT value FROM generate_series(1, 1000) AS value");
@@ -362,7 +348,6 @@ test.describe("Scratchpads", () => {
     workbench,
     notebook,
   }) => {
-    await workbench.ensureServer(demoConnectionUrl, server);
     await createScratchpad(workbench, notebook, demoAssociationText);
 
     const syntaxCell = notebook.cell(0);

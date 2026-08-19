@@ -241,39 +241,6 @@ export class DebuggerPage {
     await this.expectScopedVariable(/Arguments$/, name, value);
   }
 
-  async continueToRecursiveReturn(
-    sourceLine: string,
-    argumentValue: string,
-    resultValue: string,
-  ): Promise<void> {
-    const previousStop = await this.readDebugState();
-    const previousTimestamp = previousStop.extensionSession?.status?.timestamp;
-    if (previousStop.extensionSession?.state !== "suspended" || !previousTimestamp) {
-      throw new Error(
-        `Recursive continue requires a suspended debugger with a timestamped DAP status: ${JSON.stringify(previousStop)}`,
-      );
-    }
-    await expect(this.debugToolbar()).toBeVisible({ timeout: 5_000 });
-    await this.runDebugAction("workbench.action.debug.continue");
-    await expect
-      .poll(
-        async () => {
-          const current = await this.readDebugState();
-          return current.extensionSession?.state === "suspended"
-            ? current.extensionSession.status?.timestamp
-            : previousTimestamp;
-        },
-        {
-          timeout: DEBUG_DAP_EVENT_TIMEOUT_MS,
-          message: "The debugger must publish a new suspended DAP status after Continue",
-        },
-      )
-      .not.toBe(previousTimestamp);
-    await this.expectArgument("n", argumentValue);
-    await this.expectStoppedAt(sourceLine);
-    await this.expectVariable("result", resultValue);
-  }
-
   private async expectScopedVariable(
     scopeName: RegExp,
     name: string,
