@@ -10,7 +10,7 @@ import {
   useState,
 } from "react";
 import type { DebugResultCell } from "../../../dap/src/debugger/launch/index.js";
-import type { SqlNotebookResultPayload } from "../../../rows/src/resultPayload.js";
+import type { ResultTable } from "../../../rows/src/resultPayload.js";
 import { CellEditor, type GridEditing } from "./CellEditor.js";
 import {
   columnWidthsCh,
@@ -39,7 +39,8 @@ interface ScrollbarGeometry {
 }
 
 export interface ResultGridProps {
-  payload: SqlNotebookResultPayload;
+  /** Only the table: a grid never needed the Connexion or the Statement behind it. */
+  payload: ResultTable;
   /** When set, sorting is delegated to the host (server-side) instead of sorting loaded rows. */
   serverSort?: {
     /** Active server-side sorts in priority order. */
@@ -65,6 +66,11 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
   const [detail, setDetail] = useState<string>();
   const [localSort, setLocalSort] = useState<ResultSort>();
   const [activeCell, setActiveCell] = useState<{ row: number; ordinal: number }>();
+  /** The one cell the grid keeps reachable with a single Tab; arrows move it. */
+  const [focusCell, setFocusCell] = useState<{ row: number; column: number }>({
+    row: 0,
+    column: 0,
+  });
   const [menu, setMenu] = useState<{ ordinal: number; x: number; y: number }>();
   const [dragOver, setDragOver] = useState<number>();
   const dragSource = useRef<number | undefined>(undefined);
@@ -128,6 +134,40 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
   const bottomSpacer = (rows.length - end) * RESULT_ROW_HEIGHT;
   const scrollResetKey = `${payload.navigation?.sessionId ?? "static"}:${payload.navigation?.pageStart ?? 0}:${rows.length}:${sort?.columnIndex ?? -1}:${sort?.direction ?? "source"}`;
   const scrollbar = resultScrollbarGeometry(scrollMetrics, scrollTop);
+
+  const gridRef = useRef<HTMLTableElement>(null);
+  // Arrows walk the visible columns, so a hidden one is never a dead stop.
+  const moveFocus = (rowDelta: number, columnDelta: number, absolute?: "row" | "column") => {
+    setFocusCell((current) => {
+      const row =
+        absolute === "row"
+          ? rowDelta
+          : Math.min(Math.max(current.row + rowDelta, 0), Math.max(rows.length - 1, 0));
+      const column =
+        absolute === "column"
+          ? columnDelta
+          : Math.min(Math.max(current.column + columnDelta, 0), Math.max(columns.length - 1, 0));
+      const element = scroller.current;
+      if (element) {
+        // The rows are virtualised: bring the target into the window before asking for its focus.
+        const top = row * RESULT_ROW_HEIGHT;
+        const viewport = element.clientHeight || RESULT_VIEWPORT_HEIGHT;
+        if (top < element.scrollTop) element.scrollTop = top;
+        else if (top + RESULT_ROW_HEIGHT > element.scrollTop + viewport) {
+          element.scrollTop = top + RESULT_ROW_HEIGHT - viewport;
+        }
+      }
+      return { row, column };
+    });
+  };
+
+  // Focus follows the window: a row that was not rendered yet gets it once it is.
+  useEffect(() => {
+    const cell = gridRef.current?.querySelector<HTMLElement>(
+      `td[data-row="${focusCell.row}"][data-column="${focusCell.column}"]`,
+    );
+    if (cell && gridRef.current?.contains(document.activeElement)) cell.focus();
+  }, [focusCell]);
 
   useEffect(() => {
     if (!scrollResetKey) return;
@@ -228,8 +268,45 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
           onScroll={handleScroll}
         >
           <table
+            ref={gridRef}
+            // A table's implicit role is `table`; `grid` is the interactive one, and it is what
+            // arrow-key navigation over these cells means. `<table role="grid">` is the pattern
+            // the ARIA Authoring Practices give for a data grid.
+            // biome-ignore lint/a11y/noRedundantRoles: `grid` is not the implicit role of a table.
+            // biome-ignore lint/a11y/noNoninteractiveElementToInteractiveRole: the grid is navigable.
+            role="grid"
             aria-rowcount={rows.length + 1}
+            aria-colcount={columns.length}
             className={editing ? "editable" : undefined}
+            onKeyDown={(event) => {
+              const handled: Record<string, () => void> = {
+                ArrowRight: () => moveFocus(0, 1),
+                ArrowLeft: () => moveFocus(0, -1),
+                ArrowDown: () => moveFocus(1, 0),
+                ArrowUp: () => moveFocus(-1, 0),
+                Home: () => moveFocus(0, 0, "column"),
+                End: () => moveFocus(0, columns.length - 1, "column"),
+                PageDown: () => moveFocus(Math.floor(viewportHeight / RESULT_ROW_HEIGHT), 0),
+                PageUp: () => moveFocus(-Math.floor(viewportHeight / RESULT_ROW_HEIGHT), 0),
+              };
+              const move = handled[event.key];
+              if (move) {
+                event.preventDefault();
+                move();
+                return;
+              }
+              if (event.key !== "Enter" && event.key !== " ") return;
+              const ordinal = columns[focusCell.column]?.ordinal;
+              const cell = ordinal === undefined ? undefined : rows[focusCell.row]?.[ordinal];
+              if (!cell) return;
+              const policy = ordinal === undefined ? undefined : editing?.policies[ordinal];
+              event.preventDefault();
+              if (policy?.editable && !cell.truncated) {
+                setActiveCell({ row: focusCell.row, ordinal });
+              } else {
+                inspect(cell);
+              }
+            }}
             style={{
               width: `${columns.reduce((total, { ordinal }) => total + (widths[ordinal] ?? 12), 0)}ch`,
             }}
@@ -342,7 +419,7 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
                   <tr key={rowIndex} aria-rowindex={rowIndex + 2}>
                     {keyedValues(row, (cell) => `${cell.kind}:${cell.value ?? "NULL"}`)
                       .filter(({ ordinal }) => isVisible(ordinal))
-                      .map(({ key: cellKey, ordinal, value: cell }) => {
+                      .map(({ key: cellKey, ordinal, value: cell }, columnIndex) => {
                         const edit = editing?.editFor(row, rowIndex, ordinal);
                         const shown = edit ? edit.value : cell.value;
                         const value = shown === null ? "NULL" : shown;
@@ -352,9 +429,15 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
                         const policy = editing?.policies[ordinal];
                         const isActive =
                           activeCell?.row === rowIndex && activeCell.ordinal === ordinal;
+                        const isFocused =
+                          focusCell.row === rowIndex && focusCell.column === columnIndex;
                         return (
                           <td
                             key={cellKey}
+                            tabIndex={isFocused ? 0 : -1}
+                            data-row={rowIndex}
+                            data-column={columnIndex}
+                            onFocus={() => setFocusCell({ row: rowIndex, column: columnIndex })}
                             className={[
                               shown === null ? "null" : cell.kind === "null" ? "text" : cell.kind,
                               cell.truncated ? "truncated" : "",

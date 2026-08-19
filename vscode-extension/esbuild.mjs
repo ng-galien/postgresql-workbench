@@ -127,6 +127,22 @@ const dataViewWebviewConfig = {
   metafile: true,
 };
 
+/** @type {import('esbuild').BuildOptions} */
+const debugResultsWebviewConfig = {
+  entryPoints: ["../packages/views/src/debugResults/index.tsx"],
+  bundle: true,
+  outfile: "dist/debug-results.js",
+  format: "iife",
+  platform: "browser",
+  target: "es2022",
+  jsx: "automatic",
+  loader: { ".css": "text", ".ttf": "dataurl" },
+  define: { "process.env.NODE_ENV": '"production"' },
+  sourcemap: !production,
+  minify: production,
+  metafile: true,
+};
+
 function packageRootForInput(input) {
   let current = dirname(resolve(input));
   const nodeModulesSegment = `${sep}node_modules${sep}`;
@@ -225,6 +241,7 @@ async function main() {
     const graphCtx = await esbuild.context(graphWebviewConfig);
     const notebookRendererCtx = await esbuild.context(sqlNotebookRendererConfig);
     const dataViewCtx = await esbuild.context(dataViewWebviewConfig);
+    const debugResultsCtx = await esbuild.context(debugResultsWebviewConfig);
     await Promise.all([
       extCtx.watch(),
       dapCtx.watch(),
@@ -232,6 +249,7 @@ async function main() {
       graphCtx.watch(),
       notebookRendererCtx.watch(),
       dataViewCtx.watch(),
+      debugResultsCtx.watch(),
     ]);
     console.log("Watching for changes...");
   } else {
@@ -243,6 +261,7 @@ async function main() {
       esbuild.build(graphWebviewConfig),
       esbuild.build(sqlNotebookRendererConfig),
       esbuild.build(dataViewWebviewConfig),
+      esbuild.build(debugResultsWebviewConfig),
     ]);
     generateThirdPartyNotices(results.map((result) => result.metafile));
     console.log("Build complete.");

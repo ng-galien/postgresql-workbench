@@ -16,21 +16,28 @@ export interface ScratchpadAssociationSnapshot {
   database: string;
 }
 
-export interface SqlNotebookResultPayload {
-  version: 2;
-  binding: ScratchpadAssociationSnapshot;
-  /** SQL Statement that produced the result, when the producer knows it. */
-  statement?: string;
-  command: string;
+/**
+ * What it takes to render a result as a table: its columns, its rows, and where the reader stands
+ * in them. Every result view shows this much; the debugger output shows only this much.
+ */
+export interface ResultTable {
   columns: DebugResult["columns"];
   rows: DebugResult["rows"];
   /** Exact total when known. Cursor-backed results leave it undefined until exhausted. */
   rowCount?: number;
   capturedRowCount: number;
-  durationMs: number;
   truncated: boolean;
   truncationReasons: DebugResult["truncationReasons"];
   navigation?: SqlNotebookResultNavigation;
+}
+
+export interface SqlNotebookResultPayload extends ResultTable {
+  version: 2;
+  binding: ScratchpadAssociationSnapshot;
+  /** SQL Statement that produced the result, when the producer knows it. */
+  statement?: string;
+  command: string;
+  durationMs: number;
 }
 
 export interface SqlNotebookErrorPayload {

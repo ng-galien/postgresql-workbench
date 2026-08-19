@@ -97,7 +97,7 @@ export function registerDebugInfrastructure(
     revealStoppedSource,
   } = options;
   const resultStore = new DebugResultStore();
-  const resultsView = new DebugResultsViewProvider(resultStore);
+  const resultsView = new DebugResultsViewProvider(resultStore, context.extensionUri);
   context.subscriptions.push(
     resultsView,
     vscode.window.registerWebviewViewProvider(DEBUG_RESULTS_VIEW_ID, resultsView, {

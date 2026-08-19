@@ -5,6 +5,13 @@
  */
 
 export {
+  DebugResultStore,
+  delimitedHeader,
+  delimitedRow,
+  resultAsDelimited,
+  resultAsJson,
+} from "../../../packages/dap/src/debugger/launch/capturedResults.js";
+export {
   type DebugSessionInfo,
   enrichDebugSessions,
   listDebugSessions,
@@ -17,13 +24,6 @@ export {
   resolveDebugConfiguration,
 } from "./launchConfiguration.js";
 export { manageDebugSessions } from "./orphanSessionsUi.js";
-export {
-  DebugResultStore,
-  delimitedHeader,
-  delimitedRow,
-  resultAsDelimited,
-  resultAsJson,
-} from "./results.js";
 export { DEBUG_RESULTS_VIEW_ID, DebugResultsViewProvider } from "./resultsView.js";
 export {
   DEBUG_LAUNCH_TOKEN_PROPERTY,

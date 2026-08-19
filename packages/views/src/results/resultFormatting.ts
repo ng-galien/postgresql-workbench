@@ -1,5 +1,5 @@
 import type { DebugResultCell } from "../../../dap/src/debugger/launch/index.js";
-import type { SqlNotebookResultPayload } from "../../../rows/src/resultPayload.js";
+import type { ResultTable } from "../../../rows/src/resultPayload.js";
 
 export type ResultSortDirection = "ascending" | "descending";
 
@@ -57,7 +57,7 @@ export function formattedCellValue(cell: DebugResultCell): string {
   }
 }
 
-export function resultAsTsv(payload: SqlNotebookResultPayload): string {
+export function resultAsTsv(payload: ResultTable): string {
   const lines = [payload.columns.map((column) => escapeTsv(column.name)).join("\t")];
   for (const row of payload.rows) {
     lines.push(row.map((cell) => escapeTsv(cell.value ?? "\\N")).join("\t"));
@@ -93,7 +93,7 @@ export function sortedResultRows(
     .map(({ row }) => row);
 }
 
-export function resultSortNotice(payload: SqlNotebookResultPayload): string | undefined {
+export function resultSortNotice(payload: ResultTable): string | undefined {
   if (payload.navigation?.mode === "paged") {
     const qualifier = payload.truncationReasons.includes("cell")
       ? " using truncated display values"

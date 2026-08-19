@@ -6,8 +6,13 @@ import {
   type DebugResultEntry,
   type DebugResultStatus,
   debugResultEntryStatus,
-} from "../../../packages/dap/src/debugger/launch/index.js";
+} from "./index.js";
 
+/**
+ * What a captured debug result looks like once it is listed and exported: the summary a history
+ * shows, the state a result view renders, and the delimited and JSON forms of the rows. Free of
+ * VS Code, so the webview that renders it shares the shapes with the Extension Host that fills them.
+ */
 export const DEBUG_RESULT_NULL_EXPORT = "\\N";
 
 export interface DebugResultSummary {
