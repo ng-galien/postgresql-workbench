@@ -109,6 +109,11 @@ describe("stale Code Moniker source tabs", () => {
         onDidChangeState: () => ({ dispose() {} }),
         sourceDescriptorForDocumentUri: () => undefined,
       } as never,
+      {
+        sourceDescriptorForDocumentUri: () => undefined,
+        documentUri: () => undefined,
+        sourceDocumentUris: () => [],
+      } as never,
     );
     await vi.waitFor(() => expect(vscodeState.close).toHaveBeenCalledTimes(1));
 
@@ -135,6 +140,11 @@ describe("stale Code Moniker source tabs", () => {
       {
         onDidChangeState: () => ({ dispose() {} }),
         sourceDescriptorForDocumentUri: () => descriptor,
+      } as never,
+      {
+        sourceDescriptorForDocumentUri: () => descriptor,
+        documentUri: () => undefined,
+        sourceDocumentUris: () => [],
       } as never,
     );
     expect(new TextDecoder().decode(await provider.readFile(sourceUri as never))).toBe("SELECT 1");
@@ -319,6 +329,11 @@ function providerFor(
       syntaxParser: vi.fn(),
       indexPostgresDatabase: vi.fn(async () => {}),
       ...indexOverrides,
+    } as never,
+    {
+      sourceDescriptorForDocumentUri: descriptor,
+      documentUri: () => undefined,
+      sourceDocumentUris: () => [],
     } as never,
     undefined,
     state as never,

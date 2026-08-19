@@ -1,3 +1,5 @@
+import { mkdirSync } from "node:fs";
+import { join } from "node:path";
 import * as vscode from "vscode";
 import type {
   DebugLaunchRoutineArgument,
@@ -119,6 +121,7 @@ import {
   type WorkbenchObjectItem,
   type WorkbenchObjectModel,
   type WorkbenchRelationTargetItem,
+  WorkbenchSourceUris,
   WorkbenchTreeDragAndDropController,
   WorkbenchTreeProvider,
 } from "./workbench/index.js";
@@ -441,6 +444,7 @@ export interface PlpgsqlExtensionApi {
   debugSessions: DebugSessionController;
   coverageTests: PgTapTestController;
   workbenchIndex: WorkbenchIndexController;
+  workbenchSourceUris: WorkbenchSourceUris;
   workbenchDdlSync: WorkbenchDdlSyncController;
   workbenchGraph: WorkbenchGraphView;
   sqlNotebooks: SqlNotebookWorkspace;
@@ -515,6 +519,7 @@ interface DebugCommandOptions {
   tree: WorkbenchTreeProvider;
   sessions: DebugSessionController;
   index: WorkbenchIndexController;
+  sourceUris: WorkbenchSourceUris;
   output: vscode.OutputChannel;
 }
 
@@ -530,6 +535,7 @@ interface WorkbenchCommandOptions {
   context: vscode.ExtensionContext;
   connections: ConnectionManager;
   index: WorkbenchIndexController;
+  sourceUris: WorkbenchSourceUris;
   tree: WorkbenchTreeProvider;
   graph: WorkbenchGraphView;
   graphSync: WorkbenchGraphTreeSync;
@@ -599,6 +605,7 @@ function registerSqlWorkbenchCommands(options: SqlWorkbenchCommandOptions): void
     connections,
     documentConnections,
     index,
+    sourceUris,
     tree,
     coverage,
     resultStore,
@@ -935,7 +942,7 @@ function registerSqlWorkbenchCommands(options: SqlWorkbenchCommandOptions): void
           );
           return undefined;
         }
-        const uri = index.documentUri(object.symbolUri);
+        const uri = sourceUris.documentUri(object.symbolUri);
         if (!uri) return undefined;
         const document = await vscode.workspace.openTextDocument(uri);
         await vscode.languages.setTextDocumentLanguage(
@@ -1389,7 +1396,8 @@ function registerConnectionCommands(options: ConnectionCommandOptions): void {
 }
 
 function registerDebugCommands(options: DebugCommandOptions): void {
-  const { context, connections, documentConnections, tree, sessions, index, output } = options;
+  const { context, connections, documentConnections, tree, sessions, index, sourceUris, output } =
+    options;
   context.subscriptions.push(
     vscode.commands.registerCommand("postgresql-workbench.manageDebugSessions", () =>
       manageDebugSessions(connections, tree, output, () => sessions.statuses),
@@ -1462,7 +1470,7 @@ function registerDebugCommands(options: DebugCommandOptions): void {
     vscode.commands.registerCommand(
       "postgresql-workbench.openFunction",
       async (item: FunctionItem) => {
-        const uri = index.documentUri(item.symbolUri);
+        const uri = sourceUris.documentUri(item.symbolUri);
         if (!uri) return undefined;
         const document = await vscode.workspace.openTextDocument(uri);
         await vscode.languages.setTextDocumentLanguage(
@@ -1474,7 +1482,7 @@ function registerDebugCommands(options: DebugCommandOptions): void {
     ),
     vscode.commands.registerCommand(
       "postgresql-workbench.compareRoutineWithDatabase",
-      createRoutineComparisonHandler(connections, index),
+      createRoutineComparisonHandler(connections, index, sourceUris),
     ),
     vscode.commands.registerCommand(
       "postgresql-workbench.debugDefinition",
@@ -1546,10 +1554,23 @@ function registerDebugCommands(options: DebugCommandOptions): void {
   );
 }
 
+/** Where Code Moniker indexes: the open folders, or a private workspace when there is none. */
+function codeMonikerWorkspaceRoots(context: vscode.ExtensionContext): string[] {
+  const roots =
+    vscode.workspace.workspaceFolders
+      ?.filter((folder) => folder.uri.scheme === "file")
+      .map((folder) => folder.uri.fsPath) ?? [];
+  if (roots.length > 0) return roots;
+  const fallback = vscode.Uri.joinPath(context.globalStorageUri, "code-moniker-workspace").fsPath;
+  mkdirSync(fallback, { recursive: true });
+  return [fallback];
+}
+
 interface DebugInfrastructureOptions {
   context: vscode.ExtensionContext;
   connections: ConnectionManager;
   index: WorkbenchIndexController;
+  sourceUris: WorkbenchSourceUris;
   sessions: DebugSessionController;
   output: vscode.OutputChannel;
   refreshTree: () => void;
@@ -1579,8 +1600,16 @@ function debugSessionConnectionName(
 }
 
 function registerDebugInfrastructure(options: DebugInfrastructureOptions): DebugInfrastructure {
-  const { context, connections, index, sessions, output, refreshTree, revealStoppedSource } =
-    options;
+  const {
+    context,
+    connections,
+    index,
+    sourceUris,
+    sessions,
+    output,
+    refreshTree,
+    revealStoppedSource,
+  } = options;
   const resultStore = new DebugResultStore();
   const resultsView = new DebugResultsViewProvider(resultStore);
   context.subscriptions.push(
@@ -1634,6 +1663,7 @@ function registerDebugInfrastructure(options: DebugInfrastructureOptions): Debug
   const contentProvider = new CodeMonikerContentProvider(
     connections,
     index,
+    sourceUris,
     output,
     context.workspaceState,
   );
@@ -1675,7 +1705,7 @@ function registerDebugInfrastructure(options: DebugInfrastructureOptions): Debug
           const message = error instanceof Error ? error.message : String(error);
           output.appendLine(`Managed deploy rejected: ${message}`);
           const bindingServerId = /^Index (?:missing|stale)/u.test(message)
-            ? index.sourceDescriptorForDocumentUri(target)?.serverId
+            ? sourceUris.sourceDescriptorForDocumentUri(target)?.serverId
             : undefined;
           void vscode.window
             .showWarningMessage(
@@ -1697,7 +1727,7 @@ function registerDebugInfrastructure(options: DebugInfrastructureOptions): Debug
     ),
     vscode.workspace.onDidOpenTextDocument((document) => {
       if (document.uri.scheme !== CodeMonikerContentProvider.SCHEME) return;
-      const descriptor = index.sourceDescriptorForDocumentUri(document.uri);
+      const descriptor = sourceUris.sourceDescriptorForDocumentUri(document.uri);
       const kind =
         descriptor?.symbolKind === "function" || descriptor?.symbolKind === "procedure"
           ? descriptor.symbolKind
@@ -1770,14 +1800,14 @@ function registerDebugInfrastructure(options: DebugInfrastructureOptions): Debug
           );
           return undefined;
         }
-        const sourceUris = index.routineSourceUris(serverId);
-        if (Object.keys(sourceUris).length === 0) {
+        const routineSources = sourceUris.routineSourceUris(serverId);
+        if (Object.keys(routineSources).length === 0) {
           vscode.window.showInformationMessage(
             "The active PostgreSQL index contains no debuggable routines.",
           );
           return undefined;
         }
-        resolved.sourceUris = sourceUris;
+        resolved.sourceUris = routineSources;
         if (resolved.routine) {
           const oid = Number(resolved.routine.oid ?? 0);
           const symbol = oid > 0 ? index.routineSymbol(serverId, oid) : undefined;
@@ -1857,11 +1887,12 @@ function registerDiagnosticsAndReconnect(
   context: vscode.ExtensionContext,
   connections: ConnectionManager,
   index: WorkbenchIndexController,
+  sourceUris: WorkbenchSourceUris,
   output: vscode.OutputChannel,
   divergence: CodeMonikerContentProvider,
 ): void {
   context.subscriptions.push(
-    new PlpgsqlDiagnosticsProvider(connections, () => index.syntaxParser(), index, divergence),
+    new PlpgsqlDiagnosticsProvider(connections, () => index.syntaxParser(), sourceUris, divergence),
   );
   connections
     .tryReconnectSaved()
@@ -1899,8 +1930,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
     await cm.removeConnectionConfiguration(id);
   };
   context.subscriptions.push(cm);
-  const workbenchIndex = new WorkbenchIndexController(context, cm, out);
-  context.subscriptions.push(workbenchIndex);
+  // Indexing is domain code: VS Code answers where the runtime is and what to index.
+  const workbenchIndex = new WorkbenchIndexController(
+    {
+      log: (message) => out.appendLine(message),
+      runtimePath: () => join(context.extensionPath, "runtime", "code-moniker"),
+      workspaceRoots: () => codeMonikerWorkspaceRoots(context),
+      commandTimeoutMs: () =>
+        vscode.workspace
+          .getConfiguration("postgresql-workbench.workbench.codeMoniker")
+          .get<number>("commandTimeoutMs", 30_000),
+      acceptanceControlEnabled: () =>
+        Boolean(
+          process.env.POSTGRESQL_WORKBENCH_ACCEPTANCE_CONTROL_FILE &&
+            context.extensionMode !== vscode.ExtensionMode.Production,
+        ),
+    },
+    cm,
+  );
+  const workbenchSourceUris = new WorkbenchSourceUris(workbenchIndex);
+  context.subscriptions.push({ dispose: () => workbenchIndex.dispose() });
   // The listener is domain code: VS Code supplies the log and the Schema Sync settings.
   const workbenchDdlSync = new WorkbenchDdlSyncController(cm, workbenchIndex, {
     log: (message) => out.appendLine(message),
@@ -2065,9 +2114,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
       });
     },
     resolveRoutineSymbolUri: (serverId, oid) => workbenchIndex.routineSymbol(serverId, oid)?.uri,
-    resolveDocumentUri: (symbolUri) => workbenchIndex.documentUri(symbolUri),
+    resolveDocumentUri: (symbolUri) => workbenchSourceUris.documentUri(symbolUri),
     resolveSource: (uri) => {
-      const source = workbenchIndex.sourceDescriptorForDocumentUri(uri);
+      const source = workbenchSourceUris.sourceDescriptorForDocumentUri(uri);
       return source ? { serverId: source.serverId, oid: source.oid } : undefined;
     },
   });
@@ -2421,6 +2470,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
     context,
     connections: cm,
     index: workbenchIndex,
+    sourceUris: workbenchSourceUris,
     sessions: debugSessions,
     output: out,
     refreshTree: () => connectionTreeProvider?.refreshServer(debugSessions.active?.serverId),
@@ -2602,7 +2652,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
       const serverIds = new Set<string>();
       for (const event of events) {
         if (event.uri.scheme !== CodeMonikerContentProvider.SCHEME) continue;
-        const descriptor = workbenchIndex.sourceDescriptorForDocumentUri(event.uri);
+        const descriptor = workbenchSourceUris.sourceDescriptorForDocumentUri(event.uri);
         if (descriptor) serverIds.add(descriptor.serverId);
       }
       for (const serverId of serverIds) treeProvider.refreshServer(serverId);
@@ -2631,7 +2681,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
       const uri = vscode.Uri.parse(documentUri);
       const binding =
         uri.scheme === CodeMonikerContentProvider.SCHEME
-          ? workbenchIndex.sourceDescriptorForDocumentUri(uri)
+          ? workbenchSourceUris.sourceDescriptorForDocumentUri(uri)
           : undefined;
       const serverId = binding?.serverId ?? callSiteConnections.getDocument(documentUri);
       const server = serverId ? cm.store.get(serverId) : undefined;
@@ -2649,7 +2699,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
       debuggableSqlDefinition(connectionSnapshot(connection.id), definition),
     canDeployManagedRoutine: (documentUri) => {
       const uri = vscode.Uri.parse(documentUri);
-      const descriptor = workbenchIndex.sourceDescriptorForDocumentUri(uri);
+      const descriptor = workbenchSourceUris.sourceDescriptorForDocumentUri(uri);
       if (
         descriptor?.documentKind !== "routine" ||
         !descriptor.plpgsql ||
@@ -2704,6 +2754,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
     dataViews,
     documentConnections: callSiteConnections,
     index: workbenchIndex,
+    sourceUris: workbenchSourceUris,
     tree: treeProvider,
     graph: workbenchGraph,
     graphSync: graphTreeSync,
@@ -2720,6 +2771,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
     context,
     connections: cm,
     index: workbenchIndex,
+    sourceUris: workbenchSourceUris,
     tree: treeProvider,
     graph: workbenchGraph,
     graphSync: graphTreeSync,
@@ -2738,12 +2790,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
     tree: connectionTreeProvider,
     sessions: debugSessions,
     index: workbenchIndex,
+    sourceUris: workbenchSourceUris,
     output: out,
   });
 
   registerResultCommands(context, resultStore);
 
-  registerDiagnosticsAndReconnect(context, cm, workbenchIndex, out, contentProvider);
+  registerDiagnosticsAndReconnect(
+    context,
+    cm,
+    workbenchIndex,
+    workbenchSourceUris,
+    out,
+    contentProvider,
+  );
 
   acceptanceControl?.markReady();
 
@@ -2757,6 +2817,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
     debugSessions,
     coverageTests,
     workbenchIndex,
+    workbenchSourceUris,
     workbenchDdlSync,
     workbenchGraph,
     sqlNotebooks,

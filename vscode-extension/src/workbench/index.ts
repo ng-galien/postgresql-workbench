@@ -10,6 +10,12 @@
 
 export { WorkbenchDdlSyncController } from "../../../packages/catalog/src/ddlSync.js";
 export {
+  WorkbenchIndexController,
+  type WorkbenchIndexPhase,
+  type WorkbenchIndexResult,
+  type WorkbenchSourceDescriptor,
+} from "../../../packages/catalog/src/indexController.js";
+export {
   buildWorkbenchObjects,
   buildWorkbenchTableMembers,
   type WorkbenchDatabaseIdentity,
@@ -18,18 +24,13 @@ export {
   workbenchObjectFromSymbol,
 } from "../../../packages/catalog/src/objectModel.js";
 export {
-  WorkbenchIndexController,
-  type WorkbenchIndexPhase,
-  type WorkbenchIndexResult,
-  type WorkbenchSourceDescriptor,
-} from "./indexController.js";
-export {
   actionsForWorkbenchSurface,
   buildWorkbenchObjectActions,
   type WorkbenchObjectAction,
   type WorkbenchObjectActionId,
   type WorkbenchObjectActionSurface,
 } from "./objectActions.js";
+export { WorkbenchSourceUris } from "./sourceUris.js";
 export {
   FunctionItem,
   PlpgsqlTreeItem,

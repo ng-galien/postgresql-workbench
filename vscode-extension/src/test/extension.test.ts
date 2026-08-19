@@ -245,7 +245,11 @@ suite("Virtual source editing", () => {
             }
           : undefined,
     };
-    const provider = new CodeMonikerContentProvider(fakeConnections as never, fakeIndex as never);
+    const provider = new CodeMonikerContentProvider(
+      fakeConnections as never,
+      fakeIndex as never,
+      fakeIndex as never,
+    );
     const uri = symbolUri;
     const content = new TextEncoder().encode(
       "CREATE OR REPLACE FUNCTION public.demo() RETURNS int AS $$ BEGIN RETURN 2; END; $$ LANGUAGE plpgsql;",

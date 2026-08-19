@@ -1,6 +1,7 @@
+import type { Client } from "pg";
+import type { ServerConfig } from "../../connection/src/savedConnection.js";
 import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
-import * as vscode from "vscode";
 import {
   type CodeMonikerClient,
   type CodeMonikerGraphResult,
@@ -9,13 +10,13 @@ import {
   type CodeMonikerSymbol,
   ensureLocalCodeMonikerWorkspace,
   type LocalCodeMonikerSession,
-} from "../../../packages/catalog/src/localCodeMoniker.js";
+} from "./localCodeMoniker.js";
 import {
   buildWorkbenchObjects,
   buildWorkbenchTableMembers,
   type WorkbenchObjectModel,
   workbenchObjectFromSymbol,
-} from "../../../packages/catalog/src/objectModel.js";
+} from "./objectModel.js";
 import {
   buildPostgresSourceSet,
   type CatalogQueryClient,
@@ -32,32 +33,33 @@ import {
   readPostgresCatalogDocuments,
   type VirtualSqlDocument,
   type VirtualSqlSourceSet,
-} from "../../../packages/catalog/src/postgresCatalog.js";
-import type { PostgresDdlObject } from "../../../packages/catalog/src/postgresDdlSync.js";
+} from "./postgresCatalog.js";
+import type { PostgresDdlObject } from "./postgresDdlSync.js";
 import {
   buildPostgresResourceIndex,
   directPostgresDocumentUris,
   type IndexedPostgresResource,
-} from "../../../packages/catalog/src/postgresSourceProvider.js";
+} from "./postgresSourceProvider.js";
 import {
   buildWorkbenchRelationGroups,
   classifyWorkbenchRelationFailure,
   isWorkbenchRelationSnapshotCurrent,
   mergeWorkbenchRelationGroups,
   type WorkbenchRelationGroup,
-} from "../../../packages/catalog/src/relations.js";
-import { createCodeMonikerSyntaxParser } from "../../../packages/sql/src/analysis/codeMonikerSyntax.js";
-import type { SyntaxParser } from "../../../packages/sql/src/analysis/syntaxTree.js";
+} from "./relations.js";
+import { createCodeMonikerSyntaxParser } from "../../sql/src/analysis/codeMonikerSyntax.js";
+import type { SyntaxParser } from "../../sql/src/analysis/syntaxTree.js";
 import type {
   SqlAuthoringSnapshot,
   SqlAuthoringTrigger,
-} from "../../../packages/sql/src/authoring/protocol.js";
-import type { ConnectionManager } from "../connection/index.js";
-import {
-  codeMonikerDocumentUri,
-  codeMonikerIdentityUri,
-  codeMonikerUri,
-} from "../sources/index.js";
+} from "../../sql/src/authoring/protocol.js";
+/** What indexing needs from the open Connections; `IndexConnections` satisfies it. */
+export interface IndexConnections {
+  readonly store: { get(serverId: string): ServerConfig | undefined };
+  isServerConnected(serverId: string): boolean;
+  getClient(serverId: string): Client | undefined;
+  onChanged(listener: (change: { serverIds: readonly string[] }) => void): { dispose(): void };
+}
 
 export type WorkbenchIndexStatus =
   | "not-indexed"
@@ -240,9 +242,27 @@ class WorkbenchIndexCancelledError extends Error {
 // runtime/session access, graph queries, catalog publication, and DDL synchronization. These
 // capabilities must be split behind snapshot-bound ports before removing this exception.
 // code-moniker: ignore[smell-large-class,smell-method-size-disharmony]
-export class WorkbenchIndexController implements vscode.Disposable {
-  private readonly stateEmitter = new vscode.EventEmitter<WorkbenchIndexState>();
-  readonly onDidChangeState = this.stateEmitter.event;
+
+/**
+ * What indexing needs from its host: where to log, where the Code Moniker runtime lives, which
+ * folders to index, how long a command may take, and whether acceptance control is armed. The
+ * Extension Host answers all five from VS Code.
+ */
+export interface WorkbenchIndexHost {
+  log(message: string): void;
+  runtimePath(): string;
+  workspaceRoots(): string[];
+  commandTimeoutMs(): number;
+  acceptanceControlEnabled(): boolean;
+}
+
+/** One listener registration, released by the caller. */
+interface Subscription {
+  dispose(): void;
+}
+
+export class WorkbenchIndexController {
+  private readonly stateListeners = new Set<(state: WorkbenchIndexState) => void>();
 
   /** Index lifecycle is owned per exact Connexion/database scope. */
   private readonly states = new Map<string, WorkbenchIndexState>();
@@ -272,14 +292,14 @@ export class WorkbenchIndexController implements vscode.Disposable {
   private readonly acceptanceEvents: WorkbenchIndexAcceptanceEvent[] = [];
   private acceptancePhaseGate?: AcceptanceIndexPhaseGate;
   private lastSettledRun?: { id: number; status: WorkbenchIndexStatus };
-  private readonly connectionSubscription: vscode.Disposable;
+  private readonly connectionSubscription: Subscription;
   private readonly observedConnectedServerIds = new Set<string>();
   private disposed = false;
 
   constructor(
-    private readonly context: vscode.ExtensionContext,
-    private readonly connections: ConnectionManager,
-    private readonly output: vscode.OutputChannel,
+    private readonly host: WorkbenchIndexHost,
+    private readonly connections: IndexConnections,
+
   ) {
     this.connectionSubscription = connections.onChanged((change) =>
       this.observeConnections(change.serverIds),
@@ -465,7 +485,7 @@ export class WorkbenchIndexController implements vscode.Disposable {
             ? [
                 [
                   String(symbol.postgres.oid),
-                  this.documentUri(symbol.uri)?.toString() ?? symbol.uri,
+                  symbol.uri,
                 ],
               ]
             : [],
@@ -517,37 +537,23 @@ export class WorkbenchIndexController implements vscode.Disposable {
     };
   }
 
-  /**
-   * Resolve the VS Code URI projection back to the exact symbol URI returned by
-   * Code Moniker. VS Code normalizes percent-encoding when it materializes a
-   * Uri, so its serialized form is not suitable as the identity registry key.
-   */
-  sourceDescriptorForDocumentUri(uri: vscode.Uri): WorkbenchSourceDescriptor | undefined {
-    const documentKey = codeMonikerIdentityUri(uri).toString();
-    for (const registry of this.registries.values()) {
-      for (const symbol of registry.symbols) {
-        if (codeMonikerUri(symbol.uri).toString() === documentKey) {
-          return this.sourceDescriptor(symbol.uri);
-        }
-      }
-    }
-    return undefined;
+  /** Notifies a listener whenever the index state changes. */
+  onDidChangeState(listener: (state: WorkbenchIndexState) => void): Subscription {
+    this.stateListeners.add(listener);
+    return { dispose: () => this.stateListeners.delete(listener) };
   }
 
-  sourceDocumentUris(): vscode.Uri[] {
-    const uris: vscode.Uri[] = [];
+  private publishState(state: WorkbenchIndexState): void {
+    for (const listener of this.stateListeners) listener(state);
+  }
+
+  /** Every symbol the index holds, for the surfaces that project them onto editor documents. */
+  symbolUris(): string[] {
+    const uris: string[] = [];
     for (const registry of this.registries.values()) {
-      for (const symbol of registry.symbols) {
-        const uri = this.documentUri(symbol.uri);
-        if (uri) uris.push(uri);
-      }
+      for (const symbol of registry.symbols) uris.push(symbol.uri);
     }
     return uris;
-  }
-
-  documentUri(symbolUri: string): vscode.Uri | undefined {
-    const descriptor = this.sourceDescriptor(symbolUri);
-    return descriptor ? codeMonikerDocumentUri(descriptor.symbolUri, descriptor) : undefined;
   }
 
   get daemonRuntime(): { pid: number; owned: boolean } | undefined {
@@ -645,7 +651,7 @@ export class WorkbenchIndexController implements vscode.Disposable {
       }
       return dependencies;
     } catch (error) {
-      this.output.appendLine(
+      this.host.log(
         `workbench routine dependencies unavailable for OID ${routineOid}: ${errorMessage(error)}`,
       );
       return undefined;
@@ -868,7 +874,7 @@ export class WorkbenchIndexController implements vscode.Disposable {
       const message = error instanceof Error ? error.message : String(error);
       const status = classifyWorkbenchRelationFailure(message);
       if (status === "error") {
-        this.output.appendLine(`workbench relations failed for ${object.symbolUri}: ${message}`);
+        this.host.log(`workbench relations failed for ${object.symbolUri}: ${message}`);
       }
       return { status, message };
     }
@@ -888,7 +894,7 @@ export class WorkbenchIndexController implements vscode.Disposable {
       this.runIndex(serverId).catch((error) => {
         if (error instanceof WorkbenchIndexCancelledError) throw error;
         if (this.sessionEpoch === epoch) throw error;
-        this.output.appendLine("Code Moniker connection closed during indexing; reconnecting once");
+        this.host.log("Code Moniker connection closed during indexing; reconnecting once");
         return this.runIndex(serverId);
       }),
     );
@@ -1030,7 +1036,7 @@ export class WorkbenchIndexController implements vscode.Disposable {
     this.sqlAuthoringSnapshots.clear();
     this.scopeRefreshEpochs.clear();
     this.connectionSubscription.dispose();
-    this.stateEmitter.dispose();
+    this.stateListeners.clear();
     const pendingSession = this.sessionPromise;
     this.sessionPromise = undefined;
     this.activeSession = undefined;
@@ -1152,7 +1158,7 @@ export class WorkbenchIndexController implements vscode.Disposable {
           ...(retainedResult ? { result: retainedResult } : {}),
         });
       }
-      this.output.appendLine(
+      this.host.log(
         failure instanceof WorkbenchIndexCancelledError
           ? `workbench index cancelled: ${message}`
           : `workbench index failed: ${message}`,
@@ -1180,7 +1186,7 @@ export class WorkbenchIndexController implements vscode.Disposable {
       fallbackReason ? `Schema changed: ${fallbackReason}` : "Applying PostgreSQL schema changes",
     );
     if (fallbackReason || !registry) {
-      this.output.appendLine(
+      this.host.log(
         `workbench DDL full-refresh fallback: ${fallbackReason ?? "no indexed baseline"}`,
       );
       return this.runPostgresDatabaseIndex(
@@ -1222,7 +1228,7 @@ export class WorkbenchIndexController implements vscode.Disposable {
         ].sort(),
       };
       this.publishRegistry(scope, indexed.registry, change);
-      this.output.appendLine(
+      this.host.log(
         `workbench DDL direct refresh: objects=${objects.length} existing=${selection.documentUris.size} new=${selection.newResources.length} documents=${patch.upsertDocuments.length} removed=${patch.removeDocumentUris.length}`,
       );
       return indexed.result;
@@ -1231,7 +1237,7 @@ export class WorkbenchIndexController implements vscode.Disposable {
         error instanceof PostgresCatalogFullRefreshRequired
           ? error.message
           : `incremental update failed: ${error instanceof Error ? error.message : String(error)}`;
-      this.output.appendLine(`workbench DDL full-refresh fallback: ${reason}`);
+      this.host.log(`workbench DDL full-refresh fallback: ${reason}`);
       return this.runPostgresDatabaseIndex(
         client,
         identity,
@@ -1518,11 +1524,11 @@ export class WorkbenchIndexController implements vscode.Disposable {
           this.published.clear();
           this.registries.clear();
           this.invalidateSqlAuthoringSnapshot();
-          this.output.appendLine(
+          this.host.log(
             `Code Moniker daemon ${session.metadata.daemonPid} disconnected; session invalidated`,
           );
         });
-        this.output.appendLine(
+        this.host.log(
           `Code Moniker local client ${session.metadata.packageVersion} protocol=${session.metadata.protocolVersion} ` +
             `source=${session.metadata.source} daemon=${session.metadata.daemonPid} ` +
             `owned=${session.metadata.ownedDaemon}`,
@@ -1541,29 +1547,15 @@ export class WorkbenchIndexController implements vscode.Disposable {
   }
 
   private codeMonikerRuntimePath(): string {
-    return resolve(this.context.extensionPath, "runtime", "code-moniker");
+    return this.host.runtimePath();
   }
 
   private codeMonikerCommandTimeoutMs(): number {
-    return vscode.workspace
-      .getConfiguration("postgresql-workbench.workbench.codeMoniker")
-      .get<number>("commandTimeoutMs", 30_000);
+    return this.host.commandTimeoutMs();
   }
 
   private workspaceRoots(): string[] {
-    const roots =
-      vscode.workspace.workspaceFolders
-        ?.filter((folder) => folder.uri.scheme === "file")
-        .map((folder) => folder.uri.fsPath) ?? [];
-    if (roots.length > 0) {
-      return roots;
-    }
-    const fallback = vscode.Uri.joinPath(
-      this.context.globalStorageUri,
-      "code-moniker-workspace",
-    ).fsPath;
-    mkdirSync(fallback, { recursive: true });
-    return [fallback];
+    return this.host.workspaceRoots();
   }
 
   private observeConnections(serverIds: readonly string[]): void {
@@ -1584,7 +1576,7 @@ export class WorkbenchIndexController implements vscode.Disposable {
           serverId: server.id,
           database: server.database,
         }).catch((error) => {
-          this.output.appendLine(
+          this.host.log(
             `Automatic Workbench indexing failed for ${server.id}: ${error instanceof Error ? error.message : String(error)}`,
           );
         });
@@ -1697,7 +1689,7 @@ export class WorkbenchIndexController implements vscode.Disposable {
       });
       if (this.acceptanceEvents.length > 100) this.acceptanceEvents.shift();
     }
-    this.stateEmitter.fire(state);
+    this.publishState(state);
   }
 
   private async reportProgress(
@@ -1738,10 +1730,7 @@ export class WorkbenchIndexController implements vscode.Disposable {
   }
 
   private acceptanceControlEnabled(): boolean {
-    return Boolean(
-      process.env.POSTGRESQL_WORKBENCH_ACCEPTANCE_CONTROL_FILE &&
-        this.context.extensionMode !== vscode.ExtensionMode.Production,
-    );
+    return this.host.acceptanceControlEnabled();
   }
 
   private requireAcceptanceControl(): void {
@@ -1763,7 +1752,7 @@ export class WorkbenchIndexController implements vscode.Disposable {
   }
 
   private logResult(result: WorkbenchIndexResult, session: LocalCodeMonikerSession): void {
-    this.output.appendLine(
+    this.host.log(
       `workbench index database=${result.database} documents=${result.documents} ` +
         `symbols=${result.symbols} generation=${result.generation ?? "none"} ` +
         `introspection=${duration(result.introspectionMs)} ` +

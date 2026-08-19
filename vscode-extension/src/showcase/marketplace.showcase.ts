@@ -203,7 +203,7 @@ async function coverageScene(api: PlpgsqlExtensionApi): Promise<void> {
     assert.ok(coverage.files.length > 0, "The coverage run must publish at least one file");
     await assertRestockLoopCovered(api, coverage, routine);
     await vscode.commands.executeCommand("testing.openCoverage");
-    const uri = api.workbenchIndex.documentUri(routine.symbolUri);
+    const uri = api.workbenchSourceUris.documentUri(routine.symbolUri);
     assert.ok(uri);
     await vscode.window.showTextDocument(uri, { preview: false, preserveFocus: false });
     await delay(500);
@@ -218,7 +218,7 @@ async function assertRestockLoopCovered(
   routine: WorkbenchObjectModel,
 ): Promise<void> {
   const file = coverage.files.find(
-    ({ uri }) => api.workbenchIndex.sourceDescriptorForDocumentUri(uri)?.oid === routine.oid,
+    ({ uri }) => api.workbenchSourceUris.sourceDescriptorForDocumentUri(uri)?.oid === routine.oid,
   );
   assert.ok(file, "The coverage run must include shop.restock_report");
   const cancellation = new vscode.CancellationTokenSource();

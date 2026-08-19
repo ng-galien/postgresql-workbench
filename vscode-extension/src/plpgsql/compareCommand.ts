@@ -10,10 +10,12 @@ import {
 import type { CommandFunctionDefinition } from "../codeLens/index.js";
 import type { ConnectionManager } from "../connection/index.js";
 import type { WorkbenchIndexController } from "../workbench/index.js";
+import type { WorkbenchSourceUris } from "../workbench/sourceUris.js";
 
 export function createRoutineComparisonHandler(
   connections: ConnectionManager,
   index: WorkbenchIndexController,
+  sourceUris: WorkbenchSourceUris,
 ): (definition?: CommandFunctionDefinition) => Promise<false | RoutineComparisonResult> {
   return async (definition) => {
     if (!definition?.sourceSql || definition.body === undefined) {
@@ -79,7 +81,7 @@ export function createRoutineComparisonHandler(
       language: "plpgsql",
       content: definition.sourceSql,
     });
-    const deployedUri = index.documentUri(deployed.symbolUri);
+    const deployedUri = sourceUris.documentUri(deployed.symbolUri);
     if (!deployedUri) return false;
     await vscode.commands.executeCommand(
       "vscode.diff",

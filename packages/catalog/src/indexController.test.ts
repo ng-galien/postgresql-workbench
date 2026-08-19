@@ -1,16 +1,27 @@
 import { describe, expect, it, vi } from "vitest";
-import * as vscode from "vscode";
-import type { LocalCodeMonikerSession } from "../../../packages/catalog/src/localCodeMoniker.js";
+
+/** The environment a test controller indexes in. */
+function testHost() {
+  return {
+    log: vi.fn(),
+    runtimePath: () => "/extension/runtime/code-moniker",
+    workspaceRoots: () => ["/storage/code-moniker-workspace"],
+    commandTimeoutMs: () => 30_000,
+    acceptanceControlEnabled: () =>
+      Boolean(process.env.POSTGRESQL_WORKBENCH_ACCEPTANCE_CONTROL_FILE),
+  };
+}
+import type { LocalCodeMonikerSession } from "./localCodeMoniker.js";
 import type {
   PostgresCatalogSnapshot,
   VirtualSqlSourceSet,
-} from "../../../packages/catalog/src/postgresCatalog.js";
+} from "./postgresCatalog.js";
 import {
   postgresDatabaseDocumentRoot,
   postgresDocumentUri,
   postgresSourceSetName,
-} from "../../../packages/catalog/src/postgresCatalog.js";
-import type { ConnectionManager } from "../connection/index.js";
+} from "./postgresCatalog.js";
+import type { ServerConfig } from "../../connection/src/savedConnection.js";
 
 const SCOPE_A = postgresDatabaseDocumentRoot({ serverId: "server-a", database: "database-a" });
 const SCOPE_B = postgresDatabaseDocumentRoot({ serverId: "server-b", database: "database-b" });
@@ -56,9 +67,11 @@ vi.mock("../../../packages/catalog/src/postgresCatalog.js", async (importOrigina
   };
 });
 
-import { readPostgresCatalog } from "../../../packages/catalog/src/postgresCatalog.js";
+import { readPostgresCatalog } from "./postgresCatalog.js";
 import type { WorkbenchIndexResult } from "./indexController.js";
-import { WorkbenchIndexController } from "./indexController.js";
+import { WorkbenchIndexController,
+  type IndexConnections,
+} from "./indexController.js";
 
 function state(controller: WorkbenchIndexController, serverId = "server-a") {
   return controller.databaseState({
@@ -128,7 +141,7 @@ class FakeConnections {
     return this.server?.id === id;
   }
 
-  onChanged(listener: (change: { serverIds: string[] }) => void): vscode.Disposable {
+  onChanged(listener: (change: { serverIds: string[] }) => void): { dispose(): void } {
     this.listeners.add(listener);
     return {
       dispose: () => this.listeners.delete(listener),
@@ -156,12 +169,8 @@ describe("WorkbenchIndexController connection state", () => {
     const connections = new FakeConnections();
     connections.switchTo(undefined);
     const controller = new WorkbenchIndexController(
-      {
-        extensionPath: "/extension",
-        globalStorageUri: { fsPath: "/storage" },
-      } as vscode.ExtensionContext,
-      connections as unknown as ConnectionManager,
-      { appendLine: vi.fn() } as unknown as vscode.OutputChannel,
+      testHost(),
+      connections as unknown as IndexConnections,
     );
     const result: WorkbenchIndexResult = {
       serverId: "server-a",
@@ -199,12 +208,8 @@ describe("WorkbenchIndexController connection state", () => {
   it("serializes an ad hoc database refresh and invalidates an older active snapshot", async () => {
     const connections = new FakeConnections();
     const controller = new WorkbenchIndexController(
-      {
-        extensionPath: "/extension",
-        globalStorageUri: { fsPath: "/storage" },
-      } as vscode.ExtensionContext,
-      connections as unknown as ConnectionManager,
-      { appendLine: vi.fn() } as unknown as vscode.OutputChannel,
+      testHost(),
+      connections as unknown as IndexConnections,
     );
     const result: WorkbenchIndexResult = {
       serverId: "server-a",
@@ -261,12 +266,8 @@ describe("WorkbenchIndexController connection state", () => {
   it("publishes a refreshed registry only for its exact Connexion", () => {
     const connections = new FakeConnections();
     const controller = new WorkbenchIndexController(
-      {
-        extensionPath: "/extension",
-        globalStorageUri: { fsPath: "/storage" },
-      } as vscode.ExtensionContext,
-      connections as unknown as ConnectionManager,
-      { appendLine: vi.fn() } as unknown as vscode.OutputChannel,
+      testHost(),
+      connections as unknown as IndexConnections,
     );
     const result: WorkbenchIndexResult = {
       serverId: "server-a",
@@ -323,13 +324,8 @@ describe("WorkbenchIndexController connection state", () => {
     process.env.POSTGRESQL_WORKBENCH_ACCEPTANCE_CONTROL_FILE = "/tmp/workbench-control.json";
     const connections = new FakeConnections();
     const controller = new WorkbenchIndexController(
-      {
-        extensionMode: vscode.ExtensionMode.Test,
-        extensionPath: "/extension",
-        globalStorageUri: { fsPath: "/storage" },
-      } as vscode.ExtensionContext,
-      connections as unknown as ConnectionManager,
-      { appendLine: vi.fn() } as unknown as vscode.OutputChannel,
+      testHost(),
+      connections as unknown as IndexConnections,
     );
 
     try {
@@ -374,13 +370,8 @@ describe("WorkbenchIndexController connection state", () => {
     process.env.POSTGRESQL_WORKBENCH_ACCEPTANCE_CONTROL_FILE = "/tmp/workbench-control.json";
     const connections = new FakeConnections();
     const controller = new WorkbenchIndexController(
-      {
-        extensionMode: vscode.ExtensionMode.Test,
-        extensionPath: "/extension",
-        globalStorageUri: { fsPath: "/storage" },
-      } as vscode.ExtensionContext,
-      connections as unknown as ConnectionManager,
-      { appendLine: vi.fn() } as unknown as vscode.OutputChannel,
+      testHost(),
+      connections as unknown as IndexConnections,
     );
     const result: WorkbenchIndexResult = {
       serverId: "server-b",
@@ -458,12 +449,8 @@ describe("WorkbenchIndexController connection state", () => {
   it("keeps pre-publication errors scoped to their exact Connexion", async () => {
     const connections = new FakeConnections();
     const controller = new WorkbenchIndexController(
-      {
-        extensionPath: "/extension",
-        globalStorageUri: { fsPath: "/storage" },
-      } as vscode.ExtensionContext,
-      connections as unknown as ConnectionManager,
-      { appendLine: vi.fn() } as unknown as vscode.OutputChannel,
+      testHost(),
+      connections as unknown as IndexConnections,
     );
 
     await expect(controller.indexDatabase("server-a")).rejects.toThrow("catalog unavailable");
@@ -494,12 +481,8 @@ describe("WorkbenchIndexController connection state", () => {
   it("keeps the previous source snapshot visible in a distinct failed state", async () => {
     const connections = new FakeConnections();
     const controller = new WorkbenchIndexController(
-      {
-        extensionPath: "/extension",
-        globalStorageUri: { fsPath: "/storage" },
-      } as vscode.ExtensionContext,
-      connections as unknown as ConnectionManager,
-      { appendLine: vi.fn() } as unknown as vscode.OutputChannel,
+      testHost(),
+      connections as unknown as IndexConnections,
     );
     const result: WorkbenchIndexResult = {
       serverId: "server-a",
@@ -534,12 +517,8 @@ describe("WorkbenchIndexController connection state", () => {
   it("cancels a refresh without replacing the previous source snapshot", async () => {
     const connections = new FakeConnections();
     const controller = new WorkbenchIndexController(
-      {
-        extensionPath: "/extension",
-        globalStorageUri: { fsPath: "/storage" },
-      } as vscode.ExtensionContext,
-      connections as unknown as ConnectionManager,
-      { appendLine: vi.fn() } as unknown as vscode.OutputChannel,
+      testHost(),
+      connections as unknown as IndexConnections,
     );
     const result: WorkbenchIndexResult = {
       serverId: "server-a",
@@ -593,12 +572,8 @@ describe("WorkbenchIndexController connection state", () => {
   it("tracks an automatic refresh as a cancellable run of its exact Connexion", async () => {
     const connections = new FakeConnections();
     const controller = new WorkbenchIndexController(
-      {
-        extensionPath: "/extension",
-        globalStorageUri: { fsPath: "/storage" },
-      } as vscode.ExtensionContext,
-      connections as unknown as ConnectionManager,
-      { appendLine: vi.fn() } as unknown as vscode.OutputChannel,
+      testHost(),
+      connections as unknown as IndexConnections,
     );
     const result: WorkbenchIndexResult = {
       serverId: "server-a",
@@ -656,12 +631,8 @@ describe("WorkbenchIndexController connection state", () => {
     async (failure) => {
       const connections = new FakeConnections();
       const controller = new WorkbenchIndexController(
-        {
-          extensionPath: "/extension",
-          globalStorageUri: { fsPath: "/storage" },
-        } as vscode.ExtensionContext,
-        connections as unknown as ConnectionManager,
-        { appendLine: vi.fn() } as unknown as vscode.OutputChannel,
+        testHost(),
+        connections as unknown as IndexConnections,
       );
       const previousResult: WorkbenchIndexResult = {
         serverId: "server-a",
@@ -854,12 +825,8 @@ function tableRegistry(result: WorkbenchIndexResult) {
 
 function newController(connections: FakeConnections): WorkbenchIndexController {
   return new WorkbenchIndexController(
-    {
-      extensionPath: "/extension",
-      globalStorageUri: { fsPath: "/storage" },
-    } as vscode.ExtensionContext,
-    connections as unknown as ConnectionManager,
-    { appendLine: vi.fn() } as unknown as vscode.OutputChannel,
+    testHost(),
+    connections as unknown as IndexConnections,
   );
 }
 

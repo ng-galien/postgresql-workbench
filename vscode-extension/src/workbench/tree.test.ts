@@ -45,8 +45,8 @@ vi.mock("vscode", () => {
   };
 });
 
+import type { WorkbenchIndexState } from "../../../packages/catalog/src/indexController.js";
 import type { WorkbenchObjectModel } from "../../../packages/catalog/src/objectModel.js";
-import type { WorkbenchIndexState } from "./indexController.js";
 import {
   DatabaseSourceItem,
   FunctionItem,

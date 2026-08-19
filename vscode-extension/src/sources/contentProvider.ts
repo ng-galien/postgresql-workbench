@@ -4,6 +4,7 @@ import { validateManagedRoutineDeployment } from "../../../packages/sql/src/rout
 import type { ConnectionManager } from "../connection/index.js";
 import { openCoverageClient } from "../coverage/index.js";
 import type { WorkbenchIndexController, WorkbenchSourceDescriptor } from "../workbench/index.js";
+import type { WorkbenchSourceUris } from "../workbench/sourceUris.js";
 import { CODE_MONIKER_URI_SCHEME, codeMonikerUriString } from "./uri.js";
 
 interface ManagedWorkingCopyState {
@@ -43,6 +44,7 @@ export class CodeMonikerContentProvider implements vscode.FileSystemProvider, vs
   constructor(
     private readonly connections: ConnectionManager,
     private readonly index: WorkbenchIndexController,
+    private readonly sourceUris: WorkbenchSourceUris,
     private readonly output?: vscode.OutputChannel,
     private readonly state?: ManagedWorkingCopyState,
   ) {
@@ -112,7 +114,7 @@ export class CodeMonikerContentProvider implements vscode.FileSystemProvider, vs
       this.unavailableTabsReconciliationRequested = false;
       await closeUnavailableCodeMonikerTabs((uri) =>
         Boolean(
-          this.index.sourceDescriptorForDocumentUri(uri) ||
+          this.sourceUris.sourceDescriptorForDocumentUri(uri) ||
             this.workingCopies.has(codeMonikerUriString(uri)),
         ),
       );
@@ -133,7 +135,7 @@ export class CodeMonikerContentProvider implements vscode.FileSystemProvider, vs
         size: persisted.content.length,
       };
     }
-    const descriptor = this.index.sourceDescriptorForDocumentUri(uri);
+    const descriptor = this.sourceUris.sourceDescriptorForDocumentUri(uri);
     if (!descriptor) {
       if (this.directoryEntries(uri).length > 0) {
         return {
@@ -175,7 +177,7 @@ export class CodeMonikerContentProvider implements vscode.FileSystemProvider, vs
   }
 
   async writeFile(uri: vscode.Uri, content: Uint8Array): Promise<void> {
-    const descriptor = this.index.sourceDescriptorForDocumentUri(uri);
+    const descriptor = this.sourceUris.sourceDescriptorForDocumentUri(uri);
     if (descriptor && !descriptor.plpgsql) {
       throw vscode.FileSystemError.NoPermissions("This managed PostgreSQL source is read-only");
     }
@@ -291,12 +293,12 @@ export class CodeMonikerContentProvider implements vscode.FileSystemProvider, vs
 
   hasWorkingCopy(uri: vscode.Uri): boolean {
     if (this.workingCopies.has(codeMonikerUriString(uri))) return true;
-    const descriptor = this.index.sourceDescriptorForDocumentUri(uri);
+    const descriptor = this.sourceUris.sourceDescriptorForDocumentUri(uri);
     return descriptor ? this.workingCopies.has(descriptor.symbolUri) : false;
   }
 
   workingCopyDiffersFromDeployed(uri: vscode.Uri): boolean {
-    const descriptor = this.index.sourceDescriptorForDocumentUri(uri);
+    const descriptor = this.sourceUris.sourceDescriptorForDocumentUri(uri);
     const workingCopy =
       this.workingCopies.get(codeMonikerUriString(uri)) ??
       (descriptor ? this.workingCopies.get(descriptor.symbolUri) : undefined);
@@ -322,7 +324,7 @@ export class CodeMonikerContentProvider implements vscode.FileSystemProvider, vs
 
   private requireDescriptor(uri: vscode.Uri): WorkbenchSourceDescriptor {
     const symbolUri = codeMonikerUriString(uri);
-    const descriptor = this.index.sourceDescriptorForDocumentUri(uri);
+    const descriptor = this.sourceUris.sourceDescriptorForDocumentUri(uri);
     if (!descriptor) {
       throw vscode.FileSystemError.FileNotFound(
         `Code Moniker symbol is not available in the current PostgreSQL index: ${symbolUri}`,
@@ -352,7 +354,7 @@ export class CodeMonikerContentProvider implements vscode.FileSystemProvider, vs
   private directoryEntries(uri: vscode.Uri): [string, vscode.FileType][] {
     const prefix = uri.path.endsWith("/") ? uri.path : `${uri.path}/`;
     const entries = new Map<string, vscode.FileType>();
-    for (const candidate of this.index.sourceDocumentUris()) {
+    for (const candidate of this.sourceUris.sourceDocumentUris()) {
       if (candidate.scheme !== uri.scheme || candidate.authority !== uri.authority) continue;
       if (!candidate.path.startsWith(prefix)) continue;
       const remainder = candidate.path.slice(prefix.length);

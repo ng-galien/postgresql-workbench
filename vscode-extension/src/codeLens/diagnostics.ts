@@ -4,7 +4,7 @@ import type { SyntaxParser } from "../../../packages/sql/src/analysis/syntaxTree
 import type { ConnectionManager } from "../connection/index.js";
 import { mapPlpgsqlBodyLineToSource } from "../coverage/index.js";
 import { CODE_MONIKER_URI_SCHEME } from "../sources/index.js";
-import type { WorkbenchIndexController } from "../workbench/index.js";
+import type { WorkbenchSourceUris } from "../workbench/sourceUris.js";
 
 export interface ManagedRoutineDivergence {
   workingCopyDiffersFromDeployed(uri: vscode.Uri): boolean;
@@ -25,7 +25,7 @@ export class PlpgsqlDiagnosticsProvider implements vscode.Disposable {
   constructor(
     private readonly cm: ConnectionManager,
     private readonly syntaxParser: () => Promise<SyntaxParser>,
-    private readonly index: WorkbenchIndexController,
+    private readonly sourceUris: WorkbenchSourceUris,
     private readonly divergence?: ManagedRoutineDivergence,
   ) {
     this.diagnostics = vscode.languages.createDiagnosticCollection("postgresql-workbench-check");
@@ -53,7 +53,7 @@ export class PlpgsqlDiagnosticsProvider implements vscode.Disposable {
   }
 
   private async check(document: vscode.TextDocument): Promise<void> {
-    const source = this.index.sourceDescriptorForDocumentUri(document.uri);
+    const source = this.sourceUris.sourceDescriptorForDocumentUri(document.uri);
     if (!source?.plpgsql || !this.cm.isServerConnected(source.serverId)) return;
     this.trackedDocuments.set(document.uri.toString(), {
       uri: document.uri,

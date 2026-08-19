@@ -3,6 +3,11 @@ import type {
   WorkbenchDdlSyncController,
   WorkbenchDdlSyncState,
 } from "../../../packages/catalog/src/ddlSync.js";
+import type {
+  WorkbenchIndexController,
+  WorkbenchIndexResult,
+  WorkbenchIndexState,
+} from "../../../packages/catalog/src/indexController.js";
 import {
   buildWorkbenchObjects,
   buildWorkbenchTableMembers,
@@ -38,11 +43,6 @@ import {
   sqlNotebookDisplayName,
 } from "../scratchpad/index.js";
 import { postgresVisual } from "../sources/index.js";
-import type {
-  WorkbenchIndexController,
-  WorkbenchIndexResult,
-  WorkbenchIndexState,
-} from "./indexController.js";
 
 export class ServerItem extends vscode.TreeItem {
   readonly kind = "server" as const;
