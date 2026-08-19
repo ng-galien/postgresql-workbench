@@ -1,10 +1,10 @@
 import type { Client } from "pg";
-import { parseDebugApplicationName } from "../../../packages/dap/src/debugger/launch/debugApplicationName.js";
+import { parseDebugApplicationName } from "./debugger/launch/debugApplicationName.js";
 import type {
   DebugSessionRoutine,
   DebugSessionRuntimeState,
   DebugSessionStatus,
-} from "../../../packages/dap/src/debugger/launch/debugSessionStatus.js";
+} from "./debugger/launch/debugSessionStatus.js";
 
 interface DebugRoutineRow {
   oid: string | number;

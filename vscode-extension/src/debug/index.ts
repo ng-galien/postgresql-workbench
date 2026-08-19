@@ -3,6 +3,12 @@
  * driving the session, showing its results, and recovering the sessions PostgreSQL left behind.
  * This file is the module's public surface — everything else under `debug/` is internal.
  */
+
+export {
+  type DebugSessionInfo,
+  enrichDebugSessions,
+  listDebugSessions,
+} from "../../../packages/dap/src/orphanSessions.js";
 export {
   buildRoutineArgs,
   buildRoutineTarget,
@@ -10,11 +16,6 @@ export {
   configNameFromSql,
   resolveDebugConfiguration,
 } from "./launchConfiguration.js";
-export {
-  type DebugSessionInfo,
-  enrichDebugSessions,
-  listDebugSessions,
-} from "./orphanSessions.js";
 export { manageDebugSessions } from "./orphanSessionsUi.js";
 export {
   DebugResultStore,

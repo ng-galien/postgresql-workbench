@@ -56,11 +56,46 @@ export interface OpenedDataViewResult {
   idleTimeoutMs: number;
 }
 
+
 /** How much of a relation a Data View reads at a time, and how long its cursor may idle. */
 export interface DataViewResultSettings {
   pageSize: number;
   maxCachedRows: number;
   cursorIdleTimeoutSeconds: number;
+}
+
+/**
+ * Opens a bounded cursor over one statement: the connection is given an idle timeout so
+ * PostgreSQL closes an abandoned cursor, then the reader and its paging session are created.
+ * Every surface that streams rows — the Scratchpad and the Data View — opens them this way.
+ * On failure the reader, or the client when there is none yet, is closed here.
+ */
+export async function openBoundedCursor(options: {
+  client: Client;
+  sql: string;
+  settings: DataViewResultSettings;
+  binding: ScratchpadAssociationSnapshot;
+  /** Value decoding of the cursor; the Data View keeps everything as PostgreSQL text. */
+  types?: SqlCursorTypes;
+}): Promise<{ session: SqlResultSession; reader: PostgresCursorReader; idleTimeoutMs: number }> {
+  const { client, sql, settings, binding, types } = options;
+  const idleTimeoutMs = settings.cursorIdleTimeoutSeconds * 1_000;
+  await client.query("SELECT set_config('idle_in_transaction_session_timeout', $1, false)", [
+    `${postgresCursorSafetyTimeoutMs(idleTimeoutMs)}ms`,
+  ]);
+  const reader = new PostgresCursorReader(client, sql, types ? { types } : undefined);
+  try {
+    const session = await SqlResultSession.open(reader, {
+      pageSize: settings.pageSize,
+      maxCachedRows: settings.maxCachedRows,
+      binding,
+      statement: sql,
+    });
+    return { session, reader, idleTimeoutMs };
+  } catch (error) {
+    await reader.close().catch(() => {});
+    throw error;
+  }
 }
 
 /**
@@ -80,10 +115,6 @@ export async function openDataViewResult(options: {
   const { client, sql, settings, binding, accents, checkpoint } = options;
   let reader: PostgresCursorReader | undefined;
   try {
-    const idleTimeoutMs = settings.cursorIdleTimeoutSeconds * 1_000;
-    await client.query("SELECT set_config('idle_in_transaction_session_timeout', $1, false)", [
-      `${postgresCursorSafetyTimeoutMs(idleTimeoutMs)}ms`,
-    ]);
     const probe = await client.query({
       text: `SELECT * FROM (\n${sql}\n) AS "data_view_probe" LIMIT 0`,
       rowMode: "array",
@@ -130,13 +161,15 @@ export async function openDataViewResult(options: {
           policy.reason === READ_ONLY_REASONS.relationship)
       );
     });
-    reader = new PostgresCursorReader(client, sql, { types: TEXT_PASSTHROUGH_TYPES });
-    const session = await SqlResultSession.open(reader, {
-      pageSize: settings.pageSize,
-      maxCachedRows: settings.maxCachedRows,
+    const cursor = await openBoundedCursor({
+      client,
+      sql,
+      settings,
       binding,
-      statement: sql,
+      types: TEXT_PASSTHROUGH_TYPES,
     });
+    reader = cursor.reader;
+    const { session, idleTimeoutMs } = cursor;
     checkpoint();
     return {
       session,

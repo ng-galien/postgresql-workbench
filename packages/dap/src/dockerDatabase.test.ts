@@ -4,7 +4,7 @@ import {
   type DockerCommandRunner,
   DockerDebuggerProvisioner,
   findDockerExecutable,
-} from "./provisioning.js";
+} from "./dockerDatabase.js";
 
 function result(exitCode = 0, stdout = "", stderr = ""): DockerCommandResult {
   return { exitCode, stdout, stderr };

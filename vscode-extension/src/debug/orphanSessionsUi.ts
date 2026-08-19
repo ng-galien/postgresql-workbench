@@ -1,14 +1,14 @@
 import * as vscode from "vscode";
 import type { DebugSessionStatus } from "../../../packages/dap/src/debugger/launch/debugSessionStatus.js";
-import type { ConnectionManager } from "../connection/index.js";
-import { getConnectionName } from "../connection/index.js";
 import {
   type DebugSessionInfo,
   debugBackendSelections,
   enrichDebugSessions,
   listDebugSessions,
   terminateDebugSessions,
-} from "./orphanSessions.js";
+} from "../../../packages/dap/src/orphanSessions.js";
+import type { ConnectionManager } from "../connection/index.js";
+import { getConnectionName } from "../connection/index.js";
 
 interface RefreshableTree {
   refresh(): void;

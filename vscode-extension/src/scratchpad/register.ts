@@ -8,7 +8,8 @@ import {
   type DebugResultError,
   type DebugResultStatus,
 } from "../../../packages/dap/src/debugger/launch/index.js";
-import { PostgresCursorReader, SqlResultSession } from "../../../packages/rows/src/cursor.js";
+import type { PostgresCursorReader } from "../../../packages/rows/src/cursor.js";
+import { openBoundedCursor } from "../../../packages/rows/src/openRows.js";
 import type {
   SqlExecutionPlan,
   SqlExecutionStatement,
@@ -52,7 +53,7 @@ import {
   sqlNotebookResultPayload,
   validStatementTimeoutMs,
 } from "./notebookFile.js";
-import { postgresCursorSafetyTimeoutMs, SqlNotebookResultHost } from "./resultHost.js";
+import { SqlNotebookResultHost } from "./resultHost.js";
 import { executeSqlSelection } from "./runSelection.js";
 import { ScratchpadTransactionManager } from "./transactions.js";
 import {
@@ -1230,17 +1231,14 @@ class SqlNotebookController implements vscode.Disposable {
       cancellation.throwIfCancellationRequested();
       await configureNotebookStatementTimeout(client, statementTimeoutMs);
       cancellation.throwIfCancellationRequested();
-      const resultIdleTimeoutMs = settings.cursorIdleTimeoutSeconds * 1_000;
-      await client.query("SELECT set_config('idle_in_transaction_session_timeout', $1, false)", [
-        `${postgresCursorSafetyTimeoutMs(resultIdleTimeoutMs)}ms`,
-      ]);
-      reader = new PostgresCursorReader(client, sql);
-      const session = await SqlResultSession.open(reader, {
-        pageSize: settings.pageSize,
-        maxCachedRows: settings.maxCachedRows,
+      const cursor = await openBoundedCursor({
+        client,
+        sql,
+        settings,
         binding: association,
-        statement: sql,
       });
+      reader = cursor.reader;
+      const { session, idleTimeoutMs: resultIdleTimeoutMs } = cursor;
       cancellation.throwIfCancellationRequested();
       return this.resultHost.register(session, cell, resultIdleTimeoutMs, association, () =>
         this.isAssociationCurrent(cell.notebook, association),

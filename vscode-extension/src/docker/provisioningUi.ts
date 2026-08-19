@@ -1,11 +1,11 @@
 import * as vscode from "vscode";
-import type { ConnectionManager } from "../connection/index.js";
-import { ServerStore } from "../connection/index.js";
 import {
   DOCKER_DEBUGGER_VERSIONS,
   DockerDebuggerProvisioner,
   type DockerDebuggerVersion,
-} from "./provisioning.js";
+} from "../../../packages/dap/src/dockerDatabase.js";
+import type { ConnectionManager } from "../connection/index.js";
+import { ServerStore } from "../connection/index.js";
 
 interface VersionItem extends vscode.QuickPickItem {
   version: DockerDebuggerVersion;

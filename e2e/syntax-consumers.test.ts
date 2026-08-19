@@ -6,7 +6,7 @@ import { plpgsqlRoutineBodyStartLine } from "../packages/sql/src/analysis/plpgsq
 import { classifySqlStatementCount } from "../packages/sql/src/analysis/sqlStatements.js";
 import { parseCall, parseSqlCalls, parseSqlDefinitions } from "../packages/sql/src/callParser.js";
 import { extractFuncDeps } from "../packages/sql/src/deps.js";
-import { validateManagedRoutineDeployment } from "../vscode-extension/src/plpgsql/deployRoutine.js";
+import { validateManagedRoutineDeployment } from "../packages/sql/src/routines/validateDeployment.js";
 import { type CodeMonikerTestRuntime, startCodeMonikerTestRuntime } from "./codeMonikerRuntime.js";
 
 describe("Code Moniker SQL consumers", () => {
