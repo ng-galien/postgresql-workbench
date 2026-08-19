@@ -4,17 +4,17 @@ import {
   type DataViewEditability,
   type DataViewProjection,
   dataViewColumnKeys,
-} from "../../../../packages/views/src/dataView/protocol.js";
-import type { NotebookBindingSnapshot } from "../../scratchpad/index.js";
+} from "../../views/src/dataView/protocol.js";
+import type { ScratchpadAssociationSnapshot } from "../../views/src/results/payload.js";
 import {
   PostgresCursorReader,
-  postgresCursorSafetyTimeoutMs,
   type SqlCursorTypes,
+  postgresCursorSafetyTimeoutMs,
   SqlResultSession,
-} from "../../scratchpad/index.js";
-import { loadDataViewCatalog } from "../dataViewCatalog.js";
-import { READ_ONLY_REASONS, resolveDataViewEditability } from "../editability.js";
-import type { DataViewResultSettings } from "../hostServices.js";
+} from "./cursor.js";
+import { loadDataViewCatalog } from "./catalogFacts.js";
+import { READ_ONLY_REASONS, resolveDataViewEditability } from "./editability.js";
+
 
 /**
  * Data View cursors keep every value as PostgreSQL text except booleans and binary values, so
@@ -56,6 +56,13 @@ export interface OpenedDataViewResult {
   idleTimeoutMs: number;
 }
 
+/** How much of a relation a Data View reads at a time, and how long its cursor may idle. */
+export interface DataViewResultSettings {
+  pageSize: number;
+  maxCachedRows: number;
+  cursorIdleTimeoutSeconds: number;
+}
+
 /**
  * Probes the projection (RowDescription: table and column of every output), loads the catalog
  * facts of those tables, decides editability, then opens the bounded cursor. The client is
@@ -65,7 +72,7 @@ export async function openDataViewResult(options: {
   client: Client;
   sql: string;
   settings: DataViewResultSettings;
-  binding: NotebookBindingSnapshot;
+  binding: ScratchpadAssociationSnapshot;
   accents: TableAccents;
   /** Throws when the caller no longer wants this load; the client is then released. */
   checkpoint(): void;

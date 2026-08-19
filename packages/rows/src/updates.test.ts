@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { stripStatementTerminator } from "../../../packages/sql/src/authoring/query/analysis.js";
-import { buildRowUpdates } from "./dataViewSql.js";
+import { stripStatementTerminator } from "../../sql/src/authoring/query/analysis.js";
+import { buildRowUpdates } from "./updates.js";
 import { type CatalogTable, READ_ONLY_REASONS, resolveDataViewEditability } from "./editability.js";
 
 const address: CatalogTable = {

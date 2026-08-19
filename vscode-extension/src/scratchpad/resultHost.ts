@@ -1,4 +1,7 @@
+export { postgresCursorSafetyTimeoutMs } from "../../../packages/rows/src/cursor.js";
+
 import * as vscode from "vscode";
+import type { SqlResultSession } from "../../../packages/rows/src/cursor.js";
 import {
   associationFingerprint,
   type ScratchpadAssociationSnapshot,
@@ -9,7 +12,6 @@ import {
   type SqlNotebookResultRequest,
   type SqlResultDataViewRequest,
 } from "./notebookFile.js";
-import type { SqlResultSession } from "./resultSession.js";
 
 export type OpenDataViewFromResult = (request: {
   sql: string;
@@ -275,9 +277,6 @@ export class SqlNotebookResultHost implements vscode.Disposable {
  * PostgreSQL is a recovery guard, not the product deadline. Keeping its timeout
  * behind the host deadline prevents both clocks from racing at the same instant.
  */
-export function postgresCursorSafetyTimeoutMs(resultIdleTimeoutMs: number): number {
-  return Math.max(60_000, resultIdleTimeoutMs * 2);
-}
 
 function hasInteractiveNavigation(payload: SqlNotebookResultPayload): boolean {
   const navigation = payload.navigation;

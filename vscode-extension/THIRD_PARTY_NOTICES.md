@@ -1516,7 +1516,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ````
 
-## pg-cursor@2.21.0
+## pg-cursor@2.22.0
 
 License: MIT
 Source: git://github.com/brianc/node-postgres.git

@@ -3,8 +3,8 @@ import {
   type DataViewEdit,
   type DataViewEditability,
   sameDataViewRow,
-} from "../../../../packages/views/src/dataView/protocol.js";
-import { buildRowUpdates } from "../dataViewSql.js";
+} from "../../views/src/dataView/protocol.js";
+import { buildRowUpdates } from "./updates.js";
 
 /** Local, unapplied cell edits of a Data View, and their atomic application. */
 export class PendingEdits {

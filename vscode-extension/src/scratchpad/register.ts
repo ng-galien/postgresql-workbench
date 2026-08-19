@@ -8,6 +8,7 @@ import {
   type DebugResultError,
   type DebugResultStatus,
 } from "../../../packages/dap/src/debugger/launch/index.js";
+import { PostgresCursorReader, SqlResultSession } from "../../../packages/rows/src/cursor.js";
 import type {
   SqlExecutionPlan,
   SqlExecutionStatement,
@@ -52,7 +53,6 @@ import {
   validStatementTimeoutMs,
 } from "./notebookFile.js";
 import { postgresCursorSafetyTimeoutMs, SqlNotebookResultHost } from "./resultHost.js";
-import { PostgresCursorReader, SqlResultSession } from "./resultSession.js";
 import { executeSqlSelection } from "./runSelection.js";
 import { ScratchpadTransactionManager } from "./transactions.js";
 import {

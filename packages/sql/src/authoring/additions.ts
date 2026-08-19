@@ -1,23 +1,23 @@
-import type { SyntaxParser } from "../../../../packages/sql/src/analysis/syntaxTree.js";
+import type { SyntaxParser } from "../analysis/syntaxTree.js";
 import {
   reachableJoinTargets,
   shortestJoinPlans,
-} from "../../../../packages/sql/src/authoring/joinPlanner.js";
+} from "./joinPlanner.js";
 import type {
   SqlAuthoringComposeRequest,
   SqlAuthoringComposeResult,
   SqlAuthoringDragPayload,
   SqlAuthoringSettings,
   SqlAuthoringSnapshot,
-} from "../../../../packages/sql/src/authoring/protocol.js";
+} from "./protocol.js";
 import {
   analyzeSqlQuery,
   formatSqlQuery,
-} from "../../../../packages/sql/src/authoring/query/analysis.js";
+} from "./query/analysis.js";
 import type {
   DataViewAddition,
   DataViewProjection,
-} from "../../../../packages/views/src/dataView/protocol.js";
+} from "../../../views/src/dataView/protocol.js";
 
 /**
  * Everything the composition engine can add to a query, grouped by table already present

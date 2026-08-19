@@ -1,6 +1,6 @@
 import type { FieldDef } from "pg";
 import { describe, expect, it } from "vitest";
-import { type SqlCursorBatch, type SqlCursorReader, SqlResultSession } from "./resultSession.js";
+import { type SqlCursorBatch, type SqlCursorReader, SqlResultSession } from "./cursor.js";
 
 const FIELD: FieldDef = {
   name: "value",

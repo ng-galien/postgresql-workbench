@@ -1,10 +1,10 @@
-import { quoteIdentifier } from "../../../packages/sql/src/authoring/completion.js";
+import { quoteIdentifier } from "../../sql/src/authoring/completion.js";
 
 import type {
   DataViewEdit,
   DataViewEditability,
-} from "../../../packages/views/src/dataView/protocol.js";
-import { sameDataViewRow } from "../../../packages/views/src/dataView/protocol.js";
+} from "../../views/src/dataView/protocol.js";
+import { sameDataViewRow } from "../../views/src/dataView/protocol.js";
 
 export interface DataViewRowUpdate {
   text: string;

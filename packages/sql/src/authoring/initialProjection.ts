@@ -1,11 +1,11 @@
-import { tableProjection } from "../../../../packages/sql/src/authoring/composition.js";
+import { tableProjection } from "./composition.js";
 import type {
   SqlAuthoringObject,
   SqlAuthoringSettings,
   SqlAuthoringSnapshot,
-} from "../../../../packages/sql/src/authoring/protocol.js";
-import { stripStatementTerminator } from "../../../../packages/sql/src/authoring/query/analysis.js";
-import type { DataViewSource } from "../../../../packages/views/src/dataView/protocol.js";
+} from "./protocol.js";
+import { stripStatementTerminator } from "./query/analysis.js";
+import type { DataViewSource } from "../../../views/src/dataView/protocol.js";
 
 /**
  * Initial query of a Data View: the user's statement for a SQL source; for a relation, the

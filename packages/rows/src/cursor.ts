@@ -5,13 +5,13 @@ import Cursor from "pg-cursor";
 import {
   formatQueryResultRow,
   queryResultColumns,
-} from "../../../packages/dap/src/debugger/launch/boundedQueryResult.js";
-import type { DebugResultTruncationReason } from "../../../packages/dap/src/debugger/launch/debugResult.js";
+} from "../../dap/src/debugger/launch/boundedQueryResult.js";
+import type { DebugResultTruncationReason } from "../../dap/src/debugger/launch/debugResult.js";
 import {
   DEBUG_RESULT_LIMITS,
   type DebugResultCell,
-} from "../../../packages/dap/src/debugger/launch/index.js";
-import type { NotebookBindingSnapshot, SqlNotebookResultPayload } from "./notebookFile.js";
+} from "../../dap/src/debugger/launch/index.js";
+import type { ScratchpadAssociationSnapshot, SqlNotebookResultPayload } from "../../views/src/results/payload.js";
 
 const LOAD_ALL_BATCH_ROWS = 5_000;
 const PAYLOAD_METADATA_RESERVE_BYTES = 64 * 1024;
@@ -30,7 +30,7 @@ export interface SqlCursorReader {
 export interface SqlResultSessionOptions {
   pageSize: number;
   maxCachedRows: number;
-  binding: NotebookBindingSnapshot;
+  binding: ScratchpadAssociationSnapshot;
   id?: string;
   timestamp?: string;
   now?: () => number;
@@ -102,7 +102,7 @@ export class SqlResultSession {
   private readonly maxCachedRows: number;
   private readonly maxCellBytes: number;
   private readonly maxPayloadBytes: number;
-  private readonly binding: NotebookBindingSnapshot;
+  private readonly binding: ScratchpadAssociationSnapshot;
   private readonly statement: string | undefined;
   private readonly truncationReasons = new Set<DebugResultTruncationReason>();
   private pages: ResultPage[] = [];
@@ -337,4 +337,9 @@ function takePayloadBoundedPage(
 function clamp(value: number, minimum: number, maximum: number): number {
   if (!Number.isFinite(value)) return minimum;
   return Math.min(maximum, Math.max(minimum, Math.trunc(value)));
+}
+
+/** A cursor may idle twice its result timeout, never under a minute, before PostgreSQL closes it. */
+export function postgresCursorSafetyTimeoutMs(resultIdleTimeoutMs: number): number {
+  return Math.max(60_000, resultIdleTimeoutMs * 2);
 }

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type * as vscode from "vscode";
+import type { SqlResultSession } from "../../../packages/rows/src/cursor.js";
 import type { SqlNotebookResultAction, SqlNotebookResultPayload } from "./notebookFile.js";
-import type { SqlResultSession } from "./resultSession.js";
 
 const renderer = vi.hoisted(() => ({
   listener: undefined as
@@ -26,7 +26,8 @@ vi.mock("vscode", () => ({
   },
 }));
 
-import { postgresCursorSafetyTimeoutMs, SqlNotebookResultHost } from "./resultHost.js";
+import { postgresCursorSafetyTimeoutMs } from "../../../packages/rows/src/cursor.js";
+import { SqlNotebookResultHost } from "./resultHost.js";
 
 const TEST_BINDING = {
   serverId: "test-server",

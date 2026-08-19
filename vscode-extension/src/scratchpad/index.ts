@@ -8,6 +8,11 @@
  */
 
 export {
+  PostgresCursorReader,
+  type SqlCursorTypes,
+  SqlResultSession,
+} from "../../../packages/rows/src/cursor.js";
+export {
   type NotebookBindingSnapshot,
   nextSqlNotebookName,
   normalizeSqlNotebookName,
@@ -31,11 +36,6 @@ export {
   sqlResultSettings,
 } from "./register.js";
 export { postgresCursorSafetyTimeoutMs } from "./resultHost.js";
-export {
-  PostgresCursorReader,
-  type SqlCursorTypes,
-  SqlResultSession,
-} from "./resultSession.js";
 export { executeSqlSelection, prepareSqlSelection } from "./runSelection.js";
 export {
   type ScratchpadTransaction,

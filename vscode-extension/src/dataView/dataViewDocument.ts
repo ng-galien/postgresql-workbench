@@ -1,5 +1,13 @@
 import * as vscode from "vscode";
+import { READ_ONLY_REASONS } from "../../../packages/rows/src/editability.js";
+import { openDataViewResult, TableAccents } from "../../../packages/rows/src/openRows.js";
+import { PendingEdits } from "../../../packages/rows/src/pendingEdits.js";
+import {
+  composeIntoDataViewQuery,
+  dataViewAdditions,
+} from "../../../packages/sql/src/authoring/additions.js";
 import { quoteIdentifier } from "../../../packages/sql/src/authoring/completion.js";
+import { initialDataViewQuery } from "../../../packages/sql/src/authoring/initialProjection.js";
 import type {
   SqlAuthoringDragPayload,
   SqlAuthoringSnapshot,
@@ -23,13 +31,8 @@ import {
 import type { SqlNotebookResultPayload, SqlResultSession } from "../scratchpad/index.js";
 import { completeDataViewFilter } from "./completion/filterCompletion.js";
 import { dataViewCompletionUri, dataViewQueryUri } from "./dataViewUri.js";
-import { READ_ONLY_REASONS } from "./editability.js";
 import { exportAllRows, exportLoadedRows, pickExportTarget } from "./export/exportResult.js";
 import { type DataViewHostServices, errorMessage } from "./hostServices.js";
-import { composeIntoDataViewQuery, dataViewAdditions } from "./query/composition.js";
-import { initialDataViewQuery } from "./query/initialQuery.js";
-import { PendingEdits } from "./session/pendingEdits.js";
-import { openDataViewResult, TableAccents } from "./session/resultLoader.js";
 
 const EMPTY_EDITABILITY: DataViewEditability = { tables: [], columns: [] };
 

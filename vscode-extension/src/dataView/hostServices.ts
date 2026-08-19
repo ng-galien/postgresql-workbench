@@ -1,5 +1,8 @@
+export type { DataViewResultSettings } from "../../../packages/rows/src/openRows.js";
+
 import type { Client } from "pg";
 import type * as vscode from "vscode";
+import type { DataViewResultSettings } from "../../../packages/rows/src/openRows.js";
 import type { SyntaxParser } from "../../../packages/sql/src/analysis/syntaxTree.js";
 import type {
   SqlAuthoringComposeRequest,
@@ -10,12 +13,6 @@ import type {
 } from "../../../packages/sql/src/authoring/protocol.js";
 import type { DataViewSource } from "../../../packages/views/src/dataView/protocol.js";
 import type { DataViewQueryFileSystem } from "./queryFileSystem.js";
-
-export interface DataViewResultSettings {
-  pageSize: number;
-  maxCachedRows: number;
-  cursorIdleTimeoutSeconds: number;
-}
 
 /** Everything a Data View needs from the Extension Host, injected so the module stays testable. */
 export interface DataViewHostServices {

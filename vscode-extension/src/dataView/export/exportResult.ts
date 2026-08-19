@@ -6,10 +6,10 @@ import {
   queryResultColumns,
 } from "../../../../packages/dap/src/debugger/launch/boundedQueryResult.js";
 import type { DebugResultColumn } from "../../../../packages/dap/src/debugger/launch/index.js";
+import { TEXT_PASSTHROUGH_TYPES } from "../../../../packages/rows/src/openRows.js";
 import { delimitedHeader, delimitedRow, resultAsDelimited } from "../../debug/index.js";
 import type { SqlNotebookResultPayload } from "../../scratchpad/index.js";
 import { PostgresCursorReader } from "../../scratchpad/index.js";
-import { TEXT_PASSTHROUGH_TYPES } from "../session/resultLoader.js";
 
 export type DataViewExportFormat = "csv" | "tsv" | "json";
 
