@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { Client } from "pg";
 
 const repositoryRoot = resolve(__dirname, "../../..");
-const demoCompose = resolve(repositoryRoot, "demo", "docker-compose.yml");
+const demoCompose = resolve(repositoryRoot, "docker", "demo", "compose.yml");
 
 export const demoConnectionUrl = "postgresql://postgres:postgres@localhost:5434/demo";
 export const demoConnectionId = "localhost:5434/demo:postgres";

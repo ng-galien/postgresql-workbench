@@ -1,0 +1,23 @@
+services:
+  postgres:
+    build:
+      context: ../..
+      dockerfile: docker/postgres/Dockerfile
+    image: postgresql-workbench-postgres:pg17
+    container_name: postgresql-workbench-demo
+    ports:
+      - "5434:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: demo
+    volumes:
+      # Mount files individually — replacing the whole directory would drop the
+      # image's own init scripts, including the one that adds plugin_debugger
+      # to shared_preload_libraries.
+      - ../../demo/init/01-extension.sql:/docker-entrypoint-initdb.d/90-extension.sql:ro
+      - ../../demo/init/02-fibonacci.sql:/docker-entrypoint-initdb.d/91-fibonacci.sql:ro
+      - ../../demo/init/02-classics.sql:/docker-entrypoint-initdb.d/92-classics.sql:ro
+      - ../../demo/init/03-shop.sql:/docker-entrypoint-initdb.d/93-shop.sql:ro
+      - ../../demo/init/04-pgtap.sql:/docker-entrypoint-initdb.d/94-pgtap.sql:ro
+      - ../../demo/init/05-commerce.sql:/docker-entrypoint-initdb.d/95-commerce.sql:ro

@@ -10,7 +10,7 @@ dependency graph on something larger than a toy schema.
 The playground uses the same
 [`galien0xffffff/postgres-debugger:17`](https://hub.docker.com/r/galien0xffffff/postgres-debugger)
 image offered by the VS Code command **PL/pgSQL: Start Local Debug Database
-(Docker)**. The canonical local [Dockerfile](Dockerfile) adds the PostgreSQL 17
+(Docker)**. The canonical local [Dockerfile](../docker/postgres/Dockerfile) adds the PostgreSQL 17
 pgTAP package once and is shared by the demo, integration tests, and internal
 index benchmark. Published debugger image tags cover PostgreSQL 13–18 on amd64
 and arm64.
@@ -18,8 +18,7 @@ and arm64.
 ## Start
 
 ```bash
-cd demo
-docker compose up -d --wait
+docker compose -f docker/demo/compose.yml up -d --wait
 ```
 
 Connection: `postgresql://postgres:postgres@localhost:5434/demo`
@@ -55,7 +54,7 @@ its own fixture cleanup.
 To inspect one suite directly:
 
 ```bash
-docker compose exec postgres \
+docker compose -f docker/demo/compose.yml exec postgres \
   psql -U postgres -d demo \
   -c "SELECT * FROM playground_ut.test_fibonacci();"
 ```
@@ -91,5 +90,5 @@ docker compose exec postgres \
 ## Stop
 
 ```bash
-docker compose down -v
+docker compose -f docker/demo/compose.yml down -v
 ```

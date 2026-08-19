@@ -30,7 +30,7 @@ up explicitly:
 
 ```bash
 COMPOSE_PROJECT_NAME=postgresql-workbench-index-benchmark \
-  docker compose -f benchmarks/workbench-index/compose.yml down -v
+  docker compose -f docker/benchmark/compose.yml down -v
 ```
 
 ## Profiles

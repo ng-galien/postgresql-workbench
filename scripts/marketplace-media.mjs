@@ -487,7 +487,7 @@ async function startDemoDatabase(build) {
   const args = [
     "compose",
     "-f",
-    path.join(repoRoot, "demo", "docker-compose.yml"),
+    path.join(repoRoot, "docker", "demo", "compose.yml"),
     "up",
     "-d",
   ];

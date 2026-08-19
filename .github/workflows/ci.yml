@@ -207,7 +207,7 @@ jobs:
           if-no-files-found: ignore
       - name: Stop acceptance database fixture
         if: always()
-        run: docker compose -f demo/docker-compose.yml down -v
+        run: docker compose -f docker/demo/compose.yml down -v
 
   workbench-schema-sync:
     name: Playwright Schema Sync
@@ -242,7 +242,7 @@ jobs:
           if-no-files-found: ignore
       - name: Stop acceptance database fixture
         if: always()
-        run: docker compose -f demo/docker-compose.yml down -v
+        run: docker compose -f docker/demo/compose.yml down -v
 
   package-dap:
     name: Smoke standalone DAP (${{ matrix.target }})

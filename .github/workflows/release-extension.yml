@@ -64,7 +64,7 @@ jobs:
           if-no-files-found: ignore
       - name: Stop acceptance database fixture
         if: always()
-        run: docker compose -f demo/docker-compose.yml down -v
+        run: docker compose -f docker/demo/compose.yml down -v
       - name: VS Code Compatibility
         timeout-minutes: 3
         run: xvfb-run -a npm --prefix vscode-extension run test:min-vscode

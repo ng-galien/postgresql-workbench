@@ -63,9 +63,14 @@ src/
   *.test.ts            # Unit tests (vitest) — includes sqlCodeLensProvider tests
 
 e2e/
-  docker-compose.yml   # PostgreSQL with pldbgapi (galien0xffffff/postgres-debugger:17)
   init/                # SQL init scripts (extension + test functions)
   e2e.test.ts          # Integration tests against real PostgreSQL
+
+docker/                # Every container definition, one directory per fixture
+  postgres/            # The canonical image: pldbgapi + pgTAP, shared by the others
+  demo/ e2e/ legacy/   # The databases: demo (5434), integration (5433), unpatched pldebugger (5435)
+  acceptance/          # The Playwright CI image and its database
+  benchmark/           # The Workbench Index benchmark database
 
 vscode-extension/      # VS Code extension (full-featured, see below)
 ```

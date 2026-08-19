@@ -2,7 +2,7 @@ services:
   postgres:
     build:
       context: ../..
-      dockerfile: demo/Dockerfile
+      dockerfile: docker/postgres/Dockerfile
     image: postgresql-workbench-postgres:pg17
     ports:
       - "${PGWB_BENCH_PORT:-55433}:5432"
