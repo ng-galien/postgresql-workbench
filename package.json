@@ -72,6 +72,7 @@
     "pg-cursor": "^2.22.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
+    "smol-toml": "^1.8.0",
     "sql-formatter": "^15.8.2",
     "typescript": "^7.0.2",
     "vitest": "^4.1.11",
