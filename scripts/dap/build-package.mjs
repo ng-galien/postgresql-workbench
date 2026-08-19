@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
-const repositoryRoot = resolve(scriptDirectory, "..");
+const repositoryRoot = resolve(scriptDirectory, "..", "..");
 const packageRoot = resolve(repositoryRoot, "packages", "dap");
 const manifest = JSON.parse(readFileSync(resolve(packageRoot, "package.json"), "utf8"));
 const outputDirectory = resolve(packageRoot, "dist");
@@ -41,9 +41,7 @@ if (forbiddenInputs.length > 0) {
 }
 
 const output = Object.values(result.metafile.outputs).find((candidate) => candidate.entryPoint);
-const forbiddenImports = output?.imports.filter(
-  ({ path }) => path === "@code-moniker/client/node",
-);
+const forbiddenImports = output?.imports.filter(({ path }) => path === "@code-moniker/client/node");
 if (forbiddenImports && forbiddenImports.length > 0) {
   throw new Error("The standalone DAP must not import the Code Moniker daemon runtime");
 }

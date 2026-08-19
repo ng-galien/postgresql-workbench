@@ -31,7 +31,9 @@ export function hostCodeMonikerTarget() {
       candidate.platform === process.platform && candidate.architecture === process.arch,
   );
   if (!target) {
-    throw new Error(`Code Moniker does not publish a package for ${process.platform}-${process.arch}`);
+    throw new Error(
+      `Code Moniker does not publish a package for ${process.platform}-${process.arch}`,
+    );
   }
   return target[0];
 }
@@ -52,7 +54,6 @@ export function resolveCodeMonikerTarget(requested = process.env.CODE_MONIKER_TA
 
 export function targetFromPlatform(platform, architecture) {
   return Object.entries(CODE_MONIKER_TARGETS).find(
-    ([, candidate]) =>
-      candidate.platform === platform && candidate.architecture === architecture,
+    ([, candidate]) => candidate.platform === platform && candidate.architecture === architecture,
   )?.[0];
 }

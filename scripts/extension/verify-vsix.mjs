@@ -13,18 +13,16 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import JSZip from "jszip";
-import {
-  CODE_MONIKER_TARGETS,
-  resolveCodeMonikerTarget,
-} from "./code-moniker-target.mjs";
+import { CODE_MONIKER_TARGETS, resolveCodeMonikerTarget } from "./code-moniker-target.mjs";
 
 const target = resolveCodeMonikerTarget();
 const targetPackage = CODE_MONIKER_TARGETS[target];
 const extensionVersion = JSON.parse(
-  readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+  readFileSync(new URL("../../vscode-extension/package.json", import.meta.url), "utf8"),
 ).version;
-const [argument = `postgresql-workbench-${process.env.npm_package_version ?? extensionVersion}-${target}.vsix`] =
-  process.argv.slice(2);
+const [
+  argument = `postgresql-workbench-${process.env.npm_package_version ?? extensionVersion}-${target}.vsix`,
+] = process.argv.slice(2);
 const vsix = resolve(argument);
 const zip = await JSZip.loadAsync(readFileSync(vsix));
 const entries = new Set(Object.keys(zip.files).filter((entry) => !zip.files[entry].dir));

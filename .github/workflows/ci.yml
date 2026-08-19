@@ -165,7 +165,7 @@ jobs:
       - name: Probe VS Code and extension bootstrap
         run: >-
           xvfb-run -a -s "-screen 0 1600x1000x24"
-          bash vscode-extension/scripts/run-playwright-ci.sh test:bootstrap
+          bash scripts/test/run-playwright-ci.sh test:bootstrap
       - name: Upload Playwright bootstrap evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -197,7 +197,7 @@ jobs:
       - name: Run Playwright Core lane
         run: >-
           xvfb-run -a -s "-screen 0 1600x1000x24"
-          bash vscode-extension/scripts/run-playwright-ci.sh test:acceptance:core
+          bash scripts/test/run-playwright-ci.sh test:acceptance:core
       - name: Upload Playwright evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -232,7 +232,7 @@ jobs:
       - name: Run Playwright Schema Sync lane
         run: >-
           xvfb-run -a -s "-screen 0 1600x1000x24"
-          bash vscode-extension/scripts/run-playwright-ci.sh test:acceptance:schema-sync
+          bash scripts/test/run-playwright-ci.sh test:acceptance:schema-sync
       - name: Upload Playwright evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

@@ -3,9 +3,9 @@ import { stat, watch } from "node:fs/promises";
 import { createServer } from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildSite } from "./build-site.mjs";
+import { buildSite } from "./build.mjs";
 
-const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const outputDirectory = path.join(repositoryRoot, "dist", "site");
 const port = Number.parseInt(process.env.SITE_PORT ?? "4173", 10);
 const clients = new Set();

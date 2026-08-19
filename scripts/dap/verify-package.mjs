@@ -3,7 +3,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
-const packageRoot = resolve(scriptDirectory, "..", "packages", "dap");
+const packageRoot = resolve(scriptDirectory, "..", "..", "packages", "dap");
 const manifest = JSON.parse(readFileSync(resolve(packageRoot, "package.json"), "utf8"));
 const binary = resolve(packageRoot, manifest.bin["postgresql-dap"]);
 
@@ -14,11 +14,7 @@ const source = readFileSync(binary, "utf8");
 if (!source.startsWith("#!/usr/bin/env node\n")) {
   throw new Error("The packaged DAP executable is missing its Node.js shebang");
 }
-for (const required of [
-  "@code-moniker/client",
-  "code_moniker_read",
-  "--check-code-moniker",
-]) {
+for (const required of ["@code-moniker/client", "code_moniker_read", "--check-code-moniker"]) {
   if (!source.includes(required)) {
     throw new Error(`The packaged DAP executable is missing ${required}`);
   }

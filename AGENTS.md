@@ -150,10 +150,10 @@ verify the real VS Code and PostgreSQL paths affected by the release.
 
 ## GitHub issue workflow
 
-- `scripts/issue-workflow.mjs` is the canonical source for technical labels,
+- `scripts/issues/workflow.mjs` is the canonical source for technical labels,
   durable capabilities, body sections, and delivery requirements. The script
   consumes it directly. GitHub requires static forms, so
-  `scripts/check-issue-templates.mjs`, run by `npm run check`, compares each
+  `scripts/issues/check-templates.mjs`, run by `npm run check`, compares each
   committed form byte-for-byte to its complete projection and rejects drift.
 - Use the repository issue forms in `.github/ISSUE_TEMPLATE/` for human-created
   issues. `bug.yml` applies `bug`; `product-improvement.yml` applies
@@ -165,7 +165,7 @@ verify the real VS Code and PostgreSQL paths affected by the release.
   `capability:testing-coverage`, and/or `capability:debugger`. Use more than
   one capability only for a genuine cross-capability workflow.
 - Agents can preview a body rendered from the canonical workflow without a GitHub write using
-  `node scripts/create-issue.mjs`. It requires a type, title, problem,
+  `node scripts/issues/create.mjs`. It requires a type, title, problem,
   expected behavior, and acceptance-criteria files, which must not be empty;
   use `--context-file` for
   optional context, and bug reports also require actual behavior, reproduction

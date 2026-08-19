@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { capabilityLabels, renderIssue, technicalLabels } from "./issue-workflow.mjs";
+import { capabilityLabels, renderIssue, technicalLabels } from "./workflow.mjs";
 
 function usage(message) {
   if (message) process.stderr.write(`Error: ${message}\n`);

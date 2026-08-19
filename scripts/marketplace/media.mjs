@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// biome-ignore-all lint/suspicious/noConsole: This capture command narrates its progress to the operator who watches it run.
 
 import { spawn, spawnSync } from "node:child_process";
 import { constants } from "node:fs";
@@ -19,7 +20,7 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
-const repoRoot = path.resolve(scriptDir, "..");
+const repoRoot = path.resolve(scriptDir, "..", "..");
 const extensionRoot = path.join(repoRoot, "vscode-extension");
 const mediaRoot = path.join(extensionRoot, "media", "marketplace");
 const rawRoot = path.join(mediaRoot, "raw");
@@ -149,9 +150,7 @@ async function calibrate() {
   const rect = readFrontVsCodeWindowRect();
   manifest.window = { ...manifest.window, ...rect };
   await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
-  console.log(
-    `✓ capture window calibrated to ${rect.width}×${rect.height} at ${rect.x},${rect.y}`,
-  );
+  console.log(`✓ capture window calibrated to ${rect.width}×${rect.height} at ${rect.x},${rect.y}`);
   const captureRect = insetCaptureRect(rect);
   console.log(
     `✓ recorded area will be ${captureRect.width}×${captureRect.height} at ${captureRect.x},${captureRect.y}`,
@@ -229,23 +228,19 @@ async function executeShowcase(scene, withCapture, theme, extension) {
   try {
     if (withCapture) await rm(rawPath, { force: true });
     console.log(`\n▶ ${scene.title}`);
-    testProcess = spawn(
-      showcaseRunner,
-      ["--config", showcaseConfig, "--fail-zero"],
-      {
-        cwd: extensionRoot,
-        env: {
-          ...process.env,
-          POSTGRESQL_WORKBENCH_SHOWCASE_SCENE: scene.id,
-          POSTGRESQL_WORKBENCH_SHOWCASE_CONTROL_DIR: controlDir,
-          POSTGRESQL_WORKBENCH_SHOWCASE_PROFILE_DIR: profileDir,
-          POSTGRESQL_WORKBENCH_SHOWCASE_THEME: theme,
-          POSTGRESQL_WORKBENCH_SHOWCASE_EXTENSION_PATH: extension.path,
-          POSTGRESQL_WORKBENCH_SHOWCASE_EXTENSION_VERSION: extension.version,
-        },
-        stdio: "inherit",
+    testProcess = spawn(showcaseRunner, ["--config", showcaseConfig, "--fail-zero"], {
+      cwd: extensionRoot,
+      env: {
+        ...process.env,
+        POSTGRESQL_WORKBENCH_SHOWCASE_SCENE: scene.id,
+        POSTGRESQL_WORKBENCH_SHOWCASE_CONTROL_DIR: controlDir,
+        POSTGRESQL_WORKBENCH_SHOWCASE_PROFILE_DIR: profileDir,
+        POSTGRESQL_WORKBENCH_SHOWCASE_THEME: theme,
+        POSTGRESQL_WORKBENCH_SHOWCASE_EXTENSION_PATH: extension.path,
+        POSTGRESQL_WORKBENCH_SHOWCASE_EXTENSION_VERSION: extension.version,
       },
-    );
+      stdio: "inherit",
+    });
     const testExit = processExit(testProcess);
 
     await waitForFile(readyPath, manifest.defaults.startupTimeoutMs, testExit);
@@ -302,8 +297,7 @@ async function extractConfiguredVsix() {
   const expectedPackage = JSON.parse(
     await readFile(path.join(extensionRoot, "package.json"), "utf8"),
   );
-  const expectedName =
-    `${expectedPackage.name}-${expectedPackage.version}-${process.platform}-${process.arch}.vsix`;
+  const expectedName = `${expectedPackage.name}-${expectedPackage.version}-${process.platform}-${process.arch}.vsix`;
   if (path.basename(configuredVsixPath) !== expectedName) {
     fail(
       `Configured showcase VSIX is ${path.basename(configuredVsixPath)}; ` +
@@ -449,18 +443,23 @@ async function validate() {
     const posterPath = path.join(mediaRoot, `${scene.file}.png`);
     const maxBytes = scene.maxGifBytes ?? manifest.defaults.maxGifBytes;
     for (const target of [gifPath, posterPath]) {
-      if (!(await isReadableFile(target))) issues.push(`missing ${path.relative(repoRoot, target)}`);
+      if (!(await isReadableFile(target)))
+        issues.push(`missing ${path.relative(repoRoot, target)}`);
     }
     if (!(await isReadableFile(gifPath))) continue;
 
     const gifSize = (await stat(gifPath)).size;
     if (gifSize > maxBytes) {
-      issues.push(`${path.basename(gifPath)} is ${formatBytes(gifSize)}; limit is ${formatBytes(maxBytes)}`);
+      issues.push(
+        `${path.basename(gifPath)} is ${formatBytes(gifSize)}; limit is ${formatBytes(maxBytes)}`,
+      );
     }
     const dimensions = probeDimensions(gifPath);
     const expectedWidth = scene.width ?? manifest.defaults.width;
     if (dimensions.width > expectedWidth) {
-      issues.push(`${path.basename(gifPath)} is ${dimensions.width}px wide; limit is ${expectedWidth}px`);
+      issues.push(
+        `${path.basename(gifPath)} is ${dimensions.width}px wide; limit is ${expectedWidth}px`,
+      );
     }
     if (!readme.includes(`./media/marketplace/${scene.file}.gif`)) {
       issues.push(`README does not reference ${scene.file}.gif`);
@@ -484,13 +483,7 @@ async function preview() {
 
 async function startDemoDatabase(build) {
   ensureBinary("docker");
-  const args = [
-    "compose",
-    "-f",
-    path.join(repoRoot, "docker", "demo", "compose.yml"),
-    "up",
-    "-d",
-  ];
+  const args = ["compose", "-f", path.join(repoRoot, "docker", "demo", "compose.yml"), "up", "-d"];
   if (build) args.push("--build");
   args.push("--wait");
   await run("docker", args);
@@ -673,7 +666,11 @@ tell application "System Events"
 end tell`;
   const result = spawnSync("osascript", ["-e", script], { encoding: "utf8" });
   const values = result.stdout.trim().split(",").map(Number);
-  if (result.status !== 0 || values.length !== 4 || values.some((value) => !Number.isFinite(value))) {
+  if (
+    result.status !== 0 ||
+    values.length !== 4 ||
+    values.some((value) => !Number.isFinite(value))
+  ) {
     fail(
       "Could not read the front VS Code window. Keep the calibrated window open and check the terminal Accessibility permission.\n",
     );
@@ -711,17 +708,17 @@ function processOutcome(child) {
 }
 
 function processOutcomeWithin(child, timeoutMs) {
-  return Promise.race([
-    processOutcome(child),
-    delay(timeoutMs).then(() => undefined),
-  ]);
+  return Promise.race([processOutcome(child), delay(timeoutMs).then(() => undefined)]);
 }
 
 async function waitForFile(file, timeoutMs, competingExit) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (await isReadableFile(file)) return;
-    const outcome = await Promise.race([competingExit.then((code) => ({ code })), delay(100).then(() => undefined)]);
+    const outcome = await Promise.race([
+      competingExit.then((code) => ({ code })),
+      delay(100).then(() => undefined),
+    ]);
     if (outcome) fail(`VS Code showcase exited early with code ${outcome.code}.\n`);
   }
   fail(`Timed out waiting for ${path.basename(file)}.\n`);
@@ -782,7 +779,17 @@ function checkAccessibilityAccess() {
 function probeDimensions(file) {
   const result = spawnSync(
     "ffprobe",
-    ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "json", file],
+    [
+      "-v",
+      "error",
+      "-select_streams",
+      "v:0",
+      "-show_entries",
+      "stream=width,height",
+      "-of",
+      "json",
+      file,
+    ],
     { encoding: "utf8" },
   );
   if (result.status !== 0) fail(`ffprobe failed for ${file}\n`);

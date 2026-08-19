@@ -5,7 +5,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Client } from "pg";
 
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const COMPOSE_FILE = join(ROOT, "benchmarks/workbench-index/compose.yml");
 const DATABASE = "pgwb_index_benchmark";
 const SERVER_ID = "workbench-index-benchmark";

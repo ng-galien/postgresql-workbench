@@ -5,7 +5,7 @@ import {
   expectedGeneratedCounts,
   parseBenchmarkOptions,
   validateMemorySourceSetContract,
-} from "./workbench-index-benchmark.mjs";
+} from "./workbench-index.mjs";
 
 test("the default benchmark profile represents a medium synthetic ERP", () => {
   const options = parseBenchmarkOptions([]);

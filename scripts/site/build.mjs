@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { marked, Renderer } from "marked";
 
-const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const sourceDirectory = path.join(repositoryRoot, "site");
 const documentationDirectory = path.join(repositoryRoot, "docs", "user");
 const outputDirectory = path.join(repositoryRoot, "dist", "site");

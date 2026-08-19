@@ -4,8 +4,8 @@ import { test } from "vitest";
 
 test("the extension and standalone executable use distinct entries over the shared DAP host", async () => {
   const [build, extensionEntry, standaloneEntry] = await Promise.all([
-    readFile(new URL("../esbuild.mjs", import.meta.url), "utf8"),
-    readFile(new URL("../src/dapServer.ts", import.meta.url), "utf8"),
+    readFile(new URL("../../vscode-extension/esbuild.mjs", import.meta.url), "utf8"),
+    readFile(new URL("../../vscode-extension/src/dapServer.ts", import.meta.url), "utf8"),
     readFile(new URL("../../packages/dap/src/main.ts", import.meta.url), "utf8"),
   ]);
 

@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { resolveCodeMonikerTarget } from "./code-moniker-target.mjs";
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
-const extensionRoot = resolve(scriptDirectory, "..");
+const extensionRoot = resolve(scriptDirectory, "..", "..", "vscode-extension");
 const manifest = JSON.parse(readFileSync(resolve(extensionRoot, "package.json"), "utf8"));
 const requested = process.argv.slice(2);
 const explicitTarget = optionValue(requested, "--target");

@@ -1,6 +1,6 @@
-import { defineConfig } from "@vscode/test-cli";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { defineConfig } from "@vscode/test-cli";
 
 const testUserDataDir =
   process.platform === "darwin"
@@ -10,9 +10,7 @@ const testUserDataDir =
 export default defineConfig({
   // The suites live under tests/, so the extension root has to be named.
   extensionDevelopmentPath: "../..",
-  files: [
-    "../../dist/vscode-extension/tests/vscode/integration/extension.test.js",
-  ],
+  files: ["../../dist/vscode-extension/tests/vscode/integration/extension.test.js"],
   workspaceFolder: "../workspace",
   launchArgs: [`--user-data-dir=${testUserDataDir}`],
   mocha: {

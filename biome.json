@@ -5,16 +5,10 @@
       "packages/**",
       "!**/dist",
       "vscode-extension/src/**",
-      "vscode-extension/tests/acceptance/**",
+      "vscode-extension/tests/**",
       "e2e/**",
+      "scripts/**",
       "site/**",
-      "scripts/build-site.mjs",
-      "scripts/dev-site.mjs",
-      "scripts/create-issue.mjs",
-      "scripts/check-issue-templates.mjs",
-      "scripts/issue-workflow.mjs",
-      "scripts/workbench-index-benchmark.mjs",
-      "scripts/workbench-index-benchmark.test.mjs",
       "!!**/dist/",
       "!!**/node_modules/"
     ]

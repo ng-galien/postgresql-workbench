@@ -7,9 +7,7 @@ export default defineConfig({
   files: "../../dist/smoke/**/*.smoke.cjs",
   workspaceFolder: "../workspace",
   launchArgs:
-    process.platform === "darwin"
-      ? [`--user-data-dir=/tmp/pgwb-vscode-smoke-${process.pid}`]
-      : [],
+    process.platform === "darwin" ? [`--user-data-dir=/tmp/pgwb-vscode-smoke-${process.pid}`] : [],
   mocha: {
     ui: "tdd",
     timeout: 60_000,

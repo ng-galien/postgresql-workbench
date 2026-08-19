@@ -66,6 +66,12 @@ e2e/
   init/                # SQL init scripts (extension + test functions)
   e2e.test.ts          # Integration tests against real PostgreSQL
 
+scripts/               # Every script, one directory per purpose
+  dap/ extension/      # Build and package the DAP npm package and the VSIX
+  test/                # Run the suites: e2e, VS Code, Playwright, and their build steps
+  site/ issues/        # The documentation site and the GitHub issue workflow
+  benchmark/ marketplace/
+
 docker/                # Every container definition, one directory per fixture
   postgres/            # The canonical image: pldbgapi + pgTAP, shared by the others
   demo/ e2e/ legacy/   # The databases: demo (5434), integration (5433), unpatched pldebugger (5435)

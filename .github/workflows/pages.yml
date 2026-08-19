@@ -10,7 +10,7 @@ on:
       - "package.json"
       - "package-lock.json"
       - "site/**"
-      - "scripts/build-site.mjs"
+      - "scripts/site/build.mjs"
       - "vscode-extension/package.json"
       - "vscode-extension/icons/plpgsql-icon.png"
       - "vscode-extension/media/marketplace/**"

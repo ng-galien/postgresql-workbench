@@ -9,7 +9,7 @@ fi
 
 script_name=$1
 shift
-extension_root=$(cd "$(dirname "$0")/.." && pwd)
+extension_root=$(cd "$(dirname "$0")/../../vscode-extension" && pwd)
 results_dir="$extension_root/test-results"
 screen_snapshot="$results_dir/runner-screen-latest.png"
 export PGWB_ACCEPTANCE_VSCODE_VERSION="${PGWB_ACCEPTANCE_VSCODE_VERSION:-1.109.0}"

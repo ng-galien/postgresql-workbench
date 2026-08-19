@@ -2,7 +2,7 @@
 
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { issueFormContents } from "./issue-workflow.mjs";
+import { issueFormContents } from "./workflow.mjs";
 
 let valid = true;
 const write = process.argv.includes("--write");

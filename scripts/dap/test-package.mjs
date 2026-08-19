@@ -1,11 +1,11 @@
 import { execFileSync, spawn } from "node:child_process";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
-const repositoryRoot = resolve(scriptDirectory, "..");
+const repositoryRoot = resolve(scriptDirectory, "..", "..");
 const packageRoot = resolve(repositoryRoot, "packages", "dap");
 const manifest = JSON.parse(readFileSync(resolve(packageRoot, "package.json"), "utf8"));
 const temporaryRoot = mkdtempSync(resolve(tmpdir(), "postgresql-dap-package-"));
@@ -20,17 +20,12 @@ function runNpm(args, options) {
 }
 
 try {
-  const packOutput = runNpm(
-    ["pack", packageRoot, "--json", "--pack-destination", temporaryRoot],
-    { cwd: repositoryRoot, encoding: "utf8" },
-  );
+  const packOutput = runNpm(["pack", packageRoot, "--json", "--pack-destination", temporaryRoot], {
+    cwd: repositoryRoot,
+    encoding: "utf8",
+  });
   const packed = JSON.parse(packOutput)[0];
-  const expectedFiles = new Set([
-    "LICENSE",
-    "README.md",
-    "dist/postgresql-dap.js",
-    "package.json",
-  ]);
+  const expectedFiles = new Set(["LICENSE", "README.md", "dist/postgresql-dap.js", "package.json"]);
   const actualFiles = new Set(packed.files.map((file) => file.path));
   if (
     actualFiles.size !== expectedFiles.size ||
@@ -47,10 +42,10 @@ try {
     `${JSON.stringify({ name: "postgresql-dap-package-smoke", private: true }, null, 2)}\n`,
   );
   writeFileSync(resolve(consumer, "smoke.sql"), "SELECT 1;\n");
-  runNpm(
-    ["install", "--ignore-scripts", "--no-audit", "--no-fund", tarball],
-    { cwd: consumer, stdio: "inherit" },
-  );
+  runNpm(["install", "--ignore-scripts", "--no-audit", "--no-fund", tarball], {
+    cwd: consumer,
+    stdio: "inherit",
+  });
 
   const binary = resolve(
     consumer,
@@ -216,7 +211,10 @@ function dapMessages(stream) {
 function waitForProcessExit(child, timeoutMs) {
   if (child.exitCode !== null) return Promise.resolve(child.exitCode);
   return new Promise((resolveExit, rejectExit) => {
-    const timer = setTimeout(() => rejectExit(new Error("Timed out waiting for DAP process exit")), timeoutMs);
+    const timer = setTimeout(
+      () => rejectExit(new Error("Timed out waiting for DAP process exit")),
+      timeoutMs,
+    );
     child.once("exit", (code) => {
       clearTimeout(timer);
       resolveExit(code);

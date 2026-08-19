@@ -14,13 +14,10 @@ import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
-import {
-  CODE_MONIKER_TARGETS,
-  resolveCodeMonikerTarget,
-} from "./code-moniker-target.mjs";
+import { CODE_MONIKER_TARGETS, resolveCodeMonikerTarget } from "./code-moniker-target.mjs";
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
-const extensionRoot = resolve(scriptDirectory, "..");
+const extensionRoot = resolve(scriptDirectory, "..", "..", "vscode-extension");
 const runtimeRoot = resolve(extensionRoot, "runtime", "code-moniker");
 const clientOutput = resolve(runtimeRoot, "client", "index.cjs");
 const nodeOutput = resolve(runtimeRoot, "client", "node.cjs");

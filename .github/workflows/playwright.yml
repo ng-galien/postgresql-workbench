@@ -35,7 +35,7 @@ jobs:
           DEBUG: pw:browser
         run: >-
           xvfb-run -a -s "-screen 0 1600x1000x24"
-          bash vscode-extension/scripts/run-playwright-ci.sh test:bootstrap
+          bash scripts/test/run-playwright-ci.sh test:bootstrap
       - name: Upload Playwright evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

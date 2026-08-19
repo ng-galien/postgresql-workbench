@@ -7,7 +7,7 @@ if [[ $(uname -s) == "Darwin" && -d $docker_desktop_bin ]]; then
   export PATH="$docker_desktop_bin:$PATH"
 fi
 
-extension_root=$(cd "$(dirname "$0")/.." && pwd)
+extension_root=$(cd "$(dirname "$0")/../../vscode-extension" && pwd)
 repository_root=$(cd "$extension_root/.." && pwd)
 compose_file="$repository_root/docker/acceptance/compose.yml"
 requested_lane=${1:-all}
