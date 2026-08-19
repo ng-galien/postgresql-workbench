@@ -1588,6 +1588,6 @@
     "esbuild": "^0.28.1",
     "jszip": "^3.10.1",
     "mocha": "^11.7.5",
-    "typescript": "^5.7.0"
+    "typescript": "^7.0.2"
   }
 }

@@ -130,7 +130,7 @@ connection.onNotification(SQL_AUTHORING_SEMANTIC_TOKENS_CHANGED, () => {
   void connection.languages.semanticTokens.refresh();
 });
 
-connection.onRequest(
+connection.onRequest<SqlAuthoringComposeResult, void>(
   SQL_AUTHORING_COMPOSE_REQUEST,
   async (request: SqlAuthoringComposeRequest): Promise<SqlAuthoringComposeResult> => {
     const settings = await documentSettings(request.uri);
