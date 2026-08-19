@@ -711,3 +711,9 @@ function sqlNotebookMetadata(value: unknown): SqlNotebookMetadata {
     executionMode: metadata.executionMode === "manual" ? "manual" : "auto",
   };
 }
+
+/** The syntax budget the analysis of a SQL document is allowed to spend. */
+export function sqlSyntaxAnalysisBudget() {
+  const settings = resolveSqlAuthoringSettings();
+  return { maxDepth: settings.syntaxMaxDepth, maxNodes: settings.syntaxMaxNodes };
+}

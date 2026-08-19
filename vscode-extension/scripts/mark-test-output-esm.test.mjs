@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
-import test from "node:test";
+import { test } from "vitest";
 import { fileURLToPath } from "node:url";
 
 const execute = promisify(execFile);
