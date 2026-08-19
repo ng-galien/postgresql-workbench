@@ -1,13 +1,22 @@
 import * as vscode from "vscode";
-import { READ_ONLY_REASONS } from "../../../packages/rows/src/editability.js";
-import { openDataViewResult, TableAccents } from "../../../packages/rows/src/openRows.js";
-import { PendingEdits } from "../../../packages/rows/src/pendingEdits.js";
 import {
   composeIntoDataViewQuery,
   dataViewAdditions,
-} from "../../../packages/sql/src/authoring/additions.js";
+} from "../../../packages/rows/src/additions.js";
+import {
+  type DataViewAddition,
+  type DataViewEdit,
+  type DataViewEditability,
+  type DataViewProjection,
+  type DataViewQueryInfo,
+  type DataViewSource,
+  dataViewSourceTitle,
+} from "../../../packages/rows/src/dataView.js";
+import { READ_ONLY_REASONS } from "../../../packages/rows/src/editability.js";
+import { initialDataViewQuery } from "../../../packages/rows/src/initialProjection.js";
+import { openDataViewResult, TableAccents } from "../../../packages/rows/src/openRows.js";
+import { PendingEdits } from "../../../packages/rows/src/pendingEdits.js";
 import { quoteSqlIdentifierIfNeeded } from "../../../packages/sql/src/authoring/completion.js";
-import { initialDataViewQuery } from "../../../packages/sql/src/authoring/initialProjection.js";
 import type {
   SqlAuthoringDragPayload,
   SqlAuthoringSnapshot,
@@ -16,17 +25,10 @@ import {
   type QueryRewrite,
   SqlQueryModel,
 } from "../../../packages/sql/src/authoring/query/model.js";
-import {
-  type DataViewAddition,
-  type DataViewEdit,
-  type DataViewEditability,
-  type DataViewProjection,
-  type DataViewQueryInfo,
-  type DataViewRequest,
-  type DataViewResponse,
-  type DataViewSource,
-  type DataViewState,
-  dataViewSourceTitle,
+import type {
+  DataViewRequest,
+  DataViewResponse,
+  DataViewState,
 } from "../../../packages/views/src/dataView/protocol.js";
 import type { SqlNotebookResultPayload, SqlResultSession } from "../scratchpad/index.js";
 import { completeDataViewFilter } from "./completion/filterCompletion.js";

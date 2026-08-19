@@ -4,7 +4,7 @@ import type {
   DataViewColumnPolicy,
   DataViewEdit,
   DataViewValueEditor,
-} from "../dataView/protocol.js";
+} from "../../../rows/src/dataView.js";
 
 /** Editing contract handed to the grid by a host that owns the pending edits. */
 export interface GridEditing {

@@ -8,10 +8,7 @@ import {
 } from "../../dap/src/debugger/launch/boundedQueryResult.js";
 import type { DebugResultTruncationReason } from "../../dap/src/debugger/launch/debugResult.js";
 import { DEBUG_RESULT_LIMITS, type DebugResultCell } from "../../dap/src/debugger/launch/index.js";
-import type {
-  ScratchpadAssociationSnapshot,
-  SqlNotebookResultPayload,
-} from "../../views/src/results/payload.js";
+import type { ScratchpadAssociationSnapshot, SqlNotebookResultPayload } from "./resultPayload.js";
 
 const LOAD_ALL_BATCH_ROWS = 5_000;
 const PAYLOAD_METADATA_RESERVE_BYTES = 64 * 1024;

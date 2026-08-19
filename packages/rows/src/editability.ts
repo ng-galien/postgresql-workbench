@@ -3,7 +3,7 @@ import type {
   DataViewEditability,
   DataViewEditableTable,
   DataViewValueEditor,
-} from "../../views/src/dataView/protocol.js";
+} from "./dataView.js";
 
 /** The projection facts PostgreSQL reports for one result column (RowDescription). */
 export interface ProjectedField {

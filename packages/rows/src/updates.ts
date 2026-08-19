@@ -1,7 +1,7 @@
 import { quoteSqlIdentifierIfNeeded } from "../../sql/src/authoring/completion.js";
 
-import type { DataViewEdit, DataViewEditability } from "../../views/src/dataView/protocol.js";
-import { sameDataViewRow } from "../../views/src/dataView/protocol.js";
+import type { DataViewEdit, DataViewEditability } from "./dataView.js";
+import { sameDataViewRow } from "./dataView.js";
 
 export interface DataViewRowUpdate {
   text: string;

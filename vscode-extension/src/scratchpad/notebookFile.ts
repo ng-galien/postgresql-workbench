@@ -3,11 +3,13 @@ import type {
   ScratchpadAssociationSnapshot,
   SqlNotebookErrorPayload,
   SqlNotebookOutputPayload,
+  SqlNotebookResultNavigation,
+  SqlNotebookResultPayload,
+} from "../../../packages/rows/src/resultPayload.js";
+import type {
   SqlNotebookRendererRequest,
   SqlNotebookRendererResponse,
   SqlNotebookResultAction,
-  SqlNotebookResultNavigation,
-  SqlNotebookResultPayload,
   SqlNotebookResultRequest,
   SqlNotebookSettingsRequest,
   SqlResultDataViewRequest,

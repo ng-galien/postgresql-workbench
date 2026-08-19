@@ -1,9 +1,5 @@
 import type { Client } from "pg";
-import {
-  type DataViewEdit,
-  type DataViewEditability,
-  sameDataViewRow,
-} from "../../views/src/dataView/protocol.js";
+import { type DataViewEdit, type DataViewEditability, sameDataViewRow } from "./dataView.js";
 import { buildRowUpdates } from "./updates.js";
 
 /** Local, unapplied cell edits of a Data View, and their atomic application. */

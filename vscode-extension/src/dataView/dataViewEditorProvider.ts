@@ -1,9 +1,7 @@
 import { randomBytes } from "node:crypto";
 import * as vscode from "vscode";
-import type {
-  DataViewRequest,
-  DataViewSource,
-} from "../../../packages/views/src/dataView/protocol.js";
+import type { DataViewSource } from "../../../packages/rows/src/dataView.js";
+import type { DataViewRequest } from "../../../packages/views/src/dataView/protocol.js";
 import { DataViewDocument } from "./dataViewDocument.js";
 import { DATA_VIEW_EDITOR_VIEW_TYPE, dataViewUri, parseDataViewUri } from "./dataViewUri.js";
 import { type DataViewHostServices, errorMessage } from "./hostServices.js";
