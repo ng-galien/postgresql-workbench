@@ -7,7 +7,7 @@ import type {
 } from "../../packages/dap/src/debugger/launch/index.js";
 import { planSqlResultExecution } from "../../packages/sql/src/analysis/sqlStatements.js";
 import { POSTGRES_SOURCE_LANGUAGE_IDS } from "../../packages/sql/src/authoring/documentLanguage.js";
-import { registerAcceptanceControl } from "./acceptanceControl.js";
+import { createAcceptanceProbes, registerAcceptanceControl } from "./acceptanceControl.js";
 import { registerWorkbenchGraphDropBridge, WorkbenchGraphView } from "./cockpit/index.js";
 import { registerGraphWorkbenchCommands } from "./cockpit/registerCommands.js";
 import { WorkbenchGraphTreeSync } from "./cockpit/treeSync.js";
@@ -62,7 +62,6 @@ import {
   type PlpgsqlTreeItem,
   WorkbenchDdlSyncController,
   WorkbenchIndexController,
-  type WorkbenchIndexPhase,
   type WorkbenchObjectAction,
   type WorkbenchObjectActionId,
   type WorkbenchObjectModel,
@@ -205,29 +204,12 @@ let shutdownScratchpads: (() => Promise<void>) | undefined;
 export async function activate(context: vscode.ExtensionContext): Promise<PlpgsqlExtensionApi> {
   out.appendLine("activate() called");
 
-  let resetAcceptanceWorkbench = () => {};
-  let inspectAcceptanceDebugState = (): unknown => ({
-    extensionSession: undefined,
-    vscodeSessionId: vscode.debug.activeDebugSession?.id,
-  });
-  let inspectAcceptanceTestingState = (): unknown => ({});
-  let inspectAcceptanceWorkbenchState = (): unknown => ({});
-  let armAcceptanceIndexPhaseGate = (_phases: readonly WorkbenchIndexPhase[]): void => {};
-  let releaseAcceptanceIndexPhaseGate = (_runId: number, _phase: WorkbenchIndexPhase): void => {};
-  let removeAcceptanceServer = (_id: string): Promise<void> | void => {};
-  const acceptanceControl = registerAcceptanceControl(context, {
-    armIndexPhaseGate: (phases) => armAcceptanceIndexPhaseGate(phases),
-    inspectDebugState: () => inspectAcceptanceDebugState(),
-    inspectTestingState: () => inspectAcceptanceTestingState(),
-    inspectWorkbenchState: () => inspectAcceptanceWorkbenchState(),
-    releaseIndexPhaseGate: (runId, phase) => releaseAcceptanceIndexPhaseGate(runId, phase),
-    removeServer: (id) => removeAcceptanceServer(id),
-    resetWorkbench: () => resetAcceptanceWorkbench(),
-  });
+  const acceptanceProbes = createAcceptanceProbes();
+  const acceptanceControl = registerAcceptanceControl(context, acceptanceProbes);
   if (acceptanceControl) context.subscriptions.push(acceptanceControl);
 
   const cm = new ConnectionManager(context, out);
-  removeAcceptanceServer = async (id) => {
+  acceptanceProbes.removeServer = async (id) => {
     await cm.removeConnectionConfiguration(id);
   };
   context.subscriptions.push(cm);
@@ -269,10 +251,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
       }),
   });
   context.subscriptions.push(workbenchDdlSync);
-  armAcceptanceIndexPhaseGate = (phases) => workbenchIndex.armAcceptancePhaseGate(phases);
-  releaseAcceptanceIndexPhaseGate = (runId, phase) =>
+  acceptanceProbes.armIndexPhaseGate = (phases) => workbenchIndex.armAcceptancePhaseGate(phases);
+  acceptanceProbes.releaseIndexPhaseGate = (runId, phase) =>
     workbenchIndex.releaseAcceptancePhaseGate(runId, phase);
-  inspectAcceptanceWorkbenchState = () => ({
+  acceptanceProbes.inspectWorkbenchState = () => ({
     connection: {
       connectedServerIds: [...cm.connectedServerIds],
       connected: cm.connectedServerIds.length > 0,
@@ -454,7 +436,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
       };
     }),
   );
-  inspectAcceptanceTestingState = () => {
+  acceptanceProbes.inspectTestingState = () => {
     const serverId = cm.connectedServerIds.length === 1 ? cm.connectedServerIds[0] : undefined;
     const server = serverId ? cm.store.get(serverId) : undefined;
     const state = server
@@ -555,7 +537,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
   });
   canDebugScratchpadSql = scratchpadDebugging.canDebugScratchpadSql;
   debugScratchpadSql = scratchpadDebugging.debugScratchpadSql;
-  inspectAcceptanceDebugState = scratchpadDebugging.inspectAcceptanceDebugState;
+  acceptanceProbes.inspectDebugState = scratchpadDebugging.inspectAcceptanceDebugState;
   let sourceNavigationSequence = 0;
   const queueStoppedSource = (session: vscode.DebugSession, status: DebugSessionStatus) => {
     const sequence = ++sourceNavigationSequence;
@@ -662,7 +644,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
         if (choice === "Show Output") out.show(true);
       });
   }
-  resetAcceptanceWorkbench = async () => {
+  acceptanceProbes.resetWorkbench = async () => {
     await vscode.commands.executeCommand("workbench.action.closeQuickOpen");
     await workbenchIndex.settleAcceptanceOperations();
     const debugSession = vscode.debug.activeDebugSession;

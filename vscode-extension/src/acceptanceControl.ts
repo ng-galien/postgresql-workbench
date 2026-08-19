@@ -77,6 +77,25 @@ export interface AcceptanceControlOptions {
   resetWorkbench(): Promise<void> | void;
 }
 
+/**
+ * The probes an acceptance run reads. Activation builds the pieces in order, so each probe starts
+ * as a harmless default and is replaced once the piece it inspects exists.
+ */
+export function createAcceptanceProbes(): AcceptanceControlOptions {
+  return {
+    armIndexPhaseGate: () => {},
+    inspectDebugState: () => ({
+      extensionSession: undefined,
+      vscodeSessionId: vscode.debug.activeDebugSession?.id,
+    }),
+    inspectTestingState: () => ({}),
+    inspectWorkbenchState: () => ({}),
+    releaseIndexPhaseGate: () => {},
+    removeServer: () => {},
+    resetWorkbench: () => {},
+  };
+}
+
 export function registerAcceptanceControl(
   context: vscode.ExtensionContext,
   options: AcceptanceControlOptions,
