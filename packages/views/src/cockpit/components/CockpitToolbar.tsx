@@ -1,10 +1,10 @@
 import { Fragment } from "react";
 import { relationClass, relationLabel } from "../graph/relationPresentation.js";
+import { useCockpitStore } from "../graph/store.js";
+import { focusSymbol } from "../graph/transport.js";
 import type { CockpitDirection } from "../protocol.js";
 import { vscode } from "../vscodeApi.js";
 import { CockpitSearch } from "./CockpitSearch.js";
-import { useCockpitStore } from "./store.js";
-import { focusSymbol } from "./transport.js";
 
 const RELATIONS = ["calls", "reads", "writes", "references", "uses_type"];
 

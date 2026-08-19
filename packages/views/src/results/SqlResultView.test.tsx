@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import type { SqlNotebookResultPayload } from "./payload.js";
+import type { SqlNotebookResultPayload } from "../../../rows/src/resultPayload.js";
 import { SqlResultView } from "./SqlResultView.js";
 
 function payload(overrides: Partial<SqlNotebookResultPayload> = {}): SqlNotebookResultPayload {

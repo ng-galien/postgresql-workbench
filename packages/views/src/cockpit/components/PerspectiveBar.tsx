@@ -1,6 +1,6 @@
+import { useCockpitStore } from "../graph/store.js";
+import { focusSymbol, savePerspective } from "../graph/transport.js";
 import { vscode } from "../vscodeApi.js";
-import { useCockpitStore } from "./store.js";
-import { focusSymbol, savePerspective } from "./transport.js";
 
 export function PerspectiveBar() {
   const session = useCockpitStore((state) => state.session);

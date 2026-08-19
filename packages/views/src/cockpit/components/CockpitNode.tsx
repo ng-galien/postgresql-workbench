@@ -1,9 +1,9 @@
 import { Handle, Position, useStore } from "@xyflow/react";
 import { postgresVisual } from "../../presentation.js";
+import type { CockpitNodeModel } from "../graph/domain.js";
+import { useCockpitStore } from "../graph/store.js";
+import { cockpitZoomLevel } from "../graph/zoom.js";
 import type { CockpitDirection } from "../protocol.js";
-import type { CockpitNodeModel } from "./domain.js";
-import { useCockpitStore } from "./store.js";
-import { cockpitZoomLevel } from "./zoom.js";
 
 export interface CockpitNodeData extends Record<string, unknown> {
   node: CockpitNodeModel;

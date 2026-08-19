@@ -21,7 +21,7 @@ vi.mock("../vscodeApi.js", () => ({
     setState: vi.fn(),
   },
 }));
-vi.mock("./store.js", () => ({
+vi.mock("../graph/store.js", () => ({
   useCockpitStore: (selector: (state: typeof cockpit) => unknown) => selector(cockpit),
 }));
 

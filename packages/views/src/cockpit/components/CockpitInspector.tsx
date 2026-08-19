@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from "react";
+import { useCockpitStore } from "../graph/store.js";
 import type { WorkbenchGraphSourcePreview } from "../protocol.js";
-import { SourceInspector } from "../SourceInspector.js";
-import { useCockpitStore } from "./store.js";
+import { SourceInspector } from "./SourceInspector.js";
 import { VisiblePathPicker } from "./VisiblePathPicker.js";
 
 interface CockpitInspectorProps {

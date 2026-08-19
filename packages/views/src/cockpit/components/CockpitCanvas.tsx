@@ -19,14 +19,11 @@ import {
 
 export { hasWorkbenchTreeDrag };
 
+import { reconcileControlledNodes } from "../graph/controlledNodes.js";
+import { hiddenCount } from "../graph/domain.js";
+import { layoutCockpit } from "../graph/layout.js";
 import { relationColor } from "../graph/relationPresentation.js";
-import { vscode } from "../vscodeApi.js";
-import { CockpitEdge, type CockpitEdgeData } from "./CockpitEdge.js";
-import { CockpitNode, type CockpitNodeData } from "./CockpitNode.js";
-import { reconcileControlledNodes } from "./controlledNodes.js";
-import { hiddenCount } from "./domain.js";
-import { layoutCockpit } from "./layout.js";
-import { useCockpitStore } from "./store.js";
+import { useCockpitStore } from "../graph/store.js";
 import {
   debugSymbol,
   dismissSource,
@@ -35,7 +32,10 @@ import {
   openSymbol,
   requestNeighborhood,
   setPinnedSymbol,
-} from "./transport.js";
+} from "../graph/transport.js";
+import { vscode } from "../vscodeApi.js";
+import { CockpitEdge, type CockpitEdgeData } from "./CockpitEdge.js";
+import { CockpitNode, type CockpitNodeData } from "./CockpitNode.js";
 
 const NODE_TYPES = { cockpit: CockpitNode };
 const EDGE_TYPES = { cockpit: CockpitEdge };

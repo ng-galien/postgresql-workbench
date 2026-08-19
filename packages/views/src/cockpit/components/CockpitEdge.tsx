@@ -6,7 +6,7 @@ import {
   useStore,
 } from "@xyflow/react";
 import { relationClass, relationLabel } from "../graph/relationPresentation.js";
-import { showCockpitEdgeLabel } from "./zoom.js";
+import { showCockpitEdgeLabel } from "../graph/zoom.js";
 
 export interface CockpitEdgeData extends Record<string, unknown> {
   sourceLabel: string;

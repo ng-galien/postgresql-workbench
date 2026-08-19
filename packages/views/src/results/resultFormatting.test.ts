@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { SqlNotebookResultPayload } from "./payload.js";
+import type { SqlNotebookResultPayload } from "../../../rows/src/resultPayload.js";
 import {
   formattedCellValue,
   nextResultSort,

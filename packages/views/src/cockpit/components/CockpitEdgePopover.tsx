@@ -1,6 +1,6 @@
 import { relationLabel } from "../graph/relationPresentation.js";
-import { useCockpitStore } from "./store.js";
-import { inspectSymbol } from "./transport.js";
+import { useCockpitStore } from "../graph/store.js";
+import { inspectSymbol } from "../graph/transport.js";
 
 export function CockpitEdgePopover() {
   const selected = useCockpitStore((state) => state.selectedEdgeId);

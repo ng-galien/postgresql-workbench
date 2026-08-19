@@ -7,7 +7,7 @@ import { createJavaScriptRegexEngine } from "@shikijs/engine-javascript";
 import sql from "@shikijs/langs/sql";
 import darkPlus from "@shikijs/themes/dark-plus";
 import lightPlus from "@shikijs/themes/light-plus";
-import plpgsqlGrammar from "../../../../vscode-extension/syntaxes/plpgsql.tmLanguage.json";
+import plpgsqlGrammar from "../../../../../vscode-extension/syntaxes/plpgsql.tmLanguage.json";
 
 export interface PostgresSourceToken {
   text: string;

@@ -1,5 +1,5 @@
 import type { DebugResultCell } from "../../../dap/src/debugger/launch/index.js";
-import type { SqlNotebookResultPayload } from "./payload.js";
+import type { SqlNotebookResultPayload } from "../../../rows/src/resultPayload.js";
 
 export type ResultSortDirection = "ascending" | "descending";
 

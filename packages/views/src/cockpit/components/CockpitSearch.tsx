@@ -1,9 +1,9 @@
 import { useEffect, useId, useRef, useState } from "react";
+import { applySearchFacet, searchFacetSuggestions } from "../graph/searchSuggestions.js";
+import { useCockpitStore } from "../graph/store.js";
+import { focusSymbol } from "../graph/transport.js";
 import type { WorkbenchGraphSearchResult } from "../protocol.js";
 import { vscode } from "../vscodeApi.js";
-import { applySearchFacet, searchFacetSuggestions } from "./searchSuggestions.js";
-import { useCockpitStore } from "./store.js";
-import { focusSymbol } from "./transport.js";
 
 let searchSequence = 0;
 

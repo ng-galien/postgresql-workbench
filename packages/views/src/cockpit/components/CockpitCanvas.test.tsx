@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { type ExplorationModel, emptyExploration } from "./domain.js";
+import { type ExplorationModel, emptyExploration } from "../graph/domain.js";
 
 interface CockpitStoreMockState {
   exploration: ExplorationModel;
@@ -60,7 +60,7 @@ vi.mock("@xyflow/react", () => ({
     selector({ transform: [0, 0, 1] }),
 }));
 
-vi.mock("./transport.js", () => ({
+vi.mock("../graph/transport.js", () => ({
   debugSymbol: vi.fn(),
   focusSymbol: vi.fn(),
   inspectSymbol: vi.fn(),
@@ -73,7 +73,7 @@ vi.mock("../vscodeApi.js", () => ({
   vscode: { postMessage: vi.fn() },
 }));
 
-vi.mock("./store.js", () => ({
+vi.mock("../graph/store.js", () => ({
   useCockpitStore: (selector: (state: typeof cockpitStore.state) => unknown) =>
     selector(cockpitStore.state),
 }));

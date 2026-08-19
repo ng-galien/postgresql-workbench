@@ -1,4 +1,4 @@
-import type { SqlNotebookErrorPayload } from "./payload.js";
+import type { SqlNotebookErrorPayload } from "../../../rows/src/resultPayload.js";
 import type { SqlResultMessaging } from "./SqlResultView.js";
 
 export interface SqlErrorViewProps {

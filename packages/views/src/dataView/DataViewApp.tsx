@@ -8,6 +8,7 @@ import {
   useState,
 } from "react";
 import type { DebugResultCell } from "../../../dap/src/debugger/launch/index.js";
+import type { DataViewAddition, DataViewCompletion } from "../../../rows/src/dataView.js";
 import {
   dataViewColumnKeys,
   dataViewRowKey,
@@ -18,13 +19,7 @@ import type { GridEditing } from "../results/CellEditor.js";
 import { type GridLayout, ResultGrid } from "../results/ResultGrid.js";
 import { nextResultSort, resultAsTsv } from "../results/resultFormatting.js";
 import { resultRowSummary } from "../results/SqlResultView.js";
-import type {
-  DataViewAddition,
-  DataViewCompletion,
-  DataViewRequest,
-  DataViewResponse,
-  DataViewState,
-} from "./protocol.js";
+import type { DataViewRequest, DataViewResponse, DataViewState } from "./protocol.js";
 
 export interface DataViewMessaging {
   post(message: DataViewRequest): void;

@@ -1,10 +1,9 @@
 import { createRoot, type Root } from "react-dom/client";
 import type {
   SqlNotebookOutputPayload,
-  SqlNotebookRendererRequest,
-  SqlNotebookRendererResponse,
   SqlNotebookResultPayload,
-} from "./payload.js";
+} from "../../../rows/src/resultPayload.js";
+import type { SqlNotebookRendererRequest, SqlNotebookRendererResponse } from "./payload.js";
 import { SqlErrorView } from "./SqlErrorView.js";
 import { type SqlResultMessaging, SqlResultView } from "./SqlResultView.js";
 import styles from "./styles.css";

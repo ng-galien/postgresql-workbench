@@ -1,13 +1,13 @@
 import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
+import { readCockpitEvidence } from "../graph/evidence.js";
+import { useCockpitStore } from "../graph/store.js";
+import { requestNeighborhood } from "../graph/transport.js";
 import { vscode } from "../vscodeApi.js";
 import { CockpitCanvas } from "./CockpitCanvas.js";
 import { CockpitEdgePopover } from "./CockpitEdgePopover.js";
 import { CockpitInspector, clampInspectorHeight, clampInspectorWidth } from "./CockpitInspector.js";
 import { CockpitToolbar } from "./CockpitToolbar.js";
-import { readCockpitEvidence } from "./evidence.js";
 import { PerspectiveBar } from "./PerspectiveBar.js";
-import { useCockpitStore } from "./store.js";
-import { requestNeighborhood } from "./transport.js";
 
 export function App() {
   const receive = useCockpitStore((state) => state.receive);

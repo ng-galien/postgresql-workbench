@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
+import type { SqlNotebookResultPayload } from "../../../rows/src/resultPayload.js";
 import type {
   SqlNotebookRendererRequest,
   SqlNotebookRendererResponse,
   SqlNotebookResultAction,
-  SqlNotebookResultPayload,
 } from "./payload.js";
 import { ResultGrid } from "./ResultGrid.js";
 import { resultAsTsv } from "./resultFormatting.js";

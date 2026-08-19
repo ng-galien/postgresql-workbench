@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from "react";
-import { shortestPath } from "./domain.js";
-import { useCockpitStore } from "./store.js";
+import { shortestPath } from "../graph/domain.js";
+import { useCockpitStore } from "../graph/store.js";
 
 export function VisiblePathPicker() {
   const exploration = useCockpitStore((state) => state.exploration);
