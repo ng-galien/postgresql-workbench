@@ -95,7 +95,7 @@ jobs:
       - run: xvfb-run -a npm --prefix vscode-extension test
         timeout-minutes: 15
       - name: Upload logs
-        if: always()
+        if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: vscode-technical-logs
@@ -172,7 +172,7 @@ jobs:
           bash scripts/test/run-playwright-ci.sh test:bootstrap
         timeout-minutes: 15
       - name: Upload Playwright bootstrap evidence
-        if: always()
+        if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: playwright-bootstrap-results
@@ -209,7 +209,7 @@ jobs:
           bash scripts/test/run-playwright-ci.sh test:acceptance:core
         timeout-minutes: 20
       - name: Upload Playwright evidence
-        if: always()
+        if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: playwright-core-results
@@ -249,7 +249,7 @@ jobs:
           bash scripts/test/run-playwright-ci.sh test:acceptance:index-lifecycle
         timeout-minutes: 15
       - name: Upload Playwright evidence
-        if: always()
+        if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: playwright-index-lifecycle-results
@@ -289,7 +289,7 @@ jobs:
           bash scripts/test/run-playwright-ci.sh test:acceptance:schema-sync
         timeout-minutes: 15
       - name: Upload Playwright evidence
-        if: always()
+        if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: playwright-schema-sync-results
