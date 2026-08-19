@@ -128,7 +128,7 @@ test.describe("SQL authoring", () => {
         });
     });
 
-    await test.step("start another SELECT when no direct foreign key can form a JOIN", async () => {
+    await test.step("join through a mapping table when no direct foreign key exists", async () => {
       await vscode.openSqlDocument("SELECT product.id FROM shop.product;");
       await sqlEditor.associateDocumentAutomatically(demoAssociationText);
       const schema = await workbench.tree.expandPath([
@@ -142,8 +142,9 @@ test.describe("SQL authoring", () => {
       await expect
         .poll(() => sqlEditor.snapshot())
         .toMatchObject({
+          // shop.order_line carries a key to each side, so the shortest path runs through it.
           text: expect.stringMatching(
-            /FROM\s+shop\.product;\s*SELECT\s+customer\.id,\s+customer\.name,\s+customer\.loyalty_points,\s+customer\.email,\s+customer\.created_at\s+FROM\s+shop\.customer AS customer;/u,
+            /FROM\s+shop\.product\s+LEFT JOIN shop\.order_line AS order_line ON product\.id = order_line\.product_id\s+LEFT JOIN shop\.customer AS customer ON order_line\.customer_id = customer\.id;/u,
           ),
         });
     });
