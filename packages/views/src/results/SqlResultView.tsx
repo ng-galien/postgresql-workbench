@@ -6,6 +6,7 @@ import type {
   SqlNotebookResultAction,
 } from "./payload.js";
 import { ResultGrid } from "./ResultGrid.js";
+import { ResultNavigation } from "./ResultNavigation.js";
 import { resultAsTsv } from "./resultFormatting.js";
 
 export interface SqlResultViewProps {
@@ -114,42 +115,12 @@ export function SqlResultView({ payload, messaging }: SqlResultViewProps) {
         </div>
         {current.columns.length > 0 ? (
           <div className="result-actions">
-            {navigation && messaging ? (
-              <fieldset className="navigation-actions">
-                <legend className="sr-only">Result navigation</legend>
-                <button
-                  className="result-button"
-                  type="button"
-                  disabled={busy || closed || !navigation.hasPrevious}
-                  onClick={() => request("previous")}
-                >
-                  Previous
-                </button>
-                <button
-                  className="result-button result-button-primary"
-                  type="button"
-                  disabled={busy || closed || !navigation.hasNext}
-                  onClick={() => request("next")}
-                >
-                  Next
-                </button>
-                {navigation.canLoadAll ? (
-                  <button
-                    className="result-button result-button-warning"
-                    type="button"
-                    disabled={busy || closed}
-                    title="Load every remaining row. This may use significant memory."
-                    onClick={() => request("load-all")}
-                  >
-                    Load all
-                  </button>
-                ) : null}
-                {busy ? (
-                  <button className="result-button" type="button" onClick={() => request("cancel")}>
-                    Cancel
-                  </button>
-                ) : null}
-              </fieldset>
+            {messaging ? (
+              <ResultNavigation
+                payload={current}
+                state={{ navigation, busy, closed }}
+                onAction={(action) => request(action)}
+              />
             ) : null}
             {current.statement && messaging ? (
               <button

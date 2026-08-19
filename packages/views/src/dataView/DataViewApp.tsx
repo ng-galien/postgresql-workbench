@@ -1,7 +1,6 @@
 import {
   type CSSProperties,
   type KeyboardEvent,
-  type ReactNode,
   useEffect,
   useMemo,
   useRef,
@@ -16,7 +15,9 @@ import {
 } from "../../../rows/src/dataView.js";
 import { hasWorkbenchTreeDrag } from "../cockpit/dragAndDrop.js";
 import type { GridEditing } from "../results/CellEditor.js";
+import { IconButton } from "../results/IconButton.js";
 import { type GridLayout, ResultGrid } from "../results/ResultGrid.js";
+import { ResultNavigation } from "../results/ResultNavigation.js";
 import { nextResultSort, resultAsTsv } from "../results/resultFormatting.js";
 import { resultRowSummary } from "../results/SqlResultView.js";
 import type { DataViewRequest, DataViewResponse, DataViewState } from "./protocol.js";
@@ -29,37 +30,6 @@ export interface DataViewMessaging {
 interface Notice {
   message: string;
   severity: "info" | "error";
-}
-
-function IconButton({
-  icon,
-  label,
-  onClick,
-  disabled,
-  primary,
-  text,
-}: {
-  icon: string;
-  label: string;
-  onClick: () => void;
-  disabled?: boolean;
-  primary?: boolean;
-  /** Optional short text shown next to the icon. */
-  text?: ReactNode;
-}) {
-  return (
-    <button
-      className={`icon-button${primary ? " primary" : ""}`}
-      type="button"
-      title={label}
-      aria-label={label}
-      disabled={disabled}
-      onClick={onClick}
-    >
-      <span className={`codicon codicon-${icon}`} aria-hidden="true" />
-      {text !== undefined ? <span className="icon-button-text">{text}</span> : null}
-    </button>
-  );
 }
 
 function MenuItem({
@@ -382,7 +352,13 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
 
   const payload = state.payload;
   const navigation = payload?.navigation;
-  const cursorOpen = state.status === "ready" && navigation !== undefined && !state.message;
+  const _cursorOpen = state.status === "ready" && navigation !== undefined && !state.message;
+  // The same rules the Scratchpad output applies, read from the one place that states them.
+  const navigationState = {
+    navigation,
+    busy: state.busy,
+    closed: !(state.status === "ready" && navigation !== undefined && !state.message),
+  };
   const disabled = state.busy || state.applying;
   const editCount = state.edits.length;
   const editable = state.editability.tables.length > 0;
@@ -632,49 +608,15 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
           </div>
         </div>
 
-        {navigation ? (
-          <div className="toolbar-group toolbar-navigation">
-            <IconButton
-              icon="chevron-left"
-              label="Previous page"
-              disabled={disabled || !cursorOpen || !navigation.hasPrevious}
-              onClick={() => post({ type: "data-view/navigate", action: "previous" })}
-            />
-            <span
-              className="toolbar-rows"
-              title={payload?.truncated ? payload.truncationReasons.join(", ") : undefined}
-            >
-              {payload ? resultRowSummary(payload) : ""}
-              {payload?.truncated ? (
-                <span className="codicon codicon-warning" title="Preview truncated" />
-              ) : null}
-              {!cursorOpen && state.status === "ready" ? (
-                <span
-                  className="codicon codicon-debug-disconnect"
-                  title="Cursor closed; refresh to load again"
-                />
-              ) : null}
-            </span>
-            <IconButton
-              icon="chevron-right"
-              label="Next page"
-              disabled={disabled || !cursorOpen || !navigation.hasNext}
-              onClick={() => post({ type: "data-view/navigate", action: "next" })}
-            />
-            <IconButton
-              icon="cloud-download"
-              label="Load every remaining row (may use significant memory)"
-              disabled={disabled || !cursorOpen || !navigation.canLoadAll}
-              onClick={() => post({ type: "data-view/navigate", action: "load-all" })}
-            />
-            <IconButton
-              icon="stop-circle"
-              label="Cancel loading"
-              disabled={!state.busy || state.applying}
-              onClick={() => post({ type: "data-view/navigate", action: "cancel" })}
-            />
-          </div>
-        ) : null}
+        <div className="toolbar-group toolbar-navigation">
+          <ResultNavigation
+            payload={payload}
+            state={navigationState}
+            summary={payload ? resultRowSummary(payload) : ""}
+            onAction={(action) => post({ type: "data-view/navigate", action })}
+            disabled={disabled || state.applying}
+          />
+        </div>
 
         {editable ? (
           <div className="toolbar-group toolbar-edits">

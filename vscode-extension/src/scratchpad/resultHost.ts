@@ -2,6 +2,7 @@ export { postgresCursorSafetyTimeoutMs } from "../../../packages/rows/src/cursor
 
 import * as vscode from "vscode";
 import type { SqlResultSession } from "../../../packages/rows/src/cursor.js";
+import { navigateResult } from "../../../packages/rows/src/navigation.js";
 import {
   associationFingerprint,
   type ScratchpadAssociationSnapshot,
@@ -192,32 +193,21 @@ export class SqlNotebookResultHost implements vscode.Disposable {
     hosted: HostedResultSession,
     request: SqlNotebookResultRequest,
   ): Promise<SqlNotebookResultPayload> {
-    switch (request.action) {
-      case "attach":
-        return hosted.session.snapshot();
-      case "previous":
-        return hosted.session.previous();
-      case "next":
-        return hosted.session.next();
-      case "load-all": {
-        const progressPosts: Promise<unknown>[] = [];
-        const payload = await hosted.session.loadAll((loadedRowCount) => {
-          progressPosts.push(
-            Promise.resolve(
-              this.post(editor, {
-                type: "sql-result/progress",
-                sessionId: request.sessionId,
-                loadedRowCount,
-              }),
-            ),
-          );
-        });
-        await Promise.allSettled(progressPosts);
-        return payload;
-      }
-      default:
-        return hosted.session.snapshot();
-    }
+    if (request.action === "cancel") return hosted.session.snapshot();
+    const progressPosts: Promise<unknown>[] = [];
+    const payload = await navigateResult(hosted.session, request.action, (loadedRowCount) => {
+      progressPosts.push(
+        Promise.resolve(
+          this.post(editor, {
+            type: "sql-result/progress",
+            sessionId: request.sessionId,
+            loadedRowCount,
+          }),
+        ),
+      );
+    });
+    await Promise.allSettled(progressPosts);
+    return payload;
   }
 
   private touch(hosted: HostedResultSession): void {

@@ -104,7 +104,7 @@ const sqlNotebookRendererConfig = {
   platform: "browser",
   target: "es2022",
   jsx: "automatic",
-  loader: { ".css": "text" },
+  loader: { ".css": "text", ".ttf": "dataurl" },
   define: { "process.env.NODE_ENV": '"production"' },
   sourcemap: !production,
   minify: production,

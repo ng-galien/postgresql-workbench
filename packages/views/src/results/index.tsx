@@ -3,6 +3,8 @@ import type {
   SqlNotebookOutputPayload,
   SqlNotebookResultPayload,
 } from "../../../rows/src/resultPayload.js";
+import { codicons } from "./codicons.js";
+import iconButtonStyles from "./iconButton.css";
 import type { SqlNotebookRendererRequest, SqlNotebookRendererResponse } from "./payload.js";
 import { SqlErrorView } from "./SqlErrorView.js";
 import { type SqlResultMessaging, SqlResultView } from "./SqlResultView.js";
@@ -47,7 +49,8 @@ export function activate(context: RendererContext = {}): RendererApi {
       shadow.replaceChildren();
 
       const style = document.createElement("style");
-      style.textContent = styles;
+      // The output renders in a shadow root, so it carries every stylesheet it needs itself.
+      style.textContent = `${codicons}\n${styles}\n${iconButtonStyles}`;
       const mount = document.createElement("div");
       shadow.append(style, mount);
 

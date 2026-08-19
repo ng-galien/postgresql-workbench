@@ -6,6 +6,7 @@ import {
 import type { DebugStateSnapshot } from "../fixtures/vscode";
 import { currentPage, type PageProvider } from "./PageProvider";
 import { QuickInput } from "./QuickInput";
+import { ResultTable } from "./ResultTable";
 import { WorkbenchTree } from "./WorkbenchTree";
 
 type DebugActionCommand =
@@ -160,9 +161,8 @@ export class DebuggerPage {
       timeout: 5_000,
     });
     if (expectedResult !== undefined) {
-      const resultCells = results.locator("tbody td").filter({
-        hasText: new RegExp(`^${expectedResult.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`),
-      });
+      // The same grid the Scratchpad and the Data View show, so the same page object reads it.
+      const resultCells = new ResultTable(results).cellsWithText(expectedResult);
       await expect(resultCells).toHaveCount(1, { timeout: 5_000 });
       await expect(resultCells.first()).toHaveText(expectedResult, { timeout: 5_000 });
     }

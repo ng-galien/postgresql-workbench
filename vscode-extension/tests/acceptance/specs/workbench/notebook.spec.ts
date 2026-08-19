@@ -1,6 +1,7 @@
 import { demoAssociationText, demoAutomaticAssociationText } from "../../fixtures/demoDatabase";
 import { expect, test } from "../../fixtures/test";
 import { createScratchpad } from "../../journeys/scratchpad";
+import { ResultTable } from "../../pages/ResultTable";
 
 const resultMime = "application/vnd.postgresql-workbench.sql-result+json";
 
@@ -328,24 +329,14 @@ test.describe("Scratchpads", () => {
     await notebook.typeInCell(code, "SELECT value FROM generate_series(1, 1000) AS value");
     await notebook.executeCode(code);
 
-    const firstPage = await notebook.resultFrame("Rows 1–200 · more available");
-    await expect(firstPage.getByText("Rows 1–200 · more available", { exact: true })).toBeVisible({
-      timeout: 10_000,
-    });
-    await firstPage.getByRole("button", { name: "Next", exact: true }).click();
-    await expect(firstPage.getByText("Rows 201–400 · more available", { exact: true })).toBeVisible(
-      {
-        timeout: 5_000,
-      },
-    );
-    await firstPage.getByRole("button", { name: "Previous", exact: true }).click();
-    await expect(firstPage.getByText("Rows 1–200 · more available", { exact: true })).toBeVisible({
-      timeout: 5_000,
-    });
-    await firstPage.getByRole("button", { name: "Load all", exact: true }).click();
-    await expect(firstPage.getByText("1000 rows", { exact: true })).toBeVisible({
-      timeout: 10_000,
-    });
+    const result = new ResultTable(await notebook.resultFrame("Rows 1–200 · more available"));
+    await expect(result.summary("Rows 1–200 · more available")).toBeVisible({ timeout: 10_000 });
+    await result.next();
+    await expect(result.summary("Rows 201–400 · more available")).toBeVisible({ timeout: 5_000 });
+    await result.previous();
+    await expect(result.summary("Rows 1–200 · more available")).toBeVisible({ timeout: 5_000 });
+    await result.loadAll();
+    await expect(result.summary("1000 rows")).toBeVisible({ timeout: 10_000 });
   });
 
   test("renders syntax and PostgreSQL failures without internal stack traces", async ({

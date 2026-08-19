@@ -1,6 +1,6 @@
-import codiconStyles from "@vscode/codicons/dist/codicon.css";
-import codiconFont from "@vscode/codicons/dist/codicon.ttf";
 import { createRoot } from "react-dom/client";
+import { codicons } from "../results/codicons.js";
+import iconButtonStyles from "../results/iconButton.css";
 import gridStyles from "../results/styles.css";
 import { DataViewApp, type DataViewMessaging } from "./DataViewApp.js";
 import dataViewStyles from "./dataView.css";
@@ -27,12 +27,7 @@ const messaging: DataViewMessaging = {
 };
 
 const style = document.createElement("style");
-// The codicon stylesheet references its font by relative URL; embed the font instead.
-const codicons = codiconStyles.replace(
-  /@font-face\s*\{[^}]*\}/u,
-  `@font-face { font-family: "codicon"; src: url(${codiconFont}) format("truetype"); }`,
-);
-style.textContent = `${codicons}\n${gridStyles}\n${dataViewStyles}`;
+style.textContent = `${codicons}\n${gridStyles}\n${iconButtonStyles}\n${dataViewStyles}`;
 document.head.append(style);
 
 const container = document.getElementById("root");

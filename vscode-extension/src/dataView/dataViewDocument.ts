@@ -14,6 +14,10 @@ import {
 } from "../../../packages/rows/src/dataView.js";
 import { READ_ONLY_REASONS } from "../../../packages/rows/src/editability.js";
 import { initialDataViewQuery } from "../../../packages/rows/src/initialProjection.js";
+import {
+  navigateResult,
+  type ResultNavigationAction,
+} from "../../../packages/rows/src/navigation.js";
 import { openDataViewResult, TableAccents } from "../../../packages/rows/src/openRows.js";
 import { PendingEdits } from "../../../packages/rows/src/pendingEdits.js";
 import { quoteSqlIdentifierIfNeeded } from "../../../packages/sql/src/authoring/completion.js";
@@ -521,7 +525,7 @@ export class DataViewDocument implements vscode.CustomDocument {
     }
   }
 
-  private async navigate(action: "previous" | "next" | "load-all" | "cancel"): Promise<void> {
+  private async navigate(action: ResultNavigationAction): Promise<void> {
     const session = this.session;
     if (!session) {
       this.notify("The result cursor is closed. Refresh to load the rows again.", "info");
@@ -537,13 +541,9 @@ export class DataViewDocument implements vscode.CustomDocument {
     this.busy = true;
     this.broadcastState();
     try {
-      if (action === "previous") this.payload = session.previous();
-      else if (action === "next") this.payload = await session.next();
-      else {
-        this.payload = await session.loadAll((loadedRowCount) =>
-          this.broadcast({ type: "data-view/progress", loadedRowCount }),
-        );
-      }
+      this.payload = await navigateResult(session, action, (loadedRowCount) =>
+        this.broadcast({ type: "data-view/progress", loadedRowCount }),
+      );
       this.touch(this.services.resultSettings().cursorIdleTimeoutSeconds * 1_000);
     } catch (error) {
       if (this.session === session) {

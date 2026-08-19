@@ -73,9 +73,10 @@ describe("SqlResultView", () => {
     );
 
     expect(html).toContain("Rows 1–200 · more available");
-    expect(html).toContain("Previous");
-    expect(html).toContain("Next");
-    expect(html).toContain("Load all");
+    // The navigation is the shared control: icons, named for anyone who cannot see them.
+    expect(html).toContain('aria-label="Previous page"');
+    expect(html).toContain('aria-label="Next page"');
+    expect(html).toContain('aria-label="Load every remaining row');
     expect(html).toContain("may use significant memory");
   });
 

@@ -1,4 +1,6 @@
 import { createRoot } from "react-dom/client";
+import { codicons } from "../results/codicons.js";
+import iconButtonStyles from "../results/iconButton.css";
 import gridStyles from "../results/styles.css";
 import { DebugResultsApp, useDebugResultsState } from "./DebugResultsApp.js";
 import debugResultsStyles from "./debugResults.css";
@@ -16,7 +18,7 @@ function DebugResults() {
 }
 
 const style = document.createElement("style");
-style.textContent = `${gridStyles}\n${debugResultsStyles}`;
+style.textContent = `${codicons}\n${gridStyles}\n${iconButtonStyles}\n${debugResultsStyles}`;
 document.head.append(style);
 
 const container = document.getElementById("root");
