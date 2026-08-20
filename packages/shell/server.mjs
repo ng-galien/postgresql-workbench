@@ -123,7 +123,10 @@ createServer(async (request, response) => {
   if (request.url === "/request" && request.method === "POST") {
     const body = await new Blob(await Array.fromAsync(request)).text();
     response.writeHead(204).end();
-    await host.handle(JSON.parse(body)).catch((error) => {
+    const message = JSON.parse(body);
+    // A harness that cannot say what it was asked is a harness that cannot be debugged.
+    console.log(`→ ${message.type}`);
+    await host.handle(message).catch((error) => {
       emit({ type: "data-view/notice", message: String(error), severity: "error" });
     });
     return;

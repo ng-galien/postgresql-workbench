@@ -202,3 +202,66 @@ test("hides the key columns a reader has no use for, and offers them back", asyn
   await page.getByRole("menuitem", { name: /^Hide \d+ key columns$/u }).click();
   await expect(page.getByRole("columnheader", { name: /inventory_id/u })).toBeHidden();
 });
+
+test("removes the relation the reader points at, whichever one it is", async ({ page }) => {
+  await openEmpty(page);
+  await add(page, "shop.product");
+  await add(page, "shop.brand");
+
+  // The first table added is only the first one added: nothing makes it undeletable.
+  await page.getByRole("button", { name: "Remove shop.product" }).click();
+
+  await expect(page.getByTitle(/^shop\.product — its columns/u)).toBeHidden();
+  await expect(page.getByTitle(/^shop\.brand — its columns/u)).toBeVisible();
+  const sql = await runningSql(page);
+  expect(sql).toMatch(/FROM\s+shop\.brand AS brand/u);
+  expect(sql).not.toContain("shop.product");
+});
+
+test("removes a joined relation from the FROM clause, not only from the projection", async ({
+  page,
+}) => {
+  await openEmpty(page);
+  await add(page, "shop.inventory");
+  await add(page, "shop.product");
+
+  await page.getByRole("button", { name: "Remove shop.product" }).click();
+
+  const sql = await runningSql(page);
+  expect(sql).not.toContain("JOIN");
+  expect(sql).not.toContain("shop.product");
+  expect(sql).toMatch(/FROM\s+shop\.inventory AS inventory/u);
+});
+
+test("brings the joined relation's own columns into the projection", async ({ page }) => {
+  await openEmpty(page);
+  await add(page, "shop.inventory");
+
+  await add(page, "shop.product");
+
+  // A JOIN that projects nothing of what it joined is a JOIN the reader cannot see or remove.
+  await expect(page.getByRole("columnheader", { name: /^name/u })).toBeVisible();
+  const sql = await runningSql(page);
+  expect(sql).toContain("product.name");
+  expect(sql).toMatch(/JOIN\s+shop\.product AS product/u);
+});
+
+test("removes the right relation after the tables have been reordered", async ({ page }) => {
+  await openEmpty(page);
+  await add(page, "shop.inventory");
+  await add(page, "shop.product");
+
+  // Moving a table moves its columns; the FROM clause keeps its own order, and the two must not
+  // drift apart to the point where removing one relation takes another's columns.
+  const [inventory, product] = await page.getByTitle(/its columns carry the same accent/u).all();
+  if (!inventory || !product) throw new Error("expected two table badges");
+  await inventory.dragTo(product);
+
+  await page.getByRole("button", { name: "Remove shop.product" }).click();
+
+  const sql = await runningSql(page);
+  expect(sql).not.toContain("shop.product");
+  expect(sql).not.toContain("product.name");
+  expect(sql).toContain("inventory.quantity");
+  expect(sql).toMatch(/FROM\s+shop\.inventory AS inventory/u);
+});

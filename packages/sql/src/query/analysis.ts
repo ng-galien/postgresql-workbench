@@ -448,17 +448,18 @@ export function removeRelation(
   relation: SqlQueryRelation,
   ownedOrdinals: readonly number[],
 ): RelationRemoval {
-  if (!relation.join) {
-    if (analysis.relations.length > 1) {
-      return {
-        status: "rejected",
-        message: `${relation.name} is the base relation of the query: remove the joined tables first.`,
-      };
-    }
-    return { status: "empty" };
-  }
+  if (!relation.join && analysis.relations.length === 1) return { status: "empty" };
   if (!analysis.fromList)
     return { status: "rejected", message: "The FROM clause cannot be rewritten." };
+  /**
+   * Removing the base relation promotes the first joined one in its place. Which relation the FROM
+   * clause happens to start with is an artefact of the order they were composed, not something the
+   * reader chose, so it cannot be the one relation they may never remove. The promoted relation
+   * loses its ON condition — it had joined what is going away — and keeps whatever joined to it.
+   */
+  const promoted = relation.join
+    ? undefined
+    : analysis.relations.find((candidate) => candidate.join !== undefined);
   const referencesAny = (qualifiers: readonly string[], names: ReadonlySet<string>) =>
     qualifiers.some((qualifier) => names.has(qualifier.toLowerCase()));
   // Cascade: a joined relation whose ON condition references a removed relation goes too.
@@ -468,23 +469,71 @@ export function removeRelation(
     grew = false;
     const names = removedNames(removed);
     for (const candidate of analysis.relations) {
-      if (removed.has(candidate) || !candidate.join) continue;
+      if (candidate === promoted || removed.has(candidate) || !candidate.join) continue;
       if (referencesAny(candidate.join.qualifiers, names)) {
         removed.add(candidate);
         grew = true;
       }
     }
   }
-  const names = removedNames(removed);
   const owned = new Set(ownedOrdinals);
+  const reference = (candidate: SqlQueryRelation) => candidate.reference.toLowerCase();
+  /**
+   * A relation no column, filter or sort names is only in the query to carry a JOIN — the mapping
+   * table the engine crossed to reach something the reader asked for. It has no badge, so a reader
+   * can neither see it nor take it away: it must leave with the last relation that leant on it,
+   * or the query keeps a table nobody asked for and nothing can remove. What is load-bearing is
+   * therefore grown outwards from what the query still shows, never guessed from the FROM order.
+   */
+  if (!analysis.hasStar) {
+    const gone = removedNames(removed);
+    const carried = new Set<string>();
+    analysis.targets.forEach((target, ordinal) => {
+      if (owned.has(ordinal) || referencesAny(target.qualifiers, gone)) return;
+      for (const qualifier of target.qualifiers) carried.add(qualifier.toLowerCase());
+    });
+    for (const item of analysis.sortItems) {
+      if (referencesAny(item.qualifiers, gone)) continue;
+      for (const qualifier of item.qualifiers) carried.add(qualifier.toLowerCase());
+    }
+    if (analysis.where && !referencesAny(analysis.where.qualifiers, gone)) {
+      for (const qualifier of analysis.where.qualifiers) carried.add(qualifier.toLowerCase());
+    }
+    const load = new Set(
+      analysis.relations.filter(
+        (candidate) => !removed.has(candidate) && carried.has(reference(candidate)),
+      ),
+    );
+    let grewLoad = true;
+    while (grewLoad) {
+      grewLoad = false;
+      for (const candidate of load) {
+        for (const qualifier of candidate.join?.qualifiers ?? []) {
+          const carrier = analysis.relations.find(
+            (other) => !removed.has(other) && reference(other) === qualifier.toLowerCase(),
+          );
+          if (carrier && !load.has(carrier)) {
+            load.add(carrier);
+            grewLoad = true;
+          }
+        }
+      }
+    }
+    for (const candidate of analysis.relations) {
+      if (!load.has(candidate)) removed.add(candidate);
+    }
+  }
+  const kept = analysis.relations.filter((candidate) => !removed.has(candidate));
+  // Nothing the query showed survives the removal: the reader is back to an empty query.
+  if (kept.length === 0) return { status: "empty" };
+  const names = removedNames(removed);
   const keptTargets = analysis.targets.filter(
     (target, ordinal) => !owned.has(ordinal) && !referencesAny(target.qualifiers, names),
   );
   const keptSort = analysis.sortItems.filter((item) => !referencesAny(item.qualifiers, names));
-  const base = analysis.relations.find((candidate) => !candidate.join);
+  const [base, ...joined] = kept;
   if (!base) return { status: "rejected", message: "The FROM clause cannot be rewritten." };
-  const fromList = `${text.slice(base.ref.start, base.ref.end)}${analysis.relations
-    .filter((candidate) => candidate.join && !removed.has(candidate))
+  const fromList = `${text.slice(base.ref.start, base.ref.end)}${joined
     .map((candidate) =>
       candidate.join ? text.slice(candidate.join.left.end, candidate.join.range.end) : "",
     )

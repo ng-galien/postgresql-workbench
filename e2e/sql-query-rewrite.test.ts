@@ -111,4 +111,83 @@ describe("SQL query relation removal", () => {
 
     expect(analysis.targets.map((target) => target.qualifiers)).toEqual([[], []]);
   });
+
+  it("promotes a joined relation when the base is removed", async () => {
+    const removal = await removeJoined(
+      "SELECT a.x, b.k FROM s.first AS a JOIN s.second AS b ON a.id = b.first_id",
+      "first",
+      [0],
+    );
+
+    // Which relation the FROM starts with is the order they were composed, not a choice: the
+    // first joined one takes its place and loses the condition that joined it to what is gone.
+    expect(removal.status).toBe("removed");
+    if (removal.status !== "removed") return;
+    expect(removal.text).toMatch(/FROM\s+s\.second AS b/u);
+    expect(removal.text).not.toContain("s.first");
+    expect(removal.text).not.toContain("a.id");
+    expect(removal.alsoRemoved).toEqual([]);
+  });
+
+  it("keeps what joined to the promoted relation, and drops what joined to the removed one", async () => {
+    const removal = await removeJoined(
+      "SELECT a.x, b.k, c.j FROM s.first AS a " +
+        "JOIN s.second AS b ON a.id = b.first_id " +
+        "JOIN s.third AS c ON c.second_id = b.id",
+      "first",
+      [0],
+    );
+
+    expect(removal.status).toBe("removed");
+    if (removal.status !== "removed") return;
+    expect(removal.text).toMatch(/FROM\s+s\.second AS b/u);
+    expect(removal.text).toContain("s.third");
+    expect(removal.text).toContain("c.second_id = b.id");
+    expect(removal.alsoRemoved).toEqual([]);
+  });
+
+  it("drops a relation that only reached the query through the removed base", async () => {
+    const removal = await removeJoined(
+      "SELECT a.x, b.k, c.j FROM s.first AS a " +
+        "JOIN s.second AS b ON a.id = b.first_id " +
+        "JOIN s.third AS c ON c.first_id = a.id",
+      "first",
+      [0],
+    );
+
+    expect(removal.status).toBe("removed");
+    if (removal.status !== "removed") return;
+    expect(removal.text).toMatch(/FROM\s+s\.second AS b/u);
+    expect(removal.alsoRemoved).toEqual(["third"]);
+  });
+
+  it("empties the query when the only relation is removed", async () => {
+    const analysis = await analyze("SELECT a.x FROM s.first AS a");
+    const relation = analysis.relations[0];
+    if (!relation) throw new Error("no relation");
+
+    expect(removeRelation("SELECT a.x FROM s.first AS a", analysis, relation, [0]).status).toBe(
+      "empty",
+    );
+  });
+
+  it("removes a joined relation from the FROM clause, not only from the projection", async () => {
+    // The shape a Data View composes: every column of both relations, joined on the foreign key.
+    const text =
+      "SELECT inventory.id, inventory.product_id, inventory.quantity, " +
+      "product.id, product.name, product.price " +
+      "FROM s.inventory AS inventory JOIN s.product AS product ON inventory.product_id = product.id";
+    const analysis = await analyze(text);
+    const product = analysis.relations.find((candidate) => candidate.name === "product");
+    if (!product) throw new Error("no product relation");
+
+    const removal = removeRelation(text, analysis, product, [3, 4, 5]);
+
+    expect(removal.status).toBe("removed");
+    if (removal.status !== "removed") return;
+    expect(removal.text).not.toContain("JOIN");
+    expect(removal.text).not.toContain("s.product");
+    expect(removal.text).not.toContain("product.name");
+    expect(removal.text).toMatch(/FROM\s+s\.inventory AS inventory/u);
+  });
 });

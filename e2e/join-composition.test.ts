@@ -101,7 +101,6 @@ describe("JOIN composition through the planner", async () => {
   }
 
   const request = (text: string, oid: number, name: string, relationChoice?: number) => ({
-    uri: "file:///query.sql",
     text,
     offset: text.length,
     payload: {
