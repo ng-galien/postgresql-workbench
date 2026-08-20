@@ -66,8 +66,25 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
   });
   const parser: SyntaxParser = createCodeMonikerSyntaxParser(session.client);
 
-  const client = new Client(connection);
-  await client.connect();
+  // A connection that dies — the database restarted, the server was stopped — is news to report,
+  // not a reason for the shell to fall over. pg raises `error` on the client, and an unhandled one
+  // takes the process with it.
+  let catalogLost = false;
+  const connect = async (isCatalog = false): Promise<Client> => {
+    const opened = new Client(connection);
+    opened.on("error", (error: Error) => {
+      if (isCatalog) catalogLost = true;
+      emit({
+        type: "data-view/notice",
+        message: `The PostgreSQL connection was lost: ${error.message}`,
+        severity: "error",
+      });
+    });
+    await opened.connect();
+    return opened;
+  };
+
+  let client = await connect(true);
   const snapshot = await readSnapshot(client, serverId, connection.database);
 
   // The real completions come from the language server; it has no parser, and answers back here.
@@ -164,8 +181,7 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
     // A cursor owns the connection it reads through, so every load opens its own, exactly as the
     // Extension Host does: the previous one goes with the session it belonged to.
     await state.session?.close().catch(() => {});
-    const reader = new Client(connection);
-    await reader.connect();
+    const reader = await connect();
     try {
       const opened = await openDataViewResult({
         client: reader,
@@ -185,6 +201,12 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
       state.status = "error";
       state.message = error instanceof Error ? error.message : String(error);
       await reader.end().catch(() => {});
+      // The catalog connection dies with the database; the next load opens a fresh one.
+      if (catalogLost) {
+        catalogLost = false;
+        await client.end().catch(() => {});
+        client = await connect(true).catch(() => client);
+      }
     } finally {
       state.busy = false;
       broadcast();
