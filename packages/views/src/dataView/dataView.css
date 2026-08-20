@@ -696,3 +696,53 @@ body,
   color: inherit;
   opacity: 0.85;
 }
+
+/*
+ * The provisioned changes, read before they are written: what table and row each lands on, and
+ * the value it replaces.
+ */
+.pending-edits {
+  max-width: 460px;
+}
+
+.pending-edit {
+  display: flex;
+  flex-direction: column;
+  padding: 4px 10px;
+  gap: 1px;
+}
+
+.pending-edit + .pending-edit {
+  border-top: 1px solid color-mix(in srgb, var(--vscode-foreground) 12%, transparent);
+}
+
+.pending-edit-target {
+  overflow: hidden;
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.9em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pending-edit-change {
+  display: flex;
+  overflow: hidden;
+  align-items: center;
+  gap: 6px;
+}
+
+.pending-edit-column {
+  font-weight: 600;
+}
+
+.pending-edit-original {
+  color: var(--vscode-descriptionForeground);
+  text-decoration: line-through;
+}
+
+.pending-edit-value {
+  overflow: hidden;
+  color: var(--vscode-charts-green, var(--vscode-foreground));
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

@@ -13,11 +13,13 @@ import {
   dataViewColumnKeys,
   dataViewRowKey,
   dataViewSourceTitle,
+  describeDataViewEdits,
 } from "../../../rows/src/dataView.js";
 import { READ_ONLY_REASONS } from "../../../rows/src/editability.js";
 import { hasWorkbenchTreeDrag } from "../cockpit/dragAndDrop.js";
 import type { GridEditing } from "../results/CellEditor.js";
 import { IconButton } from "../results/IconButton.js";
+import { Modal } from "../results/Modal.js";
 import { type GridLayout, ResultGrid } from "../results/ResultGrid.js";
 import { ResultNavigation } from "../results/ResultNavigation.js";
 import { nextResultSort, resultAsTsv, resultRowSummary } from "../results/resultFormatting.js";
@@ -270,8 +272,10 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
   const [notice, setNotice] = useState<Notice>();
   const [showSql, setShowSql] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
-  /** Which page of the more-actions menu shows: its actions, or the export formats. */
-  const [exportOpen, setExportOpen] = useState(false);
+  /** Whether the list of provisioned changes is showing. */
+  const [editsOpen, setEditsOpen] = useState(false);
+  /** Which dialog is open over the view: rows coming in from a file, or rows going out to one. */
+  const [transfer, setTransfer] = useState<"import" | "export">();
   const [columnsOpen, setColumnsOpen] = useState(false);
   const [dropActive, setDropActive] = useState(false);
   const [additions, setAdditions] = useState<DataViewAddition[]>();
@@ -712,15 +716,55 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
             </div>
           </div>
           {editable ? (
-            <div className="toolbar-group toolbar-edits">
-              <span
-                className={`toolbar-edit-count${editCount > 0 ? " pending" : ""}`}
+            <div className="toolbar-group toolbar-edits toolbar-more">
+              {/*
+                The count says how much is waiting; the list says what it is. Nobody should have to
+                write to a database to find out what they were about to write.
+              */}
+              <button
+                type="button"
+                className={`icon-button toolbar-edit-count${editCount > 0 ? " pending" : ""}`}
                 aria-live="polite"
-                title={countLabel(editCount, "pending change")}
+                aria-expanded={editsOpen}
+                title={`${countLabel(editCount, "pending change")} — click to read them`}
+                disabled={editCount === 0}
+                onClick={() => setEditsOpen((open) => !open)}
               >
                 <span className="codicon codicon-edit" aria-hidden="true" />
                 {editCount}
-              </span>
+              </button>
+              {editsOpen && editCount > 0 ? (
+                <>
+                  <button
+                    type="button"
+                    className="column-menu-backdrop"
+                    aria-label="Close menu"
+                    onClick={() => setEditsOpen(false)}
+                  />
+                  <div className="column-menu toolbar-menu pending-edits">
+                    <div className="columns-menu-heading">
+                      {countLabel(editCount, "change")} waiting to be applied
+                    </div>
+                    {describeDataViewEdits(state.edits, state.editability).map((edit, index) => (
+                      <div
+                        className="pending-edit"
+                        // biome-ignore lint/suspicious/noArrayIndexKey: an edit has no identity of its own; its place in the list is it.
+                        key={index}
+                      >
+                        <span className="pending-edit-target">
+                          {edit.table} · {edit.row}
+                        </span>
+                        <span className="pending-edit-change">
+                          <span className="pending-edit-column">{edit.column}</span>
+                          <span className="pending-edit-original">{edit.original ?? "NULL"}</span>
+                          <span className="codicon codicon-arrow-right" aria-hidden="true" />
+                          <span className="pending-edit-value">{edit.value ?? "NULL"}</span>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : null}
               <IconButton
                 icon="discard"
                 label="Discard pending changes"
@@ -741,6 +785,20 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
         <div className="toolbar-side toolbar-side-seldom">
           <div className="toolbar-group">
             <IconButton
+              icon="arrow-circle-down"
+              label="Import rows from a file…"
+              onClick={() => setTransfer("import")}
+            />
+            <IconButton
+              icon="export"
+              label="Export rows to a file…"
+              disabled={!payload || payload.columns.length === 0}
+              onClick={() => setTransfer("export")}
+            />
+          </div>
+
+          <div className="toolbar-group">
+            <IconButton
               icon="code"
               label={showSql ? "Hide the SQL" : "Show the SQL"}
               onClick={() => setShowSql((current) => !current)}
@@ -751,10 +809,7 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
             <IconButton
               icon="ellipsis"
               label="More actions"
-              onClick={() => {
-                setExportOpen(false);
-                setMoreOpen((open) => !open);
-              }}
+              onClick={() => setMoreOpen((open) => !open)}
             />
             {moreOpen ? (
               <>
@@ -765,65 +820,74 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
                   onClick={() => setMoreOpen(false)}
                 />
                 <div className="column-menu toolbar-menu" role="menu">
-                  {exportOpen ? (
-                    <>
-                      <MenuItem label="‹ All actions" onSelect={() => setExportOpen(false)} />
-                      {(["loaded", "all"] as const).map((scope) => (
-                        <div className="columns-menu-group" key={scope}>
-                          <div className="columns-menu-heading">
-                            {scope === "loaded" ? "Loaded rows" : "All rows"}
-                          </div>
-                          {(["csv", "tsv", "json"] as const).map((format) => (
-                            <MenuItem
-                              key={format}
-                              label={`${format.toUpperCase()}…`}
-                              disabled={!payload || payload.columns.length === 0}
-                              onSelect={() => {
-                                setMoreOpen(false);
-                                post({ type: "data-view/export", format, scope });
-                              }}
-                            />
-                          ))}
-                        </div>
-                      ))}
-                    </>
-                  ) : (
-                    <>
-                      <MenuItem
-                        label="Edit the query in a SQL editor…"
-                        onSelect={() => {
-                          setMoreOpen(false);
-                          post({ type: "data-view/edit-query" });
-                        }}
-                      />
-                      <MenuItem
-                        label="Copy loaded rows as TSV"
-                        disabled={!payload || payload.columns.length === 0}
-                        onSelect={() => {
-                          setMoreOpen(false);
-                          if (payload) post({ type: "data-view/copy", text: resultAsTsv(payload) });
-                        }}
-                      />
-                      <MenuItem
-                        label="Export…"
-                        disabled={!payload || payload.columns.length === 0}
-                        onSelect={() => setExportOpen(true)}
-                      />
-                      <MenuItem
-                        label="Open in a new Scratchpad"
-                        onSelect={() => {
-                          setMoreOpen(false);
-                          post({ type: "data-view/open-sql" });
-                        }}
-                      />
-                    </>
-                  )}
+                  <MenuItem
+                    label="Edit the query in a SQL editor…"
+                    onSelect={() => {
+                      setMoreOpen(false);
+                      post({ type: "data-view/edit-query" });
+                    }}
+                  />
+                  <MenuItem
+                    label="Copy loaded rows as TSV"
+                    disabled={!payload || payload.columns.length === 0}
+                    onSelect={() => {
+                      setMoreOpen(false);
+                      if (payload) post({ type: "data-view/copy", text: resultAsTsv(payload) });
+                    }}
+                  />
+                  <MenuItem
+                    label="Open in a new Scratchpad"
+                    onSelect={() => {
+                      setMoreOpen(false);
+                      post({ type: "data-view/open-sql" });
+                    }}
+                  />
                 </div>
               </>
             ) : null}
           </div>
         </div>
       </header>
+
+      {transfer === "import" ? (
+        <Modal
+          title="Import rows"
+          description="Reading rows out of a file and into the table is not built yet."
+          onClose={() => setTransfer(undefined)}
+        >
+          <p className="modal-pending">
+            This is where a file is chosen, its columns lined up with the table's, and the rows it
+            holds shown before any of them are written.
+          </p>
+        </Modal>
+      ) : null}
+
+      {transfer === "export" ? (
+        <Modal
+          title="Export rows"
+          description="Choose what to write, and in which format."
+          onClose={() => setTransfer(undefined)}
+        >
+          {(["loaded", "all"] as const).map((scope) => (
+            <div className="columns-menu-group" key={scope}>
+              <div className="columns-menu-heading">
+                {scope === "loaded" ? "Loaded rows" : "All rows"}
+              </div>
+              {(["csv", "tsv", "json"] as const).map((format) => (
+                <MenuItem
+                  key={format}
+                  label={`${format.toUpperCase()}…`}
+                  disabled={!payload || payload.columns.length === 0}
+                  onSelect={() => {
+                    setTransfer(undefined);
+                    post({ type: "data-view/export", format, scope });
+                  }}
+                />
+              ))}
+            </div>
+          ))}
+        </Modal>
+      ) : null}
 
       <section
         className="data-view-tables"

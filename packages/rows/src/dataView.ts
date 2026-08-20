@@ -157,6 +157,43 @@ export function dataViewRelationOwning(
   };
 }
 
+/** One provisioned change, told the way a reader needs to read it back. */
+export interface DataViewEditSummary {
+  /** `schema.name` of the table the change is written to, when the projection still holds it. */
+  table: string;
+  /** The row it lands on, by its key: `id = 12`, or `region = 'FR', year = '2026'`. */
+  row: string;
+  column: string;
+  original: string | null;
+  value: string | null;
+}
+
+/**
+ * What each provisioned change will do, in the order they were made. A count alone says how much
+ * is waiting but not what it is, and a reader about to write to a database should be able to read
+ * the list before they commit to it.
+ */
+export function describeDataViewEdits(
+  edits: readonly DataViewEdit[],
+  editability: DataViewEditability,
+): DataViewEditSummary[] {
+  return edits.map((edit) => {
+    const table = editability.tables.find((candidate) => candidate.tableOid === edit.tableOid);
+    return {
+      table: table ? `${table.schema}.${table.name}` : "",
+      row: edit.key
+        .map(
+          (value, index) =>
+            `${table?.keyColumns[index] ?? `key ${index + 1}`} = ${value ?? "NULL"}`,
+        )
+        .join(", "),
+      column: edit.column,
+      original: edit.original,
+      value: edit.value,
+    };
+  });
+}
+
 /** Column keys of a projection, in ordinal order. */
 export function dataViewColumnKeys(
   projection: DataViewProjection,

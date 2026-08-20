@@ -286,22 +286,46 @@ test("puts what is reached for often within reach, and the rest out of the way",
   await expect(seldom.getByTitle("More actions")).toBeVisible();
 });
 
-test("keeps the export formats one step in, so the actions stay readable", async ({ page }) => {
+test("moves rows in and out through dialogs of their own", async ({ page }) => {
   await openEmpty(page);
   await add(page, "shop.sales_order");
 
+  // Six near-identical export lines used to bury everything else in the actions menu.
   await page.getByTitle("More actions").click();
-  const menu = page.getByRole("menu");
-  // Six near-identical export lines used to bury everything else in this menu.
-  await expect(menu.getByRole("menuitem")).toHaveCount(4);
+  await expect(page.getByRole("menu").getByRole("menuitem")).toHaveCount(3);
+  await page.keyboard.press("Escape");
 
-  await menu.getByRole("menuitem", { name: "Export…" }).click();
+  await page.getByTitle("Export rows to a file…").click();
+  const dialog = page.getByRole("dialog", { name: "Export rows" });
+  await expect(dialog.getByText("Loaded rows")).toBeVisible();
+  await expect(dialog.getByText("All rows")).toBeVisible();
+  await expect(dialog.getByRole("menuitem", { name: "CSV…" })).toHaveCount(2);
 
-  await expect(menu.getByText("Loaded rows")).toBeVisible();
-  await expect(menu.getByText("All rows")).toBeVisible();
-  await expect(menu.getByRole("menuitem", { name: "CSV…" })).toHaveCount(2);
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
 
-  await menu.getByRole("menuitem", { name: "‹ All actions" }).click();
+  await page.getByTitle("Import rows from a file…").click();
+  await expect(page.getByRole("dialog", { name: "Import rows" })).toBeVisible();
+});
 
-  await expect(menu.getByRole("menuitem", { name: "Export…" })).toBeVisible();
+test("says what each provisioned change will do, not only how many there are", async ({ page }) => {
+  await openEmpty(page);
+  const table = await add(page, "shop.address");
+
+  await table.cellsWithText("Nantes").first().dblclick();
+  await page.keyboard.press("ControlOrMeta+a");
+  await page.keyboard.type("Saint-Nazaire");
+  await page.keyboard.press("Enter");
+
+  const changes = page.getByTitle(/pending change.*click to read them/u);
+  await expect(changes).toBeEnabled();
+  await changes.click();
+
+  // A reader about to write to a database should be able to read the list before committing to it.
+  const drawer = page.locator(".pending-edits");
+  await expect(drawer).toContainText("1 change waiting to be applied");
+  await expect(drawer.locator(".pending-edit-target")).toContainText("shop.address · id =");
+  await expect(drawer.locator(".pending-edit-column")).toHaveText("city");
+  await expect(drawer.locator(".pending-edit-original")).toHaveText("Nantes");
+  await expect(drawer.locator(".pending-edit-value")).toHaveText("Saint-Nazaire");
 });
