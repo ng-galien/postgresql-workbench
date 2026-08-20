@@ -101,9 +101,8 @@ export class DataViewEditorProvider
           panel.reveal(panel.viewColumn, false);
           void vscode.commands.executeCommand("workbench.action.files.save");
         } else {
-          void document.apply().catch((error) => {
-            void vscode.window.showErrorMessage(errorMessage(error));
-          });
+          // The view itself says what happened; a second message on top of it says nothing more.
+          void document.apply().catch(() => {});
         }
         return;
       }

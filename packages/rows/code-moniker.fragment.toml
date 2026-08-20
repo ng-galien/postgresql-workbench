@@ -11,3 +11,10 @@ severity = "error"
 expr = "$rows_package_source AND $architectural_dependency AND ($workbench_package_target OR $extension_local_target) => $rows_package_allowed"
 message = "packages/rows reads and edits result rows: it depends on the SQL analysis layer and the DAP result shapes, and on nothing else."
 rationale = "A result is produced by a query the SQL layer understands or by a debugged call the DAP layer captured. The catalog and the views consume rows; depending on either would close a cycle around the thing every result view renders."
+
+[[ts.refs.where]]
+id = "row-writes-are-assembled-in-one-place"
+severity = "error"
+expr = "kind = 'imports_symbol' AND target.segment('path') = 'buildRowUpdates' => $rows_package_source"
+message = "Only packages/rows assembles the statements that write rows back to PostgreSQL."
+rationale = "The Extension Host and the composition shell both hold changes and both apply them. The moment either builds its own UPDATE the two drift, and a reader gets a different guarantee depending on which surface they opened. Surfaces supply what they can do — a connection, a way to speak, a way to reload — and the write sequence stays here."

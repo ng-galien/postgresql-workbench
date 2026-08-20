@@ -312,7 +312,10 @@ test("says what each provisioned change will do, not only how many there are", a
   await openEmpty(page);
   const table = await add(page, "shop.address");
 
-  await table.cellsWithText("Nantes").first().dblclick();
+  // Read what the cell holds rather than naming it: the seed is data, not a contract.
+  const cell = table.cellsWithText("Nantes").first();
+  const before = ((await cell.innerText()) ?? "").trim();
+  await cell.dblclick();
   await page.keyboard.press("ControlOrMeta+a");
   await page.keyboard.type("Saint-Nazaire");
   await page.keyboard.press("Enter");
@@ -326,6 +329,6 @@ test("says what each provisioned change will do, not only how many there are", a
   await expect(drawer).toContainText("1 change waiting to be applied");
   await expect(drawer.locator(".pending-edit-target")).toContainText("shop.address · id =");
   await expect(drawer.locator(".pending-edit-column")).toHaveText("city");
-  await expect(drawer.locator(".pending-edit-original")).toHaveText("Nantes");
+  await expect(drawer.locator(".pending-edit-original")).toHaveText(before);
   await expect(drawer.locator(".pending-edit-value")).toHaveText("Saint-Nazaire");
 });

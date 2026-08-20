@@ -3,7 +3,6 @@ import {
   composeIntoDataViewQuery,
   dataViewAdditions,
 } from "../../../packages/rows/src/additions.js";
-import { countLabel } from "../../../packages/rows/src/countLabel.js";
 import {
   type DataViewAddition,
   type DataViewEdit,
@@ -14,14 +13,13 @@ import {
   dataViewRelationOwning,
   dataViewSourceTitle,
 } from "../../../packages/rows/src/dataView.js";
-import { READ_ONLY_REASONS } from "../../../packages/rows/src/editability.js";
 import { initialDataViewQuery } from "../../../packages/rows/src/initialProjection.js";
 import {
   navigateResult,
   type ResultNavigationCommand,
 } from "../../../packages/rows/src/navigation.js";
 import { openDataViewResult, TableAccents } from "../../../packages/rows/src/openRows.js";
-import { PendingEdits } from "../../../packages/rows/src/pendingEdits.js";
+import { type DataViewWriteHost, PendingEdits } from "../../../packages/rows/src/pendingEdits.js";
 import { type QueryRewrite, SqlQueryModel } from "../../../packages/sql/src/query/model.js";
 import type {
   SqlAuthoringDragPayload,
@@ -69,7 +67,6 @@ export class DataViewDocument implements vscode.CustomDocument {
   private status: DataViewState["status"] = "loading";
   private message: string | undefined;
   private busy = false;
-  private applying = false;
   private loadGeneration = 0;
   private idleTimer: ReturnType<typeof setTimeout> | undefined;
   private readonly webviews = new Set<vscode.Webview>();
@@ -143,7 +140,7 @@ export class DataViewDocument implements vscode.CustomDocument {
       editability: this.editability,
       edits: [...this.edits.list],
       busy: this.busy,
-      applying: this.applying,
+      applying: this.edits.applying,
     };
   }
 
@@ -585,12 +582,12 @@ export class DataViewDocument implements vscode.CustomDocument {
   // --- Cell edits ----------------------------------------------------------------------------
 
   private recordEdit(edit: DataViewEdit): void {
-    const policy = this.editability.columns[edit.ordinal];
-    if (!policy?.editable || this.applying) {
-      this.notify(policy?.editable ? READ_ONLY_REASONS.applying : (policy?.reason ?? ""), "info");
+    const held = this.edits.record(edit, this.editability);
+    if (!held.held) {
+      this.notify(held.reason, "info");
       return;
     }
-    const previous = this.edits.set(edit);
+    const { previous } = held;
     if (this.nativeDirtyTracking()) {
       this._onDidEdit.fire({
         label: `Edit ${edit.column}`,
@@ -615,29 +612,21 @@ export class DataViewDocument implements vscode.CustomDocument {
 
   /** Applies every pending edit in one transaction; leaves the database unchanged on any failure. */
   async apply(): Promise<void> {
-    if (this.edits.size === 0) return;
-    if (this.applying) throw new Error("Changes are already being applied.");
-    this.applying = true;
-    this.broadcastState();
-    const client = await this.services.openClient(this.source.serverId).catch((error) => {
-      this.applying = false;
-      this.broadcastState();
-      throw error;
-    });
-    try {
-      const applied = await this.edits.applyWith(client, this.editability);
-      this.applying = false;
-      this.notify(`${countLabel(applied, "change")} applied to ${this.serverName()}.`, "info");
-      await this.load();
-    } catch (error) {
-      this.applying = false;
-      this.broadcastState();
-      const detail = errorMessage(error);
-      this.log(`apply failed: ${detail}`);
-      throw new Error(detail);
-    } finally {
-      await client.end().catch(() => {});
-    }
+    await this.edits.apply(this.writeHost, this.editability);
+  }
+
+  /** What this surface can do so held changes reach PostgreSQL; the sequence itself is shared. */
+  private get writeHost(): DataViewWriteHost {
+    return {
+      openClient: () => this.services.openClient(this.source.serverId),
+      notify: (message, severity) => {
+        if (severity === "error") this.log(`apply failed: ${message}`);
+        this.notify(message, severity);
+      },
+      changed: () => this.broadcastState(),
+      reload: () => this.load(),
+      serverName: () => this.serverName(),
+    };
   }
 
   // --- Export --------------------------------------------------------------------------------

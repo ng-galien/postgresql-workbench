@@ -13,11 +13,10 @@ import {
   type DataViewSource,
   dataViewRelationOwning,
 } from "../../rows/src/dataView.js";
-import { READ_ONLY_REASONS } from "../../rows/src/editability.js";
 import { localFilterCompletions } from "../../rows/src/filterCompletions.js";
 import { initialDataViewQuery } from "../../rows/src/initialProjection.js";
 import { openDataViewResult, TableAccents } from "../../rows/src/openRows.js";
-import { PendingEdits } from "../../rows/src/pendingEdits.js";
+import { type DataViewWriteHost, PendingEdits } from "../../rows/src/pendingEdits.js";
 import { createCodeMonikerSyntaxParser } from "../../sql/src/analysis/codeMonikerSyntax.js";
 import type { SyntaxParser } from "../../sql/src/analysis/syntaxTree.js";
 import { type SqlQueryAnalysis, setWhere } from "../../sql/src/query/analysis.js";
@@ -135,7 +134,6 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
     editability: DataViewState["editability"];
     technical: string[];
     busy: boolean;
-    applying: boolean;
     session?: SqlResultSession;
   } = {
     projection: { tables: [], columnTable: [] },
@@ -144,12 +142,24 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
     editability: { tables: [], columns: [] },
     technical: [],
     busy: false,
-    applying: false,
   };
   const seenColumns = new Set<string>();
   // The same pending edits the Extension Host keeps: local until they are written in one
   // transaction. A shell that cannot hold a change cannot show what holding one looks like.
   const edits = new PendingEdits();
+  /** What this surface can do so held changes reach PostgreSQL; the sequence itself is shared. */
+  const writeHost: DataViewWriteHost = {
+    // A write owns the connection it runs on, exactly as a read does.
+    openClient: async () => {
+      const writer = new Client(connection);
+      await writer.connect();
+      return writer;
+    },
+    notify: (message, severity) => emit({ type: "data-view/notice", message, severity }),
+    changed: () => broadcast(),
+    reload: () => load(),
+    serverName: () => serverName,
+  };
 
   const broadcast = () =>
     emit({
@@ -174,7 +184,7 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
         editability: state.editability,
         edits: [...edits.list],
         busy: state.busy,
-        applying: state.applying,
+        applying: edits.applying,
       },
     });
 
@@ -399,18 +409,11 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
           return;
         }
         case "data-view/edit": {
-          const policy = state.editability.columns[request.edit.ordinal];
-          if (!policy?.editable || state.applying) {
-            emit({
-              type: "data-view/notice",
-              message: policy?.editable
-                ? READ_ONLY_REASONS.applying
-                : (policy?.reason ?? "This column cannot be edited."),
-              severity: "info",
-            });
+          const held = edits.record(request.edit, state.editability);
+          if (!held.held) {
+            emit({ type: "data-view/notice", message: held.reason, severity: "info" });
             return;
           }
-          edits.set(request.edit);
           broadcast();
           return;
         }
@@ -418,37 +421,10 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
           edits.clear();
           broadcast();
           return;
-        case "data-view/apply": {
-          if (edits.size === 0 || state.applying) return;
-          state.applying = true;
-          broadcast();
-          // A write owns the connection it runs on, exactly as a read does.
-          const writer = new Client(connection);
-          try {
-            await writer.connect();
-            const applied = await edits.applyWith(writer, state.editability);
-            state.applying = false;
-            emit({
-              type: "data-view/notice",
-              message: `${applied} change${applied === 1 ? "" : "s"} applied to ${serverName}.`,
-              severity: "info",
-            });
-            await load();
-          } catch (error) {
-            state.applying = false;
-            broadcast();
-            emit({
-              type: "data-view/notice",
-              message: `The changes were not applied: ${
-                error instanceof Error ? error.message : String(error)
-              }`,
-              severity: "error",
-            });
-          } finally {
-            await writer.end().catch(() => {});
-          }
+        case "data-view/apply":
+          // The reader has already been told what happened; the shell has no save of its own.
+          await edits.apply(writeHost, state.editability).catch(() => {});
           return;
-        }
         case "data-view/export":
           emit({
             type: "data-view/notice",
