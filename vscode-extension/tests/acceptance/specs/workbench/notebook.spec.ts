@@ -1,7 +1,7 @@
+import { ResultTable } from "../../../../../packages/views/testing/ResultTable";
 import { demoAssociationText, demoAutomaticAssociationText } from "../../fixtures/demoDatabase";
 import { expect, test } from "../../fixtures/test";
 import { createScratchpad } from "../../journeys/scratchpad";
-import { ResultTable } from "../../pages/ResultTable";
 
 const resultMime = "application/vnd.postgresql-workbench.sql-result+json";
 

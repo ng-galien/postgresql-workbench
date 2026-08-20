@@ -3,11 +3,11 @@ import {
   DEBUG_DAP_EVENT_TIMEOUT_MS,
   runPacedDebugAction,
 } from "../../../../e2e/debugTestTiming.js";
-import { escapeRegExp } from "../fixtures/text.js";
+import { ResultTable } from "../../../../packages/views/testing/ResultTable";
+import { escapeRegExp } from "../../../../packages/views/testing/text.js";
 import type { DebugStateSnapshot } from "../fixtures/vscode";
 import { currentPage, type PageProvider } from "./PageProvider";
 import { QuickInput } from "./QuickInput";
-import { ResultTable } from "./ResultTable";
 import { WorkbenchTree } from "./WorkbenchTree";
 
 type DebugActionCommand =

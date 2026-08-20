@@ -1,5 +1,5 @@
 import { expect, type Locator } from "@playwright/test";
-import { escapeRegExp } from "../fixtures/text.js";
+import { escapeRegExp } from "../../../../packages/views/testing/text.js";
 import { currentPage, type PageProvider } from "./PageProvider";
 import type { QuickInput } from "./QuickInput";
 import { WorkbenchTree } from "./WorkbenchTree";

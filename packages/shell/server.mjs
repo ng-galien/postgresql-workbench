@@ -100,6 +100,11 @@ createServer(async (request, response) => {
     request.on("close", () => clients.delete(response));
     return;
   }
+  if (request.url === "/reset" && request.method === "POST") {
+    await host.reset();
+    response.writeHead(204).end();
+    return;
+  }
   if (request.url === "/request" && request.method === "POST") {
     const body = await new Blob(await Array.fromAsync(request)).text();
     response.writeHead(204).end();

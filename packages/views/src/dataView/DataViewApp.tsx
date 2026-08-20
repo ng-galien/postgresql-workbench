@@ -298,6 +298,22 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
     return () => window.clearTimeout(timer);
   }, [notice]);
 
+  const anyMenuOpen = columnsOpen || moreOpen || additions !== undefined;
+  useEffect(() => {
+    if (!anyMenuOpen) return;
+    // A menu a reader opened is a menu they can dismiss without aiming at anything.
+    // React's KeyboardEvent shadows the DOM one this listener receives.
+    const dismiss = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setColumnsOpen(false);
+      setMoreOpen(false);
+      setAdditions(undefined);
+      setChoices(undefined);
+    };
+    document.addEventListener("keydown", dismiss);
+    return () => document.removeEventListener("keydown", dismiss);
+  }, [anyMenuOpen]);
+
   const editing = useMemo<GridEditing | undefined>(() => {
     if (!state || state.editability.tables.length === 0) return undefined;
     // The grid asks for these once per rendered cell, on every scroll: indexed, never scanned.

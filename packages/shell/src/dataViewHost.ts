@@ -42,6 +42,8 @@ export interface DataViewHostOptions {
 
 export interface DataViewDevHost {
   handle(request: DataViewRequest): Promise<void>;
+  /** Puts the query back to the one the view opens with, so a scenario starts from a known state. */
+  reset(): Promise<void>;
   dispose(): Promise<void>;
 }
 
@@ -68,11 +70,13 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
     relationKind: "table" as const,
   };
   const query = new SqlQueryModel(async () => parser);
-  await query.setText(
-    await initialDataViewQuery(source, snapshot, DEFAULT_SQL_AUTHORING_SETTINGS, async () =>
-      columnNames(client, schema, relation),
-    ),
+  const initialText = await initialDataViewQuery(
+    source,
+    snapshot,
+    DEFAULT_SQL_AUTHORING_SETTINGS,
+    async () => columnNames(client, schema, relation),
   );
+  await query.setText(initialText);
 
   const accents = new TableAccents();
   const state: {
@@ -194,6 +198,11 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
   };
 
   return {
+    async reset() {
+      state.hidden = [];
+      await query.setText(initialText);
+      await load();
+    },
     async handle(request) {
       switch (request.type) {
         case "data-view/ready":

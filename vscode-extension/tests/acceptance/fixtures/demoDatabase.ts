@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
 import { Client } from "pg";
-import { escapeRegExp } from "./text.js";
+import { escapeRegExp } from "../../../../packages/views/testing/text.js";
 
 const repositoryRoot = resolve(__dirname, "../../../..");
 const demoCompose = resolve(repositoryRoot, "docker", "demo", "compose.yml");

@@ -44,7 +44,8 @@
     "marketplace:media": "node scripts/marketplace/media.mjs",
     "site:build": "node scripts/site/build.mjs",
     "site:dev": "node scripts/site/dev.mjs",
-    "shell": "node --watch-path=packages/shell/src packages/shell/server.mjs"
+    "shell": "node --watch-path=packages/shell/src packages/shell/server.mjs",
+    "test:shell": "playwright test --config packages/shell/tests/playwright.config.ts"
   },
   "dependencies": {
     "@code-moniker/client": "0.7.1",
@@ -54,6 +55,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.9",
+    "@playwright/test": "^1.62.1",
     "@shikijs/core": "^4.4.3",
     "@shikijs/engine-javascript": "^4.4.3",
     "@shikijs/langs": "^4.4.3",

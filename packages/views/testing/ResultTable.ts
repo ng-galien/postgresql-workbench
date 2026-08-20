@@ -1,13 +1,14 @@
-import { expect, type Frame, type Locator } from "@playwright/test";
-import { escapeRegExp } from "../fixtures/text.js";
+import { expect, type Frame, type Locator, type Page } from "@playwright/test";
+import { escapeRegExp } from "./text.js";
 
 /**
- * The result table, wherever it is shown. The Scratchpad output, the Data View and the debugger
- * output render the same grid and the same navigation, so one page object drives all three: give
- * it the frame or the region that holds one.
+ * The result table, wherever it is shown and whoever drives it. The Scratchpad output, the Data
+ * View and the debugger output render the same grid and the same navigation, so one page object
+ * drives all three — inside VS Code, or in a browser against the composition shell. Give it the
+ * frame, the page, or the region that holds one.
  */
 export class ResultTable {
-  constructor(private readonly root: Frame | Locator) {}
+  constructor(private readonly root: Frame | Locator | Page) {}
 
   cell(rowIndex: number, columnIndex: number): Locator {
     return this.root.locator(`td[data-row="${rowIndex}"][data-column="${columnIndex}"]`);
