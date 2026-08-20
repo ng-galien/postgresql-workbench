@@ -22,6 +22,16 @@ export interface GridEditing {
     value: string | null,
     original: string | null,
   ): void;
+  /**
+   * Whole rows, when there is exactly one table to write them to. A grid over a join can still
+   * have its cells edited; which table a row would be taken from is not for the grid to guess.
+   */
+  rows?: {
+    /** Whether this row is one the reader took away, and is shown struck through. */
+    isRemoved(row: readonly DebugResultCell[], rowIndex: number): boolean;
+    /** Takes this row away, or puts it back. */
+    toggleRemoval(row: readonly DebugResultCell[], rowIndex: number): void;
+  };
 }
 
 export interface CellEditorProps {

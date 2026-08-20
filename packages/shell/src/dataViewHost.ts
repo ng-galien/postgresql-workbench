@@ -5,6 +5,7 @@ import {
 } from "../../catalog/src/localCodeMoniker.js";
 import { readPostgresCatalog } from "../../catalog/src/postgresCatalog.js";
 import { composeIntoDataViewQuery, dataViewAdditions } from "../../rows/src/additions.js";
+import { countLabel } from "../../rows/src/countLabel.js";
 import type { SqlResultSession } from "../../rows/src/cursor.js";
 import {
   type DataViewAddition,
@@ -183,6 +184,7 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
         ...(state.payload ? { payload: state.payload } : {}),
         editability: state.editability,
         edits: [...edits.list],
+        removedRows: [...edits.removedRows],
         busy: state.busy,
         applying: edits.applying,
       },
@@ -220,6 +222,14 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
       state.session = opened.session;
       state.payload = opened.session.snapshot();
       state.editability = opened.editability;
+      // The query may have composed away the table a held change was written against.
+      const forgotten = edits.forget(state.editability);
+      if (forgotten > 0)
+        emit({
+          type: "data-view/notice",
+          message: `${countLabel(forgotten, "change")} let go: the query no longer writes to the table ${forgotten === 1 ? "it was" : "they were"} held against.`,
+          severity: "info",
+        });
       state.projection = opened.projection;
       state.technical = opened.technicalKeys;
       // Identity and relationship columns start hidden when the host says so — including after a
@@ -314,6 +324,7 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
 
   return {
     async reset() {
+      edits.clear();
       state.hidden = [];
       // Which columns have been seen decides what starts hidden, so a fresh start forgets them.
       seenColumns.clear();
@@ -414,6 +425,19 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
             emit({ type: "data-view/notice", message: held.reason, severity: "info" });
             return;
           }
+          broadcast();
+          return;
+        }
+        case "data-view/remove-row": {
+          if (state.editability.tables.length !== 1) {
+            emit({
+              type: "data-view/notice",
+              message: "The query joins several tables: rows can only be taken away from one.",
+              severity: "info",
+            });
+            return;
+          }
+          edits.toggleRemoval(request.row);
           broadcast();
           return;
         }

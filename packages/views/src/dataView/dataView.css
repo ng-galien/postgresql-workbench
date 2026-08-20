@@ -746,3 +746,7 @@ body,
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.pending-edit-removal {
+  color: var(--vscode-errorForeground, var(--vscode-foreground));
+}

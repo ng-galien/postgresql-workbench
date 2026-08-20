@@ -5,6 +5,7 @@ import type {
   DataViewEditability,
   DataViewProjection,
   DataViewQueryInfo,
+  DataViewRowRemoval,
   DataViewSort,
   DataViewSource,
 } from "../../../rows/src/dataView.js";
@@ -25,6 +26,8 @@ export interface DataViewState {
   payload?: SqlNotebookResultPayload;
   editability: DataViewEditability;
   edits: DataViewEdit[];
+  /** Rows the reader took away, still in the database until the changes are applied. */
+  removedRows: DataViewRowRemoval[];
   busy: boolean;
   applying: boolean;
 }
@@ -57,6 +60,8 @@ export type DataViewRequest =
   | { type: "data-view/edit-query"; clause?: "select" }
   | { type: "data-view/apply-query" }
   | { type: "data-view/edit"; edit: DataViewEdit }
+  /** Takes a whole row away, or puts it back; provisioned like any other change. */
+  | { type: "data-view/remove-row"; row: DataViewRowRemoval }
   | { type: "data-view/discard" }
   | { type: "data-view/apply" }
   | { type: "data-view/copy"; text: string }

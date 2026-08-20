@@ -333,12 +333,14 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
             }}
           >
             <colgroup>
+              {editing?.rows ? <col className="row-gutter-column" /> : null}
               {columns.map(({ key, ordinal }) => (
                 <col key={key} style={{ width: `${widths[ordinal] ?? 12}ch` }} />
               ))}
             </colgroup>
             <thead>
               <tr>
+                {editing?.rows ? <th className="row-gutter" aria-label="Rows" /> : null}
                 {columns.map(({ key, ordinal, value: column }) => (
                   <th
                     key={key}
@@ -433,11 +435,43 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
               </tr>
             </thead>
             <tbody>
-              {topSpacer > 0 ? <SpacerRow height={topSpacer} columnCount={columns.length} /> : null}
+              {topSpacer > 0 ? (
+                <SpacerRow
+                  height={topSpacer}
+                  columnCount={columns.length + (editing?.rows ? 1 : 0)}
+                />
+              ) : null}
               {visibleRows.map((row, visibleIndex) => {
                 const rowIndex = start + visibleIndex;
+                const removed = editing?.rows?.isRemoved(row, rowIndex) ?? false;
                 return (
-                  <tr key={rowIndex} aria-rowindex={rowIndex + 2}>
+                  <tr
+                    key={rowIndex}
+                    aria-rowindex={rowIndex + 2}
+                    className={removed ? "removed" : undefined}
+                  >
+                    {editing?.rows ? (
+                      <td className="row-gutter">
+                        <button
+                          type="button"
+                          className="row-gutter-action"
+                          title={
+                            removed
+                              ? "Keep this row after all"
+                              : "Take this row away when the changes are applied"
+                          }
+                          aria-label={
+                            removed ? `Keep row ${rowIndex + 1}` : `Remove row ${rowIndex + 1}`
+                          }
+                          onClick={() => editing.rows?.toggleRemoval(row, rowIndex)}
+                        >
+                          <span
+                            className={`codicon codicon-${removed ? "discard" : "remove"}`}
+                            aria-hidden="true"
+                          />
+                        </button>
+                      </td>
+                    ) : null}
                     {keyedValues(row, (cell) => `${cell.kind}:${cell.value ?? "NULL"}`)
                       .filter(({ ordinal }) => isVisible(ordinal))
                       .map(({ key: cellKey, ordinal, value: cell }) => {
@@ -508,7 +542,10 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
                 );
               })}
               {bottomSpacer > 0 ? (
-                <SpacerRow height={bottomSpacer} columnCount={columns.length} />
+                <SpacerRow
+                  height={bottomSpacer}
+                  columnCount={columns.length + (editing?.rows ? 1 : 0)}
+                />
               ) : null}
             </tbody>
           </table>

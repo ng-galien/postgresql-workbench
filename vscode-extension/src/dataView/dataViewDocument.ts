@@ -3,6 +3,7 @@ import {
   composeIntoDataViewQuery,
   dataViewAdditions,
 } from "../../../packages/rows/src/additions.js";
+import { countLabel } from "../../../packages/rows/src/countLabel.js";
 import {
   type DataViewAddition,
   type DataViewEdit,
@@ -139,6 +140,7 @@ export class DataViewDocument implements vscode.CustomDocument {
       ...(this.payload ? { payload: this.payload } : {}),
       editability: this.editability,
       edits: [...this.edits.list],
+      removedRows: [...this.edits.removedRows],
       busy: this.busy,
       applying: this.edits.applying,
     };
@@ -255,6 +257,17 @@ export class DataViewDocument implements vscode.CustomDocument {
         return;
       case "data-view/edit":
         this.recordEdit(request.edit);
+        return;
+      case "data-view/remove-row":
+        if (this.editability.tables.length !== 1) {
+          this.notify(
+            "The query joins several tables: rows can only be taken away from one.",
+            "info",
+          );
+          return;
+        }
+        this.edits.toggleRemoval(request.row);
+        this.broadcastState();
         return;
       case "data-view/copy":
         await vscode.env.clipboard.writeText(request.text);
@@ -478,6 +491,7 @@ export class DataViewDocument implements vscode.CustomDocument {
       if (this.query.isEmpty) {
         this.payload = undefined;
         this.editability = EMPTY_EDITABILITY;
+        this.edits.forget(this.editability);
         this.projection = { tables: [], columnTable: [] };
         this.status = "ready";
         this.message =
@@ -502,6 +516,13 @@ export class DataViewDocument implements vscode.CustomDocument {
       this.payload = opened.session.snapshot();
       this.editability = opened.editability;
       this.projection = opened.projection;
+      // The query may have composed away the table a held change was written against.
+      const forgotten = this.edits.forget(this.editability);
+      if (forgotten > 0)
+        this.notify(
+          `${countLabel(forgotten, "change")} let go: the query no longer writes to the table ${forgotten === 1 ? "it was" : "they were"} held against.`,
+          "info",
+        );
       // Technical columns start hidden the first time they appear (including after a JOIN was
       // composed); the user's later choices are kept.
       this.technical = opened.technicalKeys;

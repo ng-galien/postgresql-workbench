@@ -75,6 +75,16 @@ export interface DataViewEdit {
   value: string | null;
 }
 
+/**
+ * A whole row the reader took away. It stays in the database, and in the grid struck through,
+ * until the changes are applied — a deletion is provisioned like any other change, not done on
+ * the spot.
+ */
+export interface DataViewRowRemoval {
+  tableOid: number;
+  key: (string | null)[];
+}
+
 /** The SQL document behind a Data View and what the grid derived from it. */
 export interface DataViewQueryInfo {
   /** URI of the writable SQL document (open it for completion, formatting, and free edits). */
@@ -158,40 +168,51 @@ export function dataViewRelationOwning(
 }
 
 /** One provisioned change, told the way a reader needs to read it back. */
-export interface DataViewEditSummary {
+export interface DataViewChangeSummary {
+  kind: "update" | "delete";
   /** `schema.name` of the table the change is written to, when the projection still holds it. */
   table: string;
   /** The row it lands on, by its key: `id = 12`, or `region = 'FR', year = '2026'`. */
   row: string;
-  column: string;
-  original: string | null;
-  value: string | null;
+  /** What the update replaces with what; a deletion takes the whole row and names no column. */
+  column?: string;
+  original?: string | null;
+  value?: string | null;
 }
 
 /**
- * What each provisioned change will do, in the order they were made. A count alone says how much
- * is waiting but not what it is, and a reader about to write to a database should be able to read
- * the list before they commit to it.
+ * What each provisioned change will do, in the order they will be written. A count alone says how
+ * much is waiting but not what it is, and a reader about to write to a database should be able to
+ * read the list before they commit to it.
  */
-export function describeDataViewEdits(
+export function describeDataViewChanges(
   edits: readonly DataViewEdit[],
+  removals: readonly DataViewRowRemoval[],
   editability: DataViewEditability,
-): DataViewEditSummary[] {
-  return edits.map((edit) => {
-    const table = editability.tables.find((candidate) => candidate.tableOid === edit.tableOid);
+): DataViewChangeSummary[] {
+  const describe = (row: { tableOid: number; key: readonly (string | null)[] }) => {
+    const table = editability.tables.find((candidate) => candidate.tableOid === row.tableOid);
     return {
       table: table ? `${table.schema}.${table.name}` : "",
-      row: edit.key
+      row: row.key
         .map(
           (value, index) =>
             `${table?.keyColumns[index] ?? `key ${index + 1}`} = ${value ?? "NULL"}`,
         )
         .join(", "),
+    };
+  };
+  // Rows first, as they are written: a row taken away has no cell left to update.
+  return [
+    ...removals.map((removal) => ({ kind: "delete" as const, ...describe(removal) })),
+    ...edits.map((edit) => ({
+      kind: "update" as const,
+      ...describe(edit),
       column: edit.column,
       original: edit.original,
       value: edit.value,
-    };
-  });
+    })),
+  ];
 }
 
 /** Column keys of a projection, in ordinal order. */

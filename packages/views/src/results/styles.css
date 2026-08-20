@@ -541,3 +541,47 @@ th.drag-over {
     inset 3px 0 var(--vscode-focusBorder),
     inset 0 2px 0 var(--column-accent, transparent);
 }
+
+/*
+ * The row gutter: where a whole row is taken away, the way a spreadsheet puts its row controls
+ * beside the rows rather than inside them. It stays out of the way until the row is pointed at.
+ */
+.row-gutter-column {
+  width: 22px;
+}
+
+th.row-gutter,
+td.row-gutter {
+  width: 22px;
+  padding: 0;
+  text-align: center;
+}
+
+.row-gutter-action {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--vscode-descriptionForeground);
+  cursor: pointer;
+  opacity: 0;
+}
+
+tr:hover .row-gutter-action,
+.row-gutter-action:focus-visible,
+tr.removed .row-gutter-action {
+  opacity: 1;
+}
+
+.row-gutter-action:hover {
+  color: var(--vscode-errorForeground, var(--vscode-foreground));
+}
+
+/* A row on its way out is still readable: struck through, not hidden. */
+tr.removed td {
+  color: var(--vscode-descriptionForeground);
+  text-decoration: line-through;
+}
+
+tr.removed td.row-gutter {
+  text-decoration: none;
+}

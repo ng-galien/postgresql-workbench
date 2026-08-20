@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { stripStatementTerminator } from "../../sql/src/query/analysis.js";
 import { type CatalogTable, READ_ONLY_REASONS, resolveDataViewEditability } from "./editability.js";
-import { buildRowUpdates } from "./updates.js";
+import { buildRowDeletes, buildRowUpdates } from "./updates.js";
 
 const address: CatalogTable = {
   tableOid: 100,
@@ -139,5 +139,40 @@ describe("Data View SQL", () => {
         target: "shop.address (id = 8)",
       },
     ]);
+  });
+});
+
+describe("removed rows", () => {
+  const addressEditability = resolveDataViewEditability(
+    [
+      { name: "id", tableID: 100, columnID: 1, dataTypeID: 20 },
+      { name: "city", tableID: 100, columnID: 2, dataTypeID: 25 },
+    ],
+    [address],
+  );
+
+  it("deletes by identity alone, because the reader asked for that row whatever it holds now", () => {
+    const statements = buildRowDeletes([{ tableOid: 100, key: ["42"] }], addressEditability);
+
+    expect(statements).toEqual([
+      {
+        text: "DELETE FROM shop.address\nWHERE id = $1::bigint",
+        values: ["42"],
+        target: "shop.address (id = 42)",
+      },
+    ]);
+  });
+
+  it("matches a null part of a key with IS NULL rather than binding it", () => {
+    const statements = buildRowDeletes([{ tableOid: 100, key: [null] }], addressEditability);
+
+    expect(statements[0]?.text).toBe("DELETE FROM shop.address\nWHERE id IS NULL");
+    expect(statements[0]?.values).toEqual([]);
+  });
+
+  it("refuses to delete from a table the query no longer holds", () => {
+    expect(() => buildRowDeletes([{ tableOid: 99, key: ["1"] }], addressEditability)).toThrow(
+      /no longer belongs to an editable table/u,
+    );
   });
 });

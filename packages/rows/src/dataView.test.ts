@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { type DataViewEdit, type DataViewEditability, describeDataViewEdits } from "./dataView.js";
+import {
+  type DataViewEdit,
+  type DataViewEditability,
+  describeDataViewChanges,
+} from "./dataView.js";
 
 const editability: DataViewEditability = {
   tables: [
@@ -35,8 +39,9 @@ const edit = (over: Partial<DataViewEdit> = {}): DataViewEdit => ({
 
 describe("provisioned changes", () => {
   it("names the table and the row each change lands on", () => {
-    expect(describeDataViewEdits([edit()], editability)).toEqual([
+    expect(describeDataViewChanges([edit()], [], editability)).toEqual([
       {
+        kind: "update",
         table: "shop.address",
         row: "id = 12",
         column: "city",
@@ -47,8 +52,9 @@ describe("provisioned changes", () => {
   });
 
   it("spells out every column of a composite key", () => {
-    const summaries = describeDataViewEdits(
+    const summaries = describeDataViewChanges(
       [edit({ tableOid: 43, key: ["7", "31"], column: "quantity", original: "4", value: "9" })],
+      [],
       editability,
     );
 
@@ -56,8 +62,9 @@ describe("provisioned changes", () => {
   });
 
   it("says NULL where a key or a value has none, rather than showing nothing", () => {
-    const summaries = describeDataViewEdits(
+    const summaries = describeDataViewChanges(
       [edit({ key: [null], original: null, value: null })],
+      [],
       editability,
     );
 
@@ -67,8 +74,30 @@ describe("provisioned changes", () => {
 
   it("still describes a change whose table the projection has since dropped", () => {
     // The query was rewritten under the reader's feet; the change is still theirs to read.
-    const summaries = describeDataViewEdits([edit({ tableOid: 99 })], editability);
+    const summaries = describeDataViewChanges([edit({ tableOid: 99 })], [], editability);
 
     expect(summaries[0]).toMatchObject({ table: "", row: "key 1 = 12", column: "city" });
+  });
+});
+
+describe("provisioned row removals", () => {
+  it("tells a whole row apart from a change to one of its cells", () => {
+    const summaries = describeDataViewChanges([], [{ tableOid: 42, key: ["12"] }], editability);
+
+    expect(summaries).toEqual([{ kind: "delete", table: "shop.address", row: "id = 12" }]);
+  });
+
+  it("lists rows before cells, the order they are written in", () => {
+    const summaries = describeDataViewChanges(
+      [edit()],
+      [{ tableOid: 43, key: ["7", "31"] }],
+      editability,
+    );
+
+    expect(summaries.map((summary: { kind: string }) => summary.kind)).toEqual([
+      "delete",
+      "update",
+    ]);
+    expect(summaries[0]?.row).toBe("warehouse_id = 7, product_id = 31");
   });
 });

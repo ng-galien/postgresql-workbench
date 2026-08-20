@@ -13,7 +13,7 @@ import {
   dataViewColumnKeys,
   dataViewRowKey,
   dataViewSourceTitle,
-  describeDataViewEdits,
+  describeDataViewChanges,
 } from "../../../rows/src/dataView.js";
 import { READ_ONLY_REASONS } from "../../../rows/src/editability.js";
 import { hasWorkbenchTreeDrag } from "../cockpit/dragAndDrop.js";
@@ -347,6 +347,18 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
     const editsByRow = new Map(
       state.edits.map((edit) => [`${edit.ordinal}:${dataViewRowKey(edit)}`, edit] as const),
     );
+    // Rows go away one table at a time; a join gives the grid no table to take them from.
+    const onlyTable =
+      state.editability.tables.length === 1 ? state.editability.tables[0] : undefined;
+    const removedKeys = new Set(state.removedRows.map((row) => dataViewRowKey(row)));
+    const rowKeyIn = (
+      table: { tableOid: number; keyOrdinals: number[] },
+      row: readonly DebugResultCell[],
+    ) =>
+      dataViewRowKey({
+        tableOid: table.tableOid,
+        key: table.keyOrdinals.map((keyOrdinal) => row[keyOrdinal]?.value ?? null),
+      });
     const rowIdentity = (row: readonly DebugResultCell[], ordinal: number) => {
       const policy = state.editability.columns[ordinal];
       if (!policy?.editable) return undefined;
@@ -375,6 +387,29 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
           edit: { ...identity, ordinal, column: policy.column, original, value },
         });
       },
+      /**
+       * A row belongs to one table or to none the grid may choose between. Over a join the cells
+       * stay editable and the gutter stays away, which is the whole of the rule.
+       */
+      ...(onlyTable
+        ? {
+            rows: {
+              isRemoved: (row) => {
+                const key = rowKeyIn(onlyTable, row);
+                return key !== undefined && removedKeys.has(key);
+              },
+              toggleRemoval: (row) => {
+                const key = onlyTable.keyOrdinals.map(
+                  (keyOrdinal) => row[keyOrdinal]?.value ?? null,
+                );
+                messaging.post({
+                  type: "data-view/remove-row",
+                  row: { tableOid: onlyTable.tableOid, key },
+                });
+              },
+            },
+          }
+        : {}),
     };
   }, [state, messaging]);
 
@@ -415,7 +450,7 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
     closed: state.status !== "ready" || Boolean(state.message),
   };
   const disabled = state.busy || state.applying;
-  const editCount = state.edits.length;
+  const editCount = state.edits.length + state.removedRows.length;
   const editable = state.editability.tables.length > 0;
   // A Data View with nothing in it is a legal starting state, not a broken query: the reader adds
   // the first relation and it becomes the base the rest composes onto.
@@ -745,23 +780,33 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
                     <div className="columns-menu-heading">
                       {countLabel(editCount, "change")} waiting to be applied
                     </div>
-                    {describeDataViewEdits(state.edits, state.editability).map((edit, index) => (
-                      <div
-                        className="pending-edit"
-                        // biome-ignore lint/suspicious/noArrayIndexKey: an edit has no identity of its own; its place in the list is it.
-                        key={index}
-                      >
-                        <span className="pending-edit-target">
-                          {edit.table} · {edit.row}
-                        </span>
-                        <span className="pending-edit-change">
-                          <span className="pending-edit-column">{edit.column}</span>
-                          <span className="pending-edit-original">{edit.original ?? "NULL"}</span>
-                          <span className="codicon codicon-arrow-right" aria-hidden="true" />
-                          <span className="pending-edit-value">{edit.value ?? "NULL"}</span>
-                        </span>
-                      </div>
-                    ))}
+                    {describeDataViewChanges(state.edits, state.removedRows, state.editability).map(
+                      (change, index) => (
+                        <div
+                          className="pending-edit"
+                          // biome-ignore lint/suspicious/noArrayIndexKey: a change has no identity of its own; its place in the list is it.
+                          key={index}
+                        >
+                          <span className="pending-edit-target">
+                            {change.table} · {change.row}
+                          </span>
+                          {change.kind === "delete" ? (
+                            <span className="pending-edit-change">
+                              <span className="pending-edit-removal">The whole row goes away</span>
+                            </span>
+                          ) : (
+                            <span className="pending-edit-change">
+                              <span className="pending-edit-column">{change.column}</span>
+                              <span className="pending-edit-original">
+                                {change.original ?? "NULL"}
+                              </span>
+                              <span className="codicon codicon-arrow-right" aria-hidden="true" />
+                              <span className="pending-edit-value">{change.value ?? "NULL"}</span>
+                            </span>
+                          )}
+                        </div>
+                      ),
+                    )}
                   </div>
                 </>
               ) : null}

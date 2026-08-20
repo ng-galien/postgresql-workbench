@@ -113,6 +113,7 @@ export function dataViewState(overrides: Partial<DataViewState> = {}): DataViewS
     ]),
     editability: { tables: [], columns: [] },
     edits: [],
+    removedRows: [],
     busy: false,
     applying: false,
     ...overrides,

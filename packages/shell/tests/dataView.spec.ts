@@ -184,7 +184,10 @@ test("pages a relation too large to load at once, and loads the rest on demand",
   await expect(rows.summary("Rows 1–200 · more available")).toBeVisible();
 
   await rows.loadAll();
-  await expect(page.getByText("4008 rows")).toBeVisible({ timeout: 20_000 });
+  // The whole table, however many rows the seed holds and whatever a reader has since deleted:
+  // what matters is that nothing is left to fetch.
+  await expect(page.getByText(/^\d[\d,]* rows$/u)).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText(/more available/u)).toBeHidden();
 });
 
 test("hides the key columns a reader has no use for, and offers them back", async ({ page }) => {
@@ -331,4 +334,49 @@ test("says what each provisioned change will do, not only how many there are", a
   await expect(drawer.locator(".pending-edit-column")).toHaveText("city");
   await expect(drawer.locator(".pending-edit-original")).toHaveText(before);
   await expect(drawer.locator(".pending-edit-value")).toHaveText("Saint-Nazaire");
+});
+
+test("takes a whole row away, provisioned like any other change", async ({ page }) => {
+  await openEmpty(page);
+  const table = await add(page, "shop.address");
+
+  // The gutter is where a spreadsheet puts its row controls: beside the rows, not inside them.
+  const firstRow = page.locator("tbody tr").first();
+  await firstRow.locator(".row-gutter-action").click();
+
+  await expect(firstRow).toHaveClass(/removed/u);
+  const changes = page.getByTitle(/pending change.*click to read them/u);
+  await expect(changes).toBeEnabled();
+  await changes.click();
+  const drawer = page.locator(".pending-edits");
+  await expect(drawer.locator(".pending-edit-target")).toContainText("shop.address · id =");
+  await expect(drawer.locator(".pending-edit-removal")).toHaveText("The whole row goes away");
+
+  // Nothing has been written: the row is still there, struck through, until the changes are applied.
+  await expect(table.cellsWithText("Siège")).toHaveCount(1);
+});
+
+test("puts back a row it was going to take away", async ({ page }) => {
+  await openEmpty(page);
+  await add(page, "shop.address");
+
+  const firstRow = page.locator("tbody tr").first();
+  await firstRow.locator(".row-gutter-action").click();
+  await expect(firstRow).toHaveClass(/removed/u);
+
+  await firstRow.locator(".row-gutter-action").click();
+
+  await expect(firstRow).not.toHaveClass(/removed/u);
+  await expect(page.getByTitle(/pending change.*click to read them/u)).toBeDisabled();
+});
+
+test("offers no row gutter over a join, where no one table owns the row", async ({ page }) => {
+  await openEmpty(page);
+  await add(page, "shop.address");
+  await expect(page.locator(".row-gutter-action").first()).toBeAttached();
+
+  await add(page, "shop.warehouse");
+
+  // Cells stay editable over a join; which table a whole row would go from is not the grid's to guess.
+  await expect(page.locator(".row-gutter-action")).toHaveCount(0);
 });
