@@ -10,7 +10,8 @@
     "resolveJsonModule": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "types": ["node", "vitest/globals"]
+    "types": ["node"]
   },
-  "include": ["src/**/*"]
+  // The views declare what a `.css` import is; the shell bundles the same way they do.
+  "include": ["src/**/*", "browser/**/*", "../views/src/styles.d.ts"]
 }

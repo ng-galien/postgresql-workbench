@@ -192,3 +192,13 @@ function isHexadecimal(value: string): boolean {
   const normalized = value.toLowerCase();
   return (value >= "0" && value <= "9") || (normalized >= "a" && normalized <= "f");
 }
+
+/** The 1-based line of the first error or missing node, for a message a reader can act on. */
+export function firstSyntaxErrorLine(node: SyntaxNode): number | undefined {
+  if (node.error || node.missing) return node.start.line;
+  for (const child of node.children) {
+    const line = firstSyntaxErrorLine(child);
+    if (line !== undefined) return line;
+  }
+  return undefined;
+}

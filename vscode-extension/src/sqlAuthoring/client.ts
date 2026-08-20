@@ -6,7 +6,11 @@ import {
   type ServerOptions,
   TransportKind,
 } from "vscode-languageclient/node";
-import type { SyntaxNode, SyntaxParser } from "../../../packages/sql/src/analysis/syntaxTree.js";
+import type { SyntaxParser } from "../../../packages/sql/src/analysis/syntaxTree.js";
+import {
+  answerSyntaxRequest,
+  type SqlAuthoringSyntaxRequest,
+} from "../../../packages/sql/src/languageServer/answerSyntax.js";
 import { sqlAuthoringEditStillApplies } from "../../../packages/sql/src/languageServer/composeRequest.js";
 import {
   type SqlAuthoringScope,
@@ -28,7 +32,6 @@ import {
   type SqlAuthoringSyntaxResult,
   sqlAuthoringContextMatchesToken,
 } from "../../../packages/sql/src/languageServer/protocol.js";
-import { analyzeSqlQuery } from "../../../packages/sql/src/query/analysis.js";
 import {
   documentRelations,
   type SqlColumnMention,
@@ -132,70 +135,15 @@ export async function registerSqlAuthoring(
   );
   client.onRequest(
     SQL_AUTHORING_SYNTAX_REQUEST,
-    async ({
-      uri,
-      source,
-      caret,
-    }: {
-      uri: string;
-      source: string;
-      /** Offset being typed: a placeholder is inserted there so an unfinished statement parses. */
-      caret?: number;
-    }): Promise<SqlAuthoringSyntaxResult> => {
-      const parser = await index.syntaxParser();
-      const settings = resolveSqlAuthoringSettings(uri);
-      const {
-        source: parsedSource,
-        relations,
-        caretRole,
-      } = await documentRelations(parser, source, {
-        uri,
-        maxDepth: settings.syntaxMaxDepth,
-        maxNodes: settings.syntaxMaxNodes,
-        ...(caret === undefined ? {} : { caret }),
-      });
-      const budget = {
-        source: parsedSource,
-        uri,
-        maxDepth: settings.syntaxMaxDepth,
-        maxNodes: settings.syntaxMaxNodes,
-        namedOnly: true,
-      };
-      const syntax = await parser.parse({ language: "sql", ...budget });
-      if (!syntax.hasError || syntax.truncated) {
-        // The composition engine rewrites from this analysis; it never scans the text itself.
-        const analyzed = syntax.truncated
-          ? undefined
-          : await analyzeSqlQuery(source, parser, {
-              uri,
-              maxDepth: settings.syntaxMaxDepth,
-              maxNodes: settings.syntaxMaxNodes,
-            });
-        return {
-          hasError: syntax.hasError,
-          truncated: syntax.truncated,
-          ...(analyzed?.status === "ok" ? { analysis: analyzed.analysis } : {}),
-          ...(analyzed?.shape === undefined ? {} : { shape: analyzed.shape }),
-          relations,
-          ...(caretRole === undefined ? {} : { caretRole }),
-        };
-      }
-      const languageId = vscode.workspace.textDocuments.find(
-        (candidate) => candidate.uri.toString() === uri,
-      )?.languageId;
-      const plpgsqlBody =
-        languageId === "plpgsql" &&
-        !(await parser.parse({ language: "plpgsql", ...budget })).hasError;
-      const errorLine = firstSyntaxErrorLine(syntax.root);
-      return {
-        hasError: true,
-        truncated: false,
-        ...(errorLine === undefined ? {} : { errorLine }),
-        ...(plpgsqlBody ? { plpgsqlBody } : {}),
-        relations,
-        ...(caretRole === undefined ? {} : { caretRole }),
-      };
-    },
+    async (request: SqlAuthoringSyntaxRequest): Promise<SqlAuthoringSyntaxResult> =>
+      answerSyntaxRequest(
+        request,
+        await index.syntaxParser(),
+        resolveSqlAuthoringSettings(request.uri),
+        (uri) =>
+          vscode.workspace.textDocuments.find((candidate) => candidate.uri.toString() === uri)
+            ?.languageId === "plpgsql",
+      ),
   );
   client.onRequest<SqlAuthoringSettings, never>(SQL_AUTHORING_SETTINGS_REQUEST, (parameters) =>
     resolveSqlAuthoringSettings((parameters as { uri: string }).uri),
@@ -680,15 +628,6 @@ function sqlAuthoringConnexionName(
         return server ? getConnectionName(server) : undefined;
       })()
     : undefined;
-}
-
-function firstSyntaxErrorLine(node: SyntaxNode): number | undefined {
-  if (node.error || node.missing) return node.start.line;
-  for (const child of node.children) {
-    const line = firstSyntaxErrorLine(child);
-    if (line !== undefined) return line;
-  }
-  return undefined;
 }
 
 function indexedContext(

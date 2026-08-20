@@ -19,7 +19,11 @@ import {
   type SqlAuthoringDragPayload,
   type SqlAuthoringSnapshot,
 } from "../../sql/src/snapshot.js";
-import type { DataViewRequest, DataViewResponse, DataViewState } from "../src/dataView/protocol.js";
+import type {
+  DataViewRequest,
+  DataViewResponse,
+  DataViewState,
+} from "../../views/src/dataView/protocol.js";
 
 /**
  * The Data View's Extension Host, without VS Code. Every other part is the real one: PostgreSQL

@@ -1,8 +1,8 @@
 import { createRoot } from "react-dom/client";
-import { DataViewApp, type DataViewMessaging } from "../src/dataView/DataViewApp.js";
-import dataViewStyles from "../src/dataView/dataView.css";
-import type { DataViewRequest, DataViewResponse } from "../src/dataView/protocol.js";
-import { resultViewStyles } from "../src/results/resultStyles.js";
+import { DataViewApp, type DataViewMessaging } from "../../views/src/dataView/DataViewApp.js";
+import dataViewStyles from "../../views/src/dataView/dataView.css";
+import type { DataViewRequest, DataViewResponse } from "../../views/src/dataView/protocol.js";
+import { resultViewStyles } from "../../views/src/results/resultStyles.js";
 import vscodeTheme from "./vscodeTheme.css";
 
 /**

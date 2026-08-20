@@ -20,9 +20,9 @@ const SCHEMA = process.env.PGWB_DEV_SCHEMA ?? "shop";
 const RELATION = process.env.PGWB_DEV_RELATION ?? "product";
 
 // The repository writes `.js` in its specifiers, which Node cannot resolve to `.ts`; esbuild can.
-const OUT = new URL("../../../node_modules/.pgwb-dev/", import.meta.url).pathname;
+const OUT = new URL("../../node_modules/.pgwb-shell/", import.meta.url).pathname;
 await esbuild.build({
-  entryPoints: [new URL("dataViewHost.ts", import.meta.url).pathname],
+  entryPoints: [new URL("src/dataViewHost.ts", import.meta.url).pathname],
   bundle: true,
   outfile: `${OUT}host.cjs`,
   // CommonJS, because the Code Moniker client resolves its runtime through `__filename`.
@@ -71,7 +71,7 @@ const liveReload = {
 };
 
 const bundle = await esbuild.context({
-  entryPoints: [new URL("index.tsx", import.meta.url).pathname],
+  entryPoints: [new URL("browser/index.tsx", import.meta.url).pathname],
   bundle: true,
   outfile: `${OUT}data-view.js`,
   format: "iife",
@@ -117,7 +117,7 @@ createServer(async (request, response) => {
   response.writeHead(200, { "content-type": "text/html" }).end(PAGE);
 }).listen(PORT, () => {
   console.log(
-    `Data View harness on http://localhost:${PORT} — ${SCHEMA}.${RELATION} of ${CONNECTION.database}`,
+    `PostgreSQL Workbench shell on http://localhost:${PORT} — ${SCHEMA}.${RELATION} of ${CONNECTION.database}`,
   );
 });
 
