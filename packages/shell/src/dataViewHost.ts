@@ -142,7 +142,7 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
     projection: { tables: [], columnTable: [] },
     hidden: [],
     status: "loading",
-    editability: { tables: [], columns: [], requiredOrdinals: [] },
+    editability: { tables: [], columns: [], requiredOrdinals: [], technicalOrdinals: [] },
     technical: [],
     busy: false,
   };
@@ -202,7 +202,7 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
       state.session = undefined;
       state.payload = undefined;
       state.projection = { tables: [], columnTable: [] };
-      state.editability = { tables: [], columns: [], requiredOrdinals: [] };
+      state.editability = { tables: [], columns: [], requiredOrdinals: [], technicalOrdinals: [] };
       state.status = "ready";
       state.message = "The query is empty: add a table with +.";
       state.busy = false;

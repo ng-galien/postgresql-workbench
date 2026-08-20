@@ -95,6 +95,12 @@ export interface DataViewEditability {
    * column they cannot see.
    */
   requiredOrdinals: number[];
+  /**
+   * Projected columns that identify a row or tie it to another relation. What a reader who does
+   * not write SQL has no use for, so they start hidden — a matter of what is worth showing, not
+   * of what may be edited.
+   */
+  technicalOrdinals: number[];
 }
 
 /** One local, unapplied change identified by the row it targets. */

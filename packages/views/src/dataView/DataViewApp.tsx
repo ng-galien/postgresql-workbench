@@ -15,7 +15,6 @@ import {
   dataViewSourceTitle,
   describeDataViewChanges,
 } from "../../../rows/src/dataView.js";
-import { READ_ONLY_REASONS } from "../../../rows/src/editability.js";
 import { hasWorkbenchTreeDrag } from "../cockpit/dragAndDrop.js";
 import type { GridEditing } from "../results/CellEditor.js";
 import { IconButton } from "../results/IconButton.js";
@@ -473,13 +472,9 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
   const columnKeys = dataViewColumnKeys(state.projection, columnNames);
   // Identity and relationship values: what a reader who does not write SQL has no use for. The
   // host decides whether they start hidden; the view only offers to flip them.
-  const technicalKeys = columnKeys.filter((_key, ordinal) => {
-    const policy = state.editability.columns[ordinal];
-    if (!policy || policy.editable) return false;
-    return (
-      policy.reason === READ_ONLY_REASONS.identity ||
-      policy.reason === READ_ONLY_REASONS.relationship
-    );
+  const technicalKeys = state.editability.technicalOrdinals.flatMap((ordinal) => {
+    const key = columnKeys[ordinal];
+    return key === undefined ? [] : [key];
   });
   const technicalHidden =
     technicalKeys.length > 0 && technicalKeys.every((key) => query.hidden.includes(key));

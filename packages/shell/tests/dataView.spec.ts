@@ -468,3 +468,28 @@ test("brings back the columns a new row cannot go without", async ({ page }) => 
   await expect(page.getByRole("columnheader", { name: /^id/u })).toHaveCount(0);
   await expect(page.getByRole("columnheader", { name: /occurred_at/u })).toHaveCount(1);
 });
+
+test("keeps identity and relationship columns out of the way until they are needed", async ({
+  page,
+}) => {
+  await openEmpty(page);
+  await add(page, "shop.inventory_movement");
+
+  // Relationship columns are hidden because a reader has no use for them, not because they cannot
+  // be edited — and over a single table they can be, which is what an insertion needs.
+  await expect(page.getByRole("columnheader", { name: /inventory_id/u })).toHaveCount(0);
+  await expect(page.getByRole("columnheader", { name: /performed_by/u })).toHaveCount(0);
+
+  await page.getByTitle("Add an empty row to fill in").click();
+
+  await expect(page.getByRole("columnheader", { name: /inventory_id/u })).toHaveCount(1);
+  // Nullable, so the row can go without it: it stays out of the way.
+  await expect(page.getByRole("columnheader", { name: /performed_by/u })).toHaveCount(0);
+
+  const cell = page.locator("tbody.added-rows td[data-added-row]").first();
+  await cell.dblclick();
+  await page.keyboard.type("1");
+  await page.keyboard.press("Enter");
+
+  await expect(cell.locator(".cell-value")).toHaveText("1");
+});

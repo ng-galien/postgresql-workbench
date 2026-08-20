@@ -40,7 +40,12 @@ import { dataViewCompletionUri, dataViewQueryUri } from "./dataViewUri.js";
 import { exportAllRows, exportLoadedRows, pickExportTarget } from "./export/exportResult.js";
 import { type DataViewHostServices, errorMessage } from "./hostServices.js";
 
-const EMPTY_EDITABILITY: DataViewEditability = { tables: [], columns: [], requiredOrdinals: [] };
+const EMPTY_EDITABILITY: DataViewEditability = {
+  tables: [],
+  columns: [],
+  requiredOrdinals: [],
+  technicalOrdinals: [],
+};
 
 class LoadCancelledError extends Error {}
 

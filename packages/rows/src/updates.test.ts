@@ -115,6 +115,22 @@ describe("Data View editability", () => {
     ]);
   });
 
+  it("edits a relationship value over a single table, where no join depends on it", () => {
+    // The same sales_order columns, without the address it was joined to: shipping_address_id is
+    // then a column like any other, and PostgreSQL still refuses a value pointing at nothing.
+    const fields = [
+      { name: "id", tableID: 200, columnID: 1, dataTypeID: 20 },
+      { name: "shipping_address_id", tableID: 200, columnID: 2, dataTypeID: 20 },
+      { name: "status", tableID: 200, columnID: 3, dataTypeID: 25 },
+    ];
+
+    const editability = resolveDataViewEditability(fields, [salesOrder]);
+
+    expect(
+      editability.columns.map((policy) => (policy.editable ? "editable" : policy.reason)),
+    ).toEqual([READ_ONLY_REASONS.identity, "editable", "editable"]);
+  });
+
   it("refuses rows whose identity is not projected or whose table appears twice", () => {
     const missingKey = resolveDataViewEditability(
       [{ name: "city", tableID: 100, columnID: 2, dataTypeID: 25 }],
