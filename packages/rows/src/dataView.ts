@@ -1,3 +1,4 @@
+import type { DataViewDeleteRule } from "./editability.js";
 /**
  * What a Data View is: where its rows come from, how they are projected, sorted, and filtered,
  * which of them can be edited, and what the composition engine may add. The webview renders this
@@ -58,6 +59,31 @@ export interface DataViewEditableTable {
   keyOrdinals: number[];
   keyColumns: string[];
   keyTypes: string[];
+  /** Tables whose foreign keys point at this one, and what PostgreSQL does when a row goes. */
+  referencedBy: { table: string; onDelete: DataViewDeleteRule }[];
+}
+
+/**
+ * What taking a row away drags along with it, said before it is taken rather than discovered when
+ * the transaction fails. Empty when nothing points at this table.
+ */
+export function describeDeleteConsequences(table: {
+  referencedBy: readonly { table: string; onDelete: DataViewDeleteRule }[];
+}): string[] {
+  const byRule = new Map<DataViewDeleteRule, string[]>();
+  for (const reference of table.referencedBy) {
+    byRule.set(reference.onDelete, [...(byRule.get(reference.onDelete) ?? []), reference.table]);
+  }
+  const list = (tables: readonly string[]) => [...new Set(tables)].sort().join(", ");
+  const said: string[] = [];
+  const cascade = byRule.get("cascade");
+  if (cascade) said.push(`Rows of ${list(cascade)} that point at it are deleted too.`);
+  const cleared = [...(byRule.get("set-null") ?? []), ...(byRule.get("set-default") ?? [])];
+  if (cleared.length > 0) said.push(`Rows of ${list(cleared)} keep their place, pointing nowhere.`);
+  const blocking = [...(byRule.get("restrict") ?? []), ...(byRule.get("no-action") ?? [])];
+  if (blocking.length > 0)
+    said.push(`${list(blocking)} may point at it, and PostgreSQL then refuses the deletion.`);
+  return said;
 }
 
 export interface DataViewEditability {
@@ -83,6 +109,18 @@ export interface DataViewEdit {
 export interface DataViewRowRemoval {
   tableOid: number;
   key: (string | null)[];
+}
+
+/**
+ * A row the reader added. It exists only in the grid until the changes are applied, which is what
+ * lets them fill it column by column — and change their mind — before anything is written.
+ */
+export interface DataViewRowInsertion {
+  tableOid: number;
+  /** Tells two new rows apart while neither of them has a key yet. */
+  localId: string;
+  /** Column name to value, for the columns the reader has filled in. */
+  values: Record<string, string | null>;
 }
 
 /** The SQL document behind a Data View and what the grid derived from it. */
@@ -169,7 +207,7 @@ export function dataViewRelationOwning(
 
 /** One provisioned change, told the way a reader needs to read it back. */
 export interface DataViewChangeSummary {
-  kind: "update" | "delete";
+  kind: "update" | "delete" | "insert";
   /** `schema.name` of the table the change is written to, when the projection still holds it. */
   table: string;
   /** The row it lands on, by its key: `id = 12`, or `region = 'FR', year = '2026'`. */
@@ -188,6 +226,7 @@ export interface DataViewChangeSummary {
 export function describeDataViewChanges(
   edits: readonly DataViewEdit[],
   removals: readonly DataViewRowRemoval[],
+  insertions: readonly DataViewRowInsertion[],
   editability: DataViewEditability,
 ): DataViewChangeSummary[] {
   const describe = (row: { tableOid: number; key: readonly (string | null)[] }) => {
@@ -202,7 +241,11 @@ export function describeDataViewChanges(
         .join(", "),
     };
   };
-  // Rows first, as they are written: a row taken away has no cell left to update.
+  const tableName = (tableOid: number) => {
+    const table = editability.tables.find((candidate) => candidate.tableOid === tableOid);
+    return table ? `${table.schema}.${table.name}` : "";
+  };
+  // In the order they are written: rows away, then cells, then rows added.
   return [
     ...removals.map((removal) => ({ kind: "delete" as const, ...describe(removal) })),
     ...edits.map((edit) => ({
@@ -212,6 +255,18 @@ export function describeDataViewChanges(
       original: edit.original,
       value: edit.value,
     })),
+    ...insertions.map((insertion) => {
+      const filled = Object.entries(insertion.values);
+      return {
+        kind: "insert" as const,
+        table: tableName(insertion.tableOid),
+        // A row with nothing filled in is a row of defaults, which is worth saying out loud.
+        row:
+          filled.length === 0
+            ? "every column left to PostgreSQL"
+            : filled.map(([column, value]) => `${column} = ${value ?? "NULL"}`).join(", "),
+      };
+    }),
   ];
 }
 

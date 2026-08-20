@@ -5,6 +5,7 @@ import type {
   DataViewEditability,
   DataViewProjection,
   DataViewQueryInfo,
+  DataViewRowInsertion,
   DataViewRowRemoval,
   DataViewSort,
   DataViewSource,
@@ -28,6 +29,8 @@ export interface DataViewState {
   edits: DataViewEdit[];
   /** Rows the reader took away, still in the database until the changes are applied. */
   removedRows: DataViewRowRemoval[];
+  /** Rows the reader added, not in the database until the changes are applied. */
+  addedRows: DataViewRowInsertion[];
   busy: boolean;
   applying: boolean;
 }
@@ -62,6 +65,10 @@ export type DataViewRequest =
   | { type: "data-view/edit"; edit: DataViewEdit }
   /** Takes a whole row away, or puts it back; provisioned like any other change. */
   | { type: "data-view/remove-row"; row: DataViewRowRemoval }
+  /** Adds an empty row to fill in; it exists only in the grid until the changes are applied. */
+  | { type: "data-view/add-row" }
+  | { type: "data-view/drop-row"; localId: string }
+  | { type: "data-view/fill-row"; localId: string; column: string; value: string | null }
   | { type: "data-view/discard" }
   | { type: "data-view/apply" }
   | { type: "data-view/copy"; text: string }

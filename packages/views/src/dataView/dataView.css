@@ -750,3 +750,7 @@ body,
 .pending-edit-removal {
   color: var(--vscode-errorForeground, var(--vscode-foreground));
 }
+
+.pending-edit-insertion {
+  color: var(--vscode-charts-green, var(--vscode-foreground));
+}

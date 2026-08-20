@@ -31,7 +31,15 @@ SELECT c.oid::int AS table_oid,
        COALESCE((
          SELECT array_agg(DISTINCT k::int)
          FROM pg_constraint f, unnest(f.conkey) AS k
-         WHERE f.conrelid = c.oid AND f.contype = 'f'), '{}'::int[]) AS fk_attnums
+         WHERE f.conrelid = c.oid AND f.contype = 'f'), '{}'::int[]) AS fk_attnums,
+       COALESCE((
+         SELECT json_agg(DISTINCT jsonb_build_object(
+                  'table', rn.nspname || '.' || rc.relname,
+                  'onDelete', f.confdeltype::text))
+         FROM pg_constraint f
+         JOIN pg_class rc ON rc.oid = f.conrelid
+         JOIN pg_namespace rn ON rn.oid = rc.relnamespace
+         WHERE f.confrelid = c.oid AND f.contype = 'f'), '[]'::json) AS referenced_by
 FROM pg_class c
 JOIN pg_namespace n ON n.oid = c.relnamespace
 WHERE c.oid = ANY ($1::oid[])`;
@@ -51,7 +59,17 @@ interface CatalogRow {
   }>;
   unique_indexes: Array<{ attnums: number[]; primary: boolean }>;
   fk_attnums: number[];
+  referenced_by: Array<{ table: string; onDelete: string }>;
 }
+
+/** How PostgreSQL spells a delete rule in `pg_constraint.confdeltype`. */
+const DELETE_RULES: Record<string, CatalogTable["referencedBy"][number]["onDelete"]> = {
+  a: "no-action",
+  r: "restrict",
+  c: "cascade",
+  n: "set-null",
+  d: "set-default",
+};
 
 /** Loads the identity, relationship, and generation facts of the projected tables. */
 export async function loadDataViewCatalog(
@@ -79,5 +97,9 @@ export async function loadDataViewCatalog(
       primary: index.primary === true,
     })),
     foreignKeyAttnums: (row.fk_attnums ?? []).map(Number),
+    referencedBy: (row.referenced_by ?? []).map((reference) => ({
+      table: reference.table,
+      onDelete: DELETE_RULES[reference.onDelete] ?? "no-action",
+    })),
   }));
 }

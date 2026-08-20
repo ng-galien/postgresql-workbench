@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { stripStatementTerminator } from "../../sql/src/query/analysis.js";
 import { type CatalogTable, READ_ONLY_REASONS, resolveDataViewEditability } from "./editability.js";
-import { buildRowDeletes, buildRowUpdates } from "./updates.js";
+import { buildRowDeletes, buildRowInserts, buildRowUpdates } from "./updates.js";
 
 const address: CatalogTable = {
   tableOid: 100,
@@ -21,6 +21,7 @@ const address: CatalogTable = {
     },
   ],
   uniqueIndexes: [{ attnums: [1], primary: true }],
+  referencedBy: [],
   foreignKeyAttnums: [],
 };
 
@@ -42,6 +43,7 @@ const salesOrder: CatalogTable = {
     { attnum: 3, name: "status", type: "text", identity: "", generated: "", notNull: true },
   ],
   uniqueIndexes: [{ attnums: [1], primary: true }],
+  referencedBy: [],
   foreignKeyAttnums: [2],
 };
 
@@ -174,5 +176,64 @@ describe("removed rows", () => {
     expect(() => buildRowDeletes([{ tableOid: 99, key: ["1"] }], addressEditability)).toThrow(
       /no longer belongs to an editable table/u,
     );
+  });
+});
+
+describe("added rows", () => {
+  const addressEditability = resolveDataViewEditability(
+    [
+      { name: "id", tableID: 100, columnID: 1, dataTypeID: 20 },
+      { name: "city", tableID: 100, columnID: 2, dataTypeID: 25 },
+      { name: "created_at", tableID: 100, columnID: 3, dataTypeID: 1184 },
+    ],
+    [address],
+  );
+
+  it("carries only the columns the reader filled in", () => {
+    const statements = buildRowInserts(
+      [{ tableOid: 100, localId: "new-1", values: { city: "Brest" } }],
+      addressEditability,
+    );
+
+    expect(statements).toEqual([
+      {
+        text: "INSERT INTO shop.address (city)\nVALUES ($1::text)",
+        values: ["Brest"],
+        target: "shop.address (a new row)",
+      },
+    ]);
+  });
+
+  it("casts each value to its own column type", () => {
+    const statements = buildRowInserts(
+      [
+        {
+          tableOid: 100,
+          localId: "new-1",
+          values: { city: "Brest", created_at: "2026-01-01 00:00:00+00" },
+        },
+      ],
+      addressEditability,
+    );
+
+    expect(statements[0]?.text).toBe(
+      "INSERT INTO shop.address (city, created_at)\nVALUES ($1::text, $2::timestamp with time zone)",
+    );
+  });
+
+  it("leaves a row nobody touched entirely to PostgreSQL", () => {
+    const statements = buildRowInserts(
+      [{ tableOid: 100, localId: "new-1", values: {} }],
+      addressEditability,
+    );
+
+    expect(statements[0]?.text).toBe("INSERT INTO shop.address DEFAULT VALUES");
+    expect(statements[0]?.values).toEqual([]);
+  });
+
+  it("refuses to insert into a table the query no longer holds", () => {
+    expect(() =>
+      buildRowInserts([{ tableOid: 99, localId: "new-1", values: {} }], addressEditability),
+    ).toThrow(/no longer belongs to an editable table/u);
   });
 });

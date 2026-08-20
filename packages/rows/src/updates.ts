@@ -1,6 +1,11 @@
 import { quoteSqlIdentifierIfNeeded } from "../../sql/src/text/identifiers.js";
 
-import type { DataViewEdit, DataViewEditability, DataViewRowRemoval } from "./dataView.js";
+import type {
+  DataViewEdit,
+  DataViewEditability,
+  DataViewRowInsertion,
+  DataViewRowRemoval,
+} from "./dataView.js";
 import { sameDataViewRow } from "./dataView.js";
 
 export interface DataViewRowUpdate {
@@ -86,6 +91,46 @@ export function buildRowDeletes(
       target: `${table.schema}.${table.name} (${table.keyColumns
         .map((column, index) => `${column} = ${removal.key[index] ?? "NULL"}`)
         .join(", ")})`,
+    };
+  });
+}
+
+/**
+ * One parameterized INSERT per added row, carrying only the columns the reader filled in. What
+ * they left alone is left to PostgreSQL: a default, a sequence, or a refusal if the column
+ * demands a value. A row they added and never touched is inserted with defaults throughout.
+ */
+export function buildRowInserts(
+  insertions: readonly DataViewRowInsertion[],
+  editability: DataViewEditability,
+): DataViewRowUpdate[] {
+  return insertions.map((insertion) => {
+    const table = editability.tables.find((candidate) => candidate.tableOid === insertion.tableOid);
+    if (!table) throw new Error("The added row no longer belongs to an editable table.");
+    const typeOf = (column: string) => {
+      const policy = editability.columns.find(
+        (candidate) =>
+          candidate.editable &&
+          candidate.tableOid === insertion.tableOid &&
+          candidate.column === column,
+      );
+      return policy?.editable ? policy.dataType : "text";
+    };
+    const filled = Object.entries(insertion.values);
+    const qualified = `${quoteSqlIdentifierIfNeeded(table.schema)}.${quoteSqlIdentifierIfNeeded(table.name)}`;
+    const target = `${table.schema}.${table.name} (a new row)`;
+    if (filled.length === 0) {
+      return { text: `INSERT INTO ${qualified} DEFAULT VALUES`, values: [], target };
+    }
+    const values = filled.map(([, value]) => value);
+    const columns = filled.map(([column]) => quoteSqlIdentifierIfNeeded(column)).join(", ");
+    const placeholders = filled
+      .map(([column], index) => `$${index + 1}::${typeOf(column)}`)
+      .join(", ");
+    return {
+      text: `INSERT INTO ${qualified} (${columns})\nVALUES (${placeholders})`,
+      values,
+      target,
     };
   });
 }

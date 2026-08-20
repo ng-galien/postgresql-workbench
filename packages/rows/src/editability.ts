@@ -27,6 +27,9 @@ export interface CatalogUniqueIndex {
   primary: boolean;
 }
 
+/** What PostgreSQL does to the rows that point at a row being deleted. */
+export type DataViewDeleteRule = "no-action" | "restrict" | "cascade" | "set-null" | "set-default";
+
 export interface CatalogTable {
   tableOid: number;
   schema: string;
@@ -35,6 +38,8 @@ export interface CatalogTable {
   columns: CatalogColumn[];
   uniqueIndexes: CatalogUniqueIndex[];
   foreignKeyAttnums: number[];
+  /** Tables whose foreign keys point at this one, and what PostgreSQL does when a row goes. */
+  referencedBy: { table: string; onDelete: DataViewDeleteRule }[];
 }
 
 export const READ_ONLY_REASONS = {
@@ -150,6 +155,7 @@ export function resolveDataViewEditability(
       keyOrdinals,
       keyColumns,
       keyTypes,
+      referencedBy: table.referencedBy,
     });
     for (const ordinal of ordinals) {
       const attnum = fields[ordinal]?.columnID ?? 0;

@@ -407,6 +407,11 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
                   row: { tableOid: onlyTable.tableOid, key },
                 });
               },
+              added: state.addedRows,
+              add: () => messaging.post({ type: "data-view/add-row" }),
+              drop: (localId) => messaging.post({ type: "data-view/drop-row", localId }),
+              fill: (localId, column, value) =>
+                messaging.post({ type: "data-view/fill-row", localId, column, value }),
             },
           }
         : {}),
@@ -450,7 +455,7 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
     closed: state.status !== "ready" || Boolean(state.message),
   };
   const disabled = state.busy || state.applying;
-  const editCount = state.edits.length + state.removedRows.length;
+  const editCount = state.edits.length + state.removedRows.length + state.addedRows.length;
   const editable = state.editability.tables.length > 0;
   // A Data View with nothing in it is a legal starting state, not a broken query: the reader adds
   // the first relation and it becomes the base the rest composes onto.
@@ -780,33 +785,40 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
                     <div className="columns-menu-heading">
                       {countLabel(editCount, "change")} waiting to be applied
                     </div>
-                    {describeDataViewChanges(state.edits, state.removedRows, state.editability).map(
-                      (change, index) => (
-                        <div
-                          className="pending-edit"
-                          // biome-ignore lint/suspicious/noArrayIndexKey: a change has no identity of its own; its place in the list is it.
-                          key={index}
-                        >
-                          <span className="pending-edit-target">
-                            {change.table} · {change.row}
+                    {describeDataViewChanges(
+                      state.edits,
+                      state.removedRows,
+                      state.addedRows,
+                      state.editability,
+                    ).map((change, index) => (
+                      <div
+                        className="pending-edit"
+                        // biome-ignore lint/suspicious/noArrayIndexKey: a change has no identity of its own; its place in the list is it.
+                        key={index}
+                      >
+                        <span className="pending-edit-target">
+                          {change.table} · {change.row}
+                        </span>
+                        {change.kind === "delete" ? (
+                          <span className="pending-edit-change">
+                            <span className="pending-edit-removal">The whole row goes away</span>
                           </span>
-                          {change.kind === "delete" ? (
-                            <span className="pending-edit-change">
-                              <span className="pending-edit-removal">The whole row goes away</span>
+                        ) : change.kind === "insert" ? (
+                          <span className="pending-edit-change">
+                            <span className="pending-edit-insertion">A new row</span>
+                          </span>
+                        ) : (
+                          <span className="pending-edit-change">
+                            <span className="pending-edit-column">{change.column}</span>
+                            <span className="pending-edit-original">
+                              {change.original ?? "NULL"}
                             </span>
-                          ) : (
-                            <span className="pending-edit-change">
-                              <span className="pending-edit-column">{change.column}</span>
-                              <span className="pending-edit-original">
-                                {change.original ?? "NULL"}
-                              </span>
-                              <span className="codicon codicon-arrow-right" aria-hidden="true" />
-                              <span className="pending-edit-value">{change.value ?? "NULL"}</span>
-                            </span>
-                          )}
-                        </div>
-                      ),
-                    )}
+                            <span className="codicon codicon-arrow-right" aria-hidden="true" />
+                            <span className="pending-edit-value">{change.value ?? "NULL"}</span>
+                          </span>
+                        )}
+                      </div>
+                    ))}
                   </div>
                 </>
               ) : null}

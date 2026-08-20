@@ -13,6 +13,7 @@ import {
   type DataViewSource,
   dataViewRelationOwning,
   dataViewSourceTitle,
+  describeDeleteConsequences,
 } from "../../../packages/rows/src/dataView.js";
 import { initialDataViewQuery } from "../../../packages/rows/src/initialProjection.js";
 import {
@@ -141,6 +142,7 @@ export class DataViewDocument implements vscode.CustomDocument {
       editability: this.editability,
       edits: [...this.edits.list],
       removedRows: [...this.edits.removedRows],
+      addedRows: [...this.edits.addedRows],
       busy: this.busy,
       applying: this.edits.applying,
     };
@@ -258,6 +260,24 @@ export class DataViewDocument implements vscode.CustomDocument {
       case "data-view/edit":
         this.recordEdit(request.edit);
         return;
+      case "data-view/add-row": {
+        const table = this.editability.tables[0];
+        if (this.editability.tables.length !== 1 || !table) {
+          this.notify("The query joins several tables: rows can only be added to one.", "info");
+          return;
+        }
+        this.edits.addRow(table.tableOid);
+        this.broadcastState();
+        return;
+      }
+      case "data-view/drop-row":
+        this.edits.dropRow(request.localId);
+        this.broadcastState();
+        return;
+      case "data-view/fill-row":
+        this.edits.fillRow(request.localId, request.column, request.value);
+        this.broadcastState();
+        return;
       case "data-view/remove-row":
         if (this.editability.tables.length !== 1) {
           this.notify(
@@ -266,8 +286,16 @@ export class DataViewDocument implements vscode.CustomDocument {
           );
           return;
         }
-        this.edits.toggleRemoval(request.row);
-        this.broadcastState();
+        {
+          const wasRemoved = this.edits.isRemoved(request.row);
+          this.edits.toggleRemoval(request.row);
+          this.broadcastState();
+          // Said when the row is taken, not discovered when the transaction fails.
+          const consequences = wasRemoved
+            ? []
+            : describeDeleteConsequences(this.editability.tables[0] ?? { referencedBy: [] });
+          if (consequences.length > 0) this.notify(consequences.join(" "), "info");
+        }
         return;
       case "data-view/copy":
         await vscode.env.clipboard.writeText(request.text);

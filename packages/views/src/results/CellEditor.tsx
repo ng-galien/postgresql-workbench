@@ -31,6 +31,12 @@ export interface GridEditing {
     isRemoved(row: readonly DebugResultCell[], rowIndex: number): boolean;
     /** Takes this row away, or puts it back. */
     toggleRemoval(row: readonly DebugResultCell[], rowIndex: number): void;
+    /** Rows the reader added; they live below the loaded ones until the changes are applied. */
+    added: readonly { localId: string; values: Record<string, string | null> }[];
+    add(): void;
+    drop(localId: string): void;
+    /** Fills one column of an added row; null leaves the column to PostgreSQL. */
+    fill(localId: string, column: string, value: string | null): void;
   };
 }
 
@@ -97,6 +103,8 @@ export function CellEditor({ editor, value, onCommit, onCancel }: CellEditorProp
     onCommit(next);
   };
   const handleKey = (event: KeyboardEvent<HTMLElement>) => {
+    // Typing belongs to the editor: the grid behind it navigates and acts on the same keys.
+    event.stopPropagation();
     if (event.key === "Escape") {
       event.preventDefault();
       onCancel();

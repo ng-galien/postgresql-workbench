@@ -3,12 +3,13 @@ import { countLabel } from "./countLabel.js";
 import {
   type DataViewEdit,
   type DataViewEditability,
+  type DataViewRowInsertion,
   type DataViewRowRemoval,
   dataViewRowKey,
   sameDataViewRow,
 } from "./dataView.js";
 import { READ_ONLY_REASONS } from "./editability.js";
-import { buildRowDeletes, buildRowUpdates } from "./updates.js";
+import { buildRowDeletes, buildRowInserts, buildRowUpdates } from "./updates.js";
 
 /**
  * What a surface showing a Data View must be able to do for changes to reach PostgreSQL. Each
@@ -33,6 +34,8 @@ export interface DataViewWriteHost {
 export class PendingEdits {
   private items: DataViewEdit[] = [];
   private removals: DataViewRowRemoval[] = [];
+  private insertions: DataViewRowInsertion[] = [];
+  private added = 0;
   private writing = false;
 
   get list(): readonly DataViewEdit[] {
@@ -43,8 +46,12 @@ export class PendingEdits {
     return this.removals;
   }
 
+  get addedRows(): readonly DataViewRowInsertion[] {
+    return this.insertions;
+  }
+
   get size(): number {
-    return this.items.length + this.removals.length;
+    return this.items.length + this.removals.length + this.insertions.length;
   }
 
   /** True while the changes are being written: nothing may be held or discarded meanwhile. */
@@ -141,9 +148,31 @@ export class PendingEdits {
     this.removals.push(row);
   }
 
+  /** Adds an empty row to fill in, and answers with the identity the grid will call it by. */
+  addRow(tableOid: number): string {
+    this.added += 1;
+    const localId = `new-${this.added}`;
+    this.insertions.push({ tableOid, localId, values: {} });
+    return localId;
+  }
+
+  /** Takes back a row that was added but never written. */
+  dropRow(localId: string): void {
+    this.insertions = this.insertions.filter((row) => row.localId !== localId);
+  }
+
+  /** Fills one column of an added row; clearing it back to nothing leaves it to PostgreSQL. */
+  fillRow(localId: string, column: string, value: string | null): void {
+    const row = this.insertions.find((candidate) => candidate.localId === localId);
+    if (!row) return;
+    if (value === null) delete row.values[column];
+    else row.values[column] = value;
+  }
+
   clear(): void {
     this.items = [];
     this.removals = [];
+    this.insertions = [];
   }
 
   /**
@@ -156,6 +185,7 @@ export class PendingEdits {
     const before = this.size;
     this.items = this.items.filter((edit) => writable.has(edit.tableOid));
     this.removals = this.removals.filter((removal) => writable.has(removal.tableOid));
+    this.insertions = this.insertions.filter((row) => writable.has(row.tableOid));
     return before - this.size;
   }
 
@@ -164,10 +194,14 @@ export class PendingEdits {
    * database unchanged (ROLLBACK) when a row is stale, gone, or ambiguous.
    */
   async applyWith(client: Client, editability: DataViewEditability): Promise<number> {
-    // Rows go before columns: a row taken away has no cell left to update.
+    /*
+     * Rows taken away go first — one of them has no cell left to update — then the cells of the
+     * rows that stay, then the rows being added, which nothing else can refer to yet.
+     */
     const statements = [
       ...buildRowDeletes(this.removals, editability),
       ...buildRowUpdates(this.items, editability),
+      ...buildRowInserts(this.insertions, editability),
     ];
     await client.query("BEGIN");
     try {
@@ -189,6 +223,7 @@ export class PendingEdits {
     const applied = statements.length;
     this.items = [];
     this.removals = [];
+    this.insertions = [];
     return applied;
   }
 }

@@ -13,6 +13,7 @@ import {
   type DataViewProjection,
   type DataViewSource,
   dataViewRelationOwning,
+  describeDeleteConsequences,
 } from "../../rows/src/dataView.js";
 import { localFilterCompletions } from "../../rows/src/filterCompletions.js";
 import { initialDataViewQuery } from "../../rows/src/initialProjection.js";
@@ -185,6 +186,7 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
         editability: state.editability,
         edits: [...edits.list],
         removedRows: [...edits.removedRows],
+        addedRows: [...edits.addedRows],
         busy: state.busy,
         applying: edits.applying,
       },
@@ -437,10 +439,43 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
             });
             return;
           }
+          const wasRemoved = edits.isRemoved(request.row);
           edits.toggleRemoval(request.row);
+          broadcast();
+          // Said when the row is taken, not discovered when the transaction fails.
+          const consequences = wasRemoved
+            ? []
+            : describeDeleteConsequences(state.editability.tables[0] ?? { referencedBy: [] });
+          if (consequences.length > 0)
+            emit({
+              type: "data-view/notice",
+              message: consequences.join(" "),
+              severity: "info",
+            });
+          return;
+        }
+        case "data-view/add-row": {
+          const table = state.editability.tables[0];
+          if (state.editability.tables.length !== 1 || !table) {
+            emit({
+              type: "data-view/notice",
+              message: "The query joins several tables: rows can only be added to one.",
+              severity: "info",
+            });
+            return;
+          }
+          edits.addRow(table.tableOid);
           broadcast();
           return;
         }
+        case "data-view/drop-row":
+          edits.dropRow(request.localId);
+          broadcast();
+          return;
+        case "data-view/fill-row":
+          edits.fillRow(request.localId, request.column, request.value);
+          broadcast();
+          return;
         case "data-view/discard":
           edits.clear();
           broadcast();

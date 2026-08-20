@@ -380,3 +380,76 @@ test("offers no row gutter over a join, where no one table owns the row", async 
   // Cells stay editable over a join; which table a whole row would go from is not the grid's to guess.
   await expect(page.locator(".row-gutter-action")).toHaveCount(0);
 });
+
+test("adds an empty row and fills it in, without writing anything yet", async ({ page }) => {
+  await openEmpty(page);
+  await add(page, "shop.address");
+
+  await page.getByTitle("Add an empty row to fill in").click();
+
+  const added = page.locator("tbody.added-rows tr.added");
+  await expect(added).toHaveCount(1);
+  // What the reader leaves alone is left to PostgreSQL, and the row says so.
+  await expect(added.locator(".cell-value").first()).toHaveText("DEFAULT");
+
+  await added.locator("td[data-column]").first().dblclick();
+  await page.keyboard.type("Atelier Est");
+  await page.keyboard.press("Enter");
+
+  await expect(added.locator(".cell-value").first()).toHaveText("Atelier Est");
+  const changes = page.getByTitle(/pending change.*click to read them/u);
+  await changes.click();
+  const drawer = page.locator(".pending-edits");
+  await expect(drawer.locator(".pending-edit-target")).toContainText("label = Atelier Est");
+  await expect(drawer.locator(".pending-edit-insertion")).toHaveText("A new row");
+});
+
+test("takes back a row it had added", async ({ page }) => {
+  await openEmpty(page);
+  await add(page, "shop.address");
+
+  await page.getByTitle("Add an empty row to fill in").click();
+  await expect(page.locator("tbody.added-rows tr.added")).toHaveCount(1);
+
+  await page.locator("tbody.added-rows tr.added .row-gutter-action").click();
+
+  await expect(page.locator("tbody.added-rows tr.added")).toHaveCount(0);
+  await expect(page.getByTitle(/pending change.*click to read them/u)).toBeDisabled();
+});
+
+test("says what taking a row away drags along, before it is taken", async ({ page }) => {
+  await openEmpty(page);
+  await add(page, "shop.address");
+
+  await page.locator("tbody tr").first().locator(".row-gutter-action").click();
+
+  // An address is pointed at from several tables, and the reader hears about it now rather than
+  // when the transaction fails.
+  await expect(page.locator(".data-view-statusline-text")).toContainText(
+    /point at it|refuses the deletion/u,
+  );
+});
+
+test("spreads a tab-separated paste across the columns from where it lands", async ({ page }) => {
+  await openEmpty(page);
+  const table = await add(page, "shop.address");
+
+  await table
+    .cellsWithText("Lille")
+    .first()
+    .evaluate((cell) => {
+      const clipboardData = new DataTransfer();
+      clipboardData.setData("text/plain", "Saint-Herblain\tFR");
+      cell.dispatchEvent(
+        new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData }),
+      );
+    });
+
+  const changes = page.getByTitle(/pending change.*click to read them/u);
+  await expect(changes).toBeEnabled();
+  await changes.click();
+  // Only the column that really changed is held: pasting a value a cell already has is no change.
+  const drawer = page.locator(".pending-edits");
+  await expect(drawer.locator(".pending-edit-column")).toHaveText("city");
+  await expect(drawer.locator(".pending-edit-value")).toHaveText("Saint-Herblain");
+});

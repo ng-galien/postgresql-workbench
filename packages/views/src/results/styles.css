@@ -585,3 +585,37 @@ tr.removed td {
 tr.removed td.row-gutter {
   text-decoration: none;
 }
+
+/* Rows the reader added: below the result, marked as not yet part of it. */
+tbody.added-rows tr.added td {
+  border-left: 2px solid var(--vscode-charts-green, var(--vscode-focusBorder));
+}
+
+tbody.added-rows td.row-gutter {
+  border-left: 0;
+}
+
+tbody.added-rows .cell-value {
+  color: var(--vscode-descriptionForeground);
+}
+
+tr.add-row td {
+  padding: 0;
+}
+
+.row-gutter-action.always {
+  opacity: 1;
+}
+
+.add-row-label {
+  padding: 2px 6px;
+  border: 0;
+  background: none;
+  color: var(--vscode-descriptionForeground);
+  cursor: pointer;
+  font: inherit;
+}
+
+.add-row-label:hover {
+  color: var(--vscode-foreground);
+}

@@ -64,6 +64,8 @@ export interface GridLayout {
 }
 
 export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridProps) {
+  /** Which cell of which added row is being filled in right now. */
+  const [activeAdded, setActiveAdded] = useState<{ localId: string; ordinal: number }>();
   const [detail, setDetail] = useState<string>();
   const [localSort, setLocalSort] = useState<ResultSort>();
   const [activeCell, setActiveCell] = useState<{ row: number; ordinal: number }>();
@@ -290,6 +292,47 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
             aria-rowcount={rows.length + 1}
             aria-colcount={columns.length}
             className={editing ? "editable" : undefined}
+            onPaste={(event) => {
+              if (!editing) return;
+              const pasted = event.clipboardData.getData("text/plain");
+              if (pasted === "") return;
+              /*
+               * One value fills the cell it was pasted into; tab-separated values fill the columns
+               * from there rightwards, which is what a row copied out of a spreadsheet looks like.
+               * The cell comes from the event rather than from where the grid believes the cursor
+               * is, so what a reader sees under the pointer is what receives the values.
+               */
+              const cell = (event.target as HTMLElement).closest<HTMLElement>("td[data-column]");
+              if (!cell) return;
+              const ordinal = Number(cell.dataset.column);
+              const reachable = columns
+                .filter((column) => isVisible(column.ordinal))
+                .map((column) => column.ordinal);
+              const from = reachable.indexOf(ordinal);
+              if (from < 0) return;
+              const values = pasted.replace(/\r?\n$/u, "").split("\t");
+              const fill = (offset: number): number | undefined => reachable[from + offset];
+              const addedRow = cell.dataset.addedRow;
+              if (addedRow !== undefined) {
+                event.preventDefault();
+                values.forEach((value, offset) => {
+                  const target = fill(offset);
+                  const column = target === undefined ? undefined : payload.columns[target];
+                  if (!column || !editing.policies[target ?? -1]?.editable) return;
+                  editing.rows?.fill(addedRow, column.name, value);
+                });
+                return;
+              }
+              const rowIndex = Number(cell.dataset.row);
+              const row = rows[rowIndex];
+              if (!row) return;
+              event.preventDefault();
+              values.forEach((value, offset) => {
+                const target = fill(offset);
+                if (target === undefined || !editing.policies[target]?.editable) return;
+                editing.onEdit(row, rowIndex, target, value, row[target]?.value ?? null);
+              });
+            }}
             onKeyDown={(event) => {
               const page = Math.floor(viewportHeight / RESULT_ROW_HEIGHT);
               switch (event.key) {
@@ -548,6 +591,95 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
                 />
               ) : null}
             </tbody>
+            {/*
+              Rows the reader added sit below the loaded ones, in a body of their own: they are
+              not part of the result, they are not scrolled through, and the row that offers to
+              add another belongs with them rather than in the toolbar.
+            */}
+            {editing?.rows ? (
+              <tbody className="added-rows">
+                {editing.rows.added.map((added) => (
+                  <tr key={added.localId} className="added">
+                    <td className="row-gutter">
+                      <button
+                        type="button"
+                        className="row-gutter-action"
+                        title="Take back this row"
+                        aria-label={`Take back the added row ${added.localId}`}
+                        onClick={() => editing.rows?.drop(added.localId)}
+                      >
+                        <span className="codicon codicon-discard" aria-hidden="true" />
+                      </button>
+                    </td>
+                    {columns
+                      .filter(({ ordinal }) => isVisible(ordinal))
+                      .map(({ key: columnKey, ordinal, value: column }) => {
+                        const policy = editing.policies[ordinal];
+                        const shown = added.values[column.name] ?? null;
+                        const isActive =
+                          activeAdded?.localId === added.localId && activeAdded.ordinal === ordinal;
+                        return (
+                          <td
+                            key={columnKey}
+                            data-added-row={added.localId}
+                            data-column={ordinal}
+                            className={[
+                              shown === null ? "null" : "",
+                              policy && !policy.editable ? "read-only" : "",
+                              isActive ? "editing" : "",
+                            ]
+                              .filter(Boolean)
+                              .join(" ")}
+                            title={policy && !policy.editable ? policy.reason : undefined}
+                            onDoubleClick={() => {
+                              if (policy?.editable)
+                                setActiveAdded({ localId: added.localId, ordinal });
+                            }}
+                          >
+                            {isActive && policy?.editable ? (
+                              <CellEditor
+                                editor={policy.editor}
+                                value={shown}
+                                onCommit={(next) => {
+                                  setActiveAdded(undefined);
+                                  editing.rows?.fill(added.localId, column.name, next);
+                                }}
+                                onCancel={() => setActiveAdded(undefined)}
+                              />
+                            ) : (
+                              <span className="cell-value">
+                                {shown === null ? "DEFAULT" : shown}
+                              </span>
+                            )}
+                          </td>
+                        );
+                      })}
+                  </tr>
+                ))}
+                <tr className="add-row">
+                  <td className="row-gutter">
+                    <button
+                      type="button"
+                      className="row-gutter-action always"
+                      title="Add an empty row to fill in"
+                      aria-label="Add a row"
+                      onClick={() => editing.rows?.add()}
+                    >
+                      <span className="codicon codicon-add" aria-hidden="true" />
+                    </button>
+                  </td>
+                  <td colSpan={columns.filter(({ ordinal }) => isVisible(ordinal)).length}>
+                    <button
+                      type="button"
+                      className="add-row-label"
+                      onClick={() => editing.rows?.add()}
+                    >
+                      Add a row
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            ) : null}
           </table>
         </section>
         <div
