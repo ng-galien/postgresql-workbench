@@ -36,6 +36,8 @@ const messaging: DataViewMessaging = {
 };
 
 const events = new EventSource("/responses");
+// The harness rebuilds on every change; the page takes the new bundle without being asked.
+events.addEventListener("reload", () => window.location.reload());
 events.onmessage = (event) => {
   const response = JSON.parse(event.data) as DataViewResponse;
   for (const listener of listeners) listener(response);

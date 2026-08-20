@@ -44,7 +44,7 @@
     "marketplace:media": "node scripts/marketplace/media.mjs",
     "site:build": "node scripts/site/build.mjs",
     "site:dev": "node scripts/site/dev.mjs",
-    "dev:data-view": "node packages/views/dev/server.mjs"
+    "dev:data-view": "node --watch-path=packages/views/dev/dataViewHost.ts packages/views/dev/server.mjs"
   },
   "dependencies": {
     "@code-moniker/client": "0.7.1",

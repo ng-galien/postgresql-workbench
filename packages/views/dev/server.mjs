@@ -46,6 +46,30 @@ const host = await startDataViewHost({
   emit,
 });
 
+/** Reloads the page the moment the view is rebuilt, so a change is looked at rather than restarted. */
+const liveReload = {
+  name: "live-reload",
+  setup(build) {
+    let first = true;
+    build.onEnd((result) => {
+      if (first) {
+        first = false;
+        return;
+      }
+      if (result.errors.length > 0) {
+        emit({
+          type: "data-view/notice",
+          message: `The view did not build: ${result.errors[0].text}`,
+          severity: "error",
+        });
+        return;
+      }
+      for (const client of clients) client.write("event: reload\ndata: {}\n\n");
+      console.log("view rebuilt — reloading the page");
+    });
+  },
+};
+
 const bundle = await esbuild.context({
   entryPoints: [new URL("index.tsx", import.meta.url).pathname],
   bundle: true,
@@ -57,6 +81,7 @@ const bundle = await esbuild.context({
   loader: { ".css": "text", ".ttf": "dataurl" },
   define: { "process.env.NODE_ENV": '"development"' },
   sourcemap: true,
+  plugins: [liveReload],
 });
 await bundle.watch();
 
