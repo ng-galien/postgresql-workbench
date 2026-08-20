@@ -29,6 +29,7 @@ const editability: DataViewEditability = {
     },
   ],
   columns: [],
+  requiredOrdinals: [],
 };
 
 const edit = (over: Partial<DataViewEdit> = {}): DataViewEdit => ({

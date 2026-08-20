@@ -453,3 +453,18 @@ test("spreads a tab-separated paste across the columns from where it lands", asy
   await expect(drawer.locator(".pending-edit-column")).toHaveText("city");
   await expect(drawer.locator(".pending-edit-value")).toHaveText("Saint-Herblain");
 });
+
+test("brings back the columns a new row cannot go without", async ({ page }) => {
+  await openEmpty(page);
+  await add(page, "shop.inventory_movement");
+
+  // Relationship columns start hidden, and one of them is exactly what an insertion needs.
+  await expect(page.getByRole("columnheader", { name: /inventory_id/u })).toHaveCount(0);
+
+  await page.getByTitle("Add an empty row to fill in").click();
+
+  await expect(page.getByRole("columnheader", { name: /inventory_id/u })).toHaveCount(1);
+  // The key PostgreSQL generates for itself stays out of the way, and so does a defaulted column.
+  await expect(page.getByRole("columnheader", { name: /^id/u })).toHaveCount(0);
+  await expect(page.getByRole("columnheader", { name: /occurred_at/u })).toHaveCount(1);
+});

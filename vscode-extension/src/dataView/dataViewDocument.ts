@@ -14,6 +14,7 @@ import {
   dataViewRelationOwning,
   dataViewSourceTitle,
   describeDeleteConsequences,
+  withRequiredColumnsRevealed,
 } from "../../../packages/rows/src/dataView.js";
 import { initialDataViewQuery } from "../../../packages/rows/src/initialProjection.js";
 import {
@@ -39,7 +40,7 @@ import { dataViewCompletionUri, dataViewQueryUri } from "./dataViewUri.js";
 import { exportAllRows, exportLoadedRows, pickExportTarget } from "./export/exportResult.js";
 import { type DataViewHostServices, errorMessage } from "./hostServices.js";
 
-const EMPTY_EDITABILITY: DataViewEditability = { tables: [], columns: [] };
+const EMPTY_EDITABILITY: DataViewEditability = { tables: [], columns: [], requiredOrdinals: [] };
 
 class LoadCancelledError extends Error {}
 
@@ -267,6 +268,13 @@ export class DataViewDocument implements vscode.CustomDocument {
           return;
         }
         this.edits.addRow(table.tableOid);
+        // A reader cannot fill in a column they cannot see.
+        this.hidden = withRequiredColumnsRevealed(
+          this.hidden,
+          this.editability,
+          this.projection,
+          this.payload?.columns.map((column) => column.name) ?? [],
+        );
         this.broadcastState();
         return;
       }

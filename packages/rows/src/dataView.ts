@@ -89,6 +89,12 @@ export function describeDeleteConsequences(table: {
 export interface DataViewEditability {
   tables: DataViewEditableTable[];
   columns: DataViewColumnPolicy[];
+  /**
+   * Projected columns a new row cannot be written without: not null, no default of their own, and
+   * nothing PostgreSQL generates. Adding a row reveals them, because a reader cannot fill in a
+   * column they cannot see.
+   */
+  requiredOrdinals: number[];
 }
 
 /** One local, unapplied change identified by the row it targets. */
@@ -268,6 +274,27 @@ export function describeDataViewChanges(
       };
     }),
   ];
+}
+
+/**
+ * The hidden columns, with every one a new row cannot go without brought back. A reader cannot
+ * fill in a column they cannot see, and the identity and relationship columns a Data View hides
+ * by default are exactly the ones an insertion tends to need.
+ */
+export function withRequiredColumnsRevealed(
+  hidden: readonly string[],
+  editability: DataViewEditability,
+  projection: DataViewProjection,
+  columnNames: readonly string[],
+): string[] {
+  const keys = dataViewColumnKeys(projection, columnNames);
+  const demanded = new Set(
+    editability.requiredOrdinals.flatMap((ordinal) => {
+      const key = keys[ordinal];
+      return key === undefined ? [] : [key];
+    }),
+  );
+  return hidden.filter((key) => !demanded.has(key));
 }
 
 /** Column keys of a projection, in ordinal order. */

@@ -14,6 +14,7 @@ import {
   type DataViewSource,
   dataViewRelationOwning,
   describeDeleteConsequences,
+  withRequiredColumnsRevealed,
 } from "../../rows/src/dataView.js";
 import { localFilterCompletions } from "../../rows/src/filterCompletions.js";
 import { initialDataViewQuery } from "../../rows/src/initialProjection.js";
@@ -141,7 +142,7 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
     projection: { tables: [], columnTable: [] },
     hidden: [],
     status: "loading",
-    editability: { tables: [], columns: [] },
+    editability: { tables: [], columns: [], requiredOrdinals: [] },
     technical: [],
     busy: false,
   };
@@ -201,7 +202,7 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
       state.session = undefined;
       state.payload = undefined;
       state.projection = { tables: [], columnTable: [] };
-      state.editability = { tables: [], columns: [] };
+      state.editability = { tables: [], columns: [], requiredOrdinals: [] };
       state.status = "ready";
       state.message = "The query is empty: add a table with +.";
       state.busy = false;
@@ -465,6 +466,13 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
             return;
           }
           edits.addRow(table.tableOid);
+          // A reader cannot fill in a column they cannot see.
+          state.hidden = withRequiredColumnsRevealed(
+            state.hidden,
+            state.editability,
+            state.projection,
+            state.payload?.columns.map((column) => column.name) ?? [],
+          );
           broadcast();
           return;
         }

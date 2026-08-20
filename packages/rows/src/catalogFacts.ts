@@ -13,7 +13,8 @@ SELECT c.oid::int AS table_oid,
                   'type', format_type(a.atttypid, a.atttypmod),
                   'identity', a.attidentity::text,
                   'generated', a.attgenerated::text,
-                  'notNull', a.attnotnull) ORDER BY a.attnum)
+                  'notNull', a.attnotnull,
+                  'hasDefault', a.atthasdef) ORDER BY a.attnum)
          FROM pg_attribute a
          WHERE a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped), '[]'::json) AS columns,
        COALESCE((
@@ -56,6 +57,7 @@ interface CatalogRow {
     identity: string;
     generated: string;
     notNull: boolean;
+    hasDefault: boolean;
   }>;
   unique_indexes: Array<{ attnums: number[]; primary: boolean }>;
   fk_attnums: number[];
@@ -91,6 +93,7 @@ export async function loadDataViewCatalog(
       identity: column.identity === "a" || column.identity === "d" ? column.identity : "",
       generated: column.generated === "s" || column.generated === "v" ? column.generated : "",
       notNull: column.notNull === true,
+      hasDefault: column.hasDefault === true,
     })),
     uniqueIndexes: (row.unique_indexes ?? []).map((index) => ({
       attnums: (index.attnums ?? []).map(Number),

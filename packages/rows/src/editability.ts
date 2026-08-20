@@ -20,6 +20,16 @@ export interface CatalogColumn {
   identity: "" | "a" | "d";
   generated: "" | "s" | "v";
   notNull: boolean;
+  /** A DEFAULT, a sequence, an identity: PostgreSQL has a value even when nobody gives one. */
+  hasDefault: boolean;
+}
+
+/**
+ * Whether a new row cannot be written without a value for this column. Generated columns and
+ * anything PostgreSQL fills in on its own are not demanded of the reader.
+ */
+export function columnDemandsValue(column: CatalogColumn): boolean {
+  return column.notNull && !column.hasDefault && column.generated === "" && column.identity === "";
 }
 
 export interface CatalogUniqueIndex {
@@ -102,6 +112,8 @@ export function resolveDataViewEditability(
     reason: READ_ONLY_REASONS.computed,
   }));
   const tables: DataViewEditableTable[] = [];
+  // Ordinals a new row cannot go without: revealed the moment a reader adds one.
+  const required: number[] = [];
   const byTable = new Map<number, number[]>();
   fields.forEach((field, ordinal) => {
     if (field.tableID > 0 && field.columnID > 0) {
@@ -161,9 +173,10 @@ export function resolveDataViewEditability(
       const attnum = fields[ordinal]?.columnID ?? 0;
       const column = table.columns.find((candidate) => candidate.attnum === attnum);
       columns[ordinal] = columnPolicy(tableOid, column, key, table.foreignKeyAttnums);
+      if (column && columnDemandsValue(column)) required.push(ordinal);
     }
   }
-  return { tables, columns };
+  return { tables, columns, requiredOrdinals: required };
 }
 
 function identifyingIndex(
