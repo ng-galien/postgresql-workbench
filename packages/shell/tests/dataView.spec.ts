@@ -268,3 +268,40 @@ test("removes the right relation after the tables have been reordered", async ({
   expect(sql).toContain("inventory.quantity");
   expect(sql).toMatch(/FROM\s+shop\.inventory AS inventory/u);
 });
+
+test("puts what is reached for often within reach, and the rest out of the way", async ({
+  page,
+}) => {
+  await openEmpty(page);
+  await add(page, "shop.sales_order");
+
+  // Composing, walking the rows and choosing the columns is the work; reading the SQL and
+  // exporting happen once in a session. The bar is ordered by how often a control is used.
+  const often = page.locator(".toolbar-side-often");
+  const seldom = page.locator(".toolbar-side-seldom");
+  await expect(often.getByTitle("Refresh")).toBeVisible();
+  await expect(often.getByTitle(/^Next page$/u)).toBeVisible();
+  await expect(often.getByTitle(/^(Show or hide columns|Columns \()/u)).toBeVisible();
+  await expect(seldom.getByTitle(/the SQL$/u)).toBeVisible();
+  await expect(seldom.getByTitle("More actions")).toBeVisible();
+});
+
+test("keeps the export formats one step in, so the actions stay readable", async ({ page }) => {
+  await openEmpty(page);
+  await add(page, "shop.sales_order");
+
+  await page.getByTitle("More actions").click();
+  const menu = page.getByRole("menu");
+  // Six near-identical export lines used to bury everything else in this menu.
+  await expect(menu.getByRole("menuitem")).toHaveCount(4);
+
+  await menu.getByRole("menuitem", { name: "Export…" }).click();
+
+  await expect(menu.getByText("Loaded rows")).toBeVisible();
+  await expect(menu.getByText("All rows")).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: "CSV…" })).toHaveCount(2);
+
+  await menu.getByRole("menuitem", { name: "‹ All actions" }).click();
+
+  await expect(menu.getByRole("menuitem", { name: "Export…" })).toBeVisible();
+});

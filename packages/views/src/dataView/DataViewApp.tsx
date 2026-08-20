@@ -270,6 +270,8 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
   const [notice, setNotice] = useState<Notice>();
   const [showSql, setShowSql] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
+  /** Which page of the more-actions menu shows: its actions, or the export formats. */
+  const [exportOpen, setExportOpen] = useState(false);
   const [columnsOpen, setColumnsOpen] = useState(false);
   const [dropActive, setDropActive] = useState(false);
   const [additions, setAdditions] = useState<DataViewAddition[]>();
@@ -558,235 +560,268 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
         post({ type: "data-view/drop-tree" });
       }}
     >
-      <header className="data-view-toolbar">
-        <div className="toolbar-group toolbar-identity">
-          <span
-            className="data-view-association"
-            title={`Connexion Association: ${state.serverName} · ${state.source.database}`}
-          >
-            <span className="codicon codicon-database" aria-hidden="true" />
-            {associationLabel(state.serverName, state.source.database)}
-          </span>
+      <header className="data-view-toolbar" role="toolbar" aria-label="Data view actions">
+        {/*
+          What a reader reaches for most often sits on the left and what they reach for least on
+          the right: composing the query, walking the rows and choosing the columns they want to
+          see are the work; reading the SQL and exporting are what happens once in a session.
+        */}
+        <div className="toolbar-side toolbar-side-often">
+          <div className="toolbar-group toolbar-identity">
+            <span
+              className="data-view-association"
+              title={`Connexion Association: ${state.serverName} · ${state.source.database}`}
+            >
+              <span className="codicon codicon-database" aria-hidden="true" />
+              {associationLabel(state.serverName, state.source.database)}
+            </span>
+          </div>
+
+          <div className="toolbar-group">
+            <IconButton
+              icon={query.editorDirty ? "play" : "refresh"}
+              label={
+                query.editorDirty
+                  ? "Apply the edited query (saving the editor does the same)"
+                  : "Refresh"
+              }
+              onClick={refresh}
+              disabled={disabled}
+              primary={query.editorDirty}
+            />
+            <ResultNavigation
+              state={navigationState}
+              onAction={(action) => post({ type: "data-view/navigate", action })}
+            >
+              <span
+                className="result-navigation-summary"
+                title={payload?.truncated ? payload.truncationReasons.join(", ") : undefined}
+              >
+                {payload ? resultRowSummary(payload) : ""}
+                {payload?.truncated ? (
+                  <span className="codicon codicon-warning" title="Preview truncated" />
+                ) : null}
+                {navigationState.closed ? (
+                  <span
+                    className="codicon codicon-debug-disconnect"
+                    title="Cursor closed; refresh to load again"
+                  />
+                ) : null}
+              </span>
+            </ResultNavigation>
+          </div>
+
+          <div className="toolbar-group">
+            <div className="toolbar-more">
+              <IconButton
+                icon={query.hidden.length > 0 ? "eye-closed" : "list-selection"}
+                label={
+                  query.hidden.length > 0
+                    ? `Columns (${query.hidden.length} hidden)`
+                    : "Show or hide columns"
+                }
+                disabled={!query.structured || columnNames.length === 0}
+                onClick={() => setColumnsOpen((open) => !open)}
+                text={query.hidden.length > 0 ? query.hidden.length : undefined}
+              />
+              {columnsOpen ? (
+                <>
+                  <button
+                    type="button"
+                    className="column-menu-backdrop"
+                    aria-label="Close columns menu"
+                    onClick={() => setColumnsOpen(false)}
+                  />
+                  <div className="column-menu toolbar-menu columns-menu" role="menu">
+                    {[...state.projection.tables.map((_table, index) => index), undefined].map(
+                      (tableIndex) => {
+                        const ordinals = columnNames.flatMap((_name, ordinal) =>
+                          state.projection.columnTable[ordinal] === tableIndex ? [ordinal] : [],
+                        );
+                        if (ordinals.length === 0) return null;
+                        const table =
+                          tableIndex === undefined
+                            ? undefined
+                            : state.projection.tables[tableIndex];
+                        const accent = table ? tableAccent(table.accent) : undefined;
+                        return (
+                          <div
+                            key={table ? table.tableOid : "computed"}
+                            className="columns-menu-group"
+                            style={
+                              accent ? ({ "--column-accent": accent } as CSSProperties) : undefined
+                            }
+                          >
+                            <div className="columns-menu-heading">
+                              {table ? `${table.schema}.${table.name}` : "Computed values"}
+                            </div>
+                            {ordinals.map((ordinal) => {
+                              const name = columnNames[ordinal] ?? "";
+                              const key = columnKeys[ordinal] ?? name;
+                              const hidden = hiddenOrdinals.has(ordinal);
+                              return (
+                                <button
+                                  key={key}
+                                  type="button"
+                                  role="menuitemcheckbox"
+                                  aria-checked={!hidden}
+                                  className="column-menu-item"
+                                  onClick={() =>
+                                    post(
+                                      hidden
+                                        ? { type: "data-view/unhide", column: key }
+                                        : { type: "data-view/hide", column: key },
+                                    )
+                                  }
+                                >
+                                  <span
+                                    className={`codicon codicon-${hidden ? "circle-large-outline" : "pass-filled"}`}
+                                    aria-hidden="true"
+                                  />
+                                  {name}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        );
+                      },
+                    )}
+                    {technicalKeys.length > 0 ? (
+                      <MenuItem
+                        label={`${technicalHidden ? "Show" : "Hide"} ${countLabel(
+                          technicalKeys.length,
+                          "key column",
+                        )}`}
+                        onSelect={() =>
+                          post({ type: "data-view/technical-columns", hidden: !technicalHidden })
+                        }
+                      />
+                    ) : null}
+                    {query.hidden.length > 0 ? (
+                      <MenuItem
+                        label="Show all columns"
+                        onSelect={() => {
+                          setColumnsOpen(false);
+                          post({ type: "data-view/unhide" });
+                        }}
+                      />
+                    ) : null}
+                  </div>
+                </>
+              ) : null}
+            </div>
+          </div>
+          {editable ? (
+            <div className="toolbar-group toolbar-edits">
+              <span
+                className={`toolbar-edit-count${editCount > 0 ? " pending" : ""}`}
+                aria-live="polite"
+                title={countLabel(editCount, "pending change")}
+              >
+                <span className="codicon codicon-edit" aria-hidden="true" />
+                {editCount}
+              </span>
+              <IconButton
+                icon="discard"
+                label="Discard pending changes"
+                disabled={editCount === 0 || state.applying}
+                onClick={() => post({ type: "data-view/discard" })}
+              />
+              <IconButton
+                icon={state.applying ? "sync~spin" : "save"}
+                label="Apply pending changes in one transaction (Ctrl/Cmd+S)"
+                disabled={editCount === 0 || state.applying}
+                primary={editCount > 0}
+                onClick={() => post({ type: "data-view/apply" })}
+              />
+            </div>
+          ) : null}
         </div>
 
-        <div className="toolbar-group toolbar-query">
-          <IconButton
-            icon={query.editorDirty ? "play" : "refresh"}
-            label={
-              query.editorDirty
-                ? "Apply the edited query (saving the editor does the same)"
-                : "Refresh"
-            }
-            onClick={refresh}
-            disabled={disabled}
-            primary={query.editorDirty}
-          />
-          <IconButton
-            icon="code"
-            label={showSql ? "Hide the SQL" : "Show the SQL"}
-            onClick={() => setShowSql((current) => !current)}
-            primary={showSql}
-          />
-          <div className="toolbar-more">
+        <div className="toolbar-side toolbar-side-seldom">
+          <div className="toolbar-group">
             <IconButton
-              icon={query.hidden.length > 0 ? "eye-closed" : "list-selection"}
-              label={
-                query.hidden.length > 0
-                  ? `Columns (${query.hidden.length} hidden)`
-                  : "Show or hide columns"
-              }
-              disabled={!query.structured || columnNames.length === 0}
-              onClick={() => setColumnsOpen((open) => !open)}
-              text={query.hidden.length > 0 ? query.hidden.length : undefined}
+              icon="code"
+              label={showSql ? "Hide the SQL" : "Show the SQL"}
+              onClick={() => setShowSql((current) => !current)}
+              primary={showSql}
             />
-            {columnsOpen ? (
+          </div>
+          <div className="toolbar-group toolbar-more">
+            <IconButton
+              icon="ellipsis"
+              label="More actions"
+              onClick={() => {
+                setExportOpen(false);
+                setMoreOpen((open) => !open);
+              }}
+            />
+            {moreOpen ? (
               <>
                 <button
                   type="button"
                   className="column-menu-backdrop"
-                  aria-label="Close columns menu"
-                  onClick={() => setColumnsOpen(false)}
+                  aria-label="Close menu"
+                  onClick={() => setMoreOpen(false)}
                 />
-                <div className="column-menu toolbar-menu columns-menu" role="menu">
-                  {[...state.projection.tables.map((_table, index) => index), undefined].map(
-                    (tableIndex) => {
-                      const ordinals = columnNames.flatMap((_name, ordinal) =>
-                        state.projection.columnTable[ordinal] === tableIndex ? [ordinal] : [],
-                      );
-                      if (ordinals.length === 0) return null;
-                      const table =
-                        tableIndex === undefined ? undefined : state.projection.tables[tableIndex];
-                      const accent = table ? tableAccent(table.accent) : undefined;
-                      return (
-                        <div
-                          key={table ? table.tableOid : "computed"}
-                          className="columns-menu-group"
-                          style={
-                            accent ? ({ "--column-accent": accent } as CSSProperties) : undefined
-                          }
-                        >
+                <div className="column-menu toolbar-menu" role="menu">
+                  {exportOpen ? (
+                    <>
+                      <MenuItem label="‹ All actions" onSelect={() => setExportOpen(false)} />
+                      {(["loaded", "all"] as const).map((scope) => (
+                        <div className="columns-menu-group" key={scope}>
                           <div className="columns-menu-heading">
-                            {table ? `${table.schema}.${table.name}` : "Computed values"}
+                            {scope === "loaded" ? "Loaded rows" : "All rows"}
                           </div>
-                          {ordinals.map((ordinal) => {
-                            const name = columnNames[ordinal] ?? "";
-                            const key = columnKeys[ordinal] ?? name;
-                            const hidden = hiddenOrdinals.has(ordinal);
-                            return (
-                              <button
-                                key={key}
-                                type="button"
-                                role="menuitemcheckbox"
-                                aria-checked={!hidden}
-                                className="column-menu-item"
-                                onClick={() =>
-                                  post(
-                                    hidden
-                                      ? { type: "data-view/unhide", column: key }
-                                      : { type: "data-view/hide", column: key },
-                                  )
-                                }
-                              >
-                                <span
-                                  className={`codicon codicon-${hidden ? "circle-large-outline" : "pass-filled"}`}
-                                  aria-hidden="true"
-                                />
-                                {name}
-                              </button>
-                            );
-                          })}
+                          {(["csv", "tsv", "json"] as const).map((format) => (
+                            <MenuItem
+                              key={format}
+                              label={`${format.toUpperCase()}…`}
+                              disabled={!payload || payload.columns.length === 0}
+                              onSelect={() => {
+                                setMoreOpen(false);
+                                post({ type: "data-view/export", format, scope });
+                              }}
+                            />
+                          ))}
                         </div>
-                      );
-                    },
+                      ))}
+                    </>
+                  ) : (
+                    <>
+                      <MenuItem
+                        label="Edit the query in a SQL editor…"
+                        onSelect={() => {
+                          setMoreOpen(false);
+                          post({ type: "data-view/edit-query" });
+                        }}
+                      />
+                      <MenuItem
+                        label="Copy loaded rows as TSV"
+                        disabled={!payload || payload.columns.length === 0}
+                        onSelect={() => {
+                          setMoreOpen(false);
+                          if (payload) post({ type: "data-view/copy", text: resultAsTsv(payload) });
+                        }}
+                      />
+                      <MenuItem
+                        label="Export…"
+                        disabled={!payload || payload.columns.length === 0}
+                        onSelect={() => setExportOpen(true)}
+                      />
+                      <MenuItem
+                        label="Open in a new Scratchpad"
+                        onSelect={() => {
+                          setMoreOpen(false);
+                          post({ type: "data-view/open-sql" });
+                        }}
+                      />
+                    </>
                   )}
-                  {technicalKeys.length > 0 ? (
-                    <MenuItem
-                      label={`${technicalHidden ? "Show" : "Hide"} ${countLabel(
-                        technicalKeys.length,
-                        "key column",
-                      )}`}
-                      onSelect={() =>
-                        post({ type: "data-view/technical-columns", hidden: !technicalHidden })
-                      }
-                    />
-                  ) : null}
-                  {query.hidden.length > 0 ? (
-                    <MenuItem
-                      label="Show all columns"
-                      onSelect={() => {
-                        setColumnsOpen(false);
-                        post({ type: "data-view/unhide" });
-                      }}
-                    />
-                  ) : null}
                 </div>
               </>
             ) : null}
           </div>
-        </div>
-
-        <div className="toolbar-group toolbar-navigation">
-          <ResultNavigation
-            state={navigationState}
-            onAction={(action) => post({ type: "data-view/navigate", action })}
-          >
-            <span
-              className="result-navigation-summary"
-              title={payload?.truncated ? payload.truncationReasons.join(", ") : undefined}
-            >
-              {payload ? resultRowSummary(payload) : ""}
-              {payload?.truncated ? (
-                <span className="codicon codicon-warning" title="Preview truncated" />
-              ) : null}
-              {navigationState.closed ? (
-                <span
-                  className="codicon codicon-debug-disconnect"
-                  title="Cursor closed; refresh to load again"
-                />
-              ) : null}
-            </span>
-          </ResultNavigation>
-        </div>
-
-        {editable ? (
-          <div className="toolbar-group toolbar-edits">
-            <span
-              className={`toolbar-edit-count${editCount > 0 ? " pending" : ""}`}
-              aria-live="polite"
-              title={countLabel(editCount, "pending change")}
-            >
-              <span className="codicon codicon-edit" aria-hidden="true" />
-              {editCount}
-            </span>
-            <IconButton
-              icon="discard"
-              label="Discard pending changes"
-              disabled={editCount === 0 || state.applying}
-              onClick={() => post({ type: "data-view/discard" })}
-            />
-            <IconButton
-              icon={state.applying ? "sync~spin" : "save"}
-              label="Apply pending changes in one transaction (Ctrl/Cmd+S)"
-              disabled={editCount === 0 || state.applying}
-              primary={editCount > 0}
-              onClick={() => post({ type: "data-view/apply" })}
-            />
-          </div>
-        ) : null}
-
-        <div className="toolbar-group toolbar-more">
-          <IconButton
-            icon="ellipsis"
-            label="More actions"
-            onClick={() => setMoreOpen((open) => !open)}
-          />
-          {moreOpen ? (
-            <>
-              <button
-                type="button"
-                className="column-menu-backdrop"
-                aria-label="Close menu"
-                onClick={() => setMoreOpen(false)}
-              />
-              <div className="column-menu toolbar-menu" role="menu">
-                <MenuItem
-                  label="Edit the query in a SQL editor…"
-                  onSelect={() => {
-                    setMoreOpen(false);
-                    post({ type: "data-view/edit-query" });
-                  }}
-                />
-                <MenuItem
-                  label="Copy loaded rows as TSV"
-                  disabled={!payload || payload.columns.length === 0}
-                  onSelect={() => {
-                    setMoreOpen(false);
-                    if (payload) post({ type: "data-view/copy", text: resultAsTsv(payload) });
-                  }}
-                />
-                {(["loaded", "all"] as const).flatMap((scope) =>
-                  (["csv", "tsv", "json"] as const).map((format) => (
-                    <MenuItem
-                      key={`${scope}-${format}`}
-                      label={`Export ${scope} rows as ${format.toUpperCase()}…`}
-                      disabled={!payload || payload.columns.length === 0}
-                      onSelect={() => {
-                        setMoreOpen(false);
-                        post({ type: "data-view/export", format, scope });
-                      }}
-                    />
-                  )),
-                )}
-                <MenuItem
-                  label="Open in a new Scratchpad"
-                  onSelect={() => {
-                    setMoreOpen(false);
-                    post({ type: "data-view/open-sql" });
-                  }}
-                />
-              </div>
-            </>
-          ) : null}
         </div>
       </header>
 

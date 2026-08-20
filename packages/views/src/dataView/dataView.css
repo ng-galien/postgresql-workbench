@@ -48,9 +48,34 @@ body,
   min-width: 0;
 }
 
+/*
+ * The bar reads left to right by how often a control is reached for. The two sides are pushed
+ * apart, and each group inside a side is set off by a hairline so nine controls do not read as
+ * one undifferentiated row.
+ */
+.toolbar-side {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.toolbar-side-often {
+  flex: 1 1 auto;
+}
+
+.toolbar-side-seldom {
+  flex: 0 0 auto;
+}
+
+.toolbar-side > .toolbar-group + .toolbar-group {
+  padding-left: 10px;
+  /* The panel border is too faint to separate controls that sit shoulder to shoulder. */
+  border-left: 1px solid color-mix(in srgb, var(--vscode-foreground) 20%, transparent);
+}
+
 .toolbar-identity {
   gap: 8px;
-  margin-right: auto;
 }
 
 .data-view-association .codicon {

@@ -63,6 +63,8 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
   const { connection, relation, emit } = options;
   const hideKeyColumns = options.hideKeyColumns ?? true;
   const serverId = `${connection.host}:${connection.port}/${connection.database}:${connection.user}`;
+  // The chip names the server it is connected to; the database is shown beside it, not in its place.
+  const serverName = `${connection.host}:${connection.port}`;
 
   const session: LocalCodeMonikerSession = await ensureLocalCodeMonikerWorkspace({
     workspaceRoots: [process.cwd()],
@@ -147,7 +149,7 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
       type: "data-view/state",
       state: {
         source,
-        serverName: connection.database,
+        serverName,
         query: {
           uri: queryUri,
           text: query.text,
@@ -194,7 +196,7 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
         client: reader,
         sql: query.effectiveSql(),
         settings: { pageSize: 200, maxCachedRows: 5_000, cursorIdleTimeoutSeconds: 300 },
-        binding: { serverId, serverName: connection.database, database: connection.database },
+        binding: { serverId, serverName, database: connection.database },
         accents,
         checkpoint: () => {},
       });

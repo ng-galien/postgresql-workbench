@@ -38,7 +38,7 @@ export function ResultNavigation({
         onClick={() => onAction("next")}
       />
       <IconButton
-        icon="cloud-download"
+        icon="expand-all"
         label="Load every remaining row (may use significant memory)"
         disabled={!canNavigate("load-all", state)}
         onClick={() => onAction("load-all")}
