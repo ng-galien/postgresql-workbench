@@ -884,9 +884,15 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
                           item.detail.toLowerCase().includes(needle)),
                     );
                     if (items.length === 0) return null;
-                    return (
+                    /**
+                     * Relations that join nothing in the query are every other relation of the
+                     * database: a single list of them is unreadable, so they are shown under the
+                     * schema they belong to, in the order the engine listed them.
+                     */
+                    const groups = [...new Set(items.map((item) => item.group))];
+                    return groups.map((group) => (
                       <div
-                        key={table ? table.tableOid : "others"}
+                        key={table ? table.tableOid : `others:${group ?? ""}`}
                         className="columns-menu-group"
                         style={
                           table
@@ -895,37 +901,41 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
                         }
                       >
                         <div className="columns-menu-heading">
-                          {table ? `${table.schema}.${table.name}` : "Other tables and views"}
+                          {table
+                            ? `${table.schema}.${table.name}`
+                            : (group ?? "Other tables and views")}
                         </div>
-                        {items.map((item) => (
-                          <button
-                            key={`${item.kind}:${item.label}:${item.detail}`}
-                            type="button"
-                            role="menuitem"
-                            className="column-menu-item addition-item"
-                            title={
-                              item.kind !== "table"
-                                ? `Add column ${item.label} (${item.detail})`
-                                : emptyQuery
-                                  ? // Nothing to join to yet: this relation becomes the base.
-                                    `Start the query with ${item.label}`
-                                  : `JOIN ${item.label} through ${item.detail}`
-                            }
-                            onClick={() => {
-                              setAdditions(undefined);
-                              post({ type: "data-view/compose", addition: item });
-                            }}
-                          >
-                            <span
-                              className={`codicon codicon-${item.kind === "table" ? "table" : "symbol-field"}`}
-                              aria-hidden="true"
-                            />
-                            <span className="addition-label">{item.label}</span>
-                            <span className="addition-detail">{item.detail}</span>
-                          </button>
-                        ))}
+                        {items
+                          .filter((item) => item.group === group)
+                          .map((item) => (
+                            <button
+                              key={`${item.kind}:${item.label}:${item.detail}`}
+                              type="button"
+                              role="menuitem"
+                              className="column-menu-item addition-item"
+                              title={
+                                item.kind !== "table"
+                                  ? `Add column ${item.label} (${item.detail})`
+                                  : emptyQuery
+                                    ? // Nothing to join to yet: this relation becomes the base.
+                                      `Start the query with ${item.label}`
+                                    : `JOIN ${item.label} through ${item.detail}`
+                              }
+                              onClick={() => {
+                                setAdditions(undefined);
+                                post({ type: "data-view/compose", addition: item });
+                              }}
+                            >
+                              <span
+                                className={`codicon codicon-${item.kind === "table" ? "table" : "symbol-field"}`}
+                                aria-hidden="true"
+                              />
+                              <span className="addition-label">{item.label}</span>
+                              <span className="addition-detail">{item.detail}</span>
+                            </button>
+                          ))}
                       </div>
-                    );
+                    ));
                   },
                 )}
                 {additions.length === 0 && !choices ? (
@@ -958,7 +968,9 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
                 title={`Remove ${table.schema}.${table.name} from the query`}
                 aria-label={`Remove ${table.schema}.${table.name}`}
                 disabled={!query.structured}
-                onClick={() => post({ type: "data-view/remove-table", tableIndex: index })}
+                onClick={() =>
+                  post({ type: "data-view/remove-table", schema: table.schema, name: table.name })
+                }
               >
                 <span className="codicon codicon-close" aria-hidden="true" />
               </button>

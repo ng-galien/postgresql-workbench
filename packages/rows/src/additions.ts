@@ -88,6 +88,7 @@ export function dataViewAdditions(
       kind: "table",
       label: `${object.schema}.${object.name}`,
       detail: object.kind,
+      group: object.schema,
       payload: relationPayload(object),
     });
   }

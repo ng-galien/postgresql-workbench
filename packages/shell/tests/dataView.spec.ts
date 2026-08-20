@@ -45,8 +45,10 @@ test("opens with nothing, and offers every table as a first one", async ({ page 
   await expect(
     menu.getByTitle("Start the query with shop.customer", { exact: true }),
   ).toBeVisible();
-  // Nothing is reachable from nothing, so every table is offered as a starting point.
-  await expect(menu.getByText("Other tables and views")).toBeVisible();
+  // Nothing is reachable from nothing, so every table is offered as a starting point — under the
+  // schema it belongs to, because a database holds more relations than one list can show.
+  await expect(menu.getByText("shop", { exact: true })).toBeVisible();
+  await expect(menu.getByText("public", { exact: true })).toBeVisible();
 });
 
 test("makes the first relation the base of the query", async ({ page }) => {
@@ -251,11 +253,12 @@ test("removes the right relation after the tables have been reordered", async ({
   await add(page, "shop.inventory");
   await add(page, "shop.product");
 
-  // Moving a table moves its columns; the FROM clause keeps its own order, and the two must not
-  // drift apart to the point where removing one relation takes another's columns.
+  // Moving a table moves its columns, and the badges move with them. The relation a reader then
+  // points at is the one that goes: the click carries its name, not the place it used to hold.
   const [inventory, product] = await page.getByTitle(/its columns carry the same accent/u).all();
   if (!inventory || !product) throw new Error("expected two table badges");
   await inventory.dragTo(product);
+  await expect(page.locator(".data-view-table-badge").first()).toContainText("product");
 
   await page.getByRole("button", { name: "Remove shop.product" }).click();
 

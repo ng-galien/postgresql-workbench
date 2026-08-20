@@ -6,11 +6,12 @@ import {
 import { readPostgresCatalog } from "../../catalog/src/postgresCatalog.js";
 import { composeIntoDataViewQuery, dataViewAdditions } from "../../rows/src/additions.js";
 import type { SqlResultSession } from "../../rows/src/cursor.js";
-import type {
-  DataViewAddition,
-  DataViewCompletion,
-  DataViewProjection,
-  DataViewSource,
+import {
+  type DataViewAddition,
+  type DataViewCompletion,
+  type DataViewProjection,
+  type DataViewSource,
+  dataViewRelationOwning,
 } from "../../rows/src/dataView.js";
 import { localFilterCompletions } from "../../rows/src/filterCompletions.js";
 import { initialDataViewQuery } from "../../rows/src/initialProjection.js";
@@ -330,17 +331,9 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
           );
           return;
         case "data-view/remove-table": {
-          const table = state.projection.tables[request.tableIndex];
-          if (!table) return;
-          await rewrite(
-            query.relationRemoved(
-              table,
-              state.projection.columnTable.flatMap((owner, ordinal) =>
-                owner === request.tableIndex ? [ordinal] : [],
-              ),
-              2,
-            ),
-          );
+          const owning = dataViewRelationOwning(state.projection, request.schema, request.name);
+          if (!owning) return;
+          await rewrite(query.relationRemoved(owning.table, owning.ownedOrdinals, 2));
           return;
         }
         case "data-view/hide":

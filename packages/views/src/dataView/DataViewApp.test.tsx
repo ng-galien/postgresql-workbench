@@ -109,9 +109,12 @@ describe("the Data View", () => {
 
     await userEvent.click(screen.getByRole("button", { name: /Remove shop\.product/u }));
 
+    // The badge names the relation it removes: badges can be reordered, so a position posted with
+    // the click may no longer be the one the reader pointed at.
     expect(harness.lastPost("data-view/remove-table")).toEqual({
       type: "data-view/remove-table",
-      tableIndex: 0,
+      schema: "shop",
+      name: "product",
     });
   });
 

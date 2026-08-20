@@ -119,6 +119,12 @@ export interface DataViewAddition {
   kind: "column" | "table";
   label: string;
   detail: string;
+  /**
+   * Heading this addition belongs under when it relates to no table in the query: its schema.
+   * A database has more relations than a reader can scan in one list, and the schema is how they
+   * already think of them.
+   */
+  group?: string;
   /** Opaque composition payload, echoed back on selection. */
   payload: unknown;
 }
@@ -126,6 +132,29 @@ export interface DataViewAddition {
 /** Identity of a projected column for visibility: table OID (0 for computed values) and label. */
 export function dataViewColumnKey(tableOid: number | undefined, label: string): string {
   return `${tableOid ?? 0}:${label}`;
+}
+
+/**
+ * The relation a removal names, with the ordinals of the columns it owns — what the query model
+ * needs to take it out. Undefined when the projection no longer holds it, which is what a second
+ * click on a badge that has already gone looks like.
+ */
+export function dataViewRelationOwning(
+  projection: DataViewProjection,
+  schema: string,
+  name: string,
+): { table: DataViewProjection["tables"][number]; ownedOrdinals: number[] } | undefined {
+  const index = projection.tables.findIndex(
+    (candidate) => candidate.schema === schema && candidate.name === name,
+  );
+  const table = projection.tables[index];
+  if (!table) return undefined;
+  return {
+    table,
+    ownedOrdinals: projection.columnTable.flatMap((owner, ordinal) =>
+      owner === index ? [ordinal] : [],
+    ),
+  };
 }
 
 /** Column keys of a projection, in ordinal order. */

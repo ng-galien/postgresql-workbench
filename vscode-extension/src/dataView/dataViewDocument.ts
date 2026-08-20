@@ -11,6 +11,7 @@ import {
   type DataViewProjection,
   type DataViewQueryInfo,
   type DataViewSource,
+  dataViewRelationOwning,
   dataViewSourceTitle,
 } from "../../../packages/rows/src/dataView.js";
 import { READ_ONLY_REASONS } from "../../../packages/rows/src/editability.js";
@@ -190,16 +191,10 @@ export class DataViewDocument implements vscode.CustomDocument {
         );
         return;
       case "data-view/remove-table": {
-        const table = this.projection.tables[request.tableIndex];
-        if (!table) return;
+        const owning = dataViewRelationOwning(this.projection, request.schema, request.name);
+        if (!owning) return;
         await this.applyRewrite(
-          this.query.relationRemoved(
-            table,
-            this.projection.columnTable.flatMap((owner, ordinal) =>
-              owner === request.tableIndex ? [ordinal] : [],
-            ),
-            tabSize(),
-          ),
+          this.query.relationRemoved(owning.table, owning.ownedOrdinals, tabSize()),
         );
         return;
       }

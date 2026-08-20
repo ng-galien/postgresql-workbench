@@ -38,8 +38,12 @@ export type DataViewRequest =
   | { type: "data-view/reorder"; from: number; to: number }
   /** Moves every column of one table (index in `projection.tables`) before another table's. */
   | { type: "data-view/reorder-table"; from: number; to: number }
-  /** Removes one table (index in `projection.tables`) and everything that referenced it. */
-  | { type: "data-view/remove-table"; tableIndex: number }
+  /**
+   * Removes one table and everything that referenced it. The table is named, not numbered: the
+   * reader can reorder the badges, so a position posted with the click may no longer be the one
+   * they pointed at by the time the host reads it.
+   */
+  | { type: "data-view/remove-table"; schema: string; name: string }
   /** Asks for everything the composition engine can add, grouped by table in the query. */
   | { type: "data-view/additions" }
   /** Composes one addition into the query; `relationChoice` answers a previous choices response. */

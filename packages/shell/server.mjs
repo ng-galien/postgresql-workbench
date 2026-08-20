@@ -126,6 +126,11 @@ createServer(async (request, response) => {
     const message = JSON.parse(body);
     // A harness that cannot say what it was asked is a harness that cannot be debugged.
     console.log(`→ ${message.type}`);
+    if (process.env.SHELL_REQUEST_LOG)
+      (await import("node:fs")).appendFileSync(
+        process.env.SHELL_REQUEST_LOG,
+        `${JSON.stringify(message)}\n`,
+      );
     await host.handle(message).catch((error) => {
       emit({ type: "data-view/notice", message: String(error), severity: "error" });
     });
