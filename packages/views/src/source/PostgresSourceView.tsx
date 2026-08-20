@@ -1,6 +1,5 @@
 import type { CSSProperties } from "react";
-import type { HighlightedPostgresSource } from "../graph/highlight.js";
-import "../PostgresSourceView.css";
+import type { HighlightedPostgresSource } from "./highlight.js";
 
 type TokenProperties = CSSProperties & {
   "--postgres-token-light"?: string;

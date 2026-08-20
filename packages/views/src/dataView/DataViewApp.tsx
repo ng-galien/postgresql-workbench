@@ -23,6 +23,7 @@ import { nextResultSort, resultAsTsv, resultRowSummary } from "../results/result
 import type { WebviewMessaging } from "../webviewPage.js";
 import type { DataViewRequest, DataViewResponse, DataViewState } from "./protocol.js";
 import { useReorderable } from "./reorder.js";
+import { SqlPanel } from "./SqlPanel.js";
 
 export type DataViewMessaging = WebviewMessaging<DataViewRequest, DataViewResponse>;
 
@@ -532,8 +533,9 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
           />
           <IconButton
             icon="code"
-            label="Edit the query in a SQL editor (completion, formatting); save to apply"
-            onClick={() => post({ type: "data-view/edit-query" })}
+            label={showSql ? "Hide the SQL" : "Show the SQL"}
+            onClick={() => setShowSql((current) => !current)}
+            primary={showSql}
           />
           <div className="toolbar-more">
             <IconButton
@@ -687,10 +689,10 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
               />
               <div className="column-menu toolbar-menu" role="menu">
                 <MenuItem
-                  label={showSql ? "Hide SQL" : "Show SQL"}
+                  label="Edit the query in a SQL editor…"
                   onSelect={() => {
                     setMoreOpen(false);
-                    setShowSql((current) => !current);
+                    post({ type: "data-view/edit-query" });
                   }}
                 />
                 <MenuItem
@@ -995,7 +997,7 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
           ) : null}
         </ol>
       </div>
-      {showSql ? <pre className="data-view-sql">{query.text}</pre> : null}
+      {showSql ? <SqlPanel sql={query.text} onClose={() => setShowSql(false)} /> : null}
       <section className="data-view-grid" aria-label="Rows">
         {payload && payload.columns.length > 0 ? (
           <ResultGrid

@@ -192,18 +192,40 @@ body,
   color: var(--vscode-descriptionForeground);
 }
 
+/* The SQL the view runs, read in the view: a panel of its own height, scrolled inside itself. */
+
 .data-view-sql {
+  display: flex;
   flex: 0 0 auto;
-  max-height: 160px;
-  margin: 0;
-  padding: 6px 10px;
-  overflow: auto;
-  color: var(--vscode-foreground);
+  flex-direction: column;
+  min-height: 0;
+  max-height: 240px;
   background: var(--vscode-textCodeBlock-background);
   border-bottom: 1px solid var(--vscode-panel-border);
-  font-family: var(--vscode-editor-font-family);
-  font-size: var(--vscode-editor-font-size);
-  white-space: pre;
+}
+
+.data-view-sql-bar {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 6px 2px 10px;
+  border-bottom: 1px solid var(--vscode-panel-border);
+}
+
+.data-view-sql-title {
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.data-view-sql-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 4px 0 6px;
 }
 
 /* Grid fills the remaining height */

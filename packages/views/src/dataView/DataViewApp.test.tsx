@@ -154,4 +154,27 @@ describe("the Data View", () => {
       to: 1,
     });
   });
+
+  it("shows the SQL it runs, in the view, and hides it again", async () => {
+    open();
+    const toggle = screen.getByRole("button", { name: /Show the SQL/u });
+
+    await userEvent.click(toggle);
+
+    const panel = screen.getByRole("region", { name: "Query SQL" });
+    expect(within(panel).getByText(/shop\.product/u)).toBeDefined();
+
+    await userEvent.click(within(panel).getByRole("button", { name: /Hide the SQL/u }));
+    expect(screen.queryByRole("region", { name: "Query SQL" })).toBeNull();
+  });
+
+  it("offers one control for the SQL, not two", async () => {
+    open();
+
+    await userEvent.click(screen.getByRole("button", { name: /More actions/u }));
+
+    // The panel is the toolbar's; the menu keeps only what still needs an editor.
+    expect(screen.queryByRole("menuitem", { name: /Show SQL/u })).toBeNull();
+    expect(screen.getByRole("menuitem", { name: /Edit the query in a SQL editor/u })).toBeDefined();
+  });
 });

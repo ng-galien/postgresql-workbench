@@ -4,10 +4,10 @@ import {
   type HighlightedPostgresSource,
   highlightPostgresSource,
   plainPostgresSource,
-} from "../graph/highlight.js";
+} from "../../source/highlight.js";
+import { PostgresSourceView } from "../../source/PostgresSourceView.js";
 import type { WorkbenchGraphSourcePreview } from "../protocol.js";
 import { post } from "../vscodeApi.js";
-import { PostgresSourceView } from "./PostgresSourceView.js";
 
 function SourceInspector({
   preview,
