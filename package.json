@@ -43,7 +43,8 @@
     "package:ext": "npm --prefix vscode-extension run package",
     "marketplace:media": "node scripts/marketplace/media.mjs",
     "site:build": "node scripts/site/build.mjs",
-    "site:dev": "node scripts/site/dev.mjs"
+    "site:dev": "node scripts/site/dev.mjs",
+    "dev:data-view": "node packages/views/dev/server.mjs"
   },
   "dependencies": {
     "@code-moniker/client": "0.7.1",

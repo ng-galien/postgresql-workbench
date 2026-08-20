@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import type { DataViewCompletion } from "../../../../packages/rows/src/dataView.js";
+import { localFilterCompletions } from "../../../../packages/rows/src/filterCompletions.js";
 import { type SqlQueryAnalysis, setWhere } from "../../../../packages/sql/src/query/analysis.js";
 import { scanPostgresSql } from "../../../../packages/sql/src/text/sqlLexing.js";
 
@@ -81,32 +82,4 @@ export async function completeDataViewFilter(options: {
       replaceLength: Math.max(0, replaceLength),
     };
   });
-}
-
-/** Fallback when the SQL authoring server has no context: the projection's own columns. */
-export function localFilterCompletions(
-  analysis: SqlQueryAnalysis,
-  text: string,
-  offset: number,
-  replaceLength: number,
-): DataViewCompletion[] {
-  const fragment = text.slice(Math.max(0, offset - replaceLength), offset).toLowerCase();
-  const seen = new Set<string>();
-  const items: DataViewCompletion[] = [];
-  for (const target of analysis.targets) {
-    for (const candidate of [target.label, target.expression]) {
-      if (seen.has(candidate) || (fragment && !candidate.toLowerCase().includes(fragment))) {
-        continue;
-      }
-      seen.add(candidate);
-      items.push({
-        label: candidate,
-        insertText: candidate,
-        kind: "Field",
-        detail: candidate === target.label ? "column" : "projection",
-        replaceLength,
-      });
-    }
-  }
-  return items;
 }
