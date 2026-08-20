@@ -3,6 +3,7 @@ import { quoteSqlIdentifierIfNeeded } from "../../sql/src/text/identifiers.js";
 import type {
   DataViewEdit,
   DataViewEditability,
+  DataViewEditableTable,
   DataViewRowInsertion,
   DataViewRowRemoval,
 } from "./dataView.js";
@@ -13,6 +14,46 @@ export interface DataViewRowUpdate {
   values: (string | null)[];
   /** Human description used in conflict messages: `shop.address (id = 42)`. */
   target: string;
+}
+
+/** The table a change is written to, or why it can no longer be written. */
+function writableTable(
+  editability: DataViewEditability,
+  tableOid: number,
+  what: string,
+): DataViewEditableTable {
+  const table = editability.tables.find((candidate) => candidate.tableOid === tableOid);
+  if (!table) throw new Error(`The ${what} row no longer belongs to an editable table.`);
+  return table;
+}
+
+/** `schema.name`, each part quoted only where PostgreSQL needs it. */
+function qualifiedName(table: DataViewEditableTable): string {
+  return `${quoteSqlIdentifierIfNeeded(table.schema)}.${quoteSqlIdentifierIfNeeded(table.name)}`;
+}
+
+/** How a row is named to a reader when a write finds it changed, gone, or ambiguous. */
+function rowTarget(table: DataViewEditableTable, key: readonly (string | null)[]): string {
+  return `${table.schema}.${table.name} (${table.keyColumns
+    .map((column, index) => `${column} = ${key[index] ?? "NULL"}`)
+    .join(", ")})`;
+}
+
+/**
+ * The `WHERE` that picks out exactly one row by its key. A null part of a key is matched, not
+ * bound: `= NULL` is never true.
+ */
+function keyPredicates(
+  table: DataViewEditableTable,
+  key: readonly (string | null)[],
+  bind: (value: string, type: string) => string,
+): string[] {
+  return table.keyColumns.map((column, index) => {
+    const value = key[index] ?? null;
+    return value === null
+      ? `${quoteSqlIdentifierIfNeeded(column)} IS NULL`
+      : `${quoteSqlIdentifierIfNeeded(column)} = ${bind(value, table.keyTypes[index] ?? "text")}`;
+  });
 }
 
 /**
@@ -32,8 +73,7 @@ export function buildRowUpdates(
   return rows.map((rowEdits) => {
     const first = rowEdits[0];
     if (!first) throw new Error("Empty edit group");
-    const table = editability.tables.find((candidate) => candidate.tableOid === first.tableOid);
-    if (!table) throw new Error("The edited row no longer belongs to an editable table.");
+    const table = writableTable(editability, first.tableOid, "edited");
     const values: (string | null)[] = [];
     const bind = (value: string | null, type: string) => {
       values.push(value);
@@ -44,23 +84,14 @@ export function buildRowUpdates(
       if (!policy?.editable) throw new Error(`Column ${edit.column} is not editable.`);
       return `${quoteSqlIdentifierIfNeeded(edit.column)} = ${bind(edit.value, policy.dataType)}`;
     });
-    const identity = table.keyColumns.map((column, index) => {
-      const value = first.key[index] ?? null;
-      const type = table.keyTypes[index] ?? "text";
-      return value === null
-        ? `${quoteSqlIdentifierIfNeeded(column)} IS NULL`
-        : `${quoteSqlIdentifierIfNeeded(column)} = ${bind(value, type)}`;
-    });
+    const identity = keyPredicates(table, first.key, bind);
     const guards = rowEdits.map((edit) => {
       const policy = editability.columns[edit.ordinal];
       if (!policy?.editable) throw new Error(`Column ${edit.column} is not editable.`);
       return `${quoteSqlIdentifierIfNeeded(edit.column)} IS NOT DISTINCT FROM ${bind(edit.original, policy.dataType)}`;
     });
-    const text = `UPDATE ${quoteSqlIdentifierIfNeeded(table.schema)}.${quoteSqlIdentifierIfNeeded(table.name)}\nSET ${assignments.join(", ")}\nWHERE ${[...identity, ...guards].join("\n  AND ")}`;
-    const target = `${table.schema}.${table.name} (${table.keyColumns
-      .map((column, index) => `${column} = ${first.key[index] ?? "NULL"}`)
-      .join(", ")})`;
-    return { text, values, target };
+    const text = `UPDATE ${qualifiedName(table)}\nSET ${assignments.join(", ")}\nWHERE ${[...identity, ...guards].join("\n  AND ")}`;
+    return { text, values, target: rowTarget(table, first.key) };
   });
 }
 
@@ -75,22 +106,16 @@ export function buildRowDeletes(
   editability: DataViewEditability,
 ): DataViewRowUpdate[] {
   return removals.map((removal) => {
-    const table = editability.tables.find((candidate) => candidate.tableOid === removal.tableOid);
-    if (!table) throw new Error("The removed row no longer belongs to an editable table.");
+    const table = writableTable(editability, removal.tableOid, "removed");
     const values: (string | null)[] = [];
-    const identity = table.keyColumns.map((column, index) => {
-      const value = removal.key[index] ?? null;
-      const type = table.keyTypes[index] ?? "text";
-      if (value === null) return `${quoteSqlIdentifierIfNeeded(column)} IS NULL`;
+    const identity = keyPredicates(table, removal.key, (value, type) => {
       values.push(value);
-      return `${quoteSqlIdentifierIfNeeded(column)} = $${values.length}::${type}`;
+      return `$${values.length}::${type}`;
     });
     return {
-      text: `DELETE FROM ${quoteSqlIdentifierIfNeeded(table.schema)}.${quoteSqlIdentifierIfNeeded(table.name)}\nWHERE ${identity.join("\n  AND ")}`,
+      text: `DELETE FROM ${qualifiedName(table)}\nWHERE ${identity.join("\n  AND ")}`,
       values,
-      target: `${table.schema}.${table.name} (${table.keyColumns
-        .map((column, index) => `${column} = ${removal.key[index] ?? "NULL"}`)
-        .join(", ")})`,
+      target: rowTarget(table, removal.key),
     };
   });
 }
@@ -105,8 +130,7 @@ export function buildRowInserts(
   editability: DataViewEditability,
 ): DataViewRowUpdate[] {
   return insertions.map((insertion) => {
-    const table = editability.tables.find((candidate) => candidate.tableOid === insertion.tableOid);
-    if (!table) throw new Error("The added row no longer belongs to an editable table.");
+    const table = writableTable(editability, insertion.tableOid, "added");
     const typeOf = (column: string) => {
       const policy = editability.columns.find(
         (candidate) =>
@@ -117,7 +141,7 @@ export function buildRowInserts(
       return policy?.editable ? policy.dataType : "text";
     };
     const filled = Object.entries(insertion.values);
-    const qualified = `${quoteSqlIdentifierIfNeeded(table.schema)}.${quoteSqlIdentifierIfNeeded(table.name)}`;
+    const qualified = qualifiedName(table);
     const target = `${table.schema}.${table.name} (a new row)`;
     if (filled.length === 0) {
       return { text: `INSERT INTO ${qualified} DEFAULT VALUES`, values: [], target };

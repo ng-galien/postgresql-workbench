@@ -11,15 +11,16 @@ import { countLabel } from "../../../rows/src/countLabel.js";
 import type { DataViewAddition, DataViewCompletion } from "../../../rows/src/dataView.js";
 import {
   dataViewColumnKeys,
+  dataViewKeysAt,
   dataViewRowKey,
   dataViewSourceTitle,
+  dataViewWritableTable,
   describeDataViewChanges,
 } from "../../../rows/src/dataView.js";
 import { hasWorkbenchTreeDrag } from "../cockpit/dragAndDrop.js";
-import type { GridEditing } from "../results/CellEditor.js";
 import { IconButton } from "../results/IconButton.js";
 import { Modal } from "../results/Modal.js";
-import { type GridLayout, ResultGrid } from "../results/ResultGrid.js";
+import { type GridEditing, type GridLayout, ResultGrid } from "../results/ResultGrid.js";
 import { ResultNavigation } from "../results/ResultNavigation.js";
 import { nextResultSort, resultAsTsv, resultRowSummary } from "../results/resultFormatting.js";
 import type { WebviewMessaging } from "../webviewPage.js";
@@ -32,6 +33,21 @@ export type DataViewMessaging = WebviewMessaging<DataViewRequest, DataViewRespon
 interface Notice {
   message: string;
   severity: "info" | "error";
+}
+
+/**
+ * The ground behind an open menu: a click anywhere else closes it. Every toolbar menu shows one,
+ * so the dismissal a reader expects does not depend on which menu they opened.
+ */
+function MenuBackdrop({ onClose }: { onClose: () => void }) {
+  return (
+    <button
+      type="button"
+      className="column-menu-backdrop"
+      aria-label="Close menu"
+      onClick={onClose}
+    />
+  );
 }
 
 function MenuItem({
@@ -321,15 +337,17 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
     return () => window.clearTimeout(timer);
   }, [notice]);
 
-  const anyMenuOpen = columnsOpen || moreOpen || additions !== undefined;
+  const anyMenuOpen = columnsOpen || moreOpen || editsOpen || additions !== undefined;
   useEffect(() => {
     if (!anyMenuOpen) return;
-    // A menu a reader opened is a menu they can dismiss without aiming at anything.
+    // A menu a reader opened is a menu they can dismiss without aiming at anything — every menu,
+    // or Escape becomes a thing that works on some of them.
     // React's KeyboardEvent shadows the DOM one this listener receives.
     const dismiss = (event: globalThis.KeyboardEvent) => {
       if (event.key !== "Escape") return;
       setColumnsOpen(false);
       setMoreOpen(false);
+      setEditsOpen(false);
       setAdditions(undefined);
       setChoices(undefined);
     };
@@ -346,27 +364,23 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
     const editsByRow = new Map(
       state.edits.map((edit) => [`${edit.ordinal}:${dataViewRowKey(edit)}`, edit] as const),
     );
-    // Rows go away one table at a time; a join gives the grid no table to take them from.
-    const onlyTable =
-      state.editability.tables.length === 1 ? state.editability.tables[0] : undefined;
+    // Rows go one table at a time; a join gives the grid no table to take them from or put them in.
+    const writable = dataViewWritableTable(state.editability);
+    const onlyTable = "reason" in writable ? undefined : writable;
     const removedKeys = new Set(state.removedRows.map((row) => dataViewRowKey(row)));
-    const rowKeyIn = (
+    /** Which stored row a grid row is, for one of the tables the query projects. */
+    const identityOf = (
       table: { tableOid: number; keyOrdinals: number[] },
       row: readonly DebugResultCell[],
-    ) =>
-      dataViewRowKey({
-        tableOid: table.tableOid,
-        key: table.keyOrdinals.map((keyOrdinal) => row[keyOrdinal]?.value ?? null),
-      });
+    ) => ({
+      tableOid: table.tableOid,
+      key: table.keyOrdinals.map((keyOrdinal) => row[keyOrdinal]?.value ?? null),
+    });
     const rowIdentity = (row: readonly DebugResultCell[], ordinal: number) => {
       const policy = state.editability.columns[ordinal];
       if (!policy?.editable) return undefined;
       const table = tablesByOid.get(policy.tableOid);
-      if (!table) return undefined;
-      return {
-        tableOid: table.tableOid,
-        key: table.keyOrdinals.map((keyOrdinal) => row[keyOrdinal]?.value ?? null),
-      };
+      return table ? identityOf(table, row) : undefined;
     };
     return {
       policies: state.editability.columns,
@@ -393,24 +407,16 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
       ...(onlyTable
         ? {
             rows: {
-              isRemoved: (row) => {
-                const key = rowKeyIn(onlyTable, row);
-                return key !== undefined && removedKeys.has(key);
-              },
-              toggleRemoval: (row) => {
-                const key = onlyTable.keyOrdinals.map(
-                  (keyOrdinal) => row[keyOrdinal]?.value ?? null,
-                );
-                messaging.post({
-                  type: "data-view/remove-row",
-                  row: { tableOid: onlyTable.tableOid, key },
-                });
-              },
+              // Asked per rendered row on every scroll frame; no row removed is the usual state.
+              isRemoved: (row) =>
+                removedKeys.size > 0 && removedKeys.has(dataViewRowKey(identityOf(onlyTable, row))),
+              toggleRemoval: (row) =>
+                messaging.post({ type: "data-view/remove-row", row: identityOf(onlyTable, row) }),
               added: state.addedRows,
               add: () => messaging.post({ type: "data-view/add-row" }),
               drop: (localId) => messaging.post({ type: "data-view/drop-row", localId }),
-              fill: (localId, column, value) =>
-                messaging.post({ type: "data-view/fill-row", localId, column, value }),
+              fill: (localId, values) =>
+                messaging.post({ type: "data-view/fill-row", localId, values }),
             },
           }
         : {}),
@@ -445,16 +451,10 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
   }
 
   const payload = state.payload;
-  /**
-   * Rows come in one table at a time, exactly as they are added one at a time: there is nowhere
-   * to put them without a table, and no way to choose between two.
-   */
+  // Rows come in one table at a time, exactly as they are added one at a time.
+  const writableTable = dataViewWritableTable(state.editability);
   const importable =
-    state.editability.tables.length === 1
-      ? undefined
-      : state.editability.tables.length === 0
-        ? "Import rows: add a table to the query first."
-        : "Import rows: the query joins several tables, and rows go into one.";
+    "reason" in writableTable ? `Rows can only be imported ${writableTable.reason}` : undefined;
   const navigation = payload?.navigation;
   // The same rules the Scratchpad output applies, read from the one place that states them.
   const navigationState = {
@@ -482,10 +482,7 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
   const columnKeys = dataViewColumnKeys(state.projection, columnNames);
   // Identity and relationship values: what a reader who does not write SQL has no use for. The
   // host decides whether they start hidden; the view only offers to flip them.
-  const technicalKeys = state.editability.technicalOrdinals.flatMap((ordinal) => {
-    const key = columnKeys[ordinal];
-    return key === undefined ? [] : [key];
-  });
+  const technicalKeys = dataViewKeysAt(columnKeys, state.editability.technicalOrdinals);
   const technicalHidden =
     technicalKeys.length > 0 && technicalKeys.every((key) => query.hidden.includes(key));
 
@@ -675,12 +672,7 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
               />
               {columnsOpen ? (
                 <>
-                  <button
-                    type="button"
-                    className="column-menu-backdrop"
-                    aria-label="Close columns menu"
-                    onClick={() => setColumnsOpen(false)}
-                  />
+                  <MenuBackdrop onClose={() => setColumnsOpen(false)} />
                   <div className="column-menu toolbar-menu columns-menu" role="menu">
                     {[...state.projection.tables.map((_table, index) => index), undefined].map(
                       (tableIndex) => {
@@ -780,12 +772,7 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
               </button>
               {editsOpen && editCount > 0 ? (
                 <>
-                  <button
-                    type="button"
-                    className="column-menu-backdrop"
-                    aria-label="Close menu"
-                    onClick={() => setEditsOpen(false)}
-                  />
+                  <MenuBackdrop onClose={() => setEditsOpen(false)} />
                   <div className="column-menu toolbar-menu pending-edits">
                     <div className="columns-menu-heading">
                       {countLabel(editCount, "change")} waiting to be applied
@@ -876,12 +863,7 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
             />
             {moreOpen ? (
               <>
-                <button
-                  type="button"
-                  className="column-menu-backdrop"
-                  aria-label="Close menu"
-                  onClick={() => setMoreOpen(false)}
-                />
+                <MenuBackdrop onClose={() => setMoreOpen(false)} />
                 <div className="column-menu toolbar-menu" role="menu">
                   <MenuItem
                     label="Edit the query in a SQL editor…"
@@ -977,12 +959,7 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
           />
           {additions ? (
             <>
-              <button
-                type="button"
-                className="column-menu-backdrop"
-                aria-label="Close"
-                onClick={() => setAdditions(undefined)}
-              />
+              <MenuBackdrop onClose={() => setAdditions(undefined)} />
               <div className="column-menu additions-menu" role="menu">
                 {choices ? (
                   <div className="columns-menu-group">
@@ -1051,8 +1028,11 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
                      * database: a single list of them is unreadable, so they are shown under the
                      * schema they belong to, in the order the engine listed them.
                      */
-                    const groups = [...new Set(items.map((item) => item.group))];
-                    return groups.map((group) => (
+                    const byGroup = new Map<string | undefined, DataViewAddition[]>();
+                    for (const item of items) {
+                      byGroup.set(item.group, [...(byGroup.get(item.group) ?? []), item]);
+                    }
+                    return [...byGroup].map(([group, groupItems]) => (
                       <div
                         key={table ? table.tableOid : `others:${group ?? ""}`}
                         className="columns-menu-group"
@@ -1067,35 +1047,33 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
                             ? `${table.schema}.${table.name}`
                             : (group ?? "Other tables and views")}
                         </div>
-                        {items
-                          .filter((item) => item.group === group)
-                          .map((item) => (
-                            <button
-                              key={`${item.kind}:${item.label}:${item.detail}`}
-                              type="button"
-                              role="menuitem"
-                              className="column-menu-item addition-item"
-                              title={
-                                item.kind !== "table"
-                                  ? `Add column ${item.label} (${item.detail})`
-                                  : emptyQuery
-                                    ? // Nothing to join to yet: this relation becomes the base.
-                                      `Start the query with ${item.label}`
-                                    : `JOIN ${item.label} through ${item.detail}`
-                              }
-                              onClick={() => {
-                                setAdditions(undefined);
-                                post({ type: "data-view/compose", addition: item });
-                              }}
-                            >
-                              <span
-                                className={`codicon codicon-${item.kind === "table" ? "table" : "symbol-field"}`}
-                                aria-hidden="true"
-                              />
-                              <span className="addition-label">{item.label}</span>
-                              <span className="addition-detail">{item.detail}</span>
-                            </button>
-                          ))}
+                        {groupItems.map((item) => (
+                          <button
+                            key={`${item.kind}:${item.label}:${item.detail}`}
+                            type="button"
+                            role="menuitem"
+                            className="column-menu-item addition-item"
+                            title={
+                              item.kind !== "table"
+                                ? `Add column ${item.label} (${item.detail})`
+                                : emptyQuery
+                                  ? // Nothing to join to yet: this relation becomes the base.
+                                    `Start the query with ${item.label}`
+                                  : `JOIN ${item.label} through ${item.detail}`
+                            }
+                            onClick={() => {
+                              setAdditions(undefined);
+                              post({ type: "data-view/compose", addition: item });
+                            }}
+                          >
+                            <span
+                              className={`codicon codicon-${item.kind === "table" ? "table" : "symbol-field"}`}
+                              aria-hidden="true"
+                            />
+                            <span className="addition-label">{item.label}</span>
+                            <span className="addition-detail">{item.detail}</span>
+                          </button>
+                        ))}
                       </div>
                     ));
                   },

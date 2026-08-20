@@ -2,6 +2,7 @@ import { createRoot } from "react-dom/client";
 import { DataViewApp, type DataViewMessaging } from "../../views/src/dataView/DataViewApp.js";
 import dataViewStyles from "../../views/src/dataView/dataView.css";
 import type { DataViewRequest, DataViewResponse } from "../../views/src/dataView/protocol.js";
+import modalStyles from "../../views/src/results/modal.css";
 import { resultViewStyles } from "../../views/src/results/resultStyles.js";
 import { postgresSourceStyles } from "../../views/src/source/sourceStyles.js";
 import vscodeTheme from "./vscodeTheme.css";
@@ -49,7 +50,7 @@ events.onmessage = (event) => {
 document.body.classList.add("vscode-dark");
 
 const style = document.createElement("style");
-style.textContent = `${vscodeTheme}\n${resultViewStyles}\n${postgresSourceStyles}\n${dataViewStyles}\n${HARNESS_STYLES}`;
+style.textContent = `${vscodeTheme}\n${resultViewStyles}\n${postgresSourceStyles}\n${modalStyles}\n${dataViewStyles}\n${HARNESS_STYLES}`;
 document.head.append(style);
 
 const container = document.getElementById("root");

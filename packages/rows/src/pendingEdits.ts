@@ -6,6 +6,8 @@ import {
   type DataViewRowInsertion,
   type DataViewRowRemoval,
   dataViewRowKey,
+  dataViewWritableTable,
+  describeDeleteConsequences,
   sameDataViewRow,
 } from "./dataView.js";
 import { READ_ONLY_REASONS } from "./editability.js";
@@ -136,24 +138,38 @@ export class PendingEdits {
 
   /**
    * Takes a whole row away, or puts it back if it was already taken. Cell edits held on that row
-   * go with it: there is nothing to update in a row that is about to be deleted.
+   * go with it: there is nothing to update in a row that is about to be deleted. Answers with
+   * what the deletion drags along, so a reader hears it now rather than when the write fails.
    */
-  toggleRemoval(row: DataViewRowRemoval): void {
+  toggleRemoval(
+    row: DataViewRowRemoval,
+    editability: DataViewEditability,
+  ): { held: true; consequences: string[] } | { held: false; reason: string } {
+    const table = dataViewWritableTable(editability);
+    if ("reason" in table)
+      return { held: false, reason: `Rows can only be taken away ${table.reason}` };
     const key = dataViewRowKey(row);
-    if (this.isRemoved(row)) {
-      this.removals = this.removals.filter((candidate) => dataViewRowKey(candidate) !== key);
-      return;
+    const index = this.removals.findIndex((candidate) => dataViewRowKey(candidate) === key);
+    if (index >= 0) {
+      this.removals.splice(index, 1);
+      return { held: true, consequences: [] };
     }
     this.items = this.items.filter((candidate) => dataViewRowKey(candidate) !== key);
     this.removals.push(row);
+    return { held: true, consequences: describeDeleteConsequences(table) };
   }
 
-  /** Adds an empty row to fill in, and answers with the identity the grid will call it by. */
-  addRow(tableOid: number): string {
+  /**
+   * Adds an empty row to fill in, or says why it cannot be added. Rows go into one table at a
+   * time: there is nowhere to put them without one, and no way to choose between two — the same
+   * rule for every surface, worded once.
+   */
+  addRow(editability: DataViewEditability): { held: true } | { held: false; reason: string } {
+    const table = dataViewWritableTable(editability);
+    if ("reason" in table) return { held: false, reason: `Rows can only be added ${table.reason}` };
     this.added += 1;
-    const localId = `new-${this.added}`;
-    this.insertions.push({ tableOid, localId, values: {} });
-    return localId;
+    this.insertions.push({ tableOid: table.tableOid, localId: `new-${this.added}`, values: {} });
+    return { held: true };
   }
 
   /** Takes back a row that was added but never written. */
@@ -161,12 +177,14 @@ export class PendingEdits {
     this.insertions = this.insertions.filter((row) => row.localId !== localId);
   }
 
-  /** Fills one column of an added row; clearing it back to nothing leaves it to PostgreSQL. */
-  fillRow(localId: string, column: string, value: string | null): void {
+  /** Fills columns of an added row; clearing one back to nothing leaves it to PostgreSQL. */
+  fillRow(localId: string, values: Record<string, string | null>): void {
     const row = this.insertions.find((candidate) => candidate.localId === localId);
     if (!row) return;
-    if (value === null) delete row.values[column];
-    else row.values[column] = value;
+    for (const [column, value] of Object.entries(values)) {
+      if (value === null) delete row.values[column];
+      else row.values[column] = value;
+    }
   }
 
   clear(): void {
@@ -176,17 +194,22 @@ export class PendingEdits {
   }
 
   /**
-   * Lets go of every change whose table the query no longer writes to, and says how many were
-   * let go. A change is held against a table; once the reader has composed that table away there
-   * is nowhere to write it, and keeping it only fails later with a puzzling message.
+   * Lets go of every change whose table the query no longer writes to, and says so in a sentence
+   * a surface can show as it likes. A change is held against a table; once the reader has
+   * composed that table away there is nowhere to write it, and keeping it only fails later with
+   * a puzzling message.
    */
-  forget(editability: DataViewEditability): number {
+  forget(editability: DataViewEditability): string | undefined {
     const writable = new Set(editability.tables.map((table) => table.tableOid));
     const before = this.size;
     this.items = this.items.filter((edit) => writable.has(edit.tableOid));
     this.removals = this.removals.filter((removal) => writable.has(removal.tableOid));
     this.insertions = this.insertions.filter((row) => writable.has(row.tableOid));
-    return before - this.size;
+    const forgotten = before - this.size;
+    if (forgotten === 0) return undefined;
+    return `${countLabel(forgotten, "change")} let go: the query no longer writes to the table ${
+      forgotten === 1 ? "it was" : "they were"
+    } held against.`;
   }
 
   /**
@@ -221,9 +244,7 @@ export class PendingEdits {
       throw error;
     }
     const applied = statements.length;
-    this.items = [];
-    this.removals = [];
-    this.insertions = [];
+    this.clear();
     return applied;
   }
 }

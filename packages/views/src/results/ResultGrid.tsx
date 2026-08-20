@@ -11,8 +11,9 @@ import {
 } from "react";
 import type { DebugResultCell } from "../../../dap/src/debugger/launch/index.js";
 import { clamp } from "../../../rows/src/clamp.js";
+import type { DataViewColumnPolicy, DataViewEdit } from "../../../rows/src/dataView.js";
 import type { ResultTable } from "../../../rows/src/resultPayload.js";
-import { CellEditor, type GridEditing } from "./CellEditor.js";
+import { CellEditor } from "./CellEditor.js";
 import {
   columnWidthsCh,
   formattedCellValue,
@@ -37,6 +38,40 @@ interface ScrollbarGeometry {
   thumbTop: number;
   maxScrollTop: number;
   maxThumbTop: number;
+}
+
+/** Editing contract handed to the grid by a host that owns the pending edits. */
+export interface GridEditing {
+  policies: readonly DataViewColumnPolicy[];
+  /** The pending edit shown in a cell, if any. */
+  editFor(
+    row: readonly DebugResultCell[],
+    rowIndex: number,
+    ordinal: number,
+  ): DataViewEdit | undefined;
+  onEdit(
+    row: readonly DebugResultCell[],
+    rowIndex: number,
+    ordinal: number,
+    value: string | null,
+    original: string | null,
+  ): void;
+  /**
+   * Whole rows, when there is exactly one table to write them to. A grid over a join can still
+   * have its cells edited; which table a row would be taken from is not for the grid to guess.
+   */
+  rows?: {
+    /** Whether this row is one the reader took away, and is shown struck through. */
+    isRemoved(row: readonly DebugResultCell[]): boolean;
+    /** Takes this row away, or puts it back. */
+    toggleRemoval(row: readonly DebugResultCell[]): void;
+    /** Rows the reader added; they live below the loaded ones until the changes are applied. */
+    added: readonly { localId: string; values: Record<string, string | null> }[];
+    add(): void;
+    drop(localId: string): void;
+    /** Fills columns of an added row; null leaves a column to PostgreSQL. */
+    fill(localId: string, values: Record<string, string | null>): void;
+  };
 }
 
 export interface ResultGridProps {
@@ -118,6 +153,8 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
     payload.columns,
     (column) => `${column.name}:${column.dataTypeId}:${column.typeName ?? ""}`,
   ).filter(({ ordinal }) => isVisible(ordinal));
+  // What a row spans: the visible columns, plus the gutter when whole rows can be acted on.
+  const bodyColumnCount = columns.length + (editing?.rows ? 1 : 0);
   const rows = useMemo(
     () => (serverSort ? payload.rows : sortedResultRows(payload.rows, sort)),
     [payload.rows, sort, serverSort],
@@ -305,33 +342,30 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
               const cell = (event.target as HTMLElement).closest<HTMLElement>("td[data-column]");
               if (!cell) return;
               const ordinal = Number(cell.dataset.column);
-              const reachable = columns
-                .filter((column) => isVisible(column.ordinal))
-                .map((column) => column.ordinal);
+              const reachable = columns.map((column) => column.ordinal);
               const from = reachable.indexOf(ordinal);
               if (from < 0) return;
-              const values = pasted.replace(/\r?\n$/u, "").split("\t");
-              const fill = (offset: number): number | undefined => reachable[from + offset];
               const addedRow = cell.dataset.addedRow;
-              if (addedRow !== undefined) {
-                event.preventDefault();
-                values.forEach((value, offset) => {
-                  const target = fill(offset);
-                  const column = target === undefined ? undefined : payload.columns[target];
-                  if (!column || !editing.policies[target ?? -1]?.editable) return;
-                  editing.rows?.fill(addedRow, column.name, value);
-                });
-                return;
-              }
               const rowIndex = Number(cell.dataset.row);
               const row = rows[rowIndex];
-              if (!row) return;
+              // Where a pasted value lands: into a row being added, or over a loaded one.
+              if (addedRow === undefined && !row) return;
               event.preventDefault();
-              values.forEach((value, offset) => {
-                const target = fill(offset);
+              const pastedValues = pasted.replace(/\r?\n$/u, "").split("\t");
+              // Columns a row being added receives at once: a paste is one gesture, not one
+              // message per column, and the host answers each message with the whole state.
+              const filled: Record<string, string | null> = {};
+              pastedValues.forEach((value, offset) => {
+                const target = reachable[from + offset];
                 if (target === undefined || !editing.policies[target]?.editable) return;
-                editing.onEdit(row, rowIndex, target, value, row[target]?.value ?? null);
+                if (addedRow !== undefined) {
+                  const column = payload.columns[target];
+                  if (column) filled[column.name] = value;
+                  return;
+                }
+                if (row) editing.onEdit(row, rowIndex, target, value, row[target]?.value ?? null);
               });
+              if (addedRow !== undefined) editing.rows?.fill(addedRow, filled);
             }}
             onKeyDown={(event) => {
               const page = Math.floor(viewportHeight / RESULT_ROW_HEIGHT);
@@ -479,14 +513,11 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
             </thead>
             <tbody>
               {topSpacer > 0 ? (
-                <SpacerRow
-                  height={topSpacer}
-                  columnCount={columns.length + (editing?.rows ? 1 : 0)}
-                />
+                <SpacerRow height={topSpacer} columnCount={bodyColumnCount} />
               ) : null}
               {visibleRows.map((row, visibleIndex) => {
                 const rowIndex = start + visibleIndex;
-                const removed = editing?.rows?.isRemoved(row, rowIndex) ?? false;
+                const removed = editing?.rows?.isRemoved(row) ?? false;
                 return (
                   <tr
                     key={rowIndex}
@@ -506,7 +537,7 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
                           aria-label={
                             removed ? `Keep row ${rowIndex + 1}` : `Remove row ${rowIndex + 1}`
                           }
-                          onClick={() => editing.rows?.toggleRemoval(row, rowIndex)}
+                          onClick={() => editing.rows?.toggleRemoval(row)}
                         >
                           <span
                             className={`codicon codicon-${removed ? "discard" : "remove"}`}
@@ -585,10 +616,7 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
                 );
               })}
               {bottomSpacer > 0 ? (
-                <SpacerRow
-                  height={bottomSpacer}
-                  columnCount={columns.length + (editing?.rows ? 1 : 0)}
-                />
+                <SpacerRow height={bottomSpacer} columnCount={bodyColumnCount} />
               ) : null}
             </tbody>
             {/*
@@ -611,49 +639,45 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
                         <span className="codicon codicon-discard" aria-hidden="true" />
                       </button>
                     </td>
-                    {columns
-                      .filter(({ ordinal }) => isVisible(ordinal))
-                      .map(({ key: columnKey, ordinal, value: column }) => {
-                        const policy = editing.policies[ordinal];
-                        const shown = added.values[column.name] ?? null;
-                        const isActive =
-                          activeAdded?.localId === added.localId && activeAdded.ordinal === ordinal;
-                        return (
-                          <td
-                            key={columnKey}
-                            data-added-row={added.localId}
-                            data-column={ordinal}
-                            className={[
-                              shown === null ? "null" : "",
-                              policy && !policy.editable ? "read-only" : "",
-                              isActive ? "editing" : "",
-                            ]
-                              .filter(Boolean)
-                              .join(" ")}
-                            title={policy && !policy.editable ? policy.reason : undefined}
-                            onDoubleClick={() => {
-                              if (policy?.editable)
-                                setActiveAdded({ localId: added.localId, ordinal });
-                            }}
-                          >
-                            {isActive && policy?.editable ? (
-                              <CellEditor
-                                editor={policy.editor}
-                                value={shown}
-                                onCommit={(next) => {
-                                  setActiveAdded(undefined);
-                                  editing.rows?.fill(added.localId, column.name, next);
-                                }}
-                                onCancel={() => setActiveAdded(undefined)}
-                              />
-                            ) : (
-                              <span className="cell-value">
-                                {shown === null ? "DEFAULT" : shown}
-                              </span>
-                            )}
-                          </td>
-                        );
-                      })}
+                    {columns.map(({ key: columnKey, ordinal, value: column }) => {
+                      const policy = editing.policies[ordinal];
+                      const shown = added.values[column.name] ?? null;
+                      const isActive =
+                        activeAdded?.localId === added.localId && activeAdded.ordinal === ordinal;
+                      return (
+                        <td
+                          key={columnKey}
+                          data-added-row={added.localId}
+                          data-column={ordinal}
+                          className={[
+                            shown === null ? "null" : "",
+                            policy && !policy.editable ? "read-only" : "",
+                            isActive ? "editing" : "",
+                          ]
+                            .filter(Boolean)
+                            .join(" ")}
+                          title={policy && !policy.editable ? policy.reason : undefined}
+                          onDoubleClick={() => {
+                            if (policy?.editable)
+                              setActiveAdded({ localId: added.localId, ordinal });
+                          }}
+                        >
+                          {isActive && policy?.editable ? (
+                            <CellEditor
+                              editor={policy.editor}
+                              value={shown}
+                              onCommit={(next) => {
+                                setActiveAdded(undefined);
+                                editing.rows?.fill(added.localId, { [column.name]: next });
+                              }}
+                              onCancel={() => setActiveAdded(undefined)}
+                            />
+                          ) : (
+                            <span className="cell-value">{shown === null ? "DEFAULT" : shown}</span>
+                          )}
+                        </td>
+                      );
+                    })}
                   </tr>
                 ))}
                 <tr className="add-row">
@@ -668,7 +692,7 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
                       <span className="codicon codicon-add" aria-hidden="true" />
                     </button>
                   </td>
-                  <td colSpan={columns.filter(({ ordinal }) => isVisible(ordinal)).length}>
+                  <td colSpan={columns.length}>
                     <button
                       type="button"
                       className="add-row-label"

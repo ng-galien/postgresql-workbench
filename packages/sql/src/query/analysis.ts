@@ -439,8 +439,8 @@ export type RelationRemoval =
 /**
  * Removes one relation from the query with everything that depended on it: its JOIN segment,
  * the JOINs whose condition referenced it (cascade), the projected columns, ORDER BY items and
- * WHERE that referenced any of them. Removing the last relation empties the query; removing the
- * base relation while others are joined is refused.
+ * WHERE that referenced any of them. Removing the base relation promotes the first joined one in
+ * its place, and a query left carrying nothing is empty.
  */
 export function removeRelation(
   text: string,
@@ -488,35 +488,29 @@ export function removeRelation(
   if (!analysis.hasStar) {
     const gone = removedNames(removed);
     const carried = new Set<string>();
+    /** What a clause still names, once the relations going away are discounted. */
+    const carry = (qualifiers: readonly string[]) => {
+      if (referencesAny(qualifiers, gone)) return;
+      for (const qualifier of qualifiers) carried.add(qualifier.toLowerCase());
+    };
     analysis.targets.forEach((target, ordinal) => {
-      if (owned.has(ordinal) || referencesAny(target.qualifiers, gone)) return;
-      for (const qualifier of target.qualifiers) carried.add(qualifier.toLowerCase());
+      if (!owned.has(ordinal)) carry(target.qualifiers);
     });
-    for (const item of analysis.sortItems) {
-      if (referencesAny(item.qualifiers, gone)) continue;
-      for (const qualifier of item.qualifiers) carried.add(qualifier.toLowerCase());
-    }
-    if (analysis.where && !referencesAny(analysis.where.qualifiers, gone)) {
-      for (const qualifier of analysis.where.qualifiers) carried.add(qualifier.toLowerCase());
-    }
+    for (const item of analysis.sortItems) carry(item.qualifiers);
+    if (analysis.where) carry(analysis.where.qualifiers);
     const load = new Set(
       analysis.relations.filter(
         (candidate) => !removed.has(candidate) && carried.has(reference(candidate)),
       ),
     );
-    let grewLoad = true;
-    while (grewLoad) {
-      grewLoad = false;
-      for (const candidate of load) {
-        for (const qualifier of candidate.join?.qualifiers ?? []) {
-          const carrier = analysis.relations.find(
-            (other) => !removed.has(other) && reference(other) === qualifier.toLowerCase(),
-          );
-          if (carrier && !load.has(carrier)) {
-            load.add(carrier);
-            grewLoad = true;
-          }
-        }
+    // Iterating a Set visits what is appended while iterating, so this single pass grows the
+    // load-bearing set to its own closure.
+    for (const candidate of load) {
+      for (const qualifier of candidate.join?.qualifiers ?? []) {
+        const carrier = analysis.relations.find(
+          (other) => !removed.has(other) && reference(other) === qualifier.toLowerCase(),
+        );
+        if (carrier) load.add(carrier);
       }
     }
     for (const candidate of analysis.relations) {
@@ -531,8 +525,7 @@ export function removeRelation(
     (target, ordinal) => !owned.has(ordinal) && !referencesAny(target.qualifiers, names),
   );
   const keptSort = analysis.sortItems.filter((item) => !referencesAny(item.qualifiers, names));
-  const [base, ...joined] = kept;
-  if (!base) return { status: "rejected", message: "The FROM clause cannot be rewritten." };
+  const [base, ...joined] = kept as [SqlQueryRelation, ...SqlQueryRelation[]];
   const fromList = `${text.slice(base.ref.start, base.ref.end)}${joined
     .map((candidate) =>
       candidate.join ? text.slice(candidate.join.left.end, candidate.join.range.end) : "",

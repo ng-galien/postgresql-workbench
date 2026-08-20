@@ -5,7 +5,6 @@ import {
 } from "../../catalog/src/localCodeMoniker.js";
 import { readPostgresCatalog } from "../../catalog/src/postgresCatalog.js";
 import { composeIntoDataViewQuery, dataViewAdditions } from "../../rows/src/additions.js";
-import { countLabel } from "../../rows/src/countLabel.js";
 import type { SqlResultSession } from "../../rows/src/cursor.js";
 import {
   type DataViewAddition,
@@ -13,7 +12,7 @@ import {
   type DataViewProjection,
   type DataViewSource,
   dataViewRelationOwning,
-  describeDeleteConsequences,
+  EMPTY_DATA_VIEW_EDITABILITY,
   withRequiredColumnsRevealed,
 } from "../../rows/src/dataView.js";
 import { localFilterCompletions } from "../../rows/src/filterCompletions.js";
@@ -142,7 +141,7 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
     projection: { tables: [], columnTable: [] },
     hidden: [],
     status: "loading",
-    editability: { tables: [], columns: [], requiredOrdinals: [], technicalOrdinals: [] },
+    editability: EMPTY_DATA_VIEW_EDITABILITY,
     technical: [],
     busy: false,
   };
@@ -202,7 +201,7 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
       state.session = undefined;
       state.payload = undefined;
       state.projection = { tables: [], columnTable: [] };
-      state.editability = { tables: [], columns: [], requiredOrdinals: [], technicalOrdinals: [] };
+      state.editability = EMPTY_DATA_VIEW_EDITABILITY;
       state.status = "ready";
       state.message = "The query is empty: add a table with +.";
       state.busy = false;
@@ -227,12 +226,7 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
       state.editability = opened.editability;
       // The query may have composed away the table a held change was written against.
       const forgotten = edits.forget(state.editability);
-      if (forgotten > 0)
-        emit({
-          type: "data-view/notice",
-          message: `${countLabel(forgotten, "change")} let go: the query no longer writes to the table ${forgotten === 1 ? "it was" : "they were"} held against.`,
-          severity: "info",
-        });
+      if (forgotten) emit({ type: "data-view/notice", message: forgotten, severity: "info" });
       state.projection = opened.projection;
       state.technical = opened.technicalKeys;
       // Identity and relationship columns start hidden when the host says so — including after a
@@ -432,40 +426,27 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
           return;
         }
         case "data-view/remove-row": {
-          if (state.editability.tables.length !== 1) {
-            emit({
-              type: "data-view/notice",
-              message: "The query joins several tables: rows can only be taken away from one.",
-              severity: "info",
-            });
+          const removal = edits.toggleRemoval(request.row, state.editability);
+          if (!removal.held) {
+            emit({ type: "data-view/notice", message: removal.reason, severity: "info" });
             return;
           }
-          const wasRemoved = edits.isRemoved(request.row);
-          edits.toggleRemoval(request.row);
           broadcast();
           // Said when the row is taken, not discovered when the transaction fails.
-          const consequences = wasRemoved
-            ? []
-            : describeDeleteConsequences(state.editability.tables[0] ?? { referencedBy: [] });
-          if (consequences.length > 0)
+          if (removal.consequences.length > 0)
             emit({
               type: "data-view/notice",
-              message: consequences.join(" "),
+              message: removal.consequences.join(" "),
               severity: "info",
             });
           return;
         }
         case "data-view/add-row": {
-          const table = state.editability.tables[0];
-          if (state.editability.tables.length !== 1 || !table) {
-            emit({
-              type: "data-view/notice",
-              message: "The query joins several tables: rows can only be added to one.",
-              severity: "info",
-            });
+          const added = edits.addRow(state.editability);
+          if (!added.held) {
+            emit({ type: "data-view/notice", message: added.reason, severity: "info" });
             return;
           }
-          edits.addRow(table.tableOid);
           // A reader cannot fill in a column they cannot see.
           state.hidden = withRequiredColumnsRevealed(
             state.hidden,
@@ -481,7 +462,7 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
           broadcast();
           return;
         case "data-view/fill-row":
-          edits.fillRow(request.localId, request.column, request.value);
+          edits.fillRow(request.localId, request.values);
           broadcast();
           return;
         case "data-view/discard":

@@ -195,6 +195,22 @@ export function dataViewColumnKey(tableOid: number | undefined, label: string): 
 }
 
 /**
+ * The one relation a Data View writes whole rows to, or why there is none. Cells can be edited
+ * over a join; a whole row cannot, because no one table owns it. The reason completes a sentence
+ * beginning "Rows can only be added" or "Rows can only be taken away", so the restriction is
+ * worded once wherever it is met.
+ */
+export function dataViewWritableTable(
+  editability: DataViewEditability,
+): DataViewEditableTable | { reason: string } {
+  const table = editability.tables[0];
+  if (!table) return { reason: "once the query has a table to write them to." };
+  if (editability.tables.length > 1)
+    return { reason: "to one table, and this query joins several." };
+  return table;
+}
+
+/**
  * The relation a removal names, with the ordinals of the columns it owns — what the query model
  * needs to take it out. Undefined when the projection no longer holds it, which is what a second
  * click on a badge that has already gone looks like.
@@ -253,10 +269,6 @@ export function describeDataViewChanges(
         .join(", "),
     };
   };
-  const tableName = (tableOid: number) => {
-    const table = editability.tables.find((candidate) => candidate.tableOid === tableOid);
-    return table ? `${table.schema}.${table.name}` : "";
-  };
   // In the order they are written: rows away, then cells, then rows added.
   return [
     ...removals.map((removal) => ({ kind: "delete" as const, ...describe(removal) })),
@@ -271,7 +283,7 @@ export function describeDataViewChanges(
       const filled = Object.entries(insertion.values);
       return {
         kind: "insert" as const,
-        table: tableName(insertion.tableOid),
+        table: describe({ tableOid: insertion.tableOid, key: [] }).table,
         // A row with nothing filled in is a row of defaults, which is worth saying out loud.
         row:
           filled.length === 0
@@ -293,14 +305,29 @@ export function withRequiredColumnsRevealed(
   projection: DataViewProjection,
   columnNames: readonly string[],
 ): string[] {
-  const keys = dataViewColumnKeys(projection, columnNames);
   const demanded = new Set(
-    editability.requiredOrdinals.flatMap((ordinal) => {
-      const key = keys[ordinal];
-      return key === undefined ? [] : [key];
-    }),
+    dataViewKeysAt(dataViewColumnKeys(projection, columnNames), editability.requiredOrdinals),
   );
   return hidden.filter((key) => !demanded.has(key));
+}
+
+/** An empty editability: nothing to write to, and nothing worth hiding. */
+export const EMPTY_DATA_VIEW_EDITABILITY: DataViewEditability = {
+  tables: [],
+  columns: [],
+  requiredOrdinals: [],
+  technicalOrdinals: [],
+};
+
+/** The column keys at these ordinals, skipping any the projection no longer holds. */
+export function dataViewKeysAt(
+  columnKeys: readonly string[],
+  ordinals: readonly number[],
+): string[] {
+  return ordinals.flatMap((ordinal) => {
+    const key = columnKeys[ordinal];
+    return key === undefined ? [] : [key];
+  });
 }
 
 /** Column keys of a projection, in ordinal order. */

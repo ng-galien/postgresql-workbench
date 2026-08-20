@@ -3,7 +3,6 @@ import {
   composeIntoDataViewQuery,
   dataViewAdditions,
 } from "../../../packages/rows/src/additions.js";
-import { countLabel } from "../../../packages/rows/src/countLabel.js";
 import {
   type DataViewAddition,
   type DataViewEdit,
@@ -13,7 +12,7 @@ import {
   type DataViewSource,
   dataViewRelationOwning,
   dataViewSourceTitle,
-  describeDeleteConsequences,
+  EMPTY_DATA_VIEW_EDITABILITY,
   withRequiredColumnsRevealed,
 } from "../../../packages/rows/src/dataView.js";
 import { initialDataViewQuery } from "../../../packages/rows/src/initialProjection.js";
@@ -40,13 +39,6 @@ import { dataViewCompletionUri, dataViewQueryUri } from "./dataViewUri.js";
 import { exportAllRows, exportLoadedRows, pickExportTarget } from "./export/exportResult.js";
 import { type DataViewHostServices, errorMessage } from "./hostServices.js";
 
-const EMPTY_EDITABILITY: DataViewEditability = {
-  tables: [],
-  columns: [],
-  requiredOrdinals: [],
-  technicalOrdinals: [],
-};
-
 class LoadCancelledError extends Error {}
 
 /**
@@ -70,7 +62,7 @@ export class DataViewDocument implements vscode.CustomDocument {
   private initialized: Promise<void> | undefined;
   private session: SqlResultSession | undefined;
   private payload: SqlNotebookResultPayload | undefined;
-  private editability: DataViewEditability = EMPTY_EDITABILITY;
+  private editability: DataViewEditability = EMPTY_DATA_VIEW_EDITABILITY;
   private projection: DataViewProjection = { tables: [], columnTable: [] };
   private status: DataViewState["status"] = "loading";
   private message: string | undefined;
@@ -267,12 +259,11 @@ export class DataViewDocument implements vscode.CustomDocument {
         this.recordEdit(request.edit);
         return;
       case "data-view/add-row": {
-        const table = this.editability.tables[0];
-        if (this.editability.tables.length !== 1 || !table) {
-          this.notify("The query joins several tables: rows can only be added to one.", "info");
+        const added = this.edits.addRow(this.editability);
+        if (!added.held) {
+          this.notify(added.reason, "info");
           return;
         }
-        this.edits.addRow(table.tableOid);
         // A reader cannot fill in a column they cannot see.
         this.hidden = withRequiredColumnsRevealed(
           this.hidden,
@@ -288,28 +279,20 @@ export class DataViewDocument implements vscode.CustomDocument {
         this.broadcastState();
         return;
       case "data-view/fill-row":
-        this.edits.fillRow(request.localId, request.column, request.value);
+        this.edits.fillRow(request.localId, request.values);
         this.broadcastState();
         return;
-      case "data-view/remove-row":
-        if (this.editability.tables.length !== 1) {
-          this.notify(
-            "The query joins several tables: rows can only be taken away from one.",
-            "info",
-          );
+      case "data-view/remove-row": {
+        const removal = this.edits.toggleRemoval(request.row, this.editability);
+        if (!removal.held) {
+          this.notify(removal.reason, "info");
           return;
         }
-        {
-          const wasRemoved = this.edits.isRemoved(request.row);
-          this.edits.toggleRemoval(request.row);
-          this.broadcastState();
-          // Said when the row is taken, not discovered when the transaction fails.
-          const consequences = wasRemoved
-            ? []
-            : describeDeleteConsequences(this.editability.tables[0] ?? { referencedBy: [] });
-          if (consequences.length > 0) this.notify(consequences.join(" "), "info");
-        }
+        this.broadcastState();
+        // Said when the row is taken, not discovered when the transaction fails.
+        if (removal.consequences.length > 0) this.notify(removal.consequences.join(" "), "info");
         return;
+      }
       case "data-view/copy":
         await vscode.env.clipboard.writeText(request.text);
         return;
@@ -531,7 +514,7 @@ export class DataViewDocument implements vscode.CustomDocument {
       await this.ensureInitialized();
       if (this.query.isEmpty) {
         this.payload = undefined;
-        this.editability = EMPTY_EDITABILITY;
+        this.editability = EMPTY_DATA_VIEW_EDITABILITY;
         this.edits.forget(this.editability);
         this.projection = { tables: [], columnTable: [] };
         this.status = "ready";
@@ -559,11 +542,7 @@ export class DataViewDocument implements vscode.CustomDocument {
       this.projection = opened.projection;
       // The query may have composed away the table a held change was written against.
       const forgotten = this.edits.forget(this.editability);
-      if (forgotten > 0)
-        this.notify(
-          `${countLabel(forgotten, "change")} let go: the query no longer writes to the table ${forgotten === 1 ? "it was" : "they were"} held against.`,
-          "info",
-        );
+      if (forgotten) this.notify(forgotten, "info");
       // Technical columns start hidden the first time they appear (including after a JOIN was
       // composed); the user's later choices are kept.
       this.technical = opened.technicalKeys;

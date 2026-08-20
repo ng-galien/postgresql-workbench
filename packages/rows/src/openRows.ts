@@ -11,6 +11,7 @@ import {
   type DataViewEditability,
   type DataViewProjection,
   dataViewColumnKeys,
+  dataViewKeysAt,
 } from "./dataView.js";
 import { resolveDataViewEditability } from "./editability.js";
 import type { ScratchpadAssociationSnapshot } from "./resultPayload.js";
@@ -150,10 +151,7 @@ export async function openDataViewResult(options: {
     const columnNames = probe.fields.map((field) => field.name);
     // One derivation of the column keys, so hiding technical columns matches what the grid shows.
     const columnKeys = dataViewColumnKeys(projection, columnNames);
-    const technicalKeys = editability.technicalOrdinals.flatMap((ordinal) => {
-      const key = columnKeys[ordinal];
-      return key === undefined ? [] : [key];
-    });
+    const technicalKeys = dataViewKeysAt(columnKeys, editability.technicalOrdinals);
     const cursor = await openBoundedCursor({
       client,
       sql,

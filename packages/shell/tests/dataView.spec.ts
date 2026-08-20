@@ -497,8 +497,11 @@ test("keeps identity and relationship columns out of the way until they are need
 test("offers to import only where rows can go", async ({ page }) => {
   await openEmpty(page);
 
-  // Nothing to import into, and the control says so rather than opening on nothing.
-  await expect(page.getByTitle("Import rows: add a table to the query first.")).toBeDisabled();
+  // Nothing to import into, and the control says so rather than opening on nothing. The sentence
+  // completes one the engine owns, so adding, removing and importing all give the same reason.
+  await expect(
+    page.getByTitle("Rows can only be imported once the query has a table to write them to."),
+  ).toBeDisabled();
   await expect(page.getByTitle("Export rows to a file…")).toBeDisabled();
 
   await add(page, "shop.address");
@@ -510,7 +513,7 @@ test("offers to import only where rows can go", async ({ page }) => {
 
   // Rows come in one table at a time, exactly as they are added one at a time.
   await expect(
-    page.getByTitle("Import rows: the query joins several tables, and rows go into one."),
+    page.getByTitle("Rows can only be imported to one table, and this query joins several."),
   ).toBeDisabled();
   await expect(page.getByTitle("Export rows to a file…")).toBeEnabled();
 });

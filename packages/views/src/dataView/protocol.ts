@@ -68,7 +68,8 @@ export type DataViewRequest =
   /** Adds an empty row to fill in; it exists only in the grid until the changes are applied. */
   | { type: "data-view/add-row" }
   | { type: "data-view/drop-row"; localId: string }
-  | { type: "data-view/fill-row"; localId: string; column: string; value: string | null }
+  /** Fills columns of an added row; a paste arrives as one message, not one per column. */
+  | { type: "data-view/fill-row"; localId: string; values: Record<string, string | null> }
   | { type: "data-view/discard" }
   | { type: "data-view/apply" }
   | { type: "data-view/copy"; text: string }

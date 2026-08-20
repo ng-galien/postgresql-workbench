@@ -1,44 +1,5 @@
 import { type KeyboardEvent, useEffect, useRef, useState } from "react";
-import type { DebugResultCell } from "../../../dap/src/debugger/launch/index.js";
-import type {
-  DataViewColumnPolicy,
-  DataViewEdit,
-  DataViewValueEditor,
-} from "../../../rows/src/dataView.js";
-
-/** Editing contract handed to the grid by a host that owns the pending edits. */
-export interface GridEditing {
-  policies: readonly DataViewColumnPolicy[];
-  /** The pending edit shown in a cell, if any. */
-  editFor(
-    row: readonly DebugResultCell[],
-    rowIndex: number,
-    ordinal: number,
-  ): DataViewEdit | undefined;
-  onEdit(
-    row: readonly DebugResultCell[],
-    rowIndex: number,
-    ordinal: number,
-    value: string | null,
-    original: string | null,
-  ): void;
-  /**
-   * Whole rows, when there is exactly one table to write them to. A grid over a join can still
-   * have its cells edited; which table a row would be taken from is not for the grid to guess.
-   */
-  rows?: {
-    /** Whether this row is one the reader took away, and is shown struck through. */
-    isRemoved(row: readonly DebugResultCell[], rowIndex: number): boolean;
-    /** Takes this row away, or puts it back. */
-    toggleRemoval(row: readonly DebugResultCell[], rowIndex: number): void;
-    /** Rows the reader added; they live below the loaded ones until the changes are applied. */
-    added: readonly { localId: string; values: Record<string, string | null> }[];
-    add(): void;
-    drop(localId: string): void;
-    /** Fills one column of an added row; null leaves the column to PostgreSQL. */
-    fill(localId: string, column: string, value: string | null): void;
-  };
-}
+import type { DataViewValueEditor } from "../../../rows/src/dataView.js";
 
 export interface CellEditorProps {
   editor: DataViewValueEditor;
