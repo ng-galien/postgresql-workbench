@@ -33,6 +33,17 @@ await esbuild.build({
 });
 const { startDataViewHost } = createRequire(import.meta.url)(`${OUT}host.cjs`);
 
+// The language server the shell drives: the same source the extension ships, built the same way.
+await esbuild.build({
+  entryPoints: [new URL("../sql/src/languageServer/server.ts", import.meta.url).pathname],
+  bundle: true,
+  outfile: `${OUT}sql-authoring-server.cjs`,
+  format: "cjs",
+  platform: "node",
+  target: "es2022",
+  packages: "external",
+});
+
 const clients = new Set();
 const emit = (response) => {
   const frame = `data: ${JSON.stringify(response)}\n\n`;
@@ -43,6 +54,7 @@ const host = await startDataViewHost({
   connection: CONNECTION,
   schema: SCHEMA,
   relation: RELATION,
+  languageServerPath: `${OUT}sql-authoring-server.cjs`,
   emit,
 });
 

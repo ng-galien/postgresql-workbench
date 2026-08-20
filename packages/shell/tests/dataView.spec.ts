@@ -50,7 +50,7 @@ test("sorts on a column, and says so in the SQL", async ({ page }) => {
 test("filters on a WHERE the reader types", async ({ page }) => {
   await openDataView(page);
 
-  const filter = page.getByRole("textbox", { name: /where/iu });
+  const filter = page.getByRole("combobox", { name: /where/iu });
   await filter.fill("product.stock = 0");
   await filter.press("Enter");
 
@@ -111,4 +111,19 @@ test("hides a column without dropping it from the query", async ({ page }) => {
   await expect(page.getByRole("columnheader", { name: /description/u })).toBeHidden();
   // Still projected: the rows stay identified, which is what makes them editable.
   expect(await runningSql(page)).toContain("product.description");
+});
+
+test("proposes what the language server knows, not what the view already shows", async ({
+  page,
+}) => {
+  await openDataView(page);
+
+  const filter = page.getByRole("combobox", { name: /where/iu });
+  await filter.fill("product.");
+
+  const proposals = page.getByRole("listbox", { name: /completion/iu });
+  await expect(proposals).toBeVisible();
+  // The type comes from the catalog through the server; the view's own columns carry no type.
+  await expect(proposals.getByText("numeric(8,2)")).toBeVisible();
+  await expect(proposals.getByText("brand_id")).toBeVisible();
 });

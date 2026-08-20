@@ -94,7 +94,7 @@ describe("the Data View", () => {
   it("sends the filter the reader typed", async () => {
     const harness = open();
 
-    const filter = screen.getByRole("textbox", { name: /where/iu });
+    const filter = screen.getByRole("combobox", { name: /where/iu });
     await userEvent.type(filter, "name = 'Espresso'");
     await userEvent.keyboard("{Enter}");
 

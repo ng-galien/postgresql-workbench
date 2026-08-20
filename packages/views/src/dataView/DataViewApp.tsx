@@ -55,6 +55,12 @@ function MenuItem({
 }
 
 const COMPLETION_DEBOUNCE_MS = 120;
+const COMPLETIONS_ID = "data-view-filter-completions";
+
+/** The identifier a combobox points at to say which proposal is current. */
+function completionId(index: number): string {
+  return `${COMPLETIONS_ID}-${index}`;
+}
 
 /**
  * WHERE editor: multi-line (Shift+Enter), Enter applies, completions come from the SQL authoring
@@ -183,6 +189,12 @@ function FilterInput({
         spellCheck={false}
         disabled={disabled}
         aria-label="Filter (WHERE)"
+        // A field with proposals is a combobox: the list is its own, and one entry is current.
+        role="combobox"
+        aria-expanded={items.length > 0}
+        aria-controls={COMPLETIONS_ID}
+        aria-autocomplete="list"
+        {...(items.length > 0 ? { "aria-activedescendant": completionId(selected) } : {})}
         onFocus={() => setFocused(true)}
         onBlur={() => {
           setFocused(false);
@@ -223,24 +235,29 @@ function FilterInput({
         </button>
       ) : null}
       {items.length > 0 ? (
-        <ul className="filter-completions" aria-label="Completions">
+        <div
+          className="filter-completions"
+          id={COMPLETIONS_ID}
+          role="listbox"
+          aria-label="Completions"
+        >
           {items.slice(0, 12).map((item, index) => (
-            <li key={`${item.kind ?? ""}:${item.label}:${item.detail ?? ""}:${item.insertText}`}>
-              <button
-                type="button"
-                className={`filter-completion${index === selected ? " selected" : ""}`}
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => accept(item)}
-              >
-                {item.kind ? <span className="filter-completion-kind">{item.kind}</span> : null}
-                <span className="filter-completion-label">{item.label}</span>
-                {item.detail ? (
-                  <span className="filter-completion-detail">{item.detail}</span>
-                ) : null}
-              </button>
-            </li>
+            <button
+              key={`${item.kind ?? ""}:${item.label}:${item.detail ?? ""}:${item.insertText}`}
+              type="button"
+              id={completionId(index)}
+              role="option"
+              aria-selected={index === selected}
+              className={`filter-completion${index === selected ? " selected" : ""}`}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => accept(item)}
+            >
+              {item.kind ? <span className="filter-completion-kind">{item.kind}</span> : null}
+              <span className="filter-completion-label">{item.label}</span>
+              {item.detail ? <span className="filter-completion-detail">{item.detail}</span> : null}
+            </button>
           ))}
-        </ul>
+        </div>
       ) : null}
     </div>
   );
