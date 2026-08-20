@@ -22,6 +22,7 @@ import { ResultNavigation } from "../results/ResultNavigation.js";
 import { nextResultSort, resultAsTsv, resultRowSummary } from "../results/resultFormatting.js";
 import type { WebviewMessaging } from "../webviewPage.js";
 import type { DataViewRequest, DataViewResponse, DataViewState } from "./protocol.js";
+import { useReorderable } from "./reorder.js";
 
 export type DataViewMessaging = WebviewMessaging<DataViewRequest, DataViewResponse>;
 
@@ -252,7 +253,6 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
   const [moreOpen, setMoreOpen] = useState(false);
   const [columnsOpen, setColumnsOpen] = useState(false);
   const [dropActive, setDropActive] = useState(false);
-  const [badgeDragOver, setBadgeDragOver] = useState<number>();
   const [additions, setAdditions] = useState<DataViewAddition[]>();
   const [additionFilter, setAdditionFilter] = useState("");
   const [choices, setChoices] = useState<{
@@ -260,9 +260,6 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
     title: string;
     choices: Array<{ index: number; label: string; description: string }>;
   }>();
-  const badgeDragSource = useRef<number | undefined>(undefined);
-  const [sortDragOver, setSortDragOver] = useState<number>();
-  const sortDragSource = useRef<number | undefined>(undefined);
 
   useEffect(() => {
     const unsubscribe = messaging.subscribe((message) => {
@@ -339,6 +336,25 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
       },
     };
   }, [state, messaging]);
+
+  // Both live above the early return, where hooks must be: what may move and what moving means are
+  // read from this render's own state, so the handlers a list spreads are always the fresh ones.
+  const tableOrder = useReorderable(
+    () => state?.query.structured ?? false,
+    (from, to) => messaging.post({ type: "data-view/reorder-table", from, to }),
+  );
+  const sortOrder = useReorderable(
+    (index) => index >= 0,
+    (from, to) => {
+      const sorts = (state?.query.orderBy ?? []).flatMap((item) =>
+        item.column ? [{ column: item.column, direction: item.direction }] : [],
+      );
+      const [moved] = sorts.splice(from, 1);
+      if (!moved) return;
+      sorts.splice(to, 0, moved);
+      messaging.post({ type: "data-view/sort", sorts });
+    },
+  );
 
   if (!state) {
     return (
@@ -714,33 +730,14 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
       <section
         className="data-view-tables"
         aria-label="Tables in the query"
-        onDragOver={(event) => {
-          if (badgeDragSource.current === undefined) return;
-          event.preventDefault();
-          event.dataTransfer.dropEffect = "move";
-        }}
-        onDrop={(event) => {
-          const from = badgeDragSource.current;
-          if (from === undefined) return;
-          event.preventDefault();
-          badgeDragSource.current = undefined;
-          setBadgeDragOver(undefined);
-          const badges = [
-            ...event.currentTarget.querySelectorAll<HTMLElement>(".data-view-table-badge"),
-          ];
-          let to = badges.length - 1;
-          badges.forEach((badge, index) => {
-            const bounds = badge.getBoundingClientRect();
-            if (
-              event.clientX < bounds.left + bounds.width / 2 &&
-              to === badges.length - 1 &&
-              index < to
-            ) {
-              to = index;
-            }
-          });
-          if (from !== to) post({ type: "data-view/reorder-table", from, to });
-        }}
+        {...tableOrder.containerProps((event) =>
+          [...event.currentTarget.querySelectorAll<HTMLElement>(".data-view-table-badge")].map(
+            (badge) => {
+              const bounds = badge.getBoundingClientRect();
+              return bounds.left + bounds.width / 2;
+            },
+          ),
+        )}
       >
         <div className="toolbar-more">
           <IconButton
@@ -877,38 +874,10 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
           {state.projection.tables.map((table, index) => (
             <li
               key={table.tableOid}
-              className={`data-view-table-badge${badgeDragOver === index ? " drag-over" : ""}`}
+              className={`data-view-table-badge${tableOrder.isTarget(index) ? " drag-over" : ""}`}
               style={{ "--column-accent": tableAccent(table.accent) } as CSSProperties}
               title={`${table.schema}.${table.name} — its columns carry the same accent. Drag to move its columns.`}
-              draggable={query.structured}
-              onDragStart={(event) => {
-                badgeDragSource.current = index;
-                event.dataTransfer.effectAllowed = "move";
-                event.dataTransfer.setData("text/plain", `${table.schema}.${table.name}`);
-              }}
-              onDragOver={(event) => {
-                if (badgeDragSource.current === undefined) return;
-                event.preventDefault();
-                event.stopPropagation();
-                event.dataTransfer.dropEffect = "move";
-                if (badgeDragOver !== index) setBadgeDragOver(index);
-              }}
-              onDragLeave={() =>
-                setBadgeDragOver((current) => (current === index ? undefined : current))
-              }
-              onDrop={(event) => {
-                const from = badgeDragSource.current;
-                badgeDragSource.current = undefined;
-                setBadgeDragOver(undefined);
-                if (from === undefined) return;
-                event.preventDefault();
-                event.stopPropagation();
-                if (from !== index) post({ type: "data-view/reorder-table", from, to: index });
-              }}
-              onDragEnd={() => {
-                badgeDragSource.current = undefined;
-                setBadgeDragOver(undefined);
-              }}
+              {...tableOrder.itemProps(index, `${table.schema}.${table.name}`)}
             >
               <span className="data-view-table-swatch" aria-hidden="true" />
               <span className="data-view-table-schema">{table.schema}.</span>
@@ -959,44 +928,13 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
               return (
                 <li
                   key={`${item.text}:${item.direction}`}
-                  className={`data-view-clause active${sortDragOver === sortIndex && sortIndex >= 0 ? " drag-over" : ""}`}
+                  className={`data-view-clause active${sortOrder.isTarget(sortIndex) ? " drag-over" : ""}`}
                   style={
                     table
                       ? ({ "--column-accent": tableAccent(table.accent) } as CSSProperties)
                       : undefined
                   }
-                  draggable={sortIndex >= 0}
-                  onDragStart={(event) => {
-                    sortDragSource.current = sortIndex;
-                    event.dataTransfer.effectAllowed = "move";
-                    event.dataTransfer.setData("text/plain", item.text);
-                  }}
-                  onDragOver={(event) => {
-                    if (sortDragSource.current === undefined || sortIndex < 0) return;
-                    event.preventDefault();
-                    event.stopPropagation();
-                    event.dataTransfer.dropEffect = "move";
-                    if (sortDragOver !== sortIndex) setSortDragOver(sortIndex);
-                  }}
-                  onDragLeave={() =>
-                    setSortDragOver((current) => (current === sortIndex ? undefined : current))
-                  }
-                  onDrop={(event) => {
-                    const from = sortDragSource.current;
-                    sortDragSource.current = undefined;
-                    setSortDragOver(undefined);
-                    if (from === undefined || sortIndex < 0 || from === sortIndex) return;
-                    event.preventDefault();
-                    event.stopPropagation();
-                    const next = [...columnSorts];
-                    const [moved] = next.splice(from, 1);
-                    if (moved) next.splice(sortIndex, 0, moved);
-                    applySorts(next);
-                  }}
-                  onDragEnd={() => {
-                    sortDragSource.current = undefined;
-                    setSortDragOver(undefined);
-                  }}
+                  {...sortOrder.itemProps(sortIndex, item.text)}
                 >
                   <span className="data-view-order-rank">{index + 1}</span>
                   <span
