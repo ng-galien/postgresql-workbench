@@ -410,6 +410,9 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
   const disabled = state.busy || state.applying;
   const editCount = state.edits.length;
   const editable = state.editability.tables.length > 0;
+  // A Data View with nothing in it is a legal starting state, not a broken query: the reader adds
+  // the first relation and it becomes the base the rest composes onto.
+  const emptyQuery = state.query.text.trim().length === 0;
   const query = state.query;
   const columnNames = payload?.columns.map((column) => column.name) ?? [];
   /** Grid-column sorts, in ORDER BY order (items that are not grid columns are kept as text only). */
@@ -777,8 +780,12 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
         <div className="toolbar-more">
           <IconButton
             icon="add"
-            label="Add a column or a related table to the query"
-            disabled={!query.structured}
+            label={
+              emptyQuery
+                ? "Add the first table of the query"
+                : "Add a column or a related table to the query"
+            }
+            disabled={!query.structured && !emptyQuery}
             onClick={() => post({ type: "data-view/additions" })}
           />
           {additions ? (
@@ -872,9 +879,12 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
                             role="menuitem"
                             className="column-menu-item addition-item"
                             title={
-                              item.kind === "table"
-                                ? `JOIN ${item.label} through ${item.detail}`
-                                : `Add column ${item.label} (${item.detail})`
+                              item.kind !== "table"
+                                ? `Add column ${item.label} (${item.detail})`
+                                : emptyQuery
+                                  ? // Nothing to join to yet: this relation becomes the base.
+                                    `Start the query with ${item.label}`
+                                  : `JOIN ${item.label} through ${item.detail}`
                             }
                             onClick={() => {
                               setAdditions(undefined);
@@ -900,7 +910,7 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
             </>
           ) : null}
         </div>
-        {state.source.kind === "sql" ? (
+        {state.source.kind === "sql" && dataViewSourceTitle(state.source) ? (
           <span className="data-view-title" title={query.text}>
             {dataViewSourceTitle(state.source)}
           </span>
@@ -932,7 +942,7 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
         </ol>
         {state.projection.tables.length === 0 && state.source.kind === "relation" ? (
           <span className="data-view-title" title={query.text}>
-            {dataViewSourceTitle(state.source)}
+            {emptyQuery ? "No table yet — add one with +" : dataViewSourceTitle(state.source)}
           </span>
         ) : null}
       </section>

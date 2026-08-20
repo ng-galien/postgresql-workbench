@@ -351,6 +351,26 @@ INSERT INTO shop.inventory_movement
   (10, 2, 'receipt', 14, 'Opening stock', now() - interval '15 days'),
   (10, 2, 'sale', -2, 'Retail sales', now() - interval '3 days');
 
+-- A movement table is the one thing in a small shop that really grows: two years of daily traffic,
+-- so a Data View on it pages, loads every remaining row, and shows what a long text does to a cell.
+INSERT INTO shop.inventory_movement
+  (inventory_id, performed_by, movement_type, quantity_delta, reason, occurred_at)
+SELECT
+  1 + (n % 12),
+  1 + (n % 5),
+  (ARRAY['receipt', 'sale', 'transfer_in', 'transfer_out', 'adjustment'])[1 + (n % 5)],
+  CASE WHEN n % 3 = 0 THEN -(1 + n % 7) ELSE 1 + n % 11 END,
+  CASE
+    WHEN n % 97 = 0 THEN
+      'Stock reconciliation after the quarterly count: ' ||
+      repeat('the recorded quantity did not match the shelf, and the difference was traced to a ' ||
+             'mis-scanned pallet on the receiving dock. ', 6)
+    WHEN n % 5 = 0 THEN 'Warehouse transfer ' || to_char(n, 'FM000000')
+    ELSE 'Movement ' || to_char(n, 'FM000000')
+  END,
+  now() - make_interval(mins => n * 17)
+FROM generate_series(1, 4000) AS n;
+
 INSERT INTO shop.supplier (organization_id, address_id, name, email, lead_time_days) VALUES
   (NULL, 7, 'Poissons du Large', 'commandes@poissons.test', 3),
   (NULL, 8, 'Épices & Terroirs', 'pro@epices.test', 6),

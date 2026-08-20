@@ -16,8 +16,12 @@ const CONNECTION = {
   password: process.env.PGWB_DEV_PASSWORD ?? "postgres",
   database: process.env.PGWB_DEV_DATABASE ?? "demo",
 };
-const SCHEMA = process.env.PGWB_DEV_SCHEMA ?? "shop";
-const RELATION = process.env.PGWB_DEV_RELATION ?? "product";
+// The shell opens on an empty query, the way the product opens a Data View with nothing in it:
+// the reader adds the first table and composition starts there. Name one to skip that step.
+const RELATION =
+  process.env.PGWB_DEV_SCHEMA && process.env.PGWB_DEV_RELATION
+    ? { schema: process.env.PGWB_DEV_SCHEMA, name: process.env.PGWB_DEV_RELATION }
+    : undefined;
 
 // The repository writes `.js` in its specifiers, which Node cannot resolve to `.ts`; esbuild can.
 const OUT = new URL("../../node_modules/.pgwb-shell/", import.meta.url).pathname;
@@ -52,8 +56,7 @@ const emit = (response) => {
 
 const host = await startDataViewHost({
   connection: CONNECTION,
-  schema: SCHEMA,
-  relation: RELATION,
+  ...(RELATION ? { relation: RELATION } : {}),
   languageServerPath: `${OUT}sql-authoring-server.cjs`,
   emit,
 });
@@ -134,7 +137,7 @@ createServer(async (request, response) => {
   response.writeHead(200, { "content-type": "text/html" }).end(PAGE);
 }).listen(PORT, () => {
   console.log(
-    `PostgreSQL Workbench shell on http://localhost:${PORT} — ${SCHEMA}.${RELATION} of ${CONNECTION.database}`,
+    `PostgreSQL Workbench shell on http://localhost:${PORT} — ${RELATION ? `${RELATION.schema}.${RELATION.name}` : "empty"} of ${CONNECTION.database}`,
   );
 });
 

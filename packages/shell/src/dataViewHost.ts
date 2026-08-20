@@ -10,6 +10,7 @@ import type {
   DataViewAddition,
   DataViewCompletion,
   DataViewProjection,
+  DataViewSource,
 } from "../../rows/src/dataView.js";
 import { localFilterCompletions } from "../../rows/src/filterCompletions.js";
 import { initialDataViewQuery } from "../../rows/src/initialProjection.js";
@@ -40,8 +41,8 @@ import { startSqlLanguageServer } from "./languageServer.js";
  */
 export interface DataViewHostOptions {
   connection: { host: string; port: number; user: string; password: string; database: string };
-  schema: string;
-  relation: string;
+  /** The relation the view opens on. Without one it opens empty, and composition starts there. */
+  relation?: { schema: string; name: string };
   /** The bundled SQL authoring server; without one the WHERE input falls back to its own columns. */
   languageServerPath?: string;
   /** Where the responses go: the browser bridge, or a test's recorder. */
@@ -56,7 +57,7 @@ export interface DataViewDevHost {
 }
 
 export async function startDataViewHost(options: DataViewHostOptions): Promise<DataViewDevHost> {
-  const { connection, schema, relation, emit } = options;
+  const { connection, relation, emit } = options;
   const serverId = `${connection.host}:${connection.port}/${connection.database}:${connection.user}`;
 
   const session: LocalCodeMonikerSession = await ensureLocalCodeMonikerWorkspace({
@@ -78,21 +79,25 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
       })
     : undefined;
 
-  const source = {
-    kind: "relation" as const,
-    serverId,
-    database: connection.database,
-    schema,
-    name: relation,
-    relationKind: "table" as const,
-  };
+  const source: DataViewSource = relation
+    ? {
+        kind: "relation",
+        serverId,
+        database: connection.database,
+        schema: relation.schema,
+        name: relation.name,
+        relationKind: "table",
+      }
+    : { kind: "sql", serverId, database: connection.database, sql: "", label: "" };
+  const queryUri = relation
+    ? `data-view:/${relation.schema}.${relation.name}.sql`
+    : "data-view:/query.sql";
   const query = new SqlQueryModel(async () => parser);
-  const initialText = await initialDataViewQuery(
-    source,
-    snapshot,
-    DEFAULT_SQL_AUTHORING_SETTINGS,
-    async () => columnNames(client, schema, relation),
-  );
+  const initialText = relation
+    ? await initialDataViewQuery(source, snapshot, DEFAULT_SQL_AUTHORING_SETTINGS, async () =>
+        columnNames(client, relation.schema, relation.name),
+      )
+    : "";
   await query.setText(initialText);
 
   const accents = new TableAccents();
@@ -120,7 +125,7 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
         source,
         serverName: connection.database,
         query: {
-          uri: `data-view:/${schema}.${relation}.sql`,
+          uri: queryUri,
           text: query.text,
           ...(query.whereText() === undefined ? {} : { whereText: query.whereText() }),
           orderBy: query.orderBy(),
@@ -143,6 +148,19 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
   const load = async () => {
     state.busy = true;
     broadcast();
+    if (query.isEmpty) {
+      // A Data View with nothing in it is a legal state: the reader adds the first relation.
+      await state.session?.close().catch(() => {});
+      state.session = undefined;
+      state.payload = undefined;
+      state.projection = { tables: [], columnTable: [] };
+      state.editability = { tables: [], columns: [] };
+      state.status = "ready";
+      state.message = "The query is empty: add a table with +.";
+      state.busy = false;
+      broadcast();
+      return;
+    }
     // A cursor owns the connection it reads through, so every load opens its own, exactly as the
     // Extension Host does: the previous one goes with the session it belonged to.
     await state.session?.close().catch(() => {});
@@ -201,7 +219,7 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
     if (start < 0) return localFilterCompletions(analysis, text, offset);
     const candidate = draft.replace(sentinel, "");
     const proposals = await languageServer.complete(
-      `data-view:/${schema}.${relation}.filter.sql`,
+      `${queryUri}.filter`,
       candidate,
       start + Math.min(offset, text.length),
     );
@@ -212,7 +230,7 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
     const outcome = await composeIntoDataViewQuery({
       text: query.text,
       statementEnd: query.analysis?.statement.end ?? 0,
-      uri: `data-view:/${schema}.${relation}.sql`,
+      uri: queryUri,
       payload: addition.payload as SqlAuthoringDragPayload,
       ...(relationChoice === undefined ? {} : { relationChoice }),
       settings: DEFAULT_SQL_AUTHORING_SETTINGS,
