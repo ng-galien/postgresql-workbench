@@ -46,6 +46,8 @@ export type DataViewRequest =
   | { type: "data-view/compose"; addition: DataViewAddition; relationChoice?: number }
   | { type: "data-view/hide"; column: string }
   | { type: "data-view/unhide"; column?: string }
+  /** Hides or shows every identity and relationship column at once; the host knows which they are. */
+  | { type: "data-view/technical-columns"; hidden: boolean }
   | { type: "data-view/filter"; text: string }
   | { type: "data-view/complete"; requestId: number; text: string; offset: number }
   | { type: "data-view/edit-query"; clause?: "select" }

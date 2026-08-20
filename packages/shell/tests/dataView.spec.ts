@@ -23,6 +23,12 @@ async function add(page: Page, relation: string): Promise<ResultTable> {
   return new ResultTable(page);
 }
 
+/** Opens the columns menu, whose control names how many columns are hidden right now. */
+async function openColumns(page: Page) {
+  await page.getByTitle(/^(Show or hide columns|Columns \()/u).click();
+  await expect(page.getByRole("menu")).toBeVisible();
+}
+
 /** The SQL the view says it is running, read line by line out of its panel. */
 async function runningSql(page: Page): Promise<string> {
   const panel = page.getByRole("region", { name: "Query SQL" });
@@ -132,7 +138,7 @@ test("hides a column without dropping it from the query", async ({ page }) => {
   await openEmpty(page);
   await add(page, "shop.product");
 
-  await page.getByTitle(/Show or hide columns/u).click();
+  await openColumns(page);
   const column = page.getByRole("menuitemcheckbox", { name: "description" });
   await expect(column).toHaveAttribute("aria-checked", "true");
   await column.click();
@@ -177,4 +183,22 @@ test("pages a relation too large to load at once, and loads the rest on demand",
 
   await rows.loadAll();
   await expect(page.getByText("4008 rows")).toBeVisible({ timeout: 20_000 });
+});
+
+test("hides the key columns a reader has no use for, and offers them back", async ({ page }) => {
+  await openEmpty(page);
+  await add(page, "shop.inventory_movement");
+
+  // Identity and relationship values are what a reader who does not write SQL never asked for.
+  await expect(page.getByRole("columnheader", { name: /^id/u })).toBeHidden();
+  await expect(page.getByRole("columnheader", { name: /inventory_id/u })).toBeHidden();
+  await expect(page.getByRole("columnheader", { name: /movement_type/u })).toBeVisible();
+  expect(await runningSql(page)).toContain("inventory_movement.id");
+
+  await openColumns(page);
+  await page.getByRole("menuitem", { name: /^Show \d+ key columns$/u }).click();
+
+  await expect(page.getByRole("columnheader", { name: /inventory_id/u })).toBeVisible();
+  await page.getByRole("menuitem", { name: /^Hide \d+ key columns$/u }).click();
+  await expect(page.getByRole("columnheader", { name: /inventory_id/u })).toBeHidden();
 });

@@ -14,6 +14,7 @@ import {
   dataViewRowKey,
   dataViewSourceTitle,
 } from "../../../rows/src/dataView.js";
+import { READ_ONLY_REASONS } from "../../../rows/src/editability.js";
 import { hasWorkbenchTreeDrag } from "../cockpit/dragAndDrop.js";
 import type { GridEditing } from "../results/CellEditor.js";
 import { IconButton } from "../results/IconButton.js";
@@ -424,6 +425,19 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
     return columnIndex >= 0 ? [{ columnIndex, direction: sort.direction }] : [];
   });
   const columnKeys = dataViewColumnKeys(state.projection, columnNames);
+  // Identity and relationship values: what a reader who does not write SQL has no use for. The
+  // host decides whether they start hidden; the view only offers to flip them.
+  const technicalKeys = columnKeys.filter((_key, ordinal) => {
+    const policy = state.editability.columns[ordinal];
+    if (!policy || policy.editable) return false;
+    return (
+      policy.reason === READ_ONLY_REASONS.identity ||
+      policy.reason === READ_ONLY_REASONS.relationship
+    );
+  });
+  const technicalHidden =
+    technicalKeys.length > 0 && technicalKeys.every((key) => query.hidden.includes(key));
+
   const hiddenOrdinals = new Set(
     columnKeys.flatMap((key, ordinal) => (query.hidden.includes(key) ? [ordinal] : [])),
   );
@@ -645,6 +659,17 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
                       );
                     },
                   )}
+                  {technicalKeys.length > 0 ? (
+                    <MenuItem
+                      label={`${technicalHidden ? "Show" : "Hide"} ${countLabel(
+                        technicalKeys.length,
+                        "key column",
+                      )}`}
+                      onSelect={() =>
+                        post({ type: "data-view/technical-columns", hidden: !technicalHidden })
+                      }
+                    />
+                  ) : null}
                   {query.hidden.length > 0 ? (
                     <MenuItem
                       label="Show all columns"

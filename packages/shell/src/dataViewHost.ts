@@ -45,6 +45,8 @@ export interface DataViewHostOptions {
   relation?: { schema: string; name: string };
   /** The bundled SQL authoring server; without one the WHERE input falls back to its own columns. */
   languageServerPath?: string;
+  /** Whether identity and relationship columns start hidden. The product reads this from settings. */
+  hideKeyColumns?: boolean;
   /** Where the responses go: the browser bridge, or a test's recorder. */
   emit(response: DataViewResponse): void;
 }
@@ -58,6 +60,7 @@ export interface DataViewDevHost {
 
 export async function startDataViewHost(options: DataViewHostOptions): Promise<DataViewDevHost> {
   const { connection, relation, emit } = options;
+  const hideKeyColumns = options.hideKeyColumns ?? true;
   const serverId = `${connection.host}:${connection.port}/${connection.database}:${connection.user}`;
 
   const session: LocalCodeMonikerSession = await ensureLocalCodeMonikerWorkspace({
@@ -125,6 +128,7 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
     message?: string;
     payload?: DataViewState["payload"];
     editability: DataViewState["editability"];
+    technical: string[];
     busy: boolean;
     session?: SqlResultSession;
   } = {
@@ -132,8 +136,10 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
     hidden: [],
     status: "loading",
     editability: { tables: [], columns: [] },
+    technical: [],
     busy: false,
   };
+  const seenColumns = new Set<string>();
 
   const broadcast = () =>
     emit({
@@ -195,6 +201,14 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
       state.payload = opened.session.snapshot();
       state.editability = opened.editability;
       state.projection = opened.projection;
+      state.technical = opened.technicalKeys;
+      // Identity and relationship columns start hidden when the host says so — including after a
+      // JOIN brings new ones in — and whatever the reader chose afterwards is kept.
+      if (hideKeyColumns) {
+        const fresh = opened.technicalKeys.filter((key) => !seenColumns.has(key));
+        if (fresh.length > 0) state.hidden = [...new Set([...state.hidden, ...fresh])];
+      }
+      for (const key of opened.columnKeys) seenColumns.add(key);
       state.status = "ready";
       state.message = undefined;
     } catch (error) {
@@ -281,6 +295,8 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
   return {
     async reset() {
       state.hidden = [];
+      // Which columns have been seen decides what starts hidden, so a fresh start forgets them.
+      seenColumns.clear();
       await query.setText(initialText);
       await load();
     },
@@ -329,6 +345,12 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
         }
         case "data-view/hide":
           state.hidden = [...state.hidden.filter((key) => key !== request.column), request.column];
+          broadcast();
+          return;
+        case "data-view/technical-columns":
+          state.hidden = request.hidden
+            ? [...new Set([...state.hidden, ...state.technical])]
+            : state.hidden.filter((key) => !state.technical.includes(key));
           broadcast();
           return;
         case "data-view/unhide":

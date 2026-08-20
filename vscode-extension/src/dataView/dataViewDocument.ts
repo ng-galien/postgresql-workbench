@@ -59,6 +59,7 @@ export class DataViewDocument implements vscode.CustomDocument {
   private hidden: string[] = [];
   /** Column keys shown at least once: new technical columns start hidden, known ones keep the user's choice. */
   private readonly seenColumns = new Set<string>();
+  private technical: string[] = [];
   private initialized: Promise<void> | undefined;
   private session: SqlResultSession | undefined;
   private payload: SqlNotebookResultPayload | undefined;
@@ -204,6 +205,12 @@ export class DataViewDocument implements vscode.CustomDocument {
       }
       case "data-view/hide":
         this.hidden = [...this.hidden.filter((key) => key !== request.column), request.column];
+        this.broadcastState();
+        return;
+      case "data-view/technical-columns":
+        this.hidden = request.hidden
+          ? [...new Set([...this.hidden, ...this.technical])]
+          : this.hidden.filter((key) => !this.technical.includes(key));
         this.broadcastState();
         return;
       case "data-view/unhide":
@@ -505,8 +512,11 @@ export class DataViewDocument implements vscode.CustomDocument {
       this.projection = opened.projection;
       // Technical columns start hidden the first time they appear (including after a JOIN was
       // composed); the user's later choices are kept.
-      const fresh = opened.technicalKeys.filter((key) => !this.seenColumns.has(key));
-      if (fresh.length > 0) this.hidden = [...new Set([...this.hidden, ...fresh])];
+      this.technical = opened.technicalKeys;
+      if (hideKeyColumns()) {
+        const fresh = opened.technicalKeys.filter((key) => !this.seenColumns.has(key));
+        if (fresh.length > 0) this.hidden = [...new Set([...this.hidden, ...fresh])];
+      }
       for (const key of opened.columnKeys) this.seenColumns.add(key);
       this.status = "ready";
       this.touch(opened.idleTimeoutMs);
@@ -701,4 +711,11 @@ export class DataViewDocument implements vscode.CustomDocument {
     void this.services.dissociate(queryUri);
     void this.services.dissociate(this.completionUri.toString());
   }
+}
+
+/** Whether a Data View opens with its identity and relationship columns hidden. */
+function hideKeyColumns(): boolean {
+  return vscode.workspace
+    .getConfiguration("postgresql-workbench.dataView")
+    .get<boolean>("hideKeyColumns", true);
 }
