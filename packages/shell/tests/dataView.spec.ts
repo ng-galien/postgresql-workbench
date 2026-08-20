@@ -493,3 +493,24 @@ test("keeps identity and relationship columns out of the way until they are need
 
   await expect(cell.locator(".cell-value")).toHaveText("1");
 });
+
+test("offers to import only where rows can go", async ({ page }) => {
+  await openEmpty(page);
+
+  // Nothing to import into, and the control says so rather than opening on nothing.
+  await expect(page.getByTitle("Import rows: add a table to the query first.")).toBeDisabled();
+  await expect(page.getByTitle("Export rows to a file…")).toBeDisabled();
+
+  await add(page, "shop.address");
+
+  await expect(page.getByTitle("Import rows from a file…")).toBeEnabled();
+  await expect(page.getByTitle("Export rows to a file…")).toBeEnabled();
+
+  await add(page, "shop.warehouse");
+
+  // Rows come in one table at a time, exactly as they are added one at a time.
+  await expect(
+    page.getByTitle("Import rows: the query joins several tables, and rows go into one."),
+  ).toBeDisabled();
+  await expect(page.getByTitle("Export rows to a file…")).toBeEnabled();
+});

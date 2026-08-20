@@ -445,6 +445,16 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
   }
 
   const payload = state.payload;
+  /**
+   * Rows come in one table at a time, exactly as they are added one at a time: there is nowhere
+   * to put them without a table, and no way to choose between two.
+   */
+  const importable =
+    state.editability.tables.length === 1
+      ? undefined
+      : state.editability.tables.length === 0
+        ? "Import rows: add a table to the query first."
+        : "Import rows: the query joins several tables, and rows go into one.";
   const navigation = payload?.navigation;
   // The same rules the Scratchpad output applies, read from the one place that states them.
   const navigationState = {
@@ -838,7 +848,8 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
           <div className="toolbar-group">
             <IconButton
               icon="arrow-circle-down"
-              label="Import rows from a file…"
+              label={importable ?? "Import rows from a file…"}
+              disabled={importable !== undefined}
               onClick={() => setTransfer("import")}
             />
             <IconButton
