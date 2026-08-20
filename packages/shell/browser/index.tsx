@@ -44,6 +44,10 @@ events.onmessage = (event) => {
   for (const listener of listeners) listener(response);
 };
 
+// VS Code marks the body with the theme kind, and components read it to pick a token colour.
+// Without it the source view paints light-theme colours on the dark surface: black on black.
+document.body.classList.add("vscode-dark");
+
 const style = document.createElement("style");
 style.textContent = `${vscodeTheme}\n${resultViewStyles}\n${postgresSourceStyles}\n${dataViewStyles}\n${HARNESS_STYLES}`;
 document.head.append(style);
