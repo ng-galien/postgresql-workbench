@@ -182,6 +182,13 @@ describe("writing a result out a piece at a time", () => {
     ]);
   });
 
+  it("ends a file with a newline, and the clipboard without one", () => {
+    expect(dataViewExportText(COLUMNS, ROWS, choose({}))).toMatch(/\n$/u);
+    // A trailing newline on the clipboard is one empty row in whatever the reader pastes into.
+    expect(dataViewExportText(COLUMNS, ROWS, CLIPBOARD_EXPORT)).not.toMatch(/\n$/u);
+    expect(dataViewExportText(COLUMNS, ROWS, CLIPBOARD_EXPORT).split("\n")).toHaveLength(2);
+  });
+
   it("names the file after the shape", () => {
     expect(exportFileExtension("csv")).toBe("csv");
     expect(exportFileExtension("markdown")).toBe("md");

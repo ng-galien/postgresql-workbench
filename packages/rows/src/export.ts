@@ -32,6 +32,11 @@ export interface DataViewExportChoice {
    * anything else, and a prefix there would come back as part of the value.
    */
   spreadsheetSafe: boolean;
+  /*
+   * A newline after the last row. A file ends with one, the way every text file does; the
+   * clipboard does not, because a spreadsheet reads it as one more, empty, row.
+   */
+  finalNewline: boolean;
 }
 
 /** The choice a reader starts from: a CSV with a header, NULL left empty. */
@@ -41,6 +46,7 @@ export const DEFAULT_DATA_VIEW_EXPORT: DataViewExportChoice = {
   nullAs: "empty",
   delimiter: ",",
   spreadsheetSafe: true,
+  finalNewline: true,
 };
 
 /** What the clipboard speaks: tab-separated, no header, and read back by this grid unchanged. */
@@ -50,6 +56,7 @@ export const CLIPBOARD_EXPORT: DataViewExportChoice = {
   nullAs: "empty",
   delimiter: "\t",
   spreadsheetSafe: false,
+  finalNewline: false,
 };
 
 /** The delimiter each delimited shape is written with, whatever the reader last chose. */
@@ -105,11 +112,16 @@ export function dataViewExportText(
   rows: readonly (readonly (string | null)[])[],
   choice: DataViewExportChoice,
 ): string {
-  if (choice.format === "markdown") return markdownTable(columns, rows);
-  const writer = dataViewExportWriter(columns, choice);
-  return [writer.opening(), ...rows.map((row, index) => writer.row(row, index)), writer.closing()]
-    .filter((piece) => piece !== "")
-    .join("");
+  const text =
+    choice.format === "markdown"
+      ? markdownTable(columns, rows)
+      : ((writer) =>
+          [
+            writer.opening(),
+            ...rows.map((row, index) => writer.row(row, index)),
+            writer.closing(),
+          ].join(""))(dataViewExportWriter(columns, choice));
+  return choice.finalNewline ? text : text.replace(/\n$/u, "");
 }
 
 // --- The shapes ---------------------------------------------------------------------------------

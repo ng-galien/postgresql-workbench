@@ -18,6 +18,11 @@ import type {
   DataViewEdit,
   DataViewRowInsertion,
 } from "../../../rows/src/dataView.js";
+import {
+  CLIPBOARD_EXPORT,
+  dataViewExportText,
+  parseDelimitedText,
+} from "../../../rows/src/export.js";
 import type { ResultTable } from "../../../rows/src/resultPayload.js";
 import { CellEditor } from "./CellEditor.js";
 import {
@@ -42,6 +47,7 @@ import {
   sortedResultRows,
 } from "./resultFormatting.js";
 import { rowOrder } from "./rowOrder.js";
+import { shownValues } from "./shownValues.js";
 
 const RESULT_ROW_HEIGHT = 28;
 const RESULT_VIEWPORT_HEIGHT = 360;
@@ -315,37 +321,23 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
     setSelection(cellSelection(next.row, next.ordinal));
   };
   /**
-   * The selection as a spreadsheet would put it on the clipboard: tab between columns, newline
-   * between rows, in the order they are shown.
+   * The selection as a spreadsheet would put it on the clipboard. It is written by the one module
+   * that writes rows out, in the dialect the paste below reads back.
    */
   const selectionAsText = (): string => {
     const ordinals = selectedOrdinals(selection, visibleOrdinals);
     if (ordinals.length === 0) return "";
     const { first, last } = selectedRows(selection);
-    const lines: string[] = [];
-    for (let index = first; index <= last; index += 1) {
-      const shown = order.at(index);
-      if ("added" in shown) {
-        lines.push(
-          ordinals
-            .map((ordinal) => shown.added.values[payload.columns[ordinal]?.name ?? ""] ?? "")
-            .join("\t"),
-        );
-        continue;
-      }
-      const rowIndex = shown.loaded;
-      const row = rows[rowIndex];
-      if (!row) continue;
-      lines.push(
-        ordinals
-          .map((ordinal) => {
-            const edit = editing?.editFor(row, rowIndex, ordinal);
-            return (edit ? edit.value : row[ordinal]?.value) ?? "";
-          })
-          .join("\t"),
-      );
-    }
-    return lines.join("\n");
+    const values = shownValues({
+      columns: payload.columns,
+      rows,
+      order,
+      ordinals,
+      from: first,
+      to: last,
+      editFor: editing?.editFor,
+    });
+    return dataViewExportText(values.columns, values.rows, CLIPBOARD_EXPORT);
   };
   /*
    * The proxy holds one space, always selected. A browser only raises copy when it has something
@@ -396,7 +388,7 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
      */
     const from = visibleOrdinals.indexOf(selection.anchor.ordinal);
     if (from < 0) return;
-    const lines = pasted.replace(/\r?\n$/u, "").split(/\r?\n/u);
+    const lines = parseDelimitedText(pasted, "\t");
     const editableHere = (ordinal: number) => editing.policies[ordinal]?.editable === true;
     /*
      * Every line past the last loaded row becomes a row the reader added — a loaded row is
@@ -405,7 +397,7 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
      */
     lines.forEach((line, lineOffset) => {
       const at = selection.anchor.row + lineOffset;
-      const values = () => splitAcross(line, visibleOrdinals, from, payload, editableHere);
+      const values = () => spreadAcross(line, visibleOrdinals, from, payload, editableHere);
       const shown = order.at(at);
       if ("added" in shown) {
         editing.rows?.fill(shown.added.localId, values());
@@ -418,7 +410,7 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
         editing.rows?.appendPasted(values(), rows.length);
         return;
       }
-      line.split("\t").forEach((value, offset) => {
+      line.forEach((value, offset) => {
         const target = visibleOrdinals[from + offset];
         if (target === undefined || !editableHere(target)) return;
         editing.onEdit(row, rowIndex, target, value, row[target]?.value ?? null);
@@ -1109,20 +1101,20 @@ export function resultScrollbarGeometry(
 
 /** One pasted line, laid out over the columns from a starting one, by column name. */
 /**
- * One pasted line, read across the columns from where it landed, for a row the reader is adding.
+ * One pasted line, spread across the columns from where it landed, for a row the reader is adding.
  * A cell the line has nothing in is left out rather than set to an empty string: the clipboard
  * cannot tell an empty text from no text, and a row being added has a third answer — let the
  * database give the column whatever it would have given it.
  */
-function splitAcross(
-  line: string,
+function spreadAcross(
+  line: readonly string[],
   visibleOrdinals: readonly number[],
   from: number,
   payload: ResultTable,
   editable: (ordinal: number) => boolean,
 ): Record<string, string | null> {
   const values: Record<string, string | null> = {};
-  line.split("\t").forEach((value, offset) => {
+  line.forEach((value, offset) => {
     const ordinal = visibleOrdinals[from + offset];
     const column = ordinal === undefined ? undefined : payload.columns[ordinal];
     if (column && value !== "" && editable(ordinal as number)) values[column.name] = value;
