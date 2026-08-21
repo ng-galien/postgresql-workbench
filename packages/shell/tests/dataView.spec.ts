@@ -479,16 +479,24 @@ test("adds an empty row and fills it in, without writing anything yet", async ({
   await expect(drawer.locator(".pending-edit-insertion")).toHaveText("A new row");
 });
 
-test("takes back a row it had added", async ({ page }) => {
+test("selects a row it had added instead of losing it", async ({ page }) => {
   await openEmpty(page);
   await add(page, "shop.address");
   await enterEditMode(page);
   const bar = editBar(page);
 
   await bar.add.click();
-  await expect(page.locator("tbody.added-rows tr.added")).toHaveCount(1);
+  const added = page.locator("tbody.added-rows tr.added");
+  await expect(added).toHaveCount(1);
 
-  await page.locator(".row-gutter-state.added").click();
+  // Clicking the gutter of a new row selects it, the way it does for any other row.
+  await added.locator("th.row-gutter").click();
+
+  await expect(added).toHaveCount(1);
+  await expect(bar.selection).toHaveText("1 row selected");
+  await expect(added).toHaveClass(/row-selected/u);
+
+  await bar.remove.click();
 
   await expect(page.locator("tbody.added-rows tr.added")).toHaveCount(0);
   await expect(bar.changes).toBeDisabled();

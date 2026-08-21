@@ -457,15 +457,23 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
    * What the edit bar says and what it may act on. A rectangle of cells is not a set of rows: the
    * delete control stays out of reach until the reader has selected rows in the gutter.
    */
-  const selectedRowIdentities = useMemo(() => {
+  const selected = useMemo(() => {
     const table = state?.editability.tables.length === 1 ? state.editability.tables[0] : undefined;
-    if (selection?.kind !== "rows" || !table || !state?.payload) return [];
+    const added = state?.addedRows ?? [];
+    if (selection?.kind !== "rows" || !table || !state?.payload) return { rows: [], added: [] };
     const { first, last } = selectedRows(selection);
-    return state.payload.rows.slice(first, last + 1).map((row) => ({
-      tableOid: table.tableOid,
-      key: table.keyOrdinals.map((keyOrdinal) => row[keyOrdinal]?.value ?? null),
-    }));
+    // Added rows take the first places, so anything past them addresses a loaded row.
+    return {
+      added: added.slice(first, last + 1).map((row) => row.localId),
+      rows: (state.payload.rows ?? [])
+        .slice(Math.max(0, first - added.length), Math.max(0, last + 1 - added.length))
+        .map((row) => ({
+          tableOid: table.tableOid,
+          key: table.keyOrdinals.map((keyOrdinal) => row[keyOrdinal]?.value ?? null),
+        })),
+    };
   }, [selection, state]);
+  const selectedCount = selected.rows.length + selected.added.length;
 
   if (!state) {
     return (
@@ -1213,12 +1221,19 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
             type="button"
             className="edit-bar-button remove"
             title={
-              selectedRowIdentities.length > 0
-                ? `Delete ${countLabel(selectedRowIdentities.length, "row")}`
+              selectedCount > 0
+                ? `Delete ${countLabel(selectedCount, "row")}`
                 : "Select rows in the gutter to delete them"
             }
-            disabled={selectedRowIdentities.length === 0}
-            onClick={() => post({ type: "data-view/remove-rows", rows: selectedRowIdentities })}
+            disabled={selectedCount === 0}
+            onClick={() => {
+              // A row that was only ever local is taken back; one that exists is provisioned away.
+              for (const localId of selected.added) post({ type: "data-view/drop-row", localId });
+              // The selection stays: the rows are still on screen, struck through, and pressing
+              // this again is how a reader puts them back.
+              if (selected.rows.length > 0)
+                post({ type: "data-view/remove-rows", rows: selected.rows });
+            }}
           >
             ✕ Delete
           </button>

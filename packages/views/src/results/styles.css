@@ -543,129 +543,44 @@ th.drag-over {
 }
 
 /*
- * The row gutter: where a whole row is taken away, the way a spreadsheet puts its row controls
- * beside the rows rather than inside them. It stays out of the way until the row is pointed at.
- */
-.row-gutter-column {
-  width: 22px;
-}
-
-th.row-gutter,
-td.row-gutter {
-  width: 22px;
-  padding: 0;
-  text-align: center;
-}
-
-.row-gutter-action {
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--vscode-descriptionForeground);
-  cursor: pointer;
-  opacity: 0;
-}
-
-tr:hover .row-gutter-action,
-.row-gutter-action:focus-visible,
-tr.removed .row-gutter-action {
-  opacity: 1;
-}
-
-.row-gutter-action:hover {
-  color: var(--vscode-errorForeground, var(--vscode-foreground));
-}
-
-/* A row on its way out is still readable: struck through, not hidden. */
-tr.removed td {
-  color: var(--vscode-descriptionForeground);
-  text-decoration: line-through;
-}
-
-tr.removed td.row-gutter {
-  text-decoration: none;
-}
-
-/* Rows the reader added: above the result, marked as not yet part of it. */
-tbody.added-rows tr.added td {
-  border-left: 2px solid var(--vscode-charts-green, var(--vscode-focusBorder));
-}
-
-tbody.added-rows td.row-gutter {
-  border-left: 0;
-}
-
-tbody.added-rows .cell-value {
-  color: var(--vscode-descriptionForeground);
-}
-
-tr.add-row td {
-  padding: 0;
-}
-
-.row-gutter-action.always {
-  opacity: 1;
-}
-
-.add-row-label {
-  padding: 2px 6px;
-  border: 0;
-  background: none;
-  color: var(--vscode-descriptionForeground);
-  cursor: pointer;
-  font: inherit;
-}
-
-.add-row-label:hover {
-  color: var(--vscode-foreground);
-}
-
-/*
- * The gutter is a row header, the way a spreadsheet has one: it carries the row number, it is
- * where a click selects the row, and it shows what the row has become.
+ * The gutter is a row header, the way a spreadsheet has one: one narrow column carrying the row
+ * number, where a click selects the row. When a row has become something — going away, or newly
+ * added — its mark takes the number's place rather than crowding beside it.
  */
 th.row-gutter,
 td.row-gutter {
-  display: flex;
-  width: auto;
-  align-items: center;
-  justify-content: flex-end;
-  padding: 0 0.35rem;
+  width: 2.8em;
+  min-width: 2.8em;
+  padding: 0 0.55em 0 0;
   border-right: 1px solid var(--vscode-panel-border);
   background: var(--vscode-editorWidget-background);
   color: var(--vscode-descriptionForeground);
   cursor: default;
+  font-size: 0.92em;
   font-weight: 400;
-  gap: 0.3rem;
   text-align: right;
   user-select: none;
 }
 
 th.row-gutter.selected {
-  background: color-mix(in srgb, var(--vscode-focusBorder) 38%, transparent);
   color: var(--vscode-foreground);
-  font-weight: 600;
 }
 
 .row-gutter-number {
   font-variant-numeric: tabular-nums;
+  opacity: 0.6;
+}
+
+th.row-gutter.selected .row-gutter-number {
+  opacity: 1;
 }
 
 .row-gutter-state {
-  display: inline-block;
-  width: 1em;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: inherit;
-  cursor: pointer;
-  font: inherit;
-  text-align: center;
+  line-height: 1;
 }
 
 .row-gutter-state.removed {
   color: var(--vscode-errorForeground);
-  cursor: default;
 }
 
 .row-gutter-state.added {
@@ -678,9 +593,13 @@ th.row-gutter.selected {
  * leaves that variable unset would render the selection invisible instead of merely off-colour.
  */
 td.selected,
-tr.row-selected td,
-tr.row-selected th.row-gutter {
+tr.row-selected td {
   background: color-mix(in srgb, var(--vscode-focusBorder) 26%, transparent);
+}
+
+tr.row-selected th.row-gutter,
+th.row-gutter.selected {
+  background: color-mix(in srgb, var(--vscode-focusBorder) 45%, transparent);
 }
 
 td.anchor {
