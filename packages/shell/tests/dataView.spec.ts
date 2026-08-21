@@ -376,6 +376,8 @@ test("selects rows in the gutter and takes them away together", async ({ page })
 
   await expect(bar.selection).toHaveText("3 rows selected");
   await expect(page.locator("th.row-gutter.selected")).toHaveCount(3);
+  // The band reads across every column, not only down the gutter.
+  await expect(page.locator("tbody tr.row-selected")).toHaveCount(3);
   await expect(bar.remove).toBeEnabled();
 
   await bar.remove.click();
@@ -460,6 +462,8 @@ test("adds an empty row and fills it in, without writing anything yet", async ({
 
   const added = page.locator("tbody.added-rows tr.added");
   await expect(added).toHaveCount(1);
+  // The new row is where the reader is looking, not at the far end of the result.
+  await expect(page.locator("tbody tr").first()).toHaveClass(/added/u);
   await expect(page.locator(".row-gutter-state.added")).toHaveCount(1);
   // What the reader leaves alone is left to PostgreSQL, and the row says so.
   await expect(added.locator(".cell-value").first()).toHaveText("DEFAULT");
@@ -556,17 +560,19 @@ test("copies the selection the way a spreadsheet would", async ({ page }) => {
   await enterEditMode(page);
 
   await selectRows(page, 0, 1);
-  const copied = page.waitForRequest(
-    (request) =>
-      request.url().endsWith("/request") && (request.postData() ?? "").includes("data-view/copy"),
-  );
-  // The grid keeps one cell reachable by keyboard; that is where a shortcut is typed.
-  await page.locator('td[tabindex="0"]').press("ControlOrMeta+c");
 
-  const posted = JSON.parse((await copied).postData() ?? "{}");
+  // The browser's own copy carries the text; the grid fills what the event hands it.
+  const copied = await page.locator("table[role=grid]").evaluate((table) => {
+    const clipboardData = new DataTransfer();
+    table.dispatchEvent(
+      new ClipboardEvent("copy", { bubbles: true, cancelable: true, clipboardData }),
+    );
+    return clipboardData.getData("text/plain");
+  });
+
   // Tab between columns, newline between rows, in the order they are shown.
-  expect(posted.text.split("\n")).toHaveLength(2);
-  expect(posted.text).toContain("\t");
+  expect(copied.split("\n")).toHaveLength(2);
+  expect(copied).toContain("\t");
 });
 
 test("brings back the columns a new row cannot go without", async ({ page }) => {

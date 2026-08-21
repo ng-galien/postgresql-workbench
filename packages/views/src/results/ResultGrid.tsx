@@ -89,8 +89,6 @@ export interface GridEditing {
      */
     selection: GridSelection | undefined;
     select(next: GridSelection | undefined): void;
-    /** Hands text to the clipboard; the host owns that, the grid only knows what to say. */
-    copy(text: string): void;
   };
 }
 
@@ -226,16 +224,13 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
   };
   /**
    * The selection as a spreadsheet would put it on the clipboard: tab between columns, newline
-   * between rows, in the order they are shown. `withHeader` prepends the column names.
+   * between rows, in the order they are shown.
    */
-  const copySelection = (withHeader: boolean) => {
+  const selectionAsText = (): string => {
     const ordinals = selectedOrdinals(selection, visibleOrdinals);
-    if (ordinals.length === 0) return;
+    if (ordinals.length === 0) return "";
     const { first, last } = selectedRows(selection);
     const lines: string[] = [];
-    if (withHeader) {
-      lines.push(ordinals.map((ordinal) => payload.columns[ordinal]?.name ?? "").join("\t"));
-    }
     for (let index = first; index <= last; index += 1) {
       const row = rows[index];
       if (!row) continue;
@@ -248,7 +243,7 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
           .join("\t"),
       );
     }
-    editing?.rows?.copy(lines.join("\n"));
+    return lines.join("\n");
   };
   const step = (rowDelta: number, columnDelta: number, extend: boolean) => {
     setSelection(
@@ -385,6 +380,17 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
             aria-rowcount={rows.length + 1}
             aria-colcount={columns.length}
             className={editing ? "editable" : undefined}
+            onCopy={(event) => {
+              /*
+               * The browser's own copy carries the selection. Writing through the Clipboard API
+               * instead needs a permission a webview does not always grant, and asking the host to
+               * do it puts a round trip between the keystroke and the clipboard.
+               */
+              const text = selectionAsText();
+              if (text === "") return;
+              event.clipboardData.setData("text/plain", text);
+              event.preventDefault();
+            }}
             onPaste={(event) => {
               if (!editing) return;
               const pasted = event.clipboardData.getData("text/plain");
@@ -444,11 +450,6 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
                     ordinal: visibleOrdinals.at(-1) ?? 0,
                   }),
                 );
-                return;
-              }
-              if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "c") {
-                event.preventDefault();
-                copySelection(event.shiftKey);
                 return;
               }
               switch (event.key) {
@@ -596,6 +597,71 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
                 ))}
               </tr>
             </thead>
+            {/*
+              Rows the reader added sit above the loaded ones, in a body of their own: they are
+              not part of the result and they are not scrolled through. A row being filled in stays
+              where the reader is looking, however far down the result they were — the end of a
+              result is not a place, it moves with every page loaded.
+            */}
+            {editing?.rows ? (
+              <tbody className="added-rows">
+                {editing.rows.added.map((added) => (
+                  <tr key={added.localId} className="added">
+                    <th scope="row" className="row-gutter">
+                      <span className="row-gutter-number" />
+                      <button
+                        type="button"
+                        className="row-gutter-state added"
+                        title="Take back this row"
+                        aria-label={`Take back the added row ${added.localId}`}
+                        onClick={() => editing.rows?.drop(added.localId)}
+                      >
+                        ✚
+                      </button>
+                    </th>
+                    {columns.map(({ key: columnKey, ordinal, value: column }) => {
+                      const policy = editing.policies[ordinal];
+                      const shown = added.values[column.name] ?? null;
+                      const isActive =
+                        activeAdded?.localId === added.localId && activeAdded.ordinal === ordinal;
+                      return (
+                        <td
+                          key={columnKey}
+                          data-added-row={added.localId}
+                          data-column={ordinal}
+                          className={[
+                            shown === null ? "null" : "",
+                            policy && !policy.editable ? "read-only" : "",
+                            isActive ? "editing" : "",
+                          ]
+                            .filter(Boolean)
+                            .join(" ")}
+                          title={policy && !policy.editable ? policy.reason : undefined}
+                          onDoubleClick={() => {
+                            if (policy?.editable)
+                              setActiveAdded({ localId: added.localId, ordinal });
+                          }}
+                        >
+                          {isActive && policy?.editable ? (
+                            <CellEditor
+                              editor={policy.editor}
+                              value={shown}
+                              onCommit={(next) => {
+                                setActiveAdded(undefined);
+                                editing.rows?.fill(added.localId, { [column.name]: next });
+                              }}
+                              onCancel={() => setActiveAdded(undefined)}
+                            />
+                          ) : (
+                            <span className="cell-value">{shown === null ? "DEFAULT" : shown}</span>
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            ) : null}
             <tbody>
               {topSpacer > 0 ? (
                 <SpacerRow height={topSpacer} columnCount={bodyColumnCount} />
@@ -603,11 +669,14 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
               {visibleRows.map((row, visibleIndex) => {
                 const rowIndex = start + visibleIndex;
                 const removed = editing?.rows?.isRemoved(row) ?? false;
+                const selectedRow = rowIsSelected(selection, rowIndex);
                 return (
                   <tr
                     key={rowIndex}
                     aria-rowindex={rowIndex + 2}
-                    className={removed ? "removed" : undefined}
+                    className={[removed ? "removed" : "", selectedRow ? "row-selected" : ""]
+                      .filter(Boolean)
+                      .join(" ")}
                   >
                     {editing?.rows ? (
                       <th
@@ -721,70 +790,6 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
                 <SpacerRow height={bottomSpacer} columnCount={bodyColumnCount} />
               ) : null}
             </tbody>
-            {/*
-              Rows the reader added sit below the loaded ones, in a body of their own: they are
-              not part of the result and they are not scrolled through. What adds one is the edit
-              bar above the grid, so the control is reachable whatever the result is showing.
-            */}
-            {editing?.rows ? (
-              <tbody className="added-rows">
-                {editing.rows.added.map((added) => (
-                  <tr key={added.localId} className="added">
-                    <th scope="row" className="row-gutter">
-                      <span className="row-gutter-number" />
-                      <button
-                        type="button"
-                        className="row-gutter-state added"
-                        title="Take back this row"
-                        aria-label={`Take back the added row ${added.localId}`}
-                        onClick={() => editing.rows?.drop(added.localId)}
-                      >
-                        ✚
-                      </button>
-                    </th>
-                    {columns.map(({ key: columnKey, ordinal, value: column }) => {
-                      const policy = editing.policies[ordinal];
-                      const shown = added.values[column.name] ?? null;
-                      const isActive =
-                        activeAdded?.localId === added.localId && activeAdded.ordinal === ordinal;
-                      return (
-                        <td
-                          key={columnKey}
-                          data-added-row={added.localId}
-                          data-column={ordinal}
-                          className={[
-                            shown === null ? "null" : "",
-                            policy && !policy.editable ? "read-only" : "",
-                            isActive ? "editing" : "",
-                          ]
-                            .filter(Boolean)
-                            .join(" ")}
-                          title={policy && !policy.editable ? policy.reason : undefined}
-                          onDoubleClick={() => {
-                            if (policy?.editable)
-                              setActiveAdded({ localId: added.localId, ordinal });
-                          }}
-                        >
-                          {isActive && policy?.editable ? (
-                            <CellEditor
-                              editor={policy.editor}
-                              value={shown}
-                              onCommit={(next) => {
-                                setActiveAdded(undefined);
-                                editing.rows?.fill(added.localId, { [column.name]: next });
-                              }}
-                              onCancel={() => setActiveAdded(undefined)}
-                            />
-                          ) : (
-                            <span className="cell-value">{shown === null ? "DEFAULT" : shown}</span>
-                          )}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            ) : null}
           </table>
         </section>
         <div

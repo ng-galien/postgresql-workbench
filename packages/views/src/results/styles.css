@@ -586,7 +586,7 @@ tr.removed td.row-gutter {
   text-decoration: none;
 }
 
-/* Rows the reader added: below the result, marked as not yet part of it. */
+/* Rows the reader added: above the result, marked as not yet part of it. */
 tbody.added-rows tr.added td {
   border-left: 2px solid var(--vscode-charts-green, var(--vscode-focusBorder));
 }
@@ -642,8 +642,8 @@ td.row-gutter {
 }
 
 th.row-gutter.selected {
-  background: var(--vscode-list-activeSelectionBackground, var(--vscode-editorWidget-background));
-  color: var(--vscode-focusBorder);
+  background: color-mix(in srgb, var(--vscode-focusBorder) 38%, transparent);
+  color: var(--vscode-foreground);
   font-weight: 600;
 }
 
@@ -672,15 +672,21 @@ th.row-gutter.selected {
   color: var(--vscode-charts-green, var(--vscode-foreground));
 }
 
-/* A selection reads as one block: a wash over its cells, a border around the anchor. */
-td.selected {
-  background: var(--vscode-list-inactiveSelectionBackground, var(--vscode-editorWidget-background));
+/*
+ * A selection reads as one block: a wash over its cells, a border around the anchor. The wash is
+ * mixed from the focus colour rather than taken from a selection variable, because a theme that
+ * leaves that variable unset would render the selection invisible instead of merely off-colour.
+ */
+td.selected,
+tr.row-selected td,
+tr.row-selected th.row-gutter {
+  background: color-mix(in srgb, var(--vscode-focusBorder) 26%, transparent);
 }
 
 td.anchor {
-  box-shadow: inset 0 0 0 1px var(--vscode-focusBorder);
+  box-shadow: inset 0 0 0 2px var(--vscode-focusBorder);
 }
 
-tr.row-selected td {
-  background: var(--vscode-list-inactiveSelectionBackground, var(--vscode-editorWidget-background));
+tr.row-selected td:first-of-type {
+  box-shadow: inset 2px 0 0 var(--vscode-focusBorder);
 }

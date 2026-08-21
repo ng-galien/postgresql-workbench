@@ -428,7 +428,6 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
               appendPasted: (values) => messaging.post({ type: "data-view/add-row", values }),
               selection,
               select: setSelection,
-              copy: (text) => messaging.post({ type: "data-view/copy", text }),
             },
           }
         : {}),
