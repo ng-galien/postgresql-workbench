@@ -401,10 +401,19 @@ td {
   border-bottom: 1px solid var(--vscode-panel-border);
 }
 
-th {
+/*
+ * The headings hold at the top while the rows go by. Only the headings: a gutter cell is a row
+ * header too — `<th scope="row">` — and sticking those held every row number of the page at the
+ * top of the grid, one over another.
+ */
+thead th {
   position: sticky;
   top: 0;
-  z-index: 1;
+  z-index: 2;
+  background: var(--vscode-editorGroupHeader-tabsBackground);
+}
+
+th {
   background: var(--vscode-editorGroupHeader-tabsBackground);
 }
 
@@ -660,10 +669,12 @@ th[draggable="true"] .column-sort {
   cursor: grab;
 }
 
-th {
-  position: relative;
-}
-
+/*
+ * The column menu is placed against its heading, which needs the heading to be positioned. It
+ * already is: `position: sticky` above makes a heading a containing block exactly as `relative`
+ * would, and saying `relative` here again cost the headings the very thing sticky was for — they
+ * stopped holding at the top of a result long enough to scroll.
+ */
 .column-menu-button {
   position: absolute;
   top: 4px;
