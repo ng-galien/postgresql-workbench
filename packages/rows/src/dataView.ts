@@ -133,6 +133,13 @@ export interface DataViewRowInsertion {
   localId: string;
   /** Column name to value, for the columns the reader has filled in. */
   values: Record<string, string | null>;
+  /**
+   * The loaded row this one sits above, counted as the grid shows them. A reader adds a row where
+   * they are looking, so a new row appears just over the row they had selected, and over the first
+   * one when they had selected nothing. It is a place in the grid, not in the table: re-sorting the
+   * result leaves the row where it sits rather than carrying it about.
+   */
+  above: number;
 }
 
 /** The SQL document behind a Data View and what the grid derived from it. */

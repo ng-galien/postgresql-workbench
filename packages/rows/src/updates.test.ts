@@ -248,7 +248,7 @@ describe("added rows", () => {
 
   it("carries only the columns the reader filled in", () => {
     const statements = buildRowInserts(
-      [{ tableOid: 100, localId: "new-1", values: { city: "Brest" } }],
+      [{ tableOid: 100, localId: "new-1", values: { city: "Brest" }, above: 0 }],
       addressEditability,
     );
 
@@ -268,6 +268,7 @@ describe("added rows", () => {
           tableOid: 100,
           localId: "new-1",
           values: { city: "Brest", created_at: "2026-01-01 00:00:00+00" },
+          above: 0,
         },
       ],
       addressEditability,
@@ -280,7 +281,7 @@ describe("added rows", () => {
 
   it("leaves a row nobody touched entirely to PostgreSQL", () => {
     const statements = buildRowInserts(
-      [{ tableOid: 100, localId: "new-1", values: {} }],
+      [{ tableOid: 100, localId: "new-1", values: {}, above: 0 }],
       addressEditability,
     );
 
@@ -290,7 +291,10 @@ describe("added rows", () => {
 
   it("refuses to insert into a table the query no longer holds", () => {
     expect(() =>
-      buildRowInserts([{ tableOid: 99, localId: "new-1", values: {} }], addressEditability),
+      buildRowInserts(
+        [{ tableOid: 99, localId: "new-1", values: {}, above: 0 }],
+        addressEditability,
+      ),
     ).toThrow(/no longer belongs to an editable table/u);
   });
 });

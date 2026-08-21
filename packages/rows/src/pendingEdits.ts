@@ -174,11 +174,17 @@ export class PendingEdits {
   addRow(
     editability: DataViewEditability,
     values: Record<string, string | null> = {},
+    above = 0,
   ): { held: true } | { held: false; reason: string } {
     const table = dataViewWritableTable(editability);
     if ("reason" in table) return { held: false, reason: `Rows can only be added ${table.reason}` };
     this.added += 1;
-    this.insertions.push({ tableOid: table.tableOid, localId: `new-${this.added}`, values });
+    // Held in the order they are shown, so the one just added is the one just under the reader's
+    // eye: last among the rows waiting over the same loaded row, and over every row below it.
+    const at = this.insertions.findIndex((insertion) => insertion.above > above);
+    const row = { tableOid: table.tableOid, localId: `new-${this.added}`, values, above };
+    if (at < 0) this.insertions.push(row);
+    else this.insertions.splice(at, 0, row);
     return { held: true };
   }
 

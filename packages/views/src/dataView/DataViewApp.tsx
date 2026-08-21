@@ -29,6 +29,7 @@ import { Modal } from "../results/Modal.js";
 import { type GridEditing, type GridLayout, ResultGrid } from "../results/ResultGrid.js";
 import { ResultNavigation } from "../results/ResultNavigation.js";
 import { nextResultSort, resultAsTsv, resultRowSummary } from "../results/resultFormatting.js";
+import { rowOrder } from "../results/rowOrder.js";
 import type { WebviewMessaging } from "../webviewPage.js";
 import type { DataViewRequest, DataViewResponse, DataViewState } from "./protocol.js";
 import { useReorderable } from "./reorder.js";
@@ -425,7 +426,8 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
               drop: (localId) => messaging.post({ type: "data-view/drop-row", localId }),
               fill: (localId, values) =>
                 messaging.post({ type: "data-view/fill-row", localId, values }),
-              appendPasted: (values) => messaging.post({ type: "data-view/add-row", values }),
+              appendPasted: (values, above) =>
+                messaging.post({ type: "data-view/add-row", values, above }),
               selection,
               select: setSelection,
             },
@@ -453,26 +455,48 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
     },
   );
 
+  /** Where each row sits in the grid, which is what a selection and a new row are counted in. */
+  const shownRows = useMemo(
+    () => rowOrder(state?.addedRows ?? [], state?.payload?.rows.length ?? 0),
+    [state],
+  );
+  /*
+   * The loaded row a new one would go over: the one the reader is on. A new row appears just above
+   * it, and above the first row when the reader has not moved off it.
+   */
+  const addAbove = useMemo(() => {
+    if (!selection) return 0;
+    const shown = shownRows.at(selection.anchor.row);
+    return "added" in shown ? shown.added.above : shown.loaded;
+  }, [selection, shownRows]);
   /*
    * What the edit bar says and what it may act on. A rectangle of cells is not a set of rows: the
    * delete control stays out of reach until the reader has selected rows in the gutter.
    */
   const selected = useMemo(() => {
     const table = state?.editability.tables.length === 1 ? state.editability.tables[0] : undefined;
-    const added = state?.addedRows ?? [];
     if (selection?.kind !== "rows" || !table || !state?.payload) return { rows: [], added: [] };
+    const loaded = state.payload.rows ?? [];
     const { first, last } = selectedRows(selection);
-    // Added rows take the first places, so anything past them addresses a loaded row.
-    return {
-      added: added.slice(first, last + 1).map((row) => row.localId),
-      rows: (state.payload.rows ?? [])
-        .slice(Math.max(0, first - added.length), Math.max(0, last + 1 - added.length))
-        .map((row) => ({
+    const picked: { added: string[]; rows: { tableOid: number; key: (string | null)[] }[] } = {
+      added: [],
+      rows: [],
+    };
+    for (let index = first; index <= last; index += 1) {
+      const shown = shownRows.at(index);
+      if ("added" in shown) {
+        picked.added.push(shown.added.localId);
+        continue;
+      }
+      const row = loaded[shown.loaded];
+      if (row)
+        picked.rows.push({
           tableOid: table.tableOid,
           key: table.keyOrdinals.map((keyOrdinal) => row[keyOrdinal]?.value ?? null),
-        })),
-    };
-  }, [selection, state]);
+        });
+    }
+    return picked;
+  }, [selection, state, shownRows]);
   const selectedCount = selected.rows.length + selected.added.length;
 
   if (!state) {
@@ -1213,7 +1237,7 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
             className="edit-bar-button add"
             title={addable ?? "Add an empty row to fill in"}
             disabled={addable !== undefined}
-            onClick={() => post({ type: "data-view/add-row" })}
+            onClick={() => post({ type: "data-view/add-row", above: addAbove })}
           >
             ✚ Add row
           </button>

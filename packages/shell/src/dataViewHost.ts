@@ -442,7 +442,7 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
           return;
         }
         case "data-view/add-row": {
-          const added = edits.addRow(state.editability, request.values);
+          const added = edits.addRow(state.editability, request.values, request.above);
           if (!added.held) {
             emit({ type: "data-view/notice", message: added.reason, severity: "info" });
             return;

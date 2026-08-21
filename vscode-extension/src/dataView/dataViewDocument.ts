@@ -259,7 +259,7 @@ export class DataViewDocument implements vscode.CustomDocument {
         this.recordEdit(request.edit);
         return;
       case "data-view/add-row": {
-        const added = this.edits.addRow(this.editability, request.values);
+        const added = this.edits.addRow(this.editability, request.values, request.above);
         if (!added.held) {
           this.notify(added.reason, "info");
           return;

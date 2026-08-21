@@ -116,7 +116,7 @@ describe("provisioned row insertions", () => {
     const summaries = describeDataViewChanges(
       [],
       [],
-      [{ tableOid: 42, localId: "new-1", values: { city: "Brest", label: "Dépôt" } }],
+      [{ tableOid: 42, localId: "new-1", values: { city: "Brest", label: "Dépôt" }, above: 0 }],
       editability,
     );
 
@@ -129,7 +129,7 @@ describe("provisioned row insertions", () => {
     const summaries = describeDataViewChanges(
       [],
       [],
-      [{ tableOid: 42, localId: "new-1", values: {} }],
+      [{ tableOid: 42, localId: "new-1", values: {}, above: 0 }],
       editability,
     );
 
@@ -140,7 +140,7 @@ describe("provisioned row insertions", () => {
     const summaries = describeDataViewChanges(
       [edit()],
       [{ tableOid: 42, key: ["9"] }],
-      [{ tableOid: 42, localId: "new-1", values: {} }],
+      [{ tableOid: 42, localId: "new-1", values: {}, above: 0 }],
       editability,
     );
 

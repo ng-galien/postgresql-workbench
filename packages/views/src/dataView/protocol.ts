@@ -67,7 +67,7 @@ export type DataViewRequest =
    * Adds a row to fill in; it exists only in the grid until the changes are applied. `values`
    * arrives already filled when a pasted line fell past the last loaded row.
    */
-  | { type: "data-view/add-row"; values?: Record<string, string | null> }
+  | { type: "data-view/add-row"; values?: Record<string, string | null>; above?: number }
   /** Takes away every row of the selection, by identity. */
   | { type: "data-view/remove-rows"; rows: DataViewRowRemoval[] }
   | { type: "data-view/drop-row"; localId: string }

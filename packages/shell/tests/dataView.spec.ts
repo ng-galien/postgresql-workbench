@@ -471,7 +471,7 @@ test("adds an empty row and fills it in, without writing anything yet", async ({
 
   await bar.add.click();
 
-  const added = page.locator("tbody.added-rows tr.added");
+  const added = page.locator("tbody tr.added");
   await expect(added).toHaveCount(1);
   // The new row is where the reader is looking, not at the far end of the result.
   await expect(page.locator("tbody tr").first()).toHaveClass(/added/u);
@@ -497,7 +497,7 @@ test("selects a row it had added instead of losing it", async ({ page }) => {
   const bar = editBar(page);
 
   await bar.add.click();
-  const added = page.locator("tbody.added-rows tr.added");
+  const added = page.locator("tbody tr.added");
   await expect(added).toHaveCount(1);
 
   // Clicking the gutter of a new row selects it, the way it does for any other row.
@@ -509,8 +509,36 @@ test("selects a row it had added instead of losing it", async ({ page }) => {
 
   await bar.remove.click();
 
-  await expect(page.locator("tbody.added-rows tr.added")).toHaveCount(0);
+  await expect(page.locator("tbody tr.added")).toHaveCount(0);
   await expect(bar.changes).toBeDisabled();
+});
+
+test("puts a new row just over the row the reader is on", async ({ page }) => {
+  await openEmpty(page);
+  await add(page, "shop.address");
+  await enterEditMode(page);
+
+  // The fifth row is where the reader is; the new one belongs over it, not at the far top.
+  await selectRows(page, 4);
+  const shown = page.locator("tbody tr:not(.result-spacer)");
+  const wasThere = await shown.nth(4).locator("td").first().textContent();
+  await editBar(page).add.click();
+
+  await expect(shown.nth(4)).toHaveClass(/added/u);
+  await expect(shown.nth(5).locator("td").first()).toHaveText(wasThere ?? "");
+  // The new row takes the place the reader was on, and the selection with it: it is the row they
+  // are about to fill in.
+  await expect(shown.nth(4)).toHaveClass(/row-selected/u);
+});
+
+test("puts a new row at the top when the reader has not moved off it", async ({ page }) => {
+  await openEmpty(page);
+  await add(page, "shop.address");
+  await enterEditMode(page);
+
+  await editBar(page).add.click();
+
+  await expect(page.locator("tbody tr:not(.result-spacer)").first()).toHaveClass(/added/u);
 });
 
 test("says what taking a row away drags along, before it is taken", async ({ page }) => {
@@ -557,7 +585,7 @@ test("makes a row of every pasted line that falls past the last one", async ({ p
   await page.locator("tbody tr").last().locator("td[data-column]").first().click();
   await page.keyboard.press("ControlOrMeta+v");
 
-  await expect(page.locator("tbody.added-rows tr.added")).toHaveCount(2);
+  await expect(page.locator("tbody tr.added")).toHaveCount(2);
   await expect(editBar(page).changes).toHaveText(/3/u);
 });
 
@@ -587,10 +615,10 @@ test("carries a copied row into a new one, by keyboard alone", async ({ page }) 
   const copied = await readClipboard(page);
 
   await editBar(page).add.click();
-  await page.locator("tbody.added-rows tr.added th.row-gutter").click();
+  await page.locator("tbody tr.added th.row-gutter").click();
   await page.keyboard.press("ControlOrMeta+v");
 
-  const added = page.locator("tbody.added-rows tr.added").first();
+  const added = page.locator("tbody tr.added").first();
   await expect(added).toContainText(copied.split("\t")[0] ?? "");
   await expect(table.cellsWithText("Lille")).toHaveCount(2);
 });
@@ -629,7 +657,7 @@ test("keeps identity and relationship columns out of the way until they are need
   // Nullable, so the row can go without it: it stays out of the way.
   await expect(page.getByRole("columnheader", { name: /performed_by/u })).toHaveCount(0);
 
-  const cell = page.locator("tbody.added-rows td[data-added-row]").first();
+  const cell = page.locator("tbody td[data-added-row]").first();
   await cell.dblclick();
   await page.keyboard.type("1");
   await page.keyboard.press("Enter");
