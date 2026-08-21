@@ -378,8 +378,9 @@ test("selects rows in the gutter and takes them away together", async ({ page })
   await enterEditMode(page);
   const bar = editBar(page);
 
-  // Nothing is selected, so there is nothing to delete.
-  await expect(bar.selection).toHaveText("Nothing selected");
+  // Edit mode opens with the cursor on the first cell, and says so — a grid always has one. A
+  // cell is not a row, so there is still nothing to delete.
+  await expect(bar.selection).toHaveText("1 row × 1 column");
   await expect(bar.remove).toBeDisabled();
 
   await selectRows(page, 1, 3);

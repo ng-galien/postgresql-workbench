@@ -12,6 +12,17 @@ export interface GridSelection {
   head: { row: number; ordinal: number };
 }
 
+/** Whether two selections say the same thing, which is how a held one is told from a fresh one. */
+export function sameSelection(left: GridSelection | undefined, right: GridSelection): boolean {
+  return (
+    left?.kind === right.kind &&
+    left.anchor.row === right.anchor.row &&
+    left.anchor.ordinal === right.anchor.ordinal &&
+    left.head.row === right.head.row &&
+    left.head.ordinal === right.head.ordinal
+  );
+}
+
 /** A selection of one cell, which is what a plain click leaves behind. */
 export function cellSelection(row: number, ordinal: number): GridSelection {
   return { kind: "cells", anchor: { row, ordinal }, head: { row, ordinal } };

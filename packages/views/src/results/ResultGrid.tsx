@@ -24,6 +24,7 @@ import {
   movedSelection,
   rowIsSelected,
   rowSelection,
+  sameSelection,
   selectedOrdinals,
   selectedRows,
 } from "./gridSelection.js";
@@ -237,6 +238,25 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
   const ordinalsInSelection = new Set(selectedOrdinals(selection, visibleOrdinals));
   const rowBand = selectedRows(selection);
   const rowInSelection = (row: number) => row >= rowBand.first && row <= rowBand.last;
+  /*
+   * The grid is what holds the cursor, so a host tracking it is told what the cursor really is —
+   * on the first render, and again whenever a shorter result or a hidden column has clamped it.
+   * Otherwise the host would describe one selection while the reader looks at another.
+   */
+  const reportSelection = editing?.rows?.select;
+  const heldSelection = editing?.rows?.selection;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the clamped selection is the subject.
+  useEffect(() => {
+    if (reportSelection && !sameSelection(heldSelection, selection)) reportSelection(selection);
+  }, [
+    reportSelection,
+    heldSelection,
+    selection.kind,
+    selection.head.row,
+    selection.head.ordinal,
+    selection.anchor.row,
+    selection.anchor.ordinal,
+  ]);
   /** Where a loaded row sits in the selection: after the rows waiting to be added. */
   const selectionRowOf = (rowIndex: number) => addedRows.length + rowIndex;
   const focus = selection.head;
