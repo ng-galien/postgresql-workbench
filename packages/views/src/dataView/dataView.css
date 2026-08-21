@@ -754,3 +754,74 @@ body,
 .pending-edit-insertion {
   color: var(--vscode-charts-green, var(--vscode-foreground));
 }
+
+/*
+ * The edit bar: it appears with edit mode, immediately above the rows it acts on, and carries
+ * everything that changes them — what is selected, what can be done to it, what is waiting.
+ */
+.data-view-edit-bar {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  padding: 3px 8px;
+  border-bottom: 1px solid var(--vscode-panel-border);
+  background: var(--vscode-editor-background);
+  gap: 8px;
+}
+
+.edit-bar-selection {
+  color: var(--vscode-descriptionForeground);
+}
+
+.edit-bar-divider {
+  width: 1px;
+  height: 1.2em;
+  background: color-mix(in srgb, var(--vscode-foreground) 20%, transparent);
+}
+
+.edit-bar-button {
+  display: flex;
+  align-items: center;
+  padding: 1px 8px;
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 2px;
+  background: none;
+  color: var(--vscode-foreground);
+  cursor: pointer;
+  font: inherit;
+  gap: 4px;
+}
+
+.edit-bar-button:hover:not(:disabled) {
+  border-color: var(--vscode-focusBorder);
+}
+
+.edit-bar-button:disabled {
+  color: var(--vscode-disabledForeground, var(--vscode-descriptionForeground));
+  cursor: default;
+  opacity: 0.6;
+}
+
+.edit-bar-button.add:not(:disabled) {
+  color: var(--vscode-charts-green, var(--vscode-foreground));
+}
+
+.edit-bar-button.remove:not(:disabled) {
+  border-color: var(--vscode-errorForeground);
+  color: var(--vscode-errorForeground);
+}
+
+.edit-bar-button.count.pending {
+  border-color: var(--vscode-charts-green, var(--vscode-focusBorder));
+  color: var(--vscode-charts-green, var(--vscode-foreground));
+}
+
+.edit-bar-button.apply.ready {
+  border-color: var(--vscode-focusBorder);
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+}
+
+.edit-bar-changes {
+  position: relative;
+}

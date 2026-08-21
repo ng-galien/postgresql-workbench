@@ -63,10 +63,13 @@ export type DataViewRequest =
   | { type: "data-view/edit-query"; clause?: "select" }
   | { type: "data-view/apply-query" }
   | { type: "data-view/edit"; edit: DataViewEdit }
-  /** Takes a whole row away, or puts it back; provisioned like any other change. */
-  | { type: "data-view/remove-row"; row: DataViewRowRemoval }
-  /** Adds an empty row to fill in; it exists only in the grid until the changes are applied. */
-  | { type: "data-view/add-row" }
+  /**
+   * Adds a row to fill in; it exists only in the grid until the changes are applied. `values`
+   * arrives already filled when a pasted line fell past the last loaded row.
+   */
+  | { type: "data-view/add-row"; values?: Record<string, string | null> }
+  /** Takes away every row of the selection, by identity. */
+  | { type: "data-view/remove-rows"; rows: DataViewRowRemoval[] }
   | { type: "data-view/drop-row"; localId: string }
   /** Fills columns of an added row; a paste arrives as one message, not one per column. */
   | { type: "data-view/fill-row"; localId: string; values: Record<string, string | null> }

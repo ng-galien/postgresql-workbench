@@ -18,6 +18,12 @@ import {
   describeDataViewChanges,
 } from "../../../rows/src/dataView.js";
 import { hasWorkbenchTreeDrag } from "../cockpit/dragAndDrop.js";
+import {
+  type GridSelection,
+  selectedOrdinals,
+  selectedRowCount,
+  selectedRows,
+} from "../results/gridSelection.js";
 import { IconButton } from "../results/IconButton.js";
 import { Modal } from "../results/Modal.js";
 import { type GridEditing, type GridLayout, ResultGrid } from "../results/ResultGrid.js";
@@ -286,6 +292,10 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
   const [progress, setProgress] = useState<number>();
   const [notice, setNotice] = useState<Notice>();
   const [showSql, setShowSql] = useState(false);
+  /** Whether the reader turned editing on; the gutter, the edit bar and cell editing follow it. */
+  const [editMode, setEditMode] = useState(false);
+  /** What is selected in the grid, held here because the edit bar acts on it. */
+  const [selection, setSelection] = useState<GridSelection>();
   const [moreOpen, setMoreOpen] = useState(false);
   /** Whether the list of provisioned changes is showing. */
   const [editsOpen, setEditsOpen] = useState(false);
@@ -356,7 +366,8 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
   }, [anyMenuOpen]);
 
   const editing = useMemo<GridEditing | undefined>(() => {
-    if (!state || state.editability.tables.length === 0) return undefined;
+    // Nothing is editable, and no gutter shows, until the reader asks for it.
+    if (!state || !editMode || state.editability.tables.length === 0) return undefined;
     // The grid asks for these once per rendered cell, on every scroll: indexed, never scanned.
     const tablesByOid = new Map(
       state.editability.tables.map((table) => [table.tableOid, table] as const),
@@ -410,18 +421,19 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
               // Asked per rendered row on every scroll frame; no row removed is the usual state.
               isRemoved: (row) =>
                 removedKeys.size > 0 && removedKeys.has(dataViewRowKey(identityOf(onlyTable, row))),
-              toggleRemoval: (row) =>
-                messaging.post({ type: "data-view/remove-row", row: identityOf(onlyTable, row) }),
               added: state.addedRows,
-              add: () => messaging.post({ type: "data-view/add-row" }),
               drop: (localId) => messaging.post({ type: "data-view/drop-row", localId }),
               fill: (localId, values) =>
                 messaging.post({ type: "data-view/fill-row", localId, values }),
+              appendPasted: (values) => messaging.post({ type: "data-view/add-row", values }),
+              selection,
+              select: setSelection,
+              copy: (text) => messaging.post({ type: "data-view/copy", text }),
             },
           }
         : {}),
     };
-  }, [state, messaging]);
+  }, [state, messaging, selection, editMode]);
 
   // Both live above the early return, where hooks must be: what may move and what moving means are
   // read from this render's own state, so the handlers a list spreads are always the fresh ones.
@@ -442,6 +454,20 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
     },
   );
 
+  /*
+   * What the edit bar says and what it may act on. A rectangle of cells is not a set of rows: the
+   * delete control stays out of reach until the reader has selected rows in the gutter.
+   */
+  const selectedRowIdentities = useMemo(() => {
+    const table = state?.editability.tables.length === 1 ? state.editability.tables[0] : undefined;
+    if (selection?.kind !== "rows" || !table || !state?.payload) return [];
+    const { first, last } = selectedRows(selection);
+    return state.payload.rows.slice(first, last + 1).map((row) => ({
+      tableOid: table.tableOid,
+      key: table.keyOrdinals.map((keyOrdinal) => row[keyOrdinal]?.value ?? null),
+    }));
+  }, [selection, state]);
+
   if (!state) {
     return (
       <main className="data-view">
@@ -453,6 +479,8 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
   const payload = state.payload;
   // Rows come in one table at a time, exactly as they are added one at a time.
   const writableTable = dataViewWritableTable(state.editability);
+  const addable =
+    "reason" in writableTable ? `Rows can only be added ${writableTable.reason}` : undefined;
   const importable =
     "reason" in writableTable ? `Rows can only be imported ${writableTable.reason}` : undefined;
   const navigation = payload?.navigation;
@@ -489,6 +517,14 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
   const hiddenOrdinals = new Set(
     columnKeys.flatMap((key, ordinal) => (query.hidden.includes(key) ? [ordinal] : [])),
   );
+  const visibleOrdinals = columnNames.flatMap((_name, ordinal) =>
+    hiddenOrdinals.has(ordinal) ? [] : [ordinal],
+  );
+  const selectionSummary = !selection
+    ? "Nothing selected"
+    : selection.kind === "rows"
+      ? `${countLabel(selectedRowCount(selection), "row")} selected`
+      : `${countLabel(selectedRowCount(selection), "row")} × ${countLabel(selectedOrdinals(selection, visibleOrdinals).length, "column")}`;
   const post = (message: DataViewRequest) => messaging.post(message);
   const applySorts = (sorts: { column: string; direction: "ascending" | "descending" }[]) =>
     post({ type: "data-view/sort", sorts });
@@ -753,79 +789,16 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
             </div>
           </div>
           {editable ? (
-            <div className="toolbar-group toolbar-edits toolbar-more">
-              {/*
-                The count says how much is waiting; the list says what it is. Nobody should have to
-                write to a database to find out what they were about to write.
-              */}
-              <button
-                type="button"
-                className={`icon-button toolbar-edit-count${editCount > 0 ? " pending" : ""}`}
-                aria-live="polite"
-                aria-expanded={editsOpen}
-                title={`${countLabel(editCount, "pending change")} — click to read them`}
-                disabled={editCount === 0}
-                onClick={() => setEditsOpen((open) => !open)}
-              >
-                <span className="codicon codicon-edit" aria-hidden="true" />
-                {editCount}
-              </button>
-              {editsOpen && editCount > 0 ? (
-                <>
-                  <MenuBackdrop onClose={() => setEditsOpen(false)} />
-                  <div className="column-menu toolbar-menu pending-edits">
-                    <div className="columns-menu-heading">
-                      {countLabel(editCount, "change")} waiting to be applied
-                    </div>
-                    {describeDataViewChanges(
-                      state.edits,
-                      state.removedRows,
-                      state.addedRows,
-                      state.editability,
-                    ).map((change, index) => (
-                      <div
-                        className="pending-edit"
-                        // biome-ignore lint/suspicious/noArrayIndexKey: a change has no identity of its own; its place in the list is it.
-                        key={index}
-                      >
-                        <span className="pending-edit-target">
-                          {change.table} · {change.row}
-                        </span>
-                        {change.kind === "delete" ? (
-                          <span className="pending-edit-change">
-                            <span className="pending-edit-removal">The whole row goes away</span>
-                          </span>
-                        ) : change.kind === "insert" ? (
-                          <span className="pending-edit-change">
-                            <span className="pending-edit-insertion">A new row</span>
-                          </span>
-                        ) : (
-                          <span className="pending-edit-change">
-                            <span className="pending-edit-column">{change.column}</span>
-                            <span className="pending-edit-original">
-                              {change.original ?? "NULL"}
-                            </span>
-                            <span className="codicon codicon-arrow-right" aria-hidden="true" />
-                            <span className="pending-edit-value">{change.value ?? "NULL"}</span>
-                          </span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </>
-              ) : null}
+            <div className="toolbar-group">
               <IconButton
-                icon="discard"
-                label="Discard pending changes"
-                disabled={editCount === 0 || state.applying}
-                onClick={() => post({ type: "data-view/discard" })}
-              />
-              <IconButton
-                icon={state.applying ? "sync~spin" : "save"}
-                label="Apply pending changes in one transaction (Ctrl/Cmd+S)"
-                disabled={editCount === 0 || state.applying}
-                primary={editCount > 0}
-                onClick={() => post({ type: "data-view/apply" })}
+                icon="edit"
+                label={editMode ? "Leave edit mode" : "Edit mode"}
+                text="Edit"
+                primary={editMode}
+                onClick={() => {
+                  setEditMode((on) => !on);
+                  setSelection(undefined);
+                }}
               />
             </div>
           ) : null}
@@ -1218,6 +1191,119 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
         </ol>
       </div>
       {showSql ? <SqlPanel sql={query.text} onClose={() => setShowSql(false)} /> : null}
+      {/*
+        The edit bar: what a reader has selected, what they can do to it, and what is waiting to be
+        written. It shows only in edit mode, immediately above the rows it acts on.
+      */}
+      {editMode && editable ? (
+        <div className="data-view-edit-bar" role="toolbar" aria-label="Row editing">
+          <span className="edit-bar-selection" aria-live="polite">
+            {selectionSummary}
+          </span>
+          <span className="edit-bar-divider" aria-hidden="true" />
+          <button
+            type="button"
+            className="edit-bar-button add"
+            title={addable ?? "Add an empty row to fill in"}
+            disabled={addable !== undefined}
+            onClick={() => post({ type: "data-view/add-row" })}
+          >
+            ✚ Add row
+          </button>
+          <button
+            type="button"
+            className="edit-bar-button remove"
+            title={
+              selectedRowIdentities.length > 0
+                ? `Delete ${countLabel(selectedRowIdentities.length, "row")}`
+                : "Select rows in the gutter to delete them"
+            }
+            disabled={selectedRowIdentities.length === 0}
+            onClick={() => post({ type: "data-view/remove-rows", rows: selectedRowIdentities })}
+          >
+            ✕ Delete
+          </button>
+          <span className="edit-bar-divider" aria-hidden="true" />
+          <div className="edit-bar-changes toolbar-more">
+            <button
+              type="button"
+              className={`edit-bar-button count${editCount > 0 ? " pending" : ""}`}
+              aria-live="polite"
+              aria-expanded={editsOpen}
+              title={`${countLabel(editCount, "change")} — click to read them`}
+              disabled={editCount === 0}
+              onClick={() => setEditsOpen((open) => !open)}
+            >
+              <span className="codicon codicon-edit" aria-hidden="true" /> {editCount}
+            </button>
+            {editsOpen && editCount > 0 ? (
+              <>
+                <MenuBackdrop onClose={() => setEditsOpen(false)} />
+                <div className="column-menu toolbar-menu pending-edits">
+                  <div className="columns-menu-heading">
+                    {countLabel(editCount, "change")} waiting to be applied
+                  </div>
+                  {describeDataViewChanges(
+                    state.edits,
+                    state.removedRows,
+                    state.addedRows,
+                    state.editability,
+                  ).map((change, index) => (
+                    <div
+                      className="pending-edit"
+                      // biome-ignore lint/suspicious/noArrayIndexKey: a change has no identity of its own; its place in the list is it.
+                      key={index}
+                    >
+                      <span className="pending-edit-target">
+                        {change.table} · {change.row}
+                      </span>
+                      {change.kind === "delete" ? (
+                        <span className="pending-edit-change">
+                          <span className="pending-edit-removal">The whole row goes away</span>
+                        </span>
+                      ) : change.kind === "insert" ? (
+                        <span className="pending-edit-change">
+                          <span className="pending-edit-insertion">A new row</span>
+                        </span>
+                      ) : (
+                        <span className="pending-edit-change">
+                          <span className="pending-edit-column">{change.column}</span>
+                          <span className="pending-edit-original">{change.original ?? "NULL"}</span>
+                          <span className="codicon codicon-arrow-right" aria-hidden="true" />
+                          <span className="pending-edit-value">{change.value ?? "NULL"}</span>
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : null}
+          </div>
+          <button
+            type="button"
+            className="edit-bar-button"
+            title="Discard every change"
+            disabled={editCount === 0 || state.applying}
+            onClick={() => post({ type: "data-view/discard" })}
+          >
+            ↩ Discard
+          </button>
+          <button
+            type="button"
+            className={`edit-bar-button apply${editCount > 0 ? " ready" : ""}`}
+            title="Apply in one transaction (Ctrl/Cmd+S)"
+            disabled={editCount === 0 || state.applying}
+            onClick={() => post({ type: "data-view/apply" })}
+          >
+            <span
+              className={`codicon codicon-${state.applying ? "sync~spin" : "save"}`}
+              aria-hidden="true"
+            />{" "}
+            Apply
+          </button>
+        </div>
+      ) : null}
+
       <section className="data-view-grid" aria-label="Rows">
         {payload && payload.columns.length > 0 ? (
           <ResultGrid

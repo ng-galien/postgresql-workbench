@@ -141,21 +141,28 @@ export class PendingEdits {
    * go with it: there is nothing to update in a row that is about to be deleted. Answers with
    * what the deletion drags along, so a reader hears it now rather than when the write fails.
    */
-  toggleRemoval(
-    row: DataViewRowRemoval,
+  removeRows(
+    rows: readonly DataViewRowRemoval[],
     editability: DataViewEditability,
   ): { held: true; consequences: string[] } | { held: false; reason: string } {
     const table = dataViewWritableTable(editability);
     if ("reason" in table)
       return { held: false, reason: `Rows can only be taken away ${table.reason}` };
-    const key = dataViewRowKey(row);
-    const index = this.removals.findIndex((candidate) => dataViewRowKey(candidate) === key);
-    if (index >= 0) {
-      this.removals.splice(index, 1);
+    if (rows.length === 0) return { held: true, consequences: [] };
+    /*
+     * A second call on rows already taken puts them back, so the same gesture undoes itself. Cell
+     * edits held on a row go with it: there is nothing to update in a row about to be deleted.
+     */
+    const keys = new Set(rows.map((row) => dataViewRowKey(row)));
+    const alreadyGone = rows.every((row) => this.isRemoved(row));
+    if (alreadyGone) {
+      this.removals = this.removals.filter((row) => !keys.has(dataViewRowKey(row)));
       return { held: true, consequences: [] };
     }
-    this.items = this.items.filter((candidate) => dataViewRowKey(candidate) !== key);
-    this.removals.push(row);
+    this.items = this.items.filter((edit) => !keys.has(dataViewRowKey(edit)));
+    for (const row of rows) {
+      if (!this.isRemoved(row)) this.removals.push(row);
+    }
     return { held: true, consequences: describeDeleteConsequences(table) };
   }
 
@@ -164,11 +171,14 @@ export class PendingEdits {
    * time: there is nowhere to put them without one, and no way to choose between two — the same
    * rule for every surface, worded once.
    */
-  addRow(editability: DataViewEditability): { held: true } | { held: false; reason: string } {
+  addRow(
+    editability: DataViewEditability,
+    values: Record<string, string | null> = {},
+  ): { held: true } | { held: false; reason: string } {
     const table = dataViewWritableTable(editability);
     if ("reason" in table) return { held: false, reason: `Rows can only be added ${table.reason}` };
     this.added += 1;
-    this.insertions.push({ tableOid: table.tableOid, localId: `new-${this.added}`, values: {} });
+    this.insertions.push({ tableOid: table.tableOid, localId: `new-${this.added}`, values });
     return { held: true };
   }
 

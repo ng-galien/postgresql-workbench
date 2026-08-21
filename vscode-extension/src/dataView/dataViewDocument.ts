@@ -259,7 +259,7 @@ export class DataViewDocument implements vscode.CustomDocument {
         this.recordEdit(request.edit);
         return;
       case "data-view/add-row": {
-        const added = this.edits.addRow(this.editability);
+        const added = this.edits.addRow(this.editability, request.values);
         if (!added.held) {
           this.notify(added.reason, "info");
           return;
@@ -282,8 +282,8 @@ export class DataViewDocument implements vscode.CustomDocument {
         this.edits.fillRow(request.localId, request.values);
         this.broadcastState();
         return;
-      case "data-view/remove-row": {
-        const removal = this.edits.toggleRemoval(request.row, this.editability);
+      case "data-view/remove-rows": {
+        const removal = this.edits.removeRows(request.rows, this.editability);
         if (!removal.held) {
           this.notify(removal.reason, "info");
           return;

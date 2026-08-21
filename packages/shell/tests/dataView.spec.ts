@@ -29,6 +29,31 @@ async function openColumns(page: Page) {
   await expect(page.getByRole("menu")).toBeVisible();
 }
 
+/** Turns editing on: the gutter, the edit bar and cell editing all follow that one control. */
+async function enterEditMode(page: Page) {
+  await page.getByTitle("Edit mode", { exact: true }).click();
+  await expect(page.getByRole("toolbar", { name: "Row editing" })).toBeVisible();
+}
+
+/** Selects whole rows the way a reader does: in the gutter, extending with shift. */
+async function selectRows(page: Page, first: number, last = first) {
+  const gutters = page.locator("tbody th.row-gutter");
+  await gutters.nth(first).click();
+  if (last !== first) await gutters.nth(last).click({ modifiers: ["Shift"] });
+}
+
+/** The edit bar's own controls, by the words on them. */
+function editBar(page: Page) {
+  const bar = page.getByRole("toolbar", { name: "Row editing" });
+  return {
+    selection: bar.locator(".edit-bar-selection"),
+    add: bar.getByRole("button", { name: /Add row/u }),
+    remove: bar.getByRole("button", { name: /Delete/u }),
+    changes: bar.locator(".edit-bar-button.count"),
+    apply: bar.getByRole("button", { name: /Apply/u }),
+  };
+}
+
 /** The SQL the view says it is running, read line by line out of its panel. */
 async function runningSql(page: Page): Promise<string> {
   const panel = page.getByRole("region", { name: "Query SQL" });
@@ -314,6 +339,7 @@ test("moves rows in and out through dialogs of their own", async ({ page }) => {
 test("says what each provisioned change will do, not only how many there are", async ({ page }) => {
   await openEmpty(page);
   const table = await add(page, "shop.address");
+  await enterEditMode(page);
 
   // Read what the cell holds rather than naming it: the seed is data, not a contract.
   const cell = table.cellsWithText("Nantes").first();
@@ -323,9 +349,9 @@ test("says what each provisioned change will do, not only how many there are", a
   await page.keyboard.type("Saint-Nazaire");
   await page.keyboard.press("Enter");
 
-  const changes = page.getByTitle(/pending change.*click to read them/u);
-  await expect(changes).toBeEnabled();
-  await changes.click();
+  const bar = editBar(page);
+  await expect(bar.changes).toBeEnabled();
+  await bar.changes.click();
 
   // A reader about to write to a database should be able to read the list before committing to it.
   const drawer = page.locator(".pending-edits");
@@ -336,59 +362,105 @@ test("says what each provisioned change will do, not only how many there are", a
   await expect(drawer.locator(".pending-edit-value")).toHaveText("Saint-Nazaire");
 });
 
-test("takes a whole row away, provisioned like any other change", async ({ page }) => {
-  await openEmpty(page);
-  const table = await add(page, "shop.address");
-
-  // The gutter is where a spreadsheet puts its row controls: beside the rows, not inside them.
-  const firstRow = page.locator("tbody tr").first();
-  await firstRow.locator(".row-gutter-action").click();
-
-  await expect(firstRow).toHaveClass(/removed/u);
-  const changes = page.getByTitle(/pending change.*click to read them/u);
-  await expect(changes).toBeEnabled();
-  await changes.click();
-  const drawer = page.locator(".pending-edits");
-  await expect(drawer.locator(".pending-edit-target")).toContainText("shop.address · id =");
-  await expect(drawer.locator(".pending-edit-removal")).toHaveText("The whole row goes away");
-
-  // Nothing has been written: the row is still there, struck through, until the changes are applied.
-  await expect(table.cellsWithText("Siège")).toHaveCount(1);
-});
-
-test("puts back a row it was going to take away", async ({ page }) => {
+test("selects rows in the gutter and takes them away together", async ({ page }) => {
   await openEmpty(page);
   await add(page, "shop.address");
+  await enterEditMode(page);
+  const bar = editBar(page);
 
-  const firstRow = page.locator("tbody tr").first();
-  await firstRow.locator(".row-gutter-action").click();
-  await expect(firstRow).toHaveClass(/removed/u);
+  // Nothing is selected, so there is nothing to delete.
+  await expect(bar.selection).toHaveText("Nothing selected");
+  await expect(bar.remove).toBeDisabled();
 
-  await firstRow.locator(".row-gutter-action").click();
+  await selectRows(page, 1, 3);
 
-  await expect(firstRow).not.toHaveClass(/removed/u);
-  await expect(page.getByTitle(/pending change.*click to read them/u)).toBeDisabled();
+  await expect(bar.selection).toHaveText("3 rows selected");
+  await expect(page.locator("th.row-gutter.selected")).toHaveCount(3);
+  await expect(bar.remove).toBeEnabled();
+
+  await bar.remove.click();
+
+  // The rows stay on screen, struck through, until the changes are applied.
+  await expect(page.locator("tbody tr.removed")).toHaveCount(3);
+  await expect(page.locator(".row-gutter-state.removed")).toHaveCount(3);
+  await expect(bar.changes).toHaveText(/3/u);
 });
 
-test("offers no row gutter over a join, where no one table owns the row", async ({ page }) => {
+test("puts back rows it was going to take away", async ({ page }) => {
   await openEmpty(page);
   await add(page, "shop.address");
-  await expect(page.locator(".row-gutter-action").first()).toBeAttached();
+  await enterEditMode(page);
+  const bar = editBar(page);
+
+  await selectRows(page, 0, 1);
+  await bar.remove.click();
+  await expect(page.locator("tbody tr.removed")).toHaveCount(2);
+
+  await bar.remove.click();
+
+  await expect(page.locator("tbody tr.removed")).toHaveCount(0);
+  await expect(bar.changes).toBeDisabled();
+});
+
+test("selects a rectangle of cells, which is not a set of rows", async ({ page }) => {
+  await openEmpty(page);
+  await add(page, "shop.address");
+  await enterEditMode(page);
+  const bar = editBar(page);
+
+  await page.locator('td[data-row="0"][data-column="1"]').click();
+  await expect(bar.selection).toHaveText("1 row × 1 column");
+
+  await page.locator('td[data-row="2"][data-column="3"]').click({ modifiers: ["Shift"] });
+
+  await expect(bar.selection).toHaveText("3 rows × 3 columns");
+  await expect(page.locator("td.selected")).toHaveCount(9);
+  await expect(page.locator("td.anchor")).toHaveCount(1);
+  // Which table a whole row would go from is not something a rectangle answers.
+  await expect(bar.remove).toBeDisabled();
+});
+
+test("extends the selection with shift and the arrow keys", async ({ page }) => {
+  await openEmpty(page);
+  await add(page, "shop.address");
+  await enterEditMode(page);
+  const bar = editBar(page);
+
+  await page.locator('td[data-row="0"][data-column="1"]').click();
+  await page.keyboard.press("Shift+ArrowDown");
+  await page.keyboard.press("Shift+ArrowDown");
+  await page.keyboard.press("Shift+ArrowRight");
+
+  await expect(bar.selection).toHaveText("3 rows × 2 columns");
+
+  // Without shift the selection collapses onto the cell moved to.
+  await page.keyboard.press("ArrowDown");
+  await expect(bar.selection).toHaveText("1 row × 1 column");
+});
+
+test("offers no gutter over a join, where no one table owns the row", async ({ page }) => {
+  await openEmpty(page);
+  await add(page, "shop.address");
+  await enterEditMode(page);
+  await expect(page.locator("tbody th.row-gutter").first()).toBeAttached();
 
   await add(page, "shop.warehouse");
 
-  // Cells stay editable over a join; which table a whole row would go from is not the grid's to guess.
-  await expect(page.locator(".row-gutter-action")).toHaveCount(0);
+  // Cells stay editable over a join; whole rows have no single table to go from.
+  await expect(page.locator("tbody th.row-gutter")).toHaveCount(0);
 });
 
 test("adds an empty row and fills it in, without writing anything yet", async ({ page }) => {
   await openEmpty(page);
   await add(page, "shop.address");
+  await enterEditMode(page);
+  const bar = editBar(page);
 
-  await page.getByTitle("Add an empty row to fill in").click();
+  await bar.add.click();
 
   const added = page.locator("tbody.added-rows tr.added");
   await expect(added).toHaveCount(1);
+  await expect(page.locator(".row-gutter-state.added")).toHaveCount(1);
   // What the reader leaves alone is left to PostgreSQL, and the row says so.
   await expect(added.locator(".cell-value").first()).toHaveText("DEFAULT");
 
@@ -397,8 +469,7 @@ test("adds an empty row and fills it in, without writing anything yet", async ({
   await page.keyboard.press("Enter");
 
   await expect(added.locator(".cell-value").first()).toHaveText("Atelier Est");
-  const changes = page.getByTitle(/pending change.*click to read them/u);
-  await changes.click();
+  await bar.changes.click();
   const drawer = page.locator(".pending-edits");
   await expect(drawer.locator(".pending-edit-target")).toContainText("label = Atelier Est");
   await expect(drawer.locator(".pending-edit-insertion")).toHaveText("A new row");
@@ -407,21 +478,25 @@ test("adds an empty row and fills it in, without writing anything yet", async ({
 test("takes back a row it had added", async ({ page }) => {
   await openEmpty(page);
   await add(page, "shop.address");
+  await enterEditMode(page);
+  const bar = editBar(page);
 
-  await page.getByTitle("Add an empty row to fill in").click();
+  await bar.add.click();
   await expect(page.locator("tbody.added-rows tr.added")).toHaveCount(1);
 
-  await page.locator("tbody.added-rows tr.added .row-gutter-action").click();
+  await page.locator(".row-gutter-state.added").click();
 
   await expect(page.locator("tbody.added-rows tr.added")).toHaveCount(0);
-  await expect(page.getByTitle(/pending change.*click to read them/u)).toBeDisabled();
+  await expect(bar.changes).toBeDisabled();
 });
 
 test("says what taking a row away drags along, before it is taken", async ({ page }) => {
   await openEmpty(page);
   await add(page, "shop.address");
+  await enterEditMode(page);
 
-  await page.locator("tbody tr").first().locator(".row-gutter-action").click();
+  await selectRows(page, 0);
+  await editBar(page).remove.click();
 
   // An address is pointed at from several tables, and the reader hears about it now rather than
   // when the transaction fails.
@@ -433,6 +508,7 @@ test("says what taking a row away drags along, before it is taken", async ({ pag
 test("spreads a tab-separated paste across the columns from where it lands", async ({ page }) => {
   await openEmpty(page);
   const table = await add(page, "shop.address");
+  await enterEditMode(page);
 
   await table
     .cellsWithText("Lille")
@@ -445,23 +521,63 @@ test("spreads a tab-separated paste across the columns from where it lands", asy
       );
     });
 
-  const changes = page.getByTitle(/pending change.*click to read them/u);
-  await expect(changes).toBeEnabled();
-  await changes.click();
+  const bar = editBar(page);
+  await expect(bar.changes).toBeEnabled();
+  await bar.changes.click();
   // Only the column that really changed is held: pasting a value a cell already has is no change.
   const drawer = page.locator(".pending-edits");
   await expect(drawer.locator(".pending-edit-column")).toHaveText("city");
   await expect(drawer.locator(".pending-edit-value")).toHaveText("Saint-Herblain");
 });
 
+test("makes a row of every pasted line that falls past the last one", async ({ page }) => {
+  await openEmpty(page);
+  await add(page, "shop.address");
+  await enterEditMode(page);
+
+  // Three lines pasted onto the last row: the first lands on it, the other two have no row to
+  // land on and become rows of their own.
+  const lastRowCell = page.locator("tbody tr").last().locator("td[data-column]").first();
+  await lastRowCell.evaluate((cell) => {
+    const clipboardData = new DataTransfer();
+    clipboardData.setData("text/plain", "Brest\nBayonne\nColmar");
+    cell.dispatchEvent(
+      new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData }),
+    );
+  });
+
+  await expect(page.locator("tbody.added-rows tr.added")).toHaveCount(2);
+  await expect(editBar(page).changes).toHaveText(/3/u);
+});
+
+test("copies the selection the way a spreadsheet would", async ({ page }) => {
+  await openEmpty(page);
+  await add(page, "shop.address");
+  await enterEditMode(page);
+
+  await selectRows(page, 0, 1);
+  const copied = page.waitForRequest(
+    (request) =>
+      request.url().endsWith("/request") && (request.postData() ?? "").includes("data-view/copy"),
+  );
+  // The grid keeps one cell reachable by keyboard; that is where a shortcut is typed.
+  await page.locator('td[tabindex="0"]').press("ControlOrMeta+c");
+
+  const posted = JSON.parse((await copied).postData() ?? "{}");
+  // Tab between columns, newline between rows, in the order they are shown.
+  expect(posted.text.split("\n")).toHaveLength(2);
+  expect(posted.text).toContain("\t");
+});
+
 test("brings back the columns a new row cannot go without", async ({ page }) => {
   await openEmpty(page);
   await add(page, "shop.inventory_movement");
+  await enterEditMode(page);
 
   // Relationship columns start hidden, and one of them is exactly what an insertion needs.
   await expect(page.getByRole("columnheader", { name: /inventory_id/u })).toHaveCount(0);
 
-  await page.getByTitle("Add an empty row to fill in").click();
+  await editBar(page).add.click();
 
   await expect(page.getByRole("columnheader", { name: /inventory_id/u })).toHaveCount(1);
   // The key PostgreSQL generates for itself stays out of the way, and so does a defaulted column.
@@ -474,13 +590,14 @@ test("keeps identity and relationship columns out of the way until they are need
 }) => {
   await openEmpty(page);
   await add(page, "shop.inventory_movement");
+  await enterEditMode(page);
 
   // Relationship columns are hidden because a reader has no use for them, not because they cannot
   // be edited — and over a single table they can be, which is what an insertion needs.
   await expect(page.getByRole("columnheader", { name: /inventory_id/u })).toHaveCount(0);
   await expect(page.getByRole("columnheader", { name: /performed_by/u })).toHaveCount(0);
 
-  await page.getByTitle("Add an empty row to fill in").click();
+  await editBar(page).add.click();
 
   await expect(page.getByRole("columnheader", { name: /inventory_id/u })).toHaveCount(1);
   // Nullable, so the row can go without it: it stays out of the way.

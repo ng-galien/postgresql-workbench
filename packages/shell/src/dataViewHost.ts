@@ -425,8 +425,8 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
           broadcast();
           return;
         }
-        case "data-view/remove-row": {
-          const removal = edits.toggleRemoval(request.row, state.editability);
+        case "data-view/remove-rows": {
+          const removal = edits.removeRows(request.rows, state.editability);
           if (!removal.held) {
             emit({ type: "data-view/notice", message: removal.reason, severity: "info" });
             return;
@@ -442,7 +442,7 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
           return;
         }
         case "data-view/add-row": {
-          const added = edits.addRow(state.editability);
+          const added = edits.addRow(state.editability, request.values);
           if (!added.held) {
             emit({ type: "data-view/notice", message: added.reason, severity: "info" });
             return;

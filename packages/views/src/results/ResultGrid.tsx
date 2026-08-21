@@ -15,6 +15,19 @@ import type { DataViewColumnPolicy, DataViewEdit } from "../../../rows/src/dataV
 import type { ResultTable } from "../../../rows/src/resultPayload.js";
 import { CellEditor } from "./CellEditor.js";
 import {
+  cellIsSelected,
+  cellSelection,
+  extendedTo,
+  type GridSelection,
+  isAnchor,
+  movedSelection,
+  rowIsSelected,
+  rowSelection,
+  selectedOrdinals,
+  selectedRowCount,
+  selectedRows,
+} from "./gridSelection.js";
+import {
   columnWidthsCh,
   formattedCellValue,
   nextResultSort,
@@ -63,14 +76,21 @@ export interface GridEditing {
   rows?: {
     /** Whether this row is one the reader took away, and is shown struck through. */
     isRemoved(row: readonly DebugResultCell[]): boolean;
-    /** Takes this row away, or puts it back. */
-    toggleRemoval(row: readonly DebugResultCell[]): void;
     /** Rows the reader added; they live below the loaded ones until the changes are applied. */
     added: readonly { localId: string; values: Record<string, string | null> }[];
-    add(): void;
     drop(localId: string): void;
     /** Fills columns of an added row; null leaves a column to PostgreSQL. */
     fill(localId: string, values: Record<string, string | null>): void;
+    /** Adds a row already filled in — a line of a paste that fell past the last loaded row. */
+    appendPasted(values: Record<string, string | null>): void;
+    /**
+     * What is selected, held by whoever shows the controls that act on it — the count and the
+     * delete control live in the edit bar above the grid, not in the grid.
+     */
+    selection: GridSelection | undefined;
+    select(next: GridSelection | undefined): void;
+    /** Hands text to the clipboard; the host owns that, the grid only knows what to say. */
+    copy(text: string): void;
   };
 }
 
@@ -104,11 +124,8 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
   const [detail, setDetail] = useState<string>();
   const [localSort, setLocalSort] = useState<ResultSort>();
   const [activeCell, setActiveCell] = useState<{ row: number; ordinal: number }>();
-  /** The one cell the grid keeps reachable with a single Tab; arrows move it. */
-  const [focusCell, setFocusCell] = useState<{ row: number; ordinal: number }>({
-    row: 0,
-    ordinal: 0,
-  });
+  /** Where the grid points when nobody is holding a selection for it. */
+  const [ownSelection, setOwnSelection] = useState<GridSelection>(cellSelection(0, 0));
   const [menu, setMenu] = useState<{ ordinal: number; x: number; y: number }>();
   const [dragOver, setDragOver] = useState<number>();
   const dragSource = useRef<number | undefined>(undefined);
@@ -182,25 +199,64 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
   const scrollbar = resultScrollbarGeometry(scrollMetrics, scrollTop);
 
   const gridRef = useRef<HTMLTableElement>(null);
-  // Focus is keyed by ordinal, like every other position in this grid, so a hidden column never
-  // shifts it. Clamping on read means nothing has to reset it when the result changes.
-  const focus = {
-    row: clamp(focusCell.row, 0, rows.length - 1),
-    ordinal: columns.some(({ ordinal }) => ordinal === focusCell.ordinal)
-      ? focusCell.ordinal
-      : (columns[0]?.ordinal ?? 0),
+  const visibleOrdinals = columns.map((column) => column.ordinal);
+  const held = editing?.rows?.selection ?? ownSelection;
+  const setSelection = (next: GridSelection) => {
+    if (editing?.rows) editing.rows.select(next);
+    else setOwnSelection(next);
   };
+  /*
+   * Selection is keyed by ordinal, like every other position in this grid, so a hidden column
+   * never shifts it. Clamping on read means nothing has to reset it when the result changes, and
+   * the head is where the roving tabindex and the scroll-into-view follow.
+   */
+  const inBounds = (at: { row: number; ordinal: number }) => ({
+    row: clamp(at.row, 0, rows.length - 1),
+    ordinal: visibleOrdinals.includes(at.ordinal) ? at.ordinal : (visibleOrdinals[0] ?? 0),
+  });
+  const selection: GridSelection = {
+    kind: held.kind,
+    anchor: inBounds(held.anchor),
+    head: inBounds(held.head),
+  };
+  const focus = selection.head;
   const moveTo = (next: { row: number; ordinal: number }) => {
     if (next.row === focus.row && next.ordinal === focus.ordinal) return;
-    setFocusCell(next);
+    setSelection(cellSelection(next.row, next.ordinal));
   };
-  const step = (rowDelta: number, columnDelta: number) => {
-    const index = columns.findIndex(({ ordinal }) => ordinal === focus.ordinal);
-    const column = clamp(index + columnDelta, 0, columns.length - 1);
-    moveTo({
-      row: clamp(focus.row + rowDelta, 0, rows.length - 1),
-      ordinal: columns[column]?.ordinal ?? focus.ordinal,
-    });
+  /**
+   * The selection as a spreadsheet would put it on the clipboard: tab between columns, newline
+   * between rows, in the order they are shown. `withHeader` prepends the column names.
+   */
+  const copySelection = (withHeader: boolean) => {
+    const ordinals = selectedOrdinals(selection, visibleOrdinals);
+    if (ordinals.length === 0) return;
+    const { first, last } = selectedRows(selection);
+    const lines: string[] = [];
+    if (withHeader) {
+      lines.push(ordinals.map((ordinal) => payload.columns[ordinal]?.name ?? "").join("\t"));
+    }
+    for (let index = first; index <= last; index += 1) {
+      const row = rows[index];
+      if (!row) continue;
+      lines.push(
+        ordinals
+          .map((ordinal) => {
+            const edit = editing?.editFor(row, index, ordinal);
+            return (edit ? edit.value : row[ordinal]?.value) ?? "";
+          })
+          .join("\t"),
+      );
+    }
+    editing?.rows?.copy(lines.join("\n"));
+  };
+  const step = (rowDelta: number, columnDelta: number, extend: boolean) => {
+    setSelection(
+      movedSelection(selection, rowDelta, columnDelta, extend, {
+        rows: rows.length,
+        visibleOrdinals,
+      }),
+    );
   };
 
   // The rows are virtualised, so a focus that left the window scrolls it back into view and takes
@@ -340,47 +396,76 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
                * is, so what a reader sees under the pointer is what receives the values.
                */
               const cell = (event.target as HTMLElement).closest<HTMLElement>("td[data-column]");
-              if (!cell) return;
-              const ordinal = Number(cell.dataset.column);
-              const reachable = columns.map((column) => column.ordinal);
-              const from = reachable.indexOf(ordinal);
+              const addedRow = cell?.dataset.addedRow;
+              const ordinal = cell ? Number(cell.dataset.column) : selection.anchor.ordinal;
+              const from = visibleOrdinals.indexOf(ordinal);
               if (from < 0) return;
-              const addedRow = cell.dataset.addedRow;
-              const rowIndex = Number(cell.dataset.row);
-              const row = rows[rowIndex];
-              // Where a pasted value lands: into a row being added, or over a loaded one.
-              if (addedRow === undefined && !row) return;
               event.preventDefault();
-              const pastedValues = pasted.replace(/\r?\n$/u, "").split("\t");
-              // Columns a row being added receives at once: a paste is one gesture, not one
-              // message per column, and the host answers each message with the whole state.
-              const filled: Record<string, string | null> = {};
-              pastedValues.forEach((value, offset) => {
-                const target = reachable[from + offset];
-                if (target === undefined || !editing.policies[target]?.editable) return;
-                if (addedRow !== undefined) {
-                  const column = payload.columns[target];
-                  if (column) filled[column.name] = value;
+              const lines = pasted.replace(/\r?\n$/u, "").split(/\r?\n/u);
+              /*
+               * A paste is one gesture. Every line under the last loaded row becomes a row the
+               * reader added — a loaded row is never overwritten by a line that had no row of its
+               * own — and each added row is filled in a single message.
+               */
+              if (addedRow !== undefined) {
+                const filled: Record<string, string | null> = {};
+                (lines[0] ?? "").split("\t").forEach((value, offset) => {
+                  const target = visibleOrdinals[from + offset];
+                  const column = target === undefined ? undefined : payload.columns[target];
+                  if (!column || !editing.policies[target ?? -1]?.editable) return;
+                  filled[column.name] = value;
+                });
+                editing.rows?.fill(addedRow, filled);
+                return;
+              }
+              const firstRow = cell ? Number(cell.dataset.row) : selection.anchor.row;
+              lines.forEach((line, lineOffset) => {
+                const rowIndex = firstRow + lineOffset;
+                const row = rows[rowIndex];
+                if (!row) {
+                  editing.rows?.appendPasted(splitAcross(line, visibleOrdinals, from, payload));
                   return;
                 }
-                if (row) editing.onEdit(row, rowIndex, target, value, row[target]?.value ?? null);
+                line.split("\t").forEach((value, offset) => {
+                  const target = visibleOrdinals[from + offset];
+                  if (target === undefined || !editing.policies[target]?.editable) return;
+                  editing.onEdit(row, rowIndex, target, value, row[target]?.value ?? null);
+                });
               });
-              if (addedRow !== undefined) editing.rows?.fill(addedRow, filled);
             }}
             onKeyDown={(event) => {
               const page = Math.floor(viewportHeight / RESULT_ROW_HEIGHT);
+              const extend = event.shiftKey;
+              if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "a") {
+                event.preventDefault();
+                setSelection(
+                  extendedTo(rowSelection(0, visibleOrdinals[0] ?? 0), {
+                    row: rows.length - 1,
+                    ordinal: visibleOrdinals.at(-1) ?? 0,
+                  }),
+                );
+                return;
+              }
+              if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "c") {
+                event.preventDefault();
+                copySelection(event.shiftKey);
+                return;
+              }
               switch (event.key) {
                 case "ArrowRight":
-                  step(0, 1);
+                  step(0, 1, extend);
                   break;
                 case "ArrowLeft":
-                  step(0, -1);
+                  step(0, -1, extend);
                   break;
                 case "ArrowDown":
-                  step(1, 0);
+                  step(1, 0, extend);
                   break;
                 case "ArrowUp":
-                  step(-1, 0);
+                  step(-1, 0, extend);
+                  break;
+                case "Escape":
+                  setSelection(cellSelection(focus.row, focus.ordinal));
                   break;
                 case "Home":
                   moveTo({ row: focus.row, ordinal: columns[0]?.ordinal ?? focus.ordinal });
@@ -389,10 +474,10 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
                   moveTo({ row: focus.row, ordinal: columns.at(-1)?.ordinal ?? focus.ordinal });
                   break;
                 case "PageDown":
-                  step(page, 0);
+                  step(page, 0, extend);
                   break;
                 case "PageUp":
-                  step(-page, 0);
+                  step(-page, 0, extend);
                   break;
                 case "Enter":
                 case " ": {
@@ -525,26 +610,30 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
                     className={removed ? "removed" : undefined}
                   >
                     {editing?.rows ? (
-                      <td className="row-gutter">
-                        <button
-                          type="button"
-                          className="row-gutter-action"
-                          title={
-                            removed
-                              ? "Keep this row after all"
-                              : "Take this row away when the changes are applied"
-                          }
-                          aria-label={
-                            removed ? `Keep row ${rowIndex + 1}` : `Remove row ${rowIndex + 1}`
-                          }
-                          onClick={() => editing.rows?.toggleRemoval(row)}
-                        >
-                          <span
-                            className={`codicon codicon-${removed ? "discard" : "remove"}`}
-                            aria-hidden="true"
-                          />
-                        </button>
-                      </td>
+                      <th
+                        scope="row"
+                        className={`row-gutter${rowIsSelected(selection, rowIndex) ? " selected" : ""}`}
+                        aria-selected={rowIsSelected(selection, rowIndex)}
+                        title={`Row ${rowIndex + 1} — click to select it, shift-click to extend`}
+                        onMouseDown={(event) => {
+                          event.preventDefault();
+                          const at = { row: rowIndex, ordinal: visibleOrdinals[0] ?? 0 };
+                          setSelection(
+                            event.shiftKey
+                              ? extendedTo(selection, at, "rows")
+                              : rowSelection(at.row, at.ordinal),
+                          );
+                        }}
+                      >
+                        <span className="row-gutter-number">{rowIndex + 1}</span>
+                        {removed ? (
+                          <span className="row-gutter-state removed" aria-label="Row deleted">
+                            ✕
+                          </span>
+                        ) : (
+                          <span className="row-gutter-state" />
+                        )}
+                      </th>
                     ) : null}
                     {keyedValues(row, (cell) => `${cell.kind}:${cell.value ?? "NULL"}`)
                       .filter(({ ordinal }) => isVisible(ordinal))
@@ -566,10 +655,23 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
                             data-row={rowIndex}
                             data-column={ordinal}
                             onFocus={() => moveTo({ row: rowIndex, ordinal })}
+                            onMouseDown={(event) => {
+                              if (!editing?.rows) return;
+                              // A click puts the anchor here; a shifted one reaches from where it was.
+                              setSelection(
+                                event.shiftKey
+                                  ? extendedTo(selection, { row: rowIndex, ordinal }, "cells")
+                                  : cellSelection(rowIndex, ordinal),
+                              );
+                            }}
                             className={[
                               shown === null ? "null" : cell.kind === "null" ? "text" : cell.kind,
                               cell.truncated ? "truncated" : "",
                               edit ? "edited" : "",
+                              cellIsSelected(selection, rowIndex, ordinal, visibleOrdinals)
+                                ? "selected"
+                                : "",
+                              isAnchor(selection, rowIndex, ordinal) ? "anchor" : "",
                               policy && !policy.editable ? "read-only" : "",
                               isActive ? "editing" : "",
                             ]
@@ -621,24 +723,25 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
             </tbody>
             {/*
               Rows the reader added sit below the loaded ones, in a body of their own: they are
-              not part of the result, they are not scrolled through, and the row that offers to
-              add another belongs with them rather than in the toolbar.
+              not part of the result and they are not scrolled through. What adds one is the edit
+              bar above the grid, so the control is reachable whatever the result is showing.
             */}
             {editing?.rows ? (
               <tbody className="added-rows">
                 {editing.rows.added.map((added) => (
                   <tr key={added.localId} className="added">
-                    <td className="row-gutter">
+                    <th scope="row" className="row-gutter">
+                      <span className="row-gutter-number" />
                       <button
                         type="button"
-                        className="row-gutter-action"
+                        className="row-gutter-state added"
                         title="Take back this row"
                         aria-label={`Take back the added row ${added.localId}`}
                         onClick={() => editing.rows?.drop(added.localId)}
                       >
-                        <span className="codicon codicon-discard" aria-hidden="true" />
+                        ✚
                       </button>
-                    </td>
+                    </th>
                     {columns.map(({ key: columnKey, ordinal, value: column }) => {
                       const policy = editing.policies[ordinal];
                       const shown = added.values[column.name] ?? null;
@@ -680,28 +783,6 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
                     })}
                   </tr>
                 ))}
-                <tr className="add-row">
-                  <td className="row-gutter">
-                    <button
-                      type="button"
-                      className="row-gutter-action always"
-                      title="Add an empty row to fill in"
-                      aria-label="Add a row"
-                      onClick={() => editing.rows?.add()}
-                    >
-                      <span className="codicon codicon-add" aria-hidden="true" />
-                    </button>
-                  </td>
-                  <td colSpan={columns.length}>
-                    <button
-                      type="button"
-                      className="add-row-label"
-                      onClick={() => editing.rows?.add()}
-                    >
-                      Add a row
-                    </button>
-                  </td>
-                </tr>
               </tbody>
             ) : null}
           </table>
@@ -804,6 +885,22 @@ export function resultScrollbarGeometry(
   const thumbTop =
     maxScrollTop === 0 ? 0 : (clamp(scrollTop, 0, maxScrollTop) / maxScrollTop) * maxThumbTop;
   return { thumbHeight, thumbTop, maxScrollTop, maxThumbTop };
+}
+
+/** One pasted line, laid out over the columns from a starting one, by column name. */
+function splitAcross(
+  line: string,
+  visibleOrdinals: readonly number[],
+  from: number,
+  payload: ResultTable,
+): Record<string, string | null> {
+  const values: Record<string, string | null> = {};
+  line.split("\t").forEach((value, offset) => {
+    const ordinal = visibleOrdinals[from + offset];
+    const column = ordinal === undefined ? undefined : payload.columns[ordinal];
+    if (column) values[column.name] = value;
+  });
+  return values;
 }
 
 function SpacerRow({ height, columnCount }: { height: number; columnCount: number }) {
