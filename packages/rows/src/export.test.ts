@@ -5,13 +5,23 @@ import {
   DEFAULT_DATA_VIEW_EXPORT,
   dataViewExportText,
   dataViewExportWriter,
+  type ExportColumn,
   exportDelimiterFor,
   exportFileExtension,
   exportStreams,
   parseDelimitedText,
 } from "./export.js";
 
-const COLUMNS = ["label", "line2", "city"];
+const COLUMNS: ExportColumn[] = [
+  { name: "label", type: "text" },
+  { name: "line2", type: "character varying(80)" },
+  { name: "city", type: "text" },
+];
+
+/** Columns named but untyped, which is all a shape other than SQL ever reads. */
+function named(...names: string[]): ExportColumn[] {
+  return names.map((name) => ({ name }));
+}
 const ROWS: (string | null)[][] = [
   ["Bob", null, "Bordeaux"],
   ["Épices & Terroirs", "bâtiment B", "Lyon"],
@@ -94,11 +104,51 @@ describe("writing a result out", () => {
 
   it("doubles a quote inside a SQL literal, so a value cannot become syntax", () => {
     const text = dataViewExportText(
-      ["label"],
+      named("label"),
       [["l'Essai"]],
       choose({ format: "sql", table: "shop.address" }),
     );
     expect(text).toContain("VALUES ('l''Essai');");
+  });
+
+  it("puts a table the rows can go into before them, when asked", () => {
+    const text = dataViewExportText(
+      COLUMNS,
+      [ROWS[0] ?? []],
+      choose({ format: "sql", table: "shop.address", createTable: true }),
+    );
+
+    // The schema too: a script that assumes one fails on the database it is most useful on.
+    expect(text).toBe(`CREATE SCHEMA IF NOT EXISTS shop;
+CREATE TABLE IF NOT EXISTS shop.address (
+  label text,
+  line2 character varying(80),
+  city text
+);
+
+INSERT INTO shop.address (label, line2, city)
+VALUES ('Bob', NULL, 'Bordeaux');
+`);
+  });
+
+  it("leaves the table out unless it was asked for", () => {
+    const text = dataViewExportText(
+      COLUMNS,
+      [ROWS[0] ?? []],
+      choose({ format: "sql", table: "shop.address" }),
+    );
+
+    expect(text.startsWith("INSERT INTO")).toBe(true);
+  });
+
+  it("writes a column with no type known as text, rather than not at all", () => {
+    const text = dataViewExportText(
+      named("mystery"),
+      [["x"]],
+      choose({ format: "sql", table: "public.t", createTable: true }),
+    );
+
+    expect(text).toContain("mystery text");
   });
 
   it("refuses to write INSERT statements with no table to write them against", () => {
@@ -110,7 +160,7 @@ describe("writing a result out", () => {
   it("lines a Markdown table's columns up", () => {
     expect(
       dataViewExportText(
-        ["id", "label"],
+        named("id", "label"),
         [
           ["1", "Bob"],
           ["10", null],
@@ -125,7 +175,9 @@ describe("writing a result out", () => {
   });
 
   it("keeps a pipe from ending a Markdown cell", () => {
-    expect(dataViewExportText(["a"], [["x|y"]], choose({ format: "markdown" }))).toContain("x\\|y");
+    expect(dataViewExportText(named("a"), [["x|y"]], choose({ format: "markdown" }))).toContain(
+      "x\\|y",
+    );
   });
 });
 

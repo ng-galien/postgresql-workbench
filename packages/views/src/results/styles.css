@@ -245,6 +245,15 @@ th {
   background: var(--vscode-list-hoverBackground);
 }
 
+/*
+ * A lit heading keeps its own fill under the pointer: a plain hover would paint over what says
+ * the selection reaches this column.
+ */
+thead th.in-selection .column-sort:hover,
+thead th.at-cursor .column-sort:hover {
+  background: color-mix(in srgb, var(--vscode-foreground) 10%, transparent);
+}
+
 .column-heading {
   display: flex;
   align-items: center;
@@ -532,16 +541,18 @@ th:hover .column-menu-button,
   outline: none;
 }
 
-/* Table accent on column headers (Data View) */
-
+/*
+ * Which table a column comes from, along the top edge of its heading. It is a border and not a
+ * shadow inside the cell: the heading is filled by a button that spans it, and anything that
+ * button paints — a hover, a press — covers a mark drawn inside. A border cannot be covered from
+ * within. Every heading reserves the two pixels, so a column with no accent does not shift.
+ */
 th {
-  box-shadow: inset 0 2px 0 var(--column-accent, transparent);
+  border-top: 2px solid var(--column-accent, transparent);
 }
 
 th.drag-over {
-  box-shadow:
-    inset 3px 0 var(--vscode-focusBorder),
-    inset 0 2px 0 var(--column-accent, transparent);
+  box-shadow: inset 3px 0 var(--vscode-focusBorder);
 }
 
 /*
@@ -609,10 +620,16 @@ td.anchor {
  * headings light; a selection of whole rows reaches every column, so lighting every one of them
  * would say nothing, and the gutter speaks alone.
  */
+/*
+ * The heading is lifted, not washed in the focus colour. A wash competes with the accent along the
+ * top edge — a blue accent over a blue wash is a line nobody can see — so the lift is neutral and
+ * the selection speaks on the bottom edge instead, where nothing else is speaking.
+ */
 thead th.in-selection {
+  border-bottom-color: color-mix(in srgb, var(--vscode-focusBorder) 60%, transparent);
   background: color-mix(
     in srgb,
-    var(--vscode-focusBorder) 26%,
+    var(--vscode-foreground) 12%,
     var(--vscode-editorWidget-background)
   );
   color: var(--vscode-foreground);
@@ -624,14 +641,12 @@ thead th.in-selection {
  * take: both are drawn, one on each edge.
  */
 thead th.at-cursor {
+  border-bottom: 2px solid var(--vscode-focusBorder);
   background: color-mix(
     in srgb,
-    var(--vscode-focusBorder) 45%,
+    var(--vscode-foreground) 22%,
     var(--vscode-editorWidget-background)
   );
-  box-shadow:
-    inset 0 2px 0 var(--column-accent, transparent),
-    inset 0 -2px 0 var(--vscode-focusBorder);
 }
 
 /* The gutter, at two strengths: rows the selection passes through, and rows wholly selected. */

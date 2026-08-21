@@ -1,10 +1,11 @@
 import type { DebugResultCell } from "../../dap/src/debugger/launch/index.js";
 import type { DataViewEdit } from "./dataView.js";
+import type { ExportColumn } from "./export.js";
 import type { RowOrder } from "./rowOrder.js";
 
 /** Columns and the values under them, ready to be written out. */
 export interface ShownValues {
-  columns: string[];
+  columns: ExportColumn[];
   rows: (string | null)[][];
 }
 
@@ -26,6 +27,8 @@ export function shownValues(source: {
   /** The first and last rows to take, counted as they are shown. */
   from: number;
   to: number;
+  /** The type a column was declared with, where the surface knows it; only a CREATE TABLE reads it. */
+  typeFor?: (ordinal: number) => string | undefined;
   /** A pending edit on a loaded cell, where the surface holds any. */
   editFor?: (
     row: readonly DebugResultCell[],
@@ -33,7 +36,10 @@ export function shownValues(source: {
     ordinal: number,
   ) => DataViewEdit | undefined;
 }): ShownValues {
-  const columns = source.ordinals.map((ordinal) => source.columns[ordinal]?.name ?? "");
+  const columns = source.ordinals.map((ordinal) => ({
+    name: source.columns[ordinal]?.name ?? "",
+    ...(source.typeFor?.(ordinal) ? { type: source.typeFor(ordinal) } : {}),
+  }));
   const rows: (string | null)[][] = [];
   for (let index = source.from; index <= source.to; index += 1) {
     const shown = source.order.at(index);

@@ -396,18 +396,63 @@ test("lights the headings a cell selection reaches, and leaves them to whole row
   await page.keyboard.press("Shift+ArrowRight");
   await expect(lit).toHaveCount(2);
 
-  // The accent saying which table a column comes from is not the cursor's to take: the heading
-  // carries both marks, the accent on top and the cursor underneath.
-  const marks = await page
-    .locator("thead th.at-cursor")
-    .evaluate((heading) => getComputedStyle(heading).boxShadow.split("inset").length - 1);
-  expect(marks).toBe(2);
+  /*
+   * The accent saying which table a column comes from is not the selection's to take. It has the
+   * top edge, the selection has the bottom one, and the lift behind them is neutral — a wash in
+   * the focus colour would hide an accent of the same colour.
+   */
+  for (const lit of await page.locator("thead th.in-selection").all()) {
+    const paint = await lit.evaluate((heading) => {
+      const style = getComputedStyle(heading);
+      return {
+        accent: `${style.borderTopWidth} ${style.borderTopColor}`,
+        selection: style.borderBottomColor,
+        background: style.backgroundColor,
+      };
+    });
+    expect(paint.accent).toMatch(/^2px rgb/u);
+    expect(paint.selection).not.toBe(paint.background);
+    // A neutral lift has its three channels within a hair of each other; a blue wash does not.
+    const [red = 0, green = 0, blue = 0] = [...paint.background.matchAll(/[\d.]+/gu)]
+      .slice(0, 3)
+      .map((match) => Number(match[0]));
+    expect(Math.max(red, green, blue) - Math.min(red, green, blue)).toBeLessThan(
+      Math.max(red, green, blue) * 0.25,
+    );
+  }
 
   // Whole rows reach every column, so lighting every heading would say nothing about them.
   await selectRows(page, 0, 1);
   await expect(lit).toHaveCount(0);
   await expect(page.locator("thead th.at-cursor")).toHaveCount(0);
   await expect(page.locator("tbody th.row-gutter.selected")).toHaveCount(2);
+});
+
+test("keeps the accent saying which table a column comes from, under the pointer", async ({
+  page,
+}) => {
+  await openEmpty(page);
+  await add(page, "shop.brand");
+  await add(page, "shop.product");
+
+  /*
+   * The heading is filled edge to edge by the button that sorts it, so anything that button paints
+   * — a hover above all — would cover a mark drawn inside the cell. Hovering each heading in turn
+   * is the gesture that found this; asserting on a selection did not.
+   */
+  const headings = page.locator("thead th:not(.row-gutter)");
+  const accents = new Set<string>();
+  for (const heading of await headings.all()) {
+    await heading.hover();
+    const border = await heading.evaluate((cell) => {
+      const style = getComputedStyle(cell);
+      return `${style.borderTopWidth} ${style.borderTopColor}`;
+    });
+    expect(border).toMatch(/^2px rgb/u);
+    accents.add(border);
+  }
+  // Two tables in the query, so two accents — the mark says something, it is not one colour.
+  expect(accents.size).toBe(2);
 });
 
 test("selects and copies rows without opening the grid for writing", async ({ page }) => {

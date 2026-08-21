@@ -12,6 +12,15 @@ import { quoteSqlIdentifierIfNeeded } from "../../sql/src/text/identifiers.js";
 /** The shapes a result can be written out in. */
 export type DataViewExportFormat = "csv" | "tsv" | "json" | "sql" | "markdown";
 
+/**
+ * A column, as an export needs it: its name, and — where the surface knows it — the PostgreSQL
+ * type it was declared with, modifier and all. Only a CREATE TABLE reads the type.
+ */
+export interface ExportColumn {
+  name: string;
+  type?: string;
+}
+
 /** Which rows an export writes: the ones picked out, the ones on screen, or all of them. */
 export type DataViewExportScope = "selection" | "loaded" | "all";
 
@@ -29,6 +38,12 @@ export interface DataViewExportChoice {
   delimiter: string;
   /** The table INSERT statements are written against. Without one there is nothing to insert into. */
   table?: string;
+  /*
+   * A CREATE TABLE before the rows, so the script stands on its own in a database that has never
+   * held this table. It creates a table shaped like this result — the columns projected and their
+   * types — and not the original: no keys, no defaults, no constraints, no indexes.
+   */
+  createTable: boolean;
   /*
    * Whether a value a spreadsheet would run as a formula is prefixed so it stays text. A file is
    * opened by a spreadsheet, so it is; the clipboard is read back by this grid as often as by
@@ -50,6 +65,7 @@ export const DEFAULT_DATA_VIEW_EXPORT: DataViewExportChoice = {
   delimiter: ",",
   spreadsheetSafe: true,
   finalNewline: true,
+  createTable: false,
 };
 
 /** What the clipboard speaks: tab-separated, no header, and read back by this grid unchanged. */
@@ -60,6 +76,7 @@ export const CLIPBOARD_EXPORT: DataViewExportChoice = {
   delimiter: "\t",
   spreadsheetSafe: false,
   finalNewline: false,
+  createTable: false,
 };
 
 /** The delimiter each delimited shape is written with, whatever the reader last chose. */
@@ -93,11 +110,11 @@ export interface DataViewExportWriter {
 }
 
 export function dataViewExportWriter(
-  columns: readonly string[],
+  columns: readonly ExportColumn[],
   choice: DataViewExportChoice,
 ): DataViewExportWriter {
   if (choice.format === "json") return jsonWriter(columns);
-  if (choice.format === "sql") return sqlWriter(columns, choice.table);
+  if (choice.format === "sql") return sqlWriter(columns, choice);
   if (choice.format === "markdown") {
     throw new Error(
       "A Markdown table lines its columns up, so it is written whole, not in pieces.",
@@ -111,7 +128,7 @@ export function dataViewExportWriter(
  * already at hand; every other shape is the writer's pieces joined.
  */
 export function dataViewExportText(
-  columns: readonly string[],
+  columns: readonly ExportColumn[],
   rows: readonly (readonly (string | null)[])[],
   choice: DataViewExportChoice,
 ): string {
@@ -130,7 +147,7 @@ export function dataViewExportText(
 // --- The shapes ---------------------------------------------------------------------------------
 
 function delimitedWriter(
-  columns: readonly string[],
+  columns: readonly ExportColumn[],
   choice: DataViewExportChoice,
 ): DataViewExportWriter {
   const delimiter = exportDelimiterFor(choice.format, choice.delimiter);
@@ -139,7 +156,7 @@ function delimitedWriter(
     opening: () =>
       choice.header
         ? `${columns
-            .map((name) => escapeDelimited(name, delimiter, choice.spreadsheetSafe))
+            .map((column) => escapeDelimited(column.name, delimiter, choice.spreadsheetSafe))
             .join(delimiter)}\n`
         : "",
     row: (values) =>
@@ -150,12 +167,12 @@ function delimitedWriter(
   };
 }
 
-function jsonWriter(columns: readonly string[]): DataViewExportWriter {
+function jsonWriter(columns: readonly ExportColumn[]): DataViewExportWriter {
   return {
     opening: () => "[\n",
     row: (values, index) => {
       const record = Object.fromEntries(
-        columns.map((name, column) => [name, values[column] ?? null]),
+        columns.map((column, at) => [column.name, values[at] ?? null]),
       );
       return `${index > 0 ? ",\n" : ""}  ${JSON.stringify(record)}`;
     },
@@ -163,11 +180,16 @@ function jsonWriter(columns: readonly string[]): DataViewExportWriter {
   };
 }
 
-function sqlWriter(columns: readonly string[], table: string | undefined): DataViewExportWriter {
+function sqlWriter(
+  columns: readonly ExportColumn[],
+  choice: DataViewExportChoice,
+): DataViewExportWriter {
+  const table = choice.table;
   if (!table) throw new Error("INSERT statements need a table to be written against.");
-  const into = `INSERT INTO ${table} (${columns.map(quoteSqlIdentifierIfNeeded).join(", ")})`;
+  const names = columns.map((column) => quoteSqlIdentifierIfNeeded(column.name));
+  const into = `INSERT INTO ${table} (${names.join(", ")})`;
   return {
-    opening: () => "",
+    opening: () => (choice.createTable ? createTableStatement(table, columns) : ""),
     /*
      * Every value is written as a quoted literal, NULL apart. PostgreSQL reads an unadorned
      * literal as of unknown type and casts it to the column's, so a number, a date and a text all
@@ -178,20 +200,36 @@ function sqlWriter(columns: readonly string[], table: string | undefined): DataV
   };
 }
 
+/**
+ * A table shaped like this result, so the statements after it have somewhere to go. The schema is
+ * created too, because a script that assumes one fails on the database it is most useful on: a
+ * fresh one. Both are `IF NOT EXISTS` — the reader is moving rows, not redefining a schema.
+ */
+function createTableStatement(table: string, columns: readonly ExportColumn[]): string {
+  const schema = table.includes(".") ? table.slice(0, table.indexOf(".")) : undefined;
+  const definitions = columns
+    .map((column) => `  ${quoteSqlIdentifierIfNeeded(column.name)} ${column.type ?? "text"}`)
+    .join(",\n");
+  return [
+    schema ? `CREATE SCHEMA IF NOT EXISTS ${schema};\n` : "",
+    `CREATE TABLE IF NOT EXISTS ${table} (\n${definitions}\n);\n\n`,
+  ].join("");
+}
+
 function markdownTable(
-  columns: readonly string[],
+  columns: readonly ExportColumn[],
   rows: readonly (readonly (string | null)[])[],
 ): string {
   // A NULL is written as nothing: a Markdown table has no way to say it, and an empty cell reads
   // as an empty cell in every reader.
-  const cells = rows.map((row) => columns.map((_name, column) => markdownCell(row[column] ?? "")));
-  const widths = columns.map((name, column) =>
-    Math.max(markdownCell(name).length, 3, ...cells.map((row) => (row[column] ?? "").length)),
+  const cells = rows.map((row) => columns.map((_column, at) => markdownCell(row[at] ?? "")));
+  const widths = columns.map((column, at) =>
+    Math.max(markdownCell(column.name).length, 3, ...cells.map((row) => (row[at] ?? "").length)),
   );
   const line = (values: readonly string[]) =>
     `| ${values.map((value, column) => value.padEnd(widths[column] ?? 0)).join(" | ")} |\n`;
   return [
-    line(columns.map(markdownCell)),
+    line(columns.map((column) => markdownCell(column.name))),
     `|${widths.map((width) => "-".repeat(width + 2)).join("|")}|\n`,
     ...cells.map(line),
   ].join("");

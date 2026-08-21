@@ -558,6 +558,11 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
    * from the same place the clipboard takes them, so what is previewed and written is what the
    * grid shows — pending edits and rows waiting to be added included.
    */
+  /* The type a column was declared with — `character(2)`, not `character` — for a CREATE TABLE. */
+  const declaredType = (ordinal: number): string | undefined => {
+    const policy = state.editability.columns[ordinal];
+    return policy?.editable ? policy.dataType : payload?.columns[ordinal]?.typeName;
+  };
   /* The table INSERT statements would be written into; a query over several has no single one. */
   const exportTable =
     state.editability.tables.length === 1 && state.editability.tables[0]
@@ -580,6 +585,7 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
           rows: loadedRows,
           order,
           editFor: editing?.editFor,
+          typeFor: declaredType,
           ...(scope === "selection"
             ? selectedOnly
             : { ordinals: shownOrdinals, from: 0, to: order.count - 1 }),

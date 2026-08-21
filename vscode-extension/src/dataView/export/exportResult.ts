@@ -12,6 +12,7 @@ import {
   type DataViewExportWriter,
   dataViewExportText,
   dataViewExportWriter,
+  type ExportColumn,
   exportFileExtension,
 } from "../../../../packages/rows/src/export.js";
 import { TEXT_PASSTHROUGH_TYPES } from "../../../../packages/rows/src/openRows.js";
@@ -39,7 +40,7 @@ export async function pickExportTarget(
 export async function exportHeldRows(
   target: vscode.Uri,
   choice: DataViewExportChoice,
-  values: { columns: readonly string[]; rows: readonly (readonly (string | null)[])[] },
+  values: { columns: readonly ExportColumn[]; rows: readonly (readonly (string | null)[])[] },
 ): Promise<number> {
   const contents = dataViewExportText(values.columns, values.rows, choice);
   await vscode.workspace.fs.writeFile(target, Buffer.from(contents, "utf8"));
@@ -53,6 +54,8 @@ export async function exportAllRows(options: {
   sql: string;
   title: string;
   openClient(): Promise<Client>;
+  /** The type a column was declared with, where the document knows it; a CREATE TABLE reads it. */
+  typeFor?: (name: string) => string | undefined;
 }): Promise<number> {
   const { target, choice, sql, title } = options;
   let exported = 0;
@@ -78,7 +81,10 @@ export async function exportAllRows(options: {
             if (!writer && batch.fields.length > 0) {
               // The columns are only known once the first batch has arrived with its fields.
               writer = dataViewExportWriter(
-                queryResultColumns(batch.fields).map((column) => column.name),
+                queryResultColumns(batch.fields).map((column) => ({
+                  name: column.name,
+                  ...(options.typeFor?.(column.name) ? { type: options.typeFor(column.name) } : {}),
+                })),
                 choice,
               );
               await write(writer.opening());

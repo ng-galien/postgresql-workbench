@@ -221,14 +221,30 @@ export function ExportDialog({
                 </div>
               ) : null}
             </>
+          ) : chosen.format === "sql" ? (
+            <>
+              <label className="export-option">
+                <input
+                  type="checkbox"
+                  checked={chosen.createTable}
+                  onChange={(event) =>
+                    setChoice((held) => ({ ...held, createTable: event.target.checked }))
+                  }
+                />
+                <span className="export-option-label">A CREATE TABLE before the rows</span>
+              </label>
+              <p className="export-nothing-to-choose">
+                {chosen.createTable
+                  ? "A table shaped like this result — the columns projected and their types. Not the original: no keys, no defaults, no constraints."
+                  : "The statements go into a table that already holds rows like these."}
+              </p>
+            </>
           ) : (
             /* Nothing to choose here, said rather than left blank: the panel keeps its shape. */
             <p className="export-nothing-to-choose">
               {chosen.format === "json"
                 ? "JSON says a NULL its own way, and names its columns in every record."
-                : chosen.format === "sql"
-                  ? "An INSERT names its columns and says NULL as NULL; there is nothing to choose."
-                  : "A Markdown table names its columns and leaves a NULL cell empty."}
+                : "A Markdown table names its columns and leaves a NULL cell empty."}
             </p>
           )}
         </fieldset>

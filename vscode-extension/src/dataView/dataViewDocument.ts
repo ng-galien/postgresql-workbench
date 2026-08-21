@@ -695,6 +695,7 @@ export class DataViewDocument implements vscode.CustomDocument {
               sql: this.query.effectiveSql(),
               title: this.title,
               openClient: () => this.services.openClient(this.source.serverId),
+              typeFor: (name) => this.declaredType(this.columnOrdinal(name)),
             })
           : await exportHeldRows(target, choice, this.heldValues(scope, selected));
       this.notify(`Exported ${written.toLocaleString("en-US")} rows to ${target.fsPath}`, "info");
@@ -726,7 +727,23 @@ export class DataViewDocument implements vscode.CustomDocument {
             to: order.count - 1,
             ordinals: columns.flatMap((_column, ordinal) => (hidden.has(ordinal) ? [] : [ordinal])),
           };
-    return shownValues({ columns, rows: loadedRows, order, ...shown });
+    return shownValues({
+      columns,
+      rows: loadedRows,
+      order,
+      typeFor: (ordinal) => this.declaredType(ordinal),
+      ...shown,
+    });
+  }
+
+  /* The type a column was declared with — `character(2)`, not `character` — for a CREATE TABLE. */
+  private declaredType(ordinal: number): string | undefined {
+    const policy = this.editability.columns[ordinal];
+    return policy?.editable ? policy.dataType : this.payload?.columns[ordinal]?.typeName;
+  }
+
+  private columnOrdinal(name: string): number {
+    return this.payload?.columns.findIndex((column) => column.name === name) ?? -1;
   }
 
   // --- Webview messaging ---------------------------------------------------------------------

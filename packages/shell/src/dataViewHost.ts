@@ -209,6 +209,12 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
    * loaded row. The order and the values come from the same place the view previewed them, so a
    * preview and a file cannot disagree.
    */
+  /* The type a column was declared with — `character(2)`, not `character` — for a CREATE TABLE. */
+  const declaredType = (ordinal: number): string | undefined => {
+    const policy = state.editability.columns[ordinal];
+    return policy?.editable ? policy.dataType : state.payload?.columns[ordinal]?.typeName;
+  };
+
   const heldValues = (
     scope: DataViewExportScope,
     selected: { from: number; to: number; ordinals: number[] } | undefined,
@@ -228,7 +234,7 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
             to: order.count - 1,
             ordinals: columns.flatMap((_column, ordinal) => (hidden.has(ordinal) ? [] : [ordinal])),
           };
-    return shownValues({ columns, rows: loadedRows, order, ...shown });
+    return shownValues({ columns, rows: loadedRows, order, typeFor: declaredType, ...shown });
   };
 
   /** Every row of the query, read back a batch at a time and written as it arrives. */
@@ -236,7 +242,10 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
     path: string,
     choice: DataViewExportChoice,
   ): Promise<number> => {
-    const columns = (state.payload?.columns ?? []).map((column) => column.name);
+    const columns = (state.payload?.columns ?? []).map((column, ordinal) => ({
+      name: column.name,
+      ...(declaredType(ordinal) ? { type: declaredType(ordinal) } : {}),
+    }));
     const writer = dataViewExportWriter(columns, choice);
     const client = await writeHost.openClient();
     let written = 0;
@@ -247,7 +256,7 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
         ...result.rows.map((row, index) => {
           written += 1;
           return writer.row(
-            columns.map((name) => {
+            columns.map(({ name }) => {
               const value = (row as Record<string, unknown>)[name];
               return value === null || value === undefined ? null : String(value);
             }),
