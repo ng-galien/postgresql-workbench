@@ -372,6 +372,24 @@ test("says what each provisioned change will do, not only how many there are", a
   await expect(drawer.locator(".pending-edit-value")).toHaveText("Saint-Nazaire");
 });
 
+test("selects and copies rows without opening the grid for writing", async ({ page }) => {
+  await openEmpty(page);
+  await add(page, "shop.address");
+
+  // No edit mode here: taking rows out to another application is reading, not writing, so the
+  // gutter and the selection it carries belong to every grid.
+  await expect(page.getByRole("toolbar", { name: "Row editing" })).toHaveCount(0);
+  await expect(page.locator("tbody th.row-gutter").first()).toHaveText("1");
+
+  await selectRows(page, 0, 1);
+  await expect(page.locator("tbody tr.row-selected")).toHaveCount(2);
+  await page.keyboard.press("ControlOrMeta+c");
+
+  const copied = await readClipboard(page);
+  expect(copied.split("\n")).toHaveLength(2);
+  expect(copied).toContain("\t");
+});
+
 test("selects rows in the gutter and takes them away together", async ({ page }) => {
   await openEmpty(page);
   await add(page, "shop.address");
@@ -451,16 +469,23 @@ test("extends the selection with shift and the arrow keys", async ({ page }) => 
   await expect(bar.selection).toHaveText("1 row × 1 column");
 });
 
-test("offers no gutter over a join, where no one table owns the row", async ({ page }) => {
+test("offers no row to add or delete over a join, where no one table owns the row", async ({
+  page,
+}) => {
   await openEmpty(page);
   await add(page, "shop.address");
   await enterEditMode(page);
-  await expect(page.locator("tbody th.row-gutter").first()).toBeAttached();
+  const bar = editBar(page);
+  await expect(bar.add).toBeEnabled();
 
   await add(page, "shop.warehouse");
 
-  // Cells stay editable over a join; whole rows have no single table to go from.
-  await expect(page.locator("tbody th.row-gutter")).toHaveCount(0);
+  // The gutter stays — rows can still be picked out and copied. Cells stay editable too. What
+  // goes is adding and deleting: a row over a join has no one table to be added to or taken from.
+  await expect(page.locator("tbody th.row-gutter").first()).toBeAttached();
+  await expect(bar.add).toBeDisabled();
+  await selectRows(page, 0);
+  await expect(bar.remove).toBeDisabled();
 });
 
 test("adds an empty row and fills it in, without writing anything yet", async ({ page }) => {
@@ -608,6 +633,7 @@ test("carries a copied row into a new one, by keyboard alone", async ({ page }) 
   await openEmpty(page);
   const table = await add(page, "shop.address");
   await enterEditMode(page);
+  const bordeaux = await table.cellsWithText("Bordeaux").count();
 
   // The whole journey a reader makes, with nothing in between: pick a row, copy it, press the
   // button that makes an empty one, paste into it. Pressing the button must not carry the
@@ -627,7 +653,7 @@ test("carries a copied row into a new one, by keyboard alone", async ({ page }) 
     text === "NULL" ? "DEFAULT" : text,
   );
   expect(await added.locator("td[data-column]").allTextContents()).toEqual(wanted);
-  await expect(table.cellsWithText("Bordeaux")).toHaveCount(2);
+  await expect(table.cellsWithText("Bordeaux")).toHaveCount(bordeaux + 1);
 });
 
 test("writes the row it was given, and takes it away again", async ({ page }) => {
@@ -635,25 +661,31 @@ test("writes the row it was given, and takes it away again", async ({ page }) =>
   const table = await add(page, "shop.address");
   await enterEditMode(page);
   const bar = editBar(page);
-  const before = await table.cellsWithText("Bordeaux").count();
+  /*
+   * A row nothing else in the table looks like. What is written and what is taken back are then
+   * beyond doubt — a row picked out by a value the fixture already holds can be confused with the
+   * one it was copied from, and a run that stopped halfway would leave the table quietly changed.
+   */
+  const mark = "Zzz round trip";
+  await putOnClipboard(page, `${mark}\t1 rue de l'Essai\t\t99999\tZzzville\tFR`);
 
   // The whole journey, ending where it is supposed to end: in the database.
-  await selectRows(page, 3);
-  await page.keyboard.press("ControlOrMeta+c");
   await bar.add.click();
   await page.keyboard.press("ControlOrMeta+v");
   await bar.apply.click();
 
-  await expect(page.locator(".data-view-statusline-text")).toContainText(/applied/u);
-  await expect(table.cellsWithText("Bordeaux")).toHaveCount(before + 1);
+  // What is asserted is what lasts: the row is in the result and nothing is held any more. The
+  // notice saying so dismisses itself, and a test that waits for it is waiting on a stopwatch.
+  await expect(table.cellsWithText(mark)).toHaveCount(1);
   await expect(page.locator("tbody tr.added")).toHaveCount(0);
+  await expect(bar.changes).toBeDisabled();
 
   // And back out again, so the database is left as it was found.
-  await page.locator("tbody tr").filter({ hasText: "Bordeaux" }).last().locator("th").click();
+  await page.locator("tbody tr").filter({ hasText: mark }).locator("th").click();
   await bar.remove.click();
   await bar.apply.click();
 
-  await expect(table.cellsWithText("Bordeaux")).toHaveCount(before);
+  await expect(table.cellsWithText(mark)).toHaveCount(0);
 });
 
 test("says a refused write in a band across the top, not in a corner", async ({ page }) => {

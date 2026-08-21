@@ -165,11 +165,18 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
   const scrollerId = useId();
   const detailId = useId();
   const inspect = (cell: DebugResultCell) => setDetail(formattedCellValue(cell));
-  // What a cell held is read in one mode and written in the other, so the reading closes when the
-  // writing opens: a panel left behind would go on showing a value the grid no longer shows.
+  /*
+   * Turning the grid writable is an act on the grid, so the grid takes the keystrokes: a reader
+   * who opens edit mode and pastes has not clicked a cell, and would otherwise be pasting into
+   * the page. The panel showing what a cell held closes at the same time — it is the reading of a
+   * value, and a value is about to be written.
+   */
   const editable = Boolean(editing);
   useEffect(() => {
-    if (editable) setDetail(undefined);
+    if (!editable) return;
+    setDetail(undefined);
+    clipboard.current?.focus({ preventScroll: true });
+    clipboard.current?.select();
   }, [editable]);
   /** Acting on a cell: edit it when its policy allows, otherwise show what it holds. */
   const activate = (rowIndex: number, ordinal: number, cell: DebugResultCell) => {
@@ -181,8 +188,8 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
     payload.columns,
     (column) => `${column.name}:${column.dataTypeId}:${column.typeName ?? ""}`,
   ).filter(({ ordinal }) => isVisible(ordinal));
-  // What a row spans: the visible columns, plus the gutter when whole rows can be acted on.
-  const bodyColumnCount = columns.length + (editing?.rows ? 1 : 0);
+  // What a row spans: the visible columns, plus the gutter — every grid has one.
+  const bodyColumnCount = columns.length + 1;
   const rows = useMemo(
     () => (serverSort ? payload.rows : sortedResultRows(payload.rows, sort)),
     [payload.rows, sort, serverSort],
@@ -741,21 +748,21 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
             // biome-ignore lint/a11y/noNoninteractiveElementToInteractiveRole: the grid is navigable.
             role="grid"
             aria-rowcount={rows.length + 1}
-            aria-colcount={columns.length}
+            aria-colcount={columns.length + 1}
             className={editing ? "editable" : undefined}
             style={{
               width: `${columns.reduce((total, { ordinal }) => total + (widths[ordinal] ?? 12), 0)}ch`,
             }}
           >
             <colgroup>
-              {editing?.rows ? <col className="row-gutter-column" /> : null}
+              <col className="row-gutter-column" />
               {columns.map(({ key, ordinal }) => (
                 <col key={key} style={{ width: `${widths[ordinal] ?? 12}ch` }} />
               ))}
             </colgroup>
             <thead>
               <tr>
-                {editing?.rows ? <th className="row-gutter" aria-label="Rows" /> : null}
+                <th className="row-gutter" aria-label="Rows" />
                 {columns.map(({ key, ordinal, value: column }) => (
                   <th
                     key={key}
@@ -871,35 +878,33 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
                         .filter(Boolean)
                         .join(" ")}
                     >
-                      {editing?.rows ? (
-                        <th
-                          scope="row"
-                          className={`row-gutter${selectedRow ? " selected" : ""}${rowInSelection(selectionRow) ? " in-selection" : ""}`}
-                          aria-selected={selectedRow}
-                          title={`Row ${rowIndex + 1} — click to select it, shift-click to extend`}
-                          onMouseDown={(event) => {
-                            takeKeys(event);
-                            const at = { row: selectionRow, ordinal: visibleOrdinals[0] ?? 0 };
-                            setSelection(
-                              event.shiftKey
-                                ? extendedTo(selection, at, "rows")
-                                : rowSelection(at.row, at.ordinal),
-                            );
-                          }}
-                        >
-                          {removed ? (
-                            <span
-                              className="row-gutter-state removed"
-                              role="img"
-                              aria-label="Row deleted"
-                            >
-                              ✕
-                            </span>
-                          ) : (
-                            <span className="row-gutter-number">{rowIndex + 1}</span>
-                          )}
-                        </th>
-                      ) : null}
+                      <th
+                        scope="row"
+                        className={`row-gutter${selectedRow ? " selected" : ""}${rowInSelection(selectionRow) ? " in-selection" : ""}`}
+                        aria-selected={selectedRow}
+                        title={`Row ${rowIndex + 1} — click to select it, shift-click to extend`}
+                        onMouseDown={(event) => {
+                          takeKeys(event);
+                          const at = { row: selectionRow, ordinal: visibleOrdinals[0] ?? 0 };
+                          setSelection(
+                            event.shiftKey
+                              ? extendedTo(selection, at, "rows")
+                              : rowSelection(at.row, at.ordinal),
+                          );
+                        }}
+                      >
+                        {removed ? (
+                          <span
+                            className="row-gutter-state removed"
+                            role="img"
+                            aria-label="Row deleted"
+                          >
+                            ✕
+                          </span>
+                        ) : (
+                          <span className="row-gutter-number">{rowIndex + 1}</span>
+                        )}
+                      </th>
                       {keyedValues(row, (cell) => `${cell.kind}:${cell.value ?? "NULL"}`)
                         .filter(({ ordinal }) => isVisible(ordinal))
                         .map(({ key: cellKey, ordinal, value: cell }) => {
