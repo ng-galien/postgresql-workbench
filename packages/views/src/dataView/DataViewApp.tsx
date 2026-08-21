@@ -292,6 +292,8 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
   const [state, setState] = useState<DataViewState>();
   const [progress, setProgress] = useState<number>();
   const [notice, setNotice] = useState<Notice>();
+  /** The failure the reader has read and put away, so it is not shown again unchanged. */
+  const [dismissed, setDismissed] = useState<string>();
   const [showSql, setShowSql] = useState(false);
   /** Whether the reader turned editing on; the gutter, the edit bar and cell editing follow it. */
   const [editMode, setEditMode] = useState(false);
@@ -556,7 +558,29 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
     : selection.kind === "rows"
       ? `${countLabel(selectedRowCount(selection), "row")} selected`
       : `${countLabel(selectedRowCount(selection), "row")} × ${countLabel(selectedOrdinals(selection, visibleOrdinals).length, "column")}`;
-  const post = (message: DataViewRequest) => messaging.post(message);
+  /*
+   * Anything the reader asks for starts the failure over: what stood was about the last attempt,
+   * and this is a new one. An error is never dismissed on its own, so something has to — and a
+   * reader who dismissed one and then asked again must be told again, even in the same words.
+   */
+  const post = (message: DataViewRequest) => {
+    if (notice?.severity === "error") setNotice(undefined);
+    setDismissed(undefined);
+    messaging.post(message);
+  };
+  /*
+   * What went wrong, whatever it was: a query that failed to load, or a write the database
+   * refused. It is shown as a band across the top of the view rather than in the corner of the
+   * status line — a reader who pressed Apply and reads nothing takes the press for having done
+   * nothing, while the changes are in fact still held.
+   */
+  const failure =
+    state.status === "error"
+      ? (state.message ?? "Error")
+      : notice?.severity === "error"
+        ? notice.message
+        : undefined;
+  const alert = failure === dismissed ? undefined : failure;
   const applySorts = (sorts: { column: string; direction: "ascending" | "descending" }[]) =>
     post({ type: "data-view/sort", sorts });
   /** Toggles one column: none → asc → desc → none; `additive` keeps the other criteria. */
@@ -630,25 +654,24 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
     : undefined;
   // One fixed status line: messages never push the grid around.
   const statusLine: { text: string; severity: "info" | "error" } =
-    state.status === "error"
-      ? { text: state.message ?? "Error", severity: "error" }
-      : notice
-        ? { text: notice.message, severity: notice.severity }
-        : progress !== undefined
-          ? {
-              text: `Loading all rows… ${progress.toLocaleString("en-US")} loaded`,
-              severity: "info",
-            }
-          : state.message
-            ? { text: state.message, severity: "info" }
-            : query.problem
-              ? {
-                  text: `${query.problem} Column drag, hide, and sort from the grid are disabled.`,
-                  severity: "info",
-                }
-              : state.busy
-                ? { text: state.applying ? "Applying changes…" : "Loading…", severity: "info" }
-                : { text: "", severity: "info" };
+    // A failure has a band of its own across the top; saying it twice is saying it once too often.
+    notice && !failure
+      ? { text: notice.message, severity: notice.severity }
+      : progress !== undefined
+        ? {
+            text: `Loading all rows… ${progress.toLocaleString("en-US")} loaded`,
+            severity: "info",
+          }
+        : state.message
+          ? { text: state.message, severity: "info" }
+          : query.problem
+            ? {
+                text: `${query.problem} Column drag, hide, and sort from the grid are disabled.`,
+                severity: "info",
+              }
+            : state.busy
+              ? { text: state.applying ? "Applying changes…" : "Loading…", severity: "info" }
+              : { text: "", severity: "info" };
   const refresh = () =>
     post({ type: query.editorDirty ? "data-view/apply-query" : "data-view/refresh" });
 
@@ -897,6 +920,23 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
           </div>
         </div>
       </header>
+
+      {/* What went wrong, at full width across the top, where a reader cannot walk past it. */}
+      {alert ? (
+        <div className="data-view-alert" role="alert">
+          <span className="codicon codicon-error" aria-hidden="true" />
+          <span className="data-view-alert-text">{alert}</span>
+          <button
+            type="button"
+            className="data-view-alert-dismiss"
+            title="Dismiss"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => setDismissed(alert)}
+          >
+            <span className="codicon codicon-close" aria-hidden="true" />
+          </button>
+        </div>
+      ) : null}
 
       {transfer === "import" ? (
         <Modal
@@ -1227,7 +1267,18 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
         written. It shows only in edit mode, immediately above the rows it acts on.
       */}
       {editMode && editable ? (
-        <div className="data-view-edit-bar" role="toolbar" aria-label="Row editing">
+        <div
+          className="data-view-edit-bar"
+          role="toolbar"
+          aria-label="Row editing"
+          /*
+           * This bar acts on the grid, so it must not take the keystrokes from it. A reader who
+           * copies a row, presses the button that makes an empty one and pastes has never left the
+           * grid — and would find the paste going to a button if the press moved the focus. The
+           * press is refused, not the focus moved: Tab still reaches every control here.
+           */
+          onMouseDown={(event) => event.preventDefault()}
+        >
           <span className="edit-bar-selection" aria-live="polite">
             {selectionSummary}
           </span>

@@ -1094,6 +1094,12 @@ export function resultScrollbarGeometry(
 }
 
 /** One pasted line, laid out over the columns from a starting one, by column name. */
+/**
+ * One pasted line, read across the columns from where it landed, for a row the reader is adding.
+ * A cell the line has nothing in is left out rather than set to an empty string: the clipboard
+ * cannot tell an empty text from no text, and a row being added has a third answer — let the
+ * database give the column whatever it would have given it.
+ */
 function splitAcross(
   line: string,
   visibleOrdinals: readonly number[],
@@ -1105,7 +1111,7 @@ function splitAcross(
   line.split("\t").forEach((value, offset) => {
     const ordinal = visibleOrdinals[from + offset];
     const column = ordinal === undefined ? undefined : payload.columns[ordinal];
-    if (column && editable(ordinal as number)) values[column.name] = value;
+    if (column && value !== "" && editable(ordinal as number)) values[column.name] = value;
   });
   return values;
 }

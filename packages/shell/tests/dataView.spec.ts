@@ -609,18 +609,76 @@ test("carries a copied row into a new one, by keyboard alone", async ({ page }) 
   const table = await add(page, "shop.address");
   await enterEditMode(page);
 
-  // The whole journey a reader makes: pick a row, copy it, make an empty row, paste into it.
-  await selectRows(page, 0);
+  // The whole journey a reader makes, with nothing in between: pick a row, copy it, press the
+  // button that makes an empty one, paste into it. Pressing the button must not carry the
+  // keystrokes off with it — the paste still belongs to the grid.
+  await selectRows(page, 3);
   await page.keyboard.press("ControlOrMeta+c");
-  const copied = await readClipboard(page);
 
   await editBar(page).add.click();
-  await page.locator("tbody tr.added th.row-gutter").click();
   await page.keyboard.press("ControlOrMeta+v");
 
+  // Every value lands in the column it was copied from, none shifted along — and a column the
+  // source had nothing in is left to the database rather than set to an empty string.
   const added = page.locator("tbody tr.added").first();
-  await expect(added).toContainText(copied.split("\t")[0] ?? "");
-  await expect(table.cellsWithText("Lille")).toHaveCount(2);
+  const source = page.locator("tbody tr:not(.result-spacer)").nth(4);
+  await expect(added).toContainText("Bob");
+  const wanted = (await source.locator("td[data-column]").allTextContents()).map((text) =>
+    text === "NULL" ? "DEFAULT" : text,
+  );
+  expect(await added.locator("td[data-column]").allTextContents()).toEqual(wanted);
+  await expect(table.cellsWithText("Bordeaux")).toHaveCount(2);
+});
+
+test("writes the row it was given, and takes it away again", async ({ page }) => {
+  await openEmpty(page);
+  const table = await add(page, "shop.address");
+  await enterEditMode(page);
+  const bar = editBar(page);
+  const before = await table.cellsWithText("Bordeaux").count();
+
+  // The whole journey, ending where it is supposed to end: in the database.
+  await selectRows(page, 3);
+  await page.keyboard.press("ControlOrMeta+c");
+  await bar.add.click();
+  await page.keyboard.press("ControlOrMeta+v");
+  await bar.apply.click();
+
+  await expect(page.locator(".data-view-statusline-text")).toContainText(/applied/u);
+  await expect(table.cellsWithText("Bordeaux")).toHaveCount(before + 1);
+  await expect(page.locator("tbody tr.added")).toHaveCount(0);
+
+  // And back out again, so the database is left as it was found.
+  await page.locator("tbody tr").filter({ hasText: "Bordeaux" }).last().locator("th").click();
+  await bar.remove.click();
+  await bar.apply.click();
+
+  await expect(table.cellsWithText("Bordeaux")).toHaveCount(before);
+});
+
+test("says a refused write in a band across the top, not in a corner", async ({ page }) => {
+  await openEmpty(page);
+  await add(page, "shop.address");
+  await enterEditMode(page);
+  const bar = editBar(page);
+
+  // An empty row cannot go in: the table will not have a row without a line1.
+  await bar.add.click();
+  await bar.apply.click();
+
+  const band = page.getByRole("alert");
+  await expect(band).toContainText(/not applied/u);
+  // The changes are still held, so the reader can put right what was refused.
+  await expect(bar.changes).toHaveText(/1/u);
+  // And it is said once: the status line does not repeat what the band already carries.
+  await expect(page.locator(".data-view-statusline-text")).not.toContainText(/not applied/u);
+
+  await band.getByRole("button", { name: "Dismiss" }).click();
+  await expect(band).toHaveCount(0);
+
+  // Asking again says it again, in the same words: a dismissal was about the last attempt.
+  await bar.apply.click();
+  await expect(page.getByRole("alert")).toContainText(/not applied/u);
 });
 
 test("brings back the columns a new row cannot go without", async ({ page }) => {
