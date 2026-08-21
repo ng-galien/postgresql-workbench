@@ -34,6 +34,8 @@ const RESET_WORKBENCH_COMMAND = "postgresql-workbench.acceptance.resetWorkbench"
 const OPEN_WORKSPACE_FILE_COMMAND = "postgresql-workbench.acceptance.openWorkspaceFile";
 const OPEN_SQL_DOCUMENT_COMMAND = "postgresql-workbench.acceptance.openSqlDocument";
 const CLOSE_ACTIVE_EDITOR_COMMAND = "postgresql-workbench.acceptance.closeActiveEditor";
+/* Opening a Data View on whatever the tree has selected: the one thing only this lane can prove. */
+const OPEN_DATA_VIEW_COMMAND = "postgresql-workbench.openDataView";
 const ACCEPTANCE_COMMANDS = new Set([
   RELOAD_WINDOW_COMMAND,
   SAVE_ALL_COMMAND,
@@ -63,6 +65,7 @@ const ACCEPTANCE_COMMANDS = new Set([
   OPEN_WORKSPACE_FILE_COMMAND,
   OPEN_SQL_DOCUMENT_COMMAND,
   CLOSE_ACTIVE_EDITOR_COMMAND,
+  OPEN_DATA_VIEW_COMMAND,
 ]);
 
 export interface AcceptanceControl extends vscode.Disposable {

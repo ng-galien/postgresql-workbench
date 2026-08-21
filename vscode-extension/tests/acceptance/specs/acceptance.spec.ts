@@ -8,3 +8,4 @@ import "./workbench/search.spec.js";
 import "./workbench/testing-coverage.spec.js";
 import "./debugger/call-sites.spec.js";
 import "./workbench/sql-authoring.spec.js";
+import "./workbench/data-view.spec.js";

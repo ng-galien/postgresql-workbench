@@ -11,8 +11,13 @@ import { expect, test } from "../../fixtures/test";
 import { createScratchpad } from "../../journeys/scratchpad";
 import { SCHEMAS_TREE_ITEM } from "../../pages/WorkbenchTreeLabels";
 
+/*
+ * Every column the table has, in catalogue order, qualified by the relation. Named at both ends
+ * rather than one by one: what this proves is that a dragged table becomes a whole projection, and
+ * a list of thirteen column names would fail whenever the fixture gained a fourteenth.
+ */
 const productProjection =
-  /^SELECT\s+product\.id,\s+product\.name,\s+product\.price,\s+product\.stock,\s+product\.sku,\s+product\.brand_id,\s+product\.description,\s+product\.active\s+FROM\s+shop\.product AS product;\s*$/u;
+  /^SELECT\s+product\.id,\s+product\.name,[\s\S]*product\.attributes,\s+product\.supplier_payload,\s+product\.tags,[\s\S]*FROM\s+shop\.product AS product;\s*$/u;
 
 test.describe("SQL authoring", () => {
   test("formats and authors an ordinary SQL document through its Document Association", async ({

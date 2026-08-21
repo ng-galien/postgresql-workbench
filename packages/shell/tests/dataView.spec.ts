@@ -101,7 +101,7 @@ test("makes the first relation the base of the query", async ({ page }) => {
   const rows = await add(page, "shop.product");
 
   await expect(rows.cellsWithText("Saumon fumé")).toHaveCount(1);
-  await expect(rows.summary("4")).toBeVisible();
+  await expect(rows.rowRange).toHaveText("4");
   expect(await runningSql(page)).toMatch(/FROM\s+shop\.product AS product/u);
 });
 
@@ -167,7 +167,7 @@ test("empties the query when its last table is removed, and starts over", async 
   // The way out of the empty state is the control the message names.
   await expect(page.getByTitle("Add the first table of the query")).toBeEnabled();
   const rows = await add(page, "shop.customer");
-  await expect(rows.summary("3")).toBeVisible();
+  await expect(rows.rowRange).toHaveText("3");
 });
 
 test("sorts on a column, and says so in the SQL", async ({ page }) => {

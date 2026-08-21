@@ -248,6 +248,7 @@ export interface VSCodeInstance {
       | "testing.runAll"
       | "testing.toggleInlineCoverage"
       | "postgresql-workbench-connections.focus"
+      | "postgresql-workbench.openDataView"
       | "editor.action.formatDocument"
       | "workbench.action.files.saveAll"
       | "workbench.action.debug.continue"

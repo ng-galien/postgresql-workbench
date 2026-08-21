@@ -1,4 +1,9 @@
-import { expect, type Frame, type Locator, type Page } from "@playwright/test";
+/*
+ * Types only. Two harnesses drive this page object — the shell lane from the repository root and
+ * the VS Code lane from the extension — and each resolves its own Playwright: importing a value
+ * from here loaded both at once, which Playwright refuses. Nothing here needs one.
+ */
+import type { Frame, Locator, Page } from "@playwright/test";
 import { escapeRegExp } from "./text.js";
 
 /**
@@ -22,9 +27,17 @@ export class ResultTable {
   }
 
   /** The row count the navigation shows: `Rows 1–200 · more available`, `1000 rows`, and so on. */
-  /** Where the reader is in the result, as the slot between the two paging arrows says it. */
+  /** What a surface says in prose about how much of the result it is showing. */
   summary(text: string): Locator {
-    return this.root.locator(".result-navigation-summary").getByText(text, { exact: true });
+    return this.root.getByText(text, { exact: true });
+  }
+
+  /**
+   * Where the reader is, as the slot between the two paging arrows says it: as few characters as
+   * it can be said in, so that paging never moves the arrows either side of it.
+   */
+  get rowRange(): Locator {
+    return this.root.locator(".result-navigation-summary");
   }
 
   async next(): Promise<void> {
@@ -41,14 +54,6 @@ export class ResultTable {
 
   async cancel(): Promise<void> {
     await this.command("Cancel loading").click();
-  }
-
-  /** Opens the cell inspector on a cell that carries more than the grid shows. */
-  async inspect(rowIndex: number, columnIndex: number): Promise<Locator> {
-    await this.cell(rowIndex, columnIndex).locator(".cell-value.inspectable").click();
-    const detail = this.root.locator(".result-detail");
-    await expect(detail).toBeVisible({ timeout: 5_000 });
-    return detail;
   }
 
   private command(label: string): Locator {

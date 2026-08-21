@@ -61,7 +61,10 @@ test.describe("Scratchpads", () => {
       await notebook.executeCode(code);
 
       const result = await notebook.resultFrame("1");
-      await expect(result.getByText("1", { exact: true })).toBeVisible({ timeout: 10_000 });
+      // The value, not the row number beside it: every grid carries a gutter now.
+      await expect(result.locator("tbody td").getByText("1", { exact: true })).toBeVisible({
+        timeout: 10_000,
+      });
       await workbench.scratchpads.expand(scratchpad);
       const transaction = await workbench.scratchpads.transaction(scratchpad, "in progress");
       await expect(transaction).toContainText("3 Statements", { timeout: 5_000 });
@@ -291,8 +294,9 @@ test.describe("Scratchpads", () => {
       .toBe(1);
     const result = await notebook.resultFrame("3");
     await expect(result.getByRole("region", { name: "PostgreSQL query result" })).toBeVisible();
+    // The values, not the row numbers beside them: every grid carries a gutter now.
     for (const id of ["1", "2", "3"]) {
-      await expect(result.getByText(id, { exact: true })).toBeVisible();
+      await expect(result.locator("tbody td").getByText(id, { exact: true })).toBeVisible();
     }
   });
 
