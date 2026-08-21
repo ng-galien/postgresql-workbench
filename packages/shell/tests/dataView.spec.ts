@@ -36,6 +36,16 @@ async function enterEditMode(page: Page) {
 }
 
 /** Selects whole rows the way a reader does: in the gutter, extending with shift. */
+/** Puts text on the clipboard the reader will paste from. */
+async function putOnClipboard(page: Page, text: string) {
+  await page.evaluate((value) => navigator.clipboard.writeText(value), text);
+}
+
+/** Reads back what the grid put on the clipboard. */
+function readClipboard(page: Page): Promise<string> {
+  return page.evaluate(() => navigator.clipboard.readText());
+}
+
 async function selectRows(page: Page, first: number, last = first) {
   const gutters = page.locator("tbody th.row-gutter");
   await gutters.nth(first).click();
@@ -522,16 +532,9 @@ test("spreads a tab-separated paste across the columns from where it lands", asy
   const table = await add(page, "shop.address");
   await enterEditMode(page);
 
-  await table
-    .cellsWithText("Lille")
-    .first()
-    .evaluate((cell) => {
-      const clipboardData = new DataTransfer();
-      clipboardData.setData("text/plain", "Saint-Herblain\tFR");
-      cell.dispatchEvent(
-        new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData }),
-      );
-    });
+  await putOnClipboard(page, "Saint-Herblain\tFR");
+  await table.cellsWithText("Lille").first().click();
+  await page.keyboard.press("ControlOrMeta+v");
 
   const bar = editBar(page);
   await expect(bar.changes).toBeEnabled();
@@ -549,38 +552,46 @@ test("makes a row of every pasted line that falls past the last one", async ({ p
 
   // Three lines pasted onto the last row: the first lands on it, the other two have no row to
   // land on and become rows of their own.
-  const lastRowCell = page.locator("tbody tr").last().locator("td[data-column]").first();
-  await lastRowCell.evaluate((cell) => {
-    const clipboardData = new DataTransfer();
-    clipboardData.setData("text/plain", "Brest\nBayonne\nColmar");
-    cell.dispatchEvent(
-      new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData }),
-    );
-  });
+  await putOnClipboard(page, "Brest\nBayonne\nColmar");
+  await page.locator("tbody tr").last().locator("td[data-column]").first().click();
+  await page.keyboard.press("ControlOrMeta+v");
 
   await expect(page.locator("tbody.added-rows tr.added")).toHaveCount(2);
   await expect(editBar(page).changes).toHaveText(/3/u);
 });
 
-test("copies the selection the way a spreadsheet would", async ({ page }) => {
+test("copies the selection to the clipboard the way a spreadsheet would", async ({ page }) => {
   await openEmpty(page);
   await add(page, "shop.address");
   await enterEditMode(page);
 
   await selectRows(page, 0, 1);
+  await page.keyboard.press("ControlOrMeta+c");
 
-  // The browser's own copy carries the text; the grid fills what the event hands it.
-  const copied = await page.locator("table[role=grid]").evaluate((table) => {
-    const clipboardData = new DataTransfer();
-    table.dispatchEvent(
-      new ClipboardEvent("copy", { bubbles: true, cancelable: true, clipboardData }),
-    );
-    return clipboardData.getData("text/plain");
-  });
-
-  // Tab between columns, newline between rows, in the order they are shown.
+  // Tab between columns, newline between rows, in the order they are shown — read back off the
+  // clipboard the reader would paste from, not off the event.
+  const copied = await readClipboard(page);
   expect(copied.split("\n")).toHaveLength(2);
   expect(copied).toContain("\t");
+});
+
+test("carries a copied row into a new one, by keyboard alone", async ({ page }) => {
+  await openEmpty(page);
+  const table = await add(page, "shop.address");
+  await enterEditMode(page);
+
+  // The whole journey a reader makes: pick a row, copy it, make an empty row, paste into it.
+  await selectRows(page, 0);
+  await page.keyboard.press("ControlOrMeta+c");
+  const copied = await readClipboard(page);
+
+  await editBar(page).add.click();
+  await page.locator("tbody.added-rows tr.added th.row-gutter").click();
+  await page.keyboard.press("ControlOrMeta+v");
+
+  const added = page.locator("tbody.added-rows tr.added").first();
+  await expect(added).toContainText(copied.split("\t")[0] ?? "");
+  await expect(table.cellsWithText("Lille")).toHaveCount(2);
 });
 
 test("brings back the columns a new row cannot go without", async ({ page }) => {

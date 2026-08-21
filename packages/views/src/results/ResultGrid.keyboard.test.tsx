@@ -35,16 +35,22 @@ describe("result grid keyboard contract", () => {
     expect([...markup.matchAll(/<td[^>]*data-row=/gu)]).toHaveLength(4);
   });
 
-  it("keeps exactly one cell in the tab order, and remembers which", () => {
+  it("keeps one focus stop for the whole grid, and points it at the cursor", () => {
     const markup = renderToStaticMarkup(<ResultGrid payload={table()} />);
     const cells = [...markup.matchAll(/<td[^>]*>/gu)].map(([tag]) => tag);
 
-    // Roving tabindex: one Tab reaches the grid, the arrows move inside it. The scrollbar keeps
-    // its own stop, which is why only the cells are counted here.
-    const reachable = cells.filter((tag) => tag.includes('tabindex="0"'));
-    expect(reachable).toHaveLength(1);
-    expect(reachable[0]).toContain('data-row="0"');
-    expect(reachable[0]).toContain('data-column="0"');
-    expect(cells.every((tag) => /tabindex="(?:0|-1)"/u.test(tag))).toBe(true);
+    /*
+     * One Tab reaches the grid and the arrows move inside it. The stop is the clipboard proxy
+     * rather than a cell, because a cell holds no text and so a browser would raise neither copy
+     * nor paste on it. `aria-activedescendant` is what says where the cursor is instead.
+     */
+    const proxy = markup.match(/<textarea[^>]*class="grid-clipboard"[^>]*>/u)?.[0] ?? "";
+    expect(proxy).not.toBe("");
+    expect(proxy).toContain("aria-activedescendant=");
+    expect(cells.some((tag) => tag.includes("tabindex"))).toBe(false);
+
+    // The cursor starts on the first cell, and that cell is the one the proxy names.
+    const named = /aria-activedescendant="([^"]+)"/u.exec(proxy)?.[1];
+    expect(cells.find((tag) => tag.includes(`id="${named}"`))).toContain('data-row="0"');
   });
 });

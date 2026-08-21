@@ -23,6 +23,9 @@ export default defineConfig({
   use: {
     baseURL: `http://localhost:${PORT}`,
     actionTimeout: 10_000,
+    // Copy and paste are driven with the keyboard here, so the browser has to let the page reach
+    // the clipboard the way it would for a reader who has said yes.
+    permissions: ["clipboard-read", "clipboard-write"],
     trace: process.env.CI ? "off" : "retain-on-failure",
     screenshot: process.env.CI ? "off" : "only-on-failure",
   },

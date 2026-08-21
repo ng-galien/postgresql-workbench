@@ -2,6 +2,7 @@ import {
   type CSSProperties,
   type KeyboardEvent,
   type PointerEvent,
+  type MouseEvent as ReactMouseEvent,
   type UIEvent,
   useEffect,
   useId,
@@ -24,7 +25,6 @@ import {
   rowIsSelected,
   rowSelection,
   selectedOrdinals,
-  selectedRowCount,
   selectedRows,
 } from "./gridSelection.js";
 import {
@@ -197,6 +197,11 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
   const scrollbar = resultScrollbarGeometry(scrollMetrics, scrollTop);
 
   const gridRef = useRef<HTMLTableElement>(null);
+  const clipboard = useRef<HTMLTextAreaElement>(null);
+  const gridId = useId();
+  /** Whether the grid holds the keystrokes, which is what its cursor draws itself for. */
+  const [hasFocus, setHasFocus] = useState(false);
+  const cellId = (row: number, ordinal: number) => `${gridId}-${row}-${ordinal}`;
   const visibleOrdinals = columns.map((column) => column.ordinal);
   /*
    * Added rows are shown above the loaded ones, so they take the first places in the selection.
@@ -224,6 +229,14 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
     anchor: inBounds(held.anchor),
     head: inBounds(held.head),
   };
+  /*
+   * A reader has to be able to see where they are without hunting for a thin border, so the
+   * column header and the row gutter of whatever the selection covers are lit as well. These are
+   * the bands the cursor is in.
+   */
+  const ordinalsInSelection = new Set(selectedOrdinals(selection, visibleOrdinals));
+  const rowBand = selectedRows(selection);
+  const rowInSelection = (row: number) => row >= rowBand.first && row <= rowBand.last;
   /** Where a loaded row sits in the selection: after the rows waiting to be added. */
   const selectionRowOf = (rowIndex: number) => addedRows.length + rowIndex;
   const focus = selection.head;
@@ -264,6 +277,84 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
     }
     return lines.join("\n");
   };
+  /*
+   * The proxy holds one space, always selected. A browser only raises copy when it has something
+   * to copy, so the space is what makes Ctrl+C reach the grid at all; `onCopy` then puts the real
+   * selection on the clipboard in its place. Nothing ever reads the space.
+   */
+  const clipboardHolder = " ";
+  const focusClipboard = () => {
+    const proxy = clipboard.current;
+    if (!proxy) return;
+    proxy.focus({ preventScroll: true });
+    proxy.select();
+  };
+  /*
+   * A press has to leave the keystrokes with the grid. Letting the browser handle it would move
+   * the focus to whatever it finds around the cell — in practice the page itself — so the press is
+   * refused and the proxy takes the focus instead. A press inside an open editor is left alone:
+   * that one is placing a caret in a real field.
+   */
+  const takeKeys = (event: ReactMouseEvent<HTMLElement>) => {
+    if ((event.target as HTMLElement).closest("input, textarea, select")) return;
+    event.preventDefault();
+    focusClipboard();
+  };
+  /*
+   * A keystroke lands where the focus is. Re-selecting after every move keeps the proxy ready for
+   * the next Ctrl+C, and keeps the focus from drifting back to the page after a paste.
+   */
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the selection is what has to re-arm it.
+  useEffect(() => {
+    const proxy = clipboard.current;
+    if (proxy && document.activeElement === proxy) proxy.select();
+  }, [selection.kind, focus.row, focus.ordinal, selection.anchor.row, selection.anchor.ordinal]);
+
+  /*
+   * What a pasted block does to the grid. The browser's own paste event and the fallback that
+   * reads the clipboard after a keystroke both end here, so a paste means one thing however it
+   * arrived.
+   */
+  const pastes = useRef(0);
+  const applyPastedText = (pasted: string) => {
+    if (!editing) return;
+
+    /*
+     * A paste lands on the anchor and reads rightwards and downwards from there: one value
+     * fills one cell, tab-separated values fill the columns beside it, and each line takes
+     * the next row. That is the shape a spreadsheet puts on the clipboard.
+     */
+    const from = visibleOrdinals.indexOf(selection.anchor.ordinal);
+    if (from < 0) return;
+    const lines = pasted.replace(/\r?\n$/u, "").split(/\r?\n/u);
+    const editableHere = (ordinal: number) => editing.policies[ordinal]?.editable === true;
+    /*
+     * Every line past the last loaded row becomes a row the reader added — a loaded row is
+     * never overwritten by a line that had no row of its own — and each row is filled in a
+     * single message.
+     */
+    lines.forEach((line, lineOffset) => {
+      const at = selection.anchor.row + lineOffset;
+      const values = () => splitAcross(line, visibleOrdinals, from, payload, editableHere);
+      const added = addedRows[at];
+      if (added) {
+        editing.rows?.fill(added.localId, values());
+        return;
+      }
+      const rowIndex = at - addedRows.length;
+      const row = rows[rowIndex];
+      if (!row) {
+        editing.rows?.appendPasted(values());
+        return;
+      }
+      line.split("\t").forEach((value, offset) => {
+        const target = visibleOrdinals[from + offset];
+        if (target === undefined || !editableHere(target)) return;
+        editing.onEdit(row, rowIndex, target, value, row[target]?.value ?? null);
+      });
+    });
+  };
+
   const step = (rowDelta: number, columnDelta: number, extend: boolean) => {
     setSelection(
       movedSelection(selection, rowDelta, columnDelta, extend, {
@@ -273,23 +364,20 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
     );
   };
 
-  // The rows are virtualised, so a focus that left the window scrolls it back into view and takes
-  // the cell once it exists. Both belong in an effect: a state updater may run more than once.
+  // The rows are virtualised, so a cursor that left the window scrolls it back into view. It
+  // belongs in an effect: a state updater may run more than once. Rows waiting to be added sit
+  // above the window rather than inside it, so only what the window holds can be scrolled to.
+  const loadedFocusRow = focus.row - addedRows.length;
   useEffect(() => {
     const element = scroller.current;
-    if (element) {
-      const top = focus.row * RESULT_ROW_HEIGHT;
-      const viewport = element.clientHeight || RESULT_VIEWPORT_HEIGHT;
-      if (top < element.scrollTop) element.scrollTop = top;
-      else if (top + RESULT_ROW_HEIGHT > element.scrollTop + viewport) {
-        element.scrollTop = top + RESULT_ROW_HEIGHT - viewport;
-      }
+    if (!element || loadedFocusRow < 0) return;
+    const top = loadedFocusRow * RESULT_ROW_HEIGHT;
+    const viewport = element.clientHeight || RESULT_VIEWPORT_HEIGHT;
+    if (top < element.scrollTop) element.scrollTop = top;
+    else if (top + RESULT_ROW_HEIGHT > element.scrollTop + viewport) {
+      element.scrollTop = top + RESULT_ROW_HEIGHT - viewport;
     }
-    const cell = gridRef.current?.querySelector<HTMLElement>(
-      `td[data-row="${focus.row}"][data-column="${focus.ordinal}"]`,
-    );
-    if (cell && gridRef.current?.contains(document.activeElement)) cell.focus();
-  }, [focus.row, focus.ordinal]);
+  }, [loadedFocusRow]);
 
   useEffect(() => {
     if (!scrollResetKey) return;
@@ -382,6 +470,124 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
   return (
     <>
       <div className="result-scroller-frame">
+        {/*
+          A grid is not an editable element, so a browser fires neither copy nor paste while a
+          cell holds the focus: those events go to whatever can hold text. This textarea is that
+          thing. It stays out of sight, holds the focus for the grid, and so receives the copy, the
+          paste and the arrow keys. `aria-activedescendant` tells a screen reader which cell the
+          reader is on.
+        */}
+        <textarea
+          ref={clipboard}
+          className="grid-clipboard"
+          aria-label="Grid selection"
+          aria-controls={gridId}
+          aria-activedescendant={cellId(selection.head.row, selection.head.ordinal)}
+          value={clipboardHolder}
+          onChange={() => {}}
+          onBlur={() => setHasFocus(false)}
+          onFocus={() => setHasFocus(true)}
+          onCopy={(event) => {
+            /*
+             * The browser's own copy carries the selection. Writing through the Clipboard API
+             * instead needs a permission a webview does not always grant, and asking the host to
+             * do it puts a round trip between the keystroke and the clipboard.
+             */
+            const text = selectionAsText();
+            if (text === "") return;
+            event.clipboardData.setData("text/plain", text);
+            event.preventDefault();
+          }}
+          onPaste={(event) => {
+            const pasted = event.clipboardData.getData("text/plain");
+            if (pasted === "") return;
+            event.preventDefault();
+            pastes.current += 1;
+            applyPastedText(pasted);
+          }}
+          onKeyDown={(event) => {
+            const page = Math.floor(viewportHeight / RESULT_ROW_HEIGHT);
+            const extend = event.shiftKey;
+            const chord = event.metaKey || event.ctrlKey;
+            /*
+             * Copy is asked for rather than waited for. A browser turns the chord into a copy on
+             * its own, but only when it decides the keystroke is an editing command, and a webview
+             * driven from outside does not always decide that. Asking for it is the same event,
+             * from the same gesture, and it reaches `onCopy` either way.
+             */
+            if (chord && event.key.toLowerCase() === "c") {
+              event.preventDefault();
+              document.execCommand("copy");
+              return;
+            }
+            /*
+             * Paste cannot be asked for — no page may read the clipboard by command. So the
+             * browser's own paste is left to arrive, and only if none did does the grid ask the
+             * clipboard for the text itself, which is the path that needs the reader's permission.
+             */
+            if (chord && event.key.toLowerCase() === "v") {
+              const before = pastes.current;
+              window.setTimeout(() => {
+                if (pastes.current !== before) return;
+                navigator.clipboard
+                  ?.readText()
+                  .then((text) => {
+                    if (text !== "") applyPastedText(text);
+                  })
+                  .catch(() => {});
+              }, 0);
+              return;
+            }
+            if (chord && event.key.toLowerCase() === "a") {
+              event.preventDefault();
+              setSelection(
+                extendedTo(rowSelection(0, visibleOrdinals[0] ?? 0), {
+                  row: selectableRows - 1,
+                  ordinal: visibleOrdinals.at(-1) ?? 0,
+                }),
+              );
+              return;
+            }
+            switch (event.key) {
+              case "ArrowRight":
+                step(0, 1, extend);
+                break;
+              case "ArrowLeft":
+                step(0, -1, extend);
+                break;
+              case "ArrowDown":
+                step(1, 0, extend);
+                break;
+              case "ArrowUp":
+                step(-1, 0, extend);
+                break;
+              case "Escape":
+                setSelection(cellSelection(focus.row, focus.ordinal));
+                break;
+              case "Home":
+                moveTo({ row: focus.row, ordinal: columns[0]?.ordinal ?? focus.ordinal });
+                break;
+              case "End":
+                moveTo({ row: focus.row, ordinal: columns.at(-1)?.ordinal ?? focus.ordinal });
+                break;
+              case "PageDown":
+                step(page, 0, extend);
+                break;
+              case "PageUp":
+                step(-page, 0, extend);
+                break;
+              case "Enter":
+              case " ": {
+                const cell = rows[focus.row]?.[focus.ordinal];
+                if (cell) activate(focus.row, focus.ordinal, cell);
+                break;
+              }
+              default:
+                return;
+            }
+            event.preventDefault();
+          }}
+        />
         <section
           id={scrollerId}
           className="result-scroller"
@@ -391,6 +597,7 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
         >
           <table
             ref={gridRef}
+            id={gridId}
             // A table's implicit role is `table`; `grid` is the interactive one, and it is what
             // arrow-key navigation over these cells means. `<table role="grid">` is the pattern
             // the ARIA Authoring Practices give for a data grid.
@@ -399,117 +606,6 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
             aria-rowcount={rows.length + 1}
             aria-colcount={columns.length}
             className={editing ? "editable" : undefined}
-            onCopy={(event) => {
-              /*
-               * The browser's own copy carries the selection. Writing through the Clipboard API
-               * instead needs a permission a webview does not always grant, and asking the host to
-               * do it puts a round trip between the keystroke and the clipboard.
-               */
-              const text = selectionAsText();
-              if (text === "") return;
-              event.clipboardData.setData("text/plain", text);
-              event.preventDefault();
-            }}
-            onPaste={(event) => {
-              if (!editing) return;
-              const pasted = event.clipboardData.getData("text/plain");
-              if (pasted === "") return;
-              /*
-               * One value fills the cell it was pasted into; tab-separated values fill the columns
-               * from there rightwards, which is what a row copied out of a spreadsheet looks like.
-               * The cell comes from the event rather than from where the grid believes the cursor
-               * is, so what a reader sees under the pointer is what receives the values.
-               */
-              const cell = (event.target as HTMLElement).closest<HTMLElement>("td[data-column]");
-              const addedRow = cell?.dataset.addedRow;
-              const ordinal = cell ? Number(cell.dataset.column) : selection.anchor.ordinal;
-              const from = visibleOrdinals.indexOf(ordinal);
-              if (from < 0) return;
-              event.preventDefault();
-              const lines = pasted.replace(/\r?\n$/u, "").split(/\r?\n/u);
-              /*
-               * A paste is one gesture. Every line under the last loaded row becomes a row the
-               * reader added — a loaded row is never overwritten by a line that had no row of its
-               * own — and each added row is filled in a single message.
-               */
-              if (addedRow !== undefined) {
-                const filled: Record<string, string | null> = {};
-                (lines[0] ?? "").split("\t").forEach((value, offset) => {
-                  const target = visibleOrdinals[from + offset];
-                  const column = target === undefined ? undefined : payload.columns[target];
-                  if (!column || !editing.policies[target ?? -1]?.editable) return;
-                  filled[column.name] = value;
-                });
-                editing.rows?.fill(addedRow, filled);
-                return;
-              }
-              const firstRow = cell ? Number(cell.dataset.row) : selection.anchor.row;
-              lines.forEach((line, lineOffset) => {
-                const rowIndex = firstRow + lineOffset;
-                const row = rows[rowIndex];
-                if (!row) {
-                  editing.rows?.appendPasted(splitAcross(line, visibleOrdinals, from, payload));
-                  return;
-                }
-                line.split("\t").forEach((value, offset) => {
-                  const target = visibleOrdinals[from + offset];
-                  if (target === undefined || !editing.policies[target]?.editable) return;
-                  editing.onEdit(row, rowIndex, target, value, row[target]?.value ?? null);
-                });
-              });
-            }}
-            onKeyDown={(event) => {
-              const page = Math.floor(viewportHeight / RESULT_ROW_HEIGHT);
-              const extend = event.shiftKey;
-              if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "a") {
-                event.preventDefault();
-                setSelection(
-                  extendedTo(rowSelection(0, visibleOrdinals[0] ?? 0), {
-                    row: selectableRows - 1,
-                    ordinal: visibleOrdinals.at(-1) ?? 0,
-                  }),
-                );
-                return;
-              }
-              switch (event.key) {
-                case "ArrowRight":
-                  step(0, 1, extend);
-                  break;
-                case "ArrowLeft":
-                  step(0, -1, extend);
-                  break;
-                case "ArrowDown":
-                  step(1, 0, extend);
-                  break;
-                case "ArrowUp":
-                  step(-1, 0, extend);
-                  break;
-                case "Escape":
-                  setSelection(cellSelection(focus.row, focus.ordinal));
-                  break;
-                case "Home":
-                  moveTo({ row: focus.row, ordinal: columns[0]?.ordinal ?? focus.ordinal });
-                  break;
-                case "End":
-                  moveTo({ row: focus.row, ordinal: columns.at(-1)?.ordinal ?? focus.ordinal });
-                  break;
-                case "PageDown":
-                  step(page, 0, extend);
-                  break;
-                case "PageUp":
-                  step(-page, 0, extend);
-                  break;
-                case "Enter":
-                case " ": {
-                  const cell = rows[focus.row]?.[focus.ordinal];
-                  if (cell) activate(focus.row, focus.ordinal, cell);
-                  break;
-                }
-                default:
-                  return;
-              }
-              event.preventDefault();
-            }}
             style={{
               width: `${columns.reduce((total, { ordinal }) => total + (widths[ordinal] ?? 12), 0)}ch`,
             }}
@@ -530,6 +626,8 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
                     className={[
                       editing?.policies[ordinal]?.editable === false ? "read-only" : "",
                       dragOver === ordinal ? "drag-over" : "",
+                      ordinalsInSelection.has(ordinal) ? "in-selection" : "",
+                      hasFocus && selection.anchor.ordinal === ordinal ? "at-cursor" : "",
                     ]
                       .filter(Boolean)
                       .join(" ")}
@@ -633,11 +731,11 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
                     >
                       <th
                         scope="row"
-                        className={`row-gutter${selectedRow ? " selected" : ""}`}
+                        className={`row-gutter${selectedRow ? " selected" : ""}${rowInSelection(addedIndex) ? " in-selection" : ""}`}
                         aria-selected={selectedRow}
                         title="New row — click to select it, shift-click to extend"
                         onMouseDown={(event) => {
-                          event.preventDefault();
+                          takeKeys(event);
                           const at = { row: addedIndex, ordinal: visibleOrdinals[0] ?? 0 };
                           setSelection(
                             event.shiftKey
@@ -646,7 +744,7 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
                           );
                         }}
                       >
-                        <span className="row-gutter-state added" aria-label="New row">
+                        <span className="row-gutter-state added" role="img" aria-label="New row">
                           ✚
                         </span>
                       </th>
@@ -658,12 +756,25 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
                         return (
                           <td
                             key={columnKey}
+                            id={cellId(addedIndex, ordinal)}
                             data-added-row={added.localId}
                             data-column={ordinal}
+                            onMouseDown={(event) => {
+                              takeKeys(event);
+                              setSelection(
+                                event.shiftKey
+                                  ? extendedTo(selection, { row: addedIndex, ordinal }, "cells")
+                                  : cellSelection(addedIndex, ordinal),
+                              );
+                            }}
                             className={[
                               shown === null ? "null" : "",
                               policy && !policy.editable ? "read-only" : "",
                               isActive ? "editing" : "",
+                              cellIsSelected(selection, addedIndex, ordinal, visibleOrdinals)
+                                ? "selected"
+                                : "",
+                              isAnchor(selection, addedIndex, ordinal) ? "anchor" : "",
                             ]
                               .filter(Boolean)
                               .join(" ")}
@@ -716,11 +827,11 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
                     {editing?.rows ? (
                       <th
                         scope="row"
-                        className={`row-gutter${selectedRow ? " selected" : ""}`}
+                        className={`row-gutter${selectedRow ? " selected" : ""}${rowInSelection(selectionRow) ? " in-selection" : ""}`}
                         aria-selected={selectedRow}
                         title={`Row ${rowIndex + 1} — click to select it, shift-click to extend`}
                         onMouseDown={(event) => {
-                          event.preventDefault();
+                          takeKeys(event);
                           const at = { row: selectionRow, ordinal: visibleOrdinals[0] ?? 0 };
                           setSelection(
                             event.shiftKey
@@ -730,7 +841,11 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
                         }}
                       >
                         {removed ? (
-                          <span className="row-gutter-state removed" aria-label="Row deleted">
+                          <span
+                            className="row-gutter-state removed"
+                            role="img"
+                            aria-label="Row deleted"
+                          >
                             ✕
                           </span>
                         ) : (
@@ -750,17 +865,15 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
                         const policy = editing?.policies[ordinal];
                         const isActive =
                           activeCell?.row === rowIndex && activeCell.ordinal === ordinal;
-                        const isFocused = focus.row === selectionRow && focus.ordinal === ordinal;
                         return (
                           <td
                             key={cellKey}
-                            tabIndex={isFocused ? 0 : -1}
+                            id={cellId(selectionRow, ordinal)}
                             data-row={rowIndex}
                             data-column={ordinal}
-                            onFocus={() => moveTo({ row: selectionRow, ordinal })}
                             onMouseDown={(event) => {
-                              if (!editing?.rows) return;
                               // A click puts the anchor here; a shifted one reaches from where it was.
+                              takeKeys(event);
                               setSelection(
                                 event.shiftKey
                                   ? extendedTo(selection, { row: selectionRow, ordinal }, "cells")
@@ -932,12 +1045,13 @@ function splitAcross(
   visibleOrdinals: readonly number[],
   from: number,
   payload: ResultTable,
+  editable: (ordinal: number) => boolean,
 ): Record<string, string | null> {
   const values: Record<string, string | null> = {};
   line.split("\t").forEach((value, offset) => {
     const ordinal = visibleOrdinals[from + offset];
     const column = ordinal === undefined ? undefined : payload.columns[ordinal];
-    if (column) values[column.name] = value;
+    if (column && editable(ordinal as number)) values[column.name] = value;
   });
   return values;
 }

@@ -149,6 +149,8 @@
 }
 
 .result-scroller-frame {
+  /* The clipboard proxy is placed out of the flow, and this is what it is placed against. */
+  position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 14px;
   max-height: 360px;
@@ -604,6 +606,50 @@ th.row-gutter.selected {
 
 td.anchor {
   box-shadow: inset 0 0 0 2px var(--vscode-focusBorder);
+}
+
+/*
+ * A two-pixel border on one cell is not enough to find in four thousand rows, so the column header
+ * and the row gutter the selection covers are lit too — the way a spreadsheet lights its headings.
+ * The cursor's own column is lit harder still, and only while the grid holds the keystrokes.
+ */
+thead th.in-selection,
+th.row-gutter.in-selection {
+  background: color-mix(
+    in srgb,
+    var(--vscode-focusBorder) 30%,
+    var(--vscode-editorWidget-background)
+  );
+  color: var(--vscode-foreground);
+}
+
+thead th.at-cursor {
+  background: color-mix(
+    in srgb,
+    var(--vscode-focusBorder) 55%,
+    var(--vscode-editorWidget-background)
+  );
+  box-shadow: inset 0 -2px 0 var(--vscode-focusBorder);
+}
+
+th.row-gutter.in-selection .row-gutter-number {
+  opacity: 1;
+}
+
+/*
+ * A grid holds no text, so a browser raises neither copy nor paste while a cell has the focus.
+ * This is what holds it instead: one character, always selected, out of sight but not out of the
+ * accessibility tree — a focusable element hidden from a screen reader would be a trap.
+ */
+.grid-clipboard {
+  position: absolute;
+  z-index: -1;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  resize: none;
 }
 
 tr.row-selected td:first-of-type {
