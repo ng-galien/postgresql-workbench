@@ -159,6 +159,12 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
   const scrollerId = useId();
   const detailId = useId();
   const inspect = (cell: DebugResultCell) => setDetail(formattedCellValue(cell));
+  // What a cell held is read in one mode and written in the other, so the reading closes when the
+  // writing opens: a panel left behind would go on showing a value the grid no longer shows.
+  const editable = Boolean(editing);
+  useEffect(() => {
+    if (editable) setDetail(undefined);
+  }, [editable]);
   /** Acting on a cell: edit it when its policy allows, otherwise show what it holds. */
   const activate = (rowIndex: number, ordinal: number, cell: DebugResultCell) => {
     const policy = editing?.policies[ordinal];
