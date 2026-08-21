@@ -747,11 +747,21 @@ test("shows what an export will give, before it is written", async ({ page }) =>
   await expect(preview).toContainText("label,line1");
   expect((await preview.textContent())?.trim().split("\n")).toHaveLength(4);
 
+  /*
+   * And the panel does not move as the reader tries the shapes. It hangs from the top and keeps
+   * its room, so the button they are reaching for is where it was when they decided to press it.
+   */
+  const where = async () =>
+    dialog.evaluate((panel) => JSON.stringify(panel.getBoundingClientRect()));
+  const before = await where();
+
   // A different shape, the same rows, read back before anything is written.
   await dialog.getByRole("radio", { name: "Markdown" }).check();
+  expect(await where()).toBe(before);
   await expect(preview).toContainText("|---");
   await dialog.getByRole("radio", { name: "JSON" }).check();
   await expect(preview).toContainText('"label"');
+  expect(await where()).toBe(before);
 });
 
 test("offers no INSERT statements where no one table owns the rows", async ({ page }) => {

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { countLabel } from "../../../rows/src/countLabel.js";
 import {
   type DataViewExportChoice,
   type DataViewExportFormat,
@@ -142,8 +143,8 @@ export function ExportDialog({
                 {candidate === "all"
                   ? source.counts.all === undefined
                     ? "read from the database as it is written"
-                    : `${source.counts.all.toLocaleString("en-US")} rows`
-                  : `${source.counts[candidate].toLocaleString("en-US")} rows`}
+                    : countLabel(source.counts.all, "row")
+                  : countLabel(source.counts[candidate], "row")}
               </span>
             </label>
           ))}
@@ -175,51 +176,62 @@ export function ExportDialog({
           })}
         </fieldset>
 
-        {delimited ? (
-          <fieldset className="export-group">
-            <legend className="export-legend">Written as</legend>
-            <label className="export-option">
-              <input
-                type="checkbox"
-                checked={chosen.header}
-                onChange={(event) =>
-                  setChoice((held) => ({ ...held, header: event.target.checked }))
-                }
-              />
-              <span className="export-option-label">A first line naming the columns</span>
-            </label>
-            <div className="export-row">
-              <span className="export-row-label">A NULL written as</span>
-              {NULLS.map(({ nullAs, label }) => (
-                <button
-                  type="button"
-                  key={nullAs}
-                  className={`export-pill${chosen.nullAs === nullAs ? " chosen" : ""}`}
-                  onClick={() => setChoice((held) => ({ ...held, nullAs }))}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            {chosen.format === "csv" ? (
+        <fieldset className="export-group export-written">
+          <legend className="export-legend">Written as</legend>
+          {delimited ? (
+            <>
+              <label className="export-option">
+                <input
+                  type="checkbox"
+                  checked={chosen.header}
+                  onChange={(event) =>
+                    setChoice((held) => ({ ...held, header: event.target.checked }))
+                  }
+                />
+                <span className="export-option-label">A first line naming the columns</span>
+              </label>
               <div className="export-row">
-                <span className="export-row-label">Columns separated by</span>
-                {DELIMITERS.filter(({ delimiter }) => delimiter !== "\t").map(
-                  ({ delimiter, label }) => (
-                    <button
-                      type="button"
-                      key={delimiter}
-                      className={`export-pill${chosen.delimiter === delimiter ? " chosen" : ""}`}
-                      onClick={() => setChoice((held) => ({ ...held, delimiter }))}
-                    >
-                      {label}
-                    </button>
-                  ),
-                )}
+                <span className="export-row-label">A NULL written as</span>
+                {NULLS.map(({ nullAs, label }) => (
+                  <button
+                    type="button"
+                    key={nullAs}
+                    className={`export-pill${chosen.nullAs === nullAs ? " chosen" : ""}`}
+                    onClick={() => setChoice((held) => ({ ...held, nullAs }))}
+                  >
+                    {label}
+                  </button>
+                ))}
               </div>
-            ) : null}
-          </fieldset>
-        ) : null}
+              {chosen.format === "csv" ? (
+                <div className="export-row">
+                  <span className="export-row-label">Columns separated by</span>
+                  {DELIMITERS.filter(({ delimiter }) => delimiter !== "\t").map(
+                    ({ delimiter, label }) => (
+                      <button
+                        type="button"
+                        key={delimiter}
+                        className={`export-pill${chosen.delimiter === delimiter ? " chosen" : ""}`}
+                        onClick={() => setChoice((held) => ({ ...held, delimiter }))}
+                      >
+                        {label}
+                      </button>
+                    ),
+                  )}
+                </div>
+              ) : null}
+            </>
+          ) : (
+            /* Nothing to choose here, said rather than left blank: the panel keeps its shape. */
+            <p className="export-nothing-to-choose">
+              {chosen.format === "json"
+                ? "JSON says a NULL its own way, and names its columns in every record."
+                : chosen.format === "sql"
+                  ? "An INSERT names its columns and says NULL as NULL; there is nothing to choose."
+                  : "A Markdown table names its columns and leaves a NULL cell empty."}
+            </p>
+          )}
+        </fieldset>
 
         <div className="export-preview-frame">
           <div className="export-preview-heading">
@@ -237,9 +249,7 @@ export function ExportDialog({
           <span className="export-target">
             {refused
               ? ""
-              : `${fileName}${
-                  rowsInScope === undefined ? "" : ` · ${rowsInScope.toLocaleString("en-US")} rows`
-                }`}
+              : `${fileName}${rowsInScope === undefined ? "" : ` · ${countLabel(rowsInScope, "row")}`}`}
           </span>
           <button type="button" className="edit-bar-button" onClick={onClose}>
             Cancel
