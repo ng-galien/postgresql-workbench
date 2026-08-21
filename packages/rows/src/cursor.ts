@@ -5,6 +5,7 @@ import Cursor from "pg-cursor";
 import {
   formatQueryResultRow,
   queryResultColumns,
+  unnamedTypeIds,
 } from "../../dap/src/debugger/launch/boundedQueryResult.js";
 import type { DebugResultTruncationReason } from "../../dap/src/debugger/launch/debugResult.js";
 import { DEBUG_RESULT_LIMITS, type DebugResultCell } from "../../dap/src/debugger/launch/index.js";
@@ -18,6 +19,8 @@ export interface SqlCursorBatch {
   rows: unknown[][];
   fields: FieldDef[];
   command?: string;
+  /** What the database calls the types the built-in table cannot name; see `queryResultColumns`. */
+  typeNames?: ReadonlyMap<number, string>;
 }
 
 export interface SqlCursorReader {
@@ -51,6 +54,7 @@ export interface SqlCursorTypes {
 export class PostgresCursorReader implements SqlCursorReader {
   private readonly cursor: Cursor<unknown[]>;
   private closed = false;
+  private typeNames: Map<number, string> | undefined;
 
   constructor(
     private readonly client: Client,
@@ -64,6 +68,31 @@ export class PostgresCursorReader implements SqlCursorReader {
     client.query(this.cursor as never);
   }
 
+  /*
+   * Asks the database what it calls the types this result uses that nothing here can name — an
+   * array, a range, an enum a schema declared. Asked once per reader: the columns of a result do
+   * not change between its batches, and an unnamed type stays unnamed.
+   */
+  private async named(batch: SqlCursorBatch): Promise<SqlCursorBatch> {
+    if (batch.fields.length === 0) return batch;
+    if (!this.typeNames) {
+      const unnamed = unnamedTypeIds(batch.fields);
+      this.typeNames = new Map();
+      if (unnamed.length > 0) {
+        try {
+          const named = await this.client.query<{ oid: string; name: string }>(
+            "SELECT oid::text AS oid, format_type(oid, NULL) AS name FROM pg_type WHERE oid = ANY($1::oid[])",
+            [unnamed],
+          );
+          for (const row of named.rows) this.typeNames.set(Number(row.oid), row.name);
+        } catch {
+          // A type nobody could name says its number; that is better than failing the read.
+        }
+      }
+    }
+    return this.typeNames.size > 0 ? { ...batch, typeNames: this.typeNames } : batch;
+  }
+
   read(maxRows: number): Promise<SqlCursorBatch> {
     if (this.closed) return Promise.resolve({ rows: [], fields: [] });
     return new Promise((resolve, reject) => {
@@ -73,11 +102,13 @@ export class PostgresCursorReader implements SqlCursorReader {
           return;
         }
         const queryResult = result as QueryResult<unknown[]>;
-        resolve({
-          rows,
-          fields: queryResult.fields,
-          ...(queryResult.command ? { command: queryResult.command } : {}),
-        });
+        resolve(
+          this.named({
+            rows,
+            fields: queryResult.fields,
+            ...(queryResult.command ? { command: queryResult.command } : {}),
+          }),
+        );
       });
     });
   }
@@ -109,6 +140,7 @@ export class SqlResultSession {
   private nextPageStart = 1;
   private fetchedRowCount = 0;
   private fields: FieldDef[] = [];
+  private typeNames: ReadonlyMap<number, string> | undefined;
   private command = "SELECT";
   private exhausted = false;
   private readerClosed = false;
@@ -170,7 +202,7 @@ export class SqlResultSession {
       binding: this.binding,
       ...(this.statement !== undefined ? { statement: this.statement } : {}),
       command: this.command,
-      columns: queryResultColumns(this.fields),
+      columns: queryResultColumns(this.fields, this.typeNames),
       rows: page.rows,
       ...(this.exhausted ? { rowCount: this.fetchedRowCount } : {}),
       capturedRowCount: page.rows.length,
@@ -270,6 +302,7 @@ export class SqlResultSession {
   private captureBatch(batch: SqlCursorBatch): void {
     this.fetchedRowCount += batch.rows.length;
     if (batch.fields.length > 0) this.fields = batch.fields;
+    if (batch.typeNames) this.typeNames = batch.typeNames;
     if (batch.command) this.command = batch.command;
   }
 

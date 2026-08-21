@@ -128,12 +128,36 @@ function formatCell(value: unknown, field: FieldDef, maxBytes: number): DebugRes
   };
 }
 
-export function queryResultColumns(fields: readonly FieldDef[]): DebugResultColumn[] {
+/**
+ * The types a result's columns were declared with. The table above holds the ones every PostgreSQL
+ * has at the same number; everything else — arrays, ranges, network addresses, and every enum a
+ * schema declares, whose number differs from one database to the next — can only be named by the
+ * database itself, and reaches this through `resolved`. A column nobody could name says its number,
+ * which is at least something a reader can look up.
+ */
+export function queryResultColumns(
+  fields: readonly FieldDef[],
+  resolved?: ReadonlyMap<number, string>,
+): DebugResultColumn[] {
   return fields.map((field) => ({
     name: field.name,
     dataTypeId: field.dataTypeID,
-    typeName: POSTGRES_TYPE_NAMES.get(field.dataTypeID) ?? `oid ${field.dataTypeID}`,
+    typeName:
+      resolved?.get(field.dataTypeID) ??
+      POSTGRES_TYPE_NAMES.get(field.dataTypeID) ??
+      `oid ${field.dataTypeID}`,
   }));
+}
+
+/** The type numbers of a result that the built-in table cannot name. */
+export function unnamedTypeIds(fields: readonly FieldDef[]): number[] {
+  return [
+    ...new Set(
+      fields.flatMap((field) =>
+        POSTGRES_TYPE_NAMES.has(field.dataTypeID) ? [] : [field.dataTypeID],
+      ),
+    ),
+  ];
 }
 
 export function formatQueryResultRow(

@@ -28,6 +28,11 @@ CREATE TABLE shop.app_user (
   display_name text NOT NULL,
   role text NOT NULL CHECK (role IN ('admin', 'operations', 'support', 'analyst')),
   active boolean NOT NULL DEFAULT true,
+  -- An identifier that is not a number and cannot be typed from memory.
+  external_id uuid NOT NULL DEFAULT gen_random_uuid(),
+  -- Where they were, and when — an address, and a moment with no zone to anchor it.
+  last_login_ip inet,
+  last_seen_at timestamp,
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
@@ -68,6 +73,19 @@ ALTER TABLE shop.product
   ADD COLUMN brand_id bigint REFERENCES shop.brand,
   ADD COLUMN description text,
   ADD COLUMN active boolean NOT NULL DEFAULT true,
+  -- A document per product: what it is made of, where it comes from, how it is cured. The shape
+  -- of thing nobody wants to read — or edit — as one long line.
+  ADD COLUMN attributes jsonb,
+  -- The same shape held as PostgreSQL received it. `json` keeps whitespace, key order and
+  -- duplicate keys where `jsonb` normalises all three away; a grid showing them identically hides
+  -- the one difference between the two types.
+  ADD COLUMN supplier_payload json,
+  -- A list in one cell.
+  ADD COLUMN tags text[],
+  -- Somewhere to go.
+  ADD COLUMN datasheet_url text,
+  -- Bytes, which a grid can say the size of and nothing else.
+  ADD COLUMN thumbnail bytea,
   ADD CONSTRAINT product_sku_key UNIQUE (sku);
 
 ALTER TABLE shop.customer
@@ -88,6 +106,9 @@ CREATE TABLE shop.warehouse (
   address_id bigint NOT NULL REFERENCES shop.address,
   code text NOT NULL UNIQUE,
   name text NOT NULL,
+  -- Times of day with no date to put them on.
+  opens_at time,
+  closes_at time,
   active boolean NOT NULL DEFAULT true
 );
 
@@ -160,6 +181,8 @@ CREATE TABLE shop.promotion (
   code text NOT NULL UNIQUE,
   name text NOT NULL,
   discount_rate numeric(5, 4) NOT NULL CHECK (discount_rate > 0 AND discount_rate <= 1),
+  -- Two bounds in one value, each of which may be open.
+  season daterange,
   starts_at timestamptz NOT NULL,
   ends_at timestamptz NOT NULL,
   active boolean NOT NULL DEFAULT true,
@@ -242,12 +265,18 @@ CREATE TABLE shop.shipment_item (
   PRIMARY KEY (shipment_id, sales_order_line_id)
 );
 
+-- A type with a closed set of values, which a grid can offer rather than make a reader spell.
+CREATE TYPE shop.ticket_severity AS ENUM ('cosmetic', 'minor', 'major', 'blocking');
+
 CREATE TABLE shop.support_ticket (
   id bigserial PRIMARY KEY,
   customer_id int NOT NULL REFERENCES shop.customer,
   sales_order_id bigint REFERENCES shop.sales_order,
   assigned_to bigint REFERENCES shop.app_user,
   subject text NOT NULL,
+  severity shop.ticket_severity NOT NULL DEFAULT 'minor',
+  -- How long the first answer may take: a duration, which is neither a number nor a moment.
+  first_response_within interval,
   priority text NOT NULL CHECK (priority IN ('low', 'normal', 'high', 'urgent')),
   status text NOT NULL CHECK (status IN ('open', 'waiting_customer', 'resolved', 'closed')),
   created_at timestamptz NOT NULL DEFAULT now(),
@@ -286,6 +315,10 @@ INSERT INTO shop.app_user (organization_id, email, display_name, role) VALUES
   (1, 'analyst@atelier-fume.test', 'Adam Petit', 'analyst'),
   (2, 'warehouse@logistique.test', 'Jade Moreau', 'operations');
 
+UPDATE shop.app_user SET
+  last_login_ip = ('192.168.1.' || (10 + id))::inet,
+  last_seen_at = timestamp '2026-08-19 09:00:00' + (id * interval '3 hours 17 minutes');
+
 INSERT INTO shop.user_profile (user_id, preferred_address_id, locale, preferences) VALUES
   (1, 1, 'fr-FR', '{"theme":"dark","notifications":true}'),
   (2, 2, 'fr-FR', '{"dashboard":"operations"}'),
@@ -318,21 +351,42 @@ INSERT INTO shop.brand (name, website, country_code) VALUES
   ('Épices des Quais', 'https://example.test/epices', 'FR');
 
 UPDATE shop.product SET sku = 'FA-SAUMON-250', brand_id = 1,
-  description = 'Saumon fumé au bois de hêtre' WHERE name = 'Saumon fumé';
+  description = 'Saumon fumé au bois de hêtre',
+  attributes = '{"origin":{"country":"FR","region":"Bretagne","port":"Concarneau"},"weight_g":250,"allergens":["poisson"],"cure":{"salt":"sel de Guérande","days":3,"smoke":"hêtre"},"organic":true}',
+  -- Left exactly as a supplier sent it: repeated spaces, a key out of order and a duplicate one.
+  -- `json` keeps all three; the `attributes` above show what `jsonb` does to the same document.
+  supplier_payload = '{ "ref": "F-2201",  "lot": "L-88", "ref": "F-2201-bis",
+    "received": "2026-03-04" }',
+  tags = ARRAY['fumé', 'poisson', 'bretagne', 'sans gluten'],
+  datasheet_url = 'https://example.test/fiches/saumon-fume.pdf',
+  thumbnail = decode('89504e470d0a1a0a0000000d49484452', 'hex')
+  WHERE name = 'Saumon fumé';
 UPDATE shop.product SET sku = 'MM-MAGRET-180', brand_id = 2,
-  description = 'Magret de canard séché' WHERE name = 'Magret séché';
+  description = 'Magret de canard séché',
+  attributes = '{"origin":{"country":"FR","region":"Landes"},"weight_g":180,"allergens":[],"cure":{"salt":"gros sel","days":21,"smoke":null},"organic":false}',
+  tags = ARRAY['canard', 'séché', 'sud-ouest'],
+  datasheet_url = 'https://example.test/fiches/magret-seche.pdf'
+  WHERE name = 'Magret séché';
 UPDATE shop.product SET sku = 'FA-TRUITE-200', brand_id = 1,
-  description = 'Truite fumée tranchée' WHERE name = 'Truite fumée';
+  description = 'Truite fumée tranchée',
+  attributes = '{"origin":{"country":"FR","region":"Aquitaine"},"weight_g":200,"allergens":["poisson"],"cure":{"salt":"sel fin","days":2,"smoke":"chêne"},"organic":false}',
+  supplier_payload = '{ "ref": "F-2202", "lot": "L-91" }',
+  tags = ARRAY['fumé', 'poisson']
+  WHERE name = 'Truite fumée';
 UPDATE shop.product SET sku = 'EQ-POIVRE-060', brand_id = 3,
-  description = 'Poivre noir fumé' WHERE name = 'Poivre fumé';
+  description = 'Poivre noir fumé',
+  -- A document with nothing nested in it, beside three that have plenty.
+  attributes = '{"origin":{"country":"FR"},"weight_g":60,"allergens":[]}',
+  tags = ARRAY[]::text[]
+  WHERE name = 'Poivre fumé';
 
 INSERT INTO shop.product_category (product_id, category_id, featured) VALUES
   (1, 4, true), (2, 5, true), (3, 4, false), (4, 6, true);
 
-INSERT INTO shop.warehouse (organization_id, address_id, code, name) VALUES
-  (1, 1, 'HQ', 'Stock boutique'),
-  (2, 2, 'LIL', 'Entrepôt Lille'),
-  (2, 3, 'LOR', 'Entrepôt Lorient');
+INSERT INTO shop.warehouse (organization_id, address_id, code, name, opens_at, closes_at) VALUES
+  (1, 1, 'HQ', 'Stock boutique', '09:00', '19:00'),
+  (2, 2, 'LIL', 'Entrepôt Lille', '06:30', '20:00'),
+  (2, 3, 'LOR', 'Entrepôt Lorient', '07:00', NULL);
 
 INSERT INTO shop.inventory (product_id, warehouse_id, quantity, reserved_quantity, reorder_level) VALUES
   (1, 1, 4, 1, 3), (1, 2, 8, 2, 5), (1, 3, 6, 0, 4),
@@ -394,10 +448,14 @@ INSERT INTO shop.purchase_order_line
   (1, 1, 10, 10, 14.20), (1, 3, 12, 12, 8.10),
   (2, 4, 24, 0, 2.40), (3, 2, 10, 6, 10.00);
 
-INSERT INTO shop.promotion (code, name, discount_rate, starts_at, ends_at) VALUES
-  ('WELCOME10', 'Bienvenue', 0.10, now() - interval '30 days', now() + interval '60 days'),
-  ('FISH15', 'Semaine du poisson', 0.15, now() - interval '3 days', now() + interval '4 days'),
-  ('SPICE20', 'Découverte des épices', 0.20, now() + interval '10 days', now() + interval '20 days');
+INSERT INTO shop.promotion (code, name, discount_rate, season, starts_at, ends_at) VALUES
+  -- One range closed at both ends, one open at the far end, one absent altogether.
+  ('WELCOME10', 'Bienvenue', 0.10, daterange('2026-01-01', '2026-12-31', '[]'),
+   now() - interval '30 days', now() + interval '60 days'),
+  ('FISH15', 'Semaine du poisson', 0.15, daterange('2026-08-01', NULL),
+   now() - interval '3 days', now() + interval '4 days'),
+  ('SPICE20', 'Découverte des épices', 0.20, NULL,
+   now() + interval '10 days', now() + interval '20 days');
 
 INSERT INTO shop.promotion_product (promotion_id, product_id) VALUES
   (2, 1), (2, 3), (3, 4);
@@ -450,10 +508,14 @@ INSERT INTO shop.shipment_item (shipment_id, sales_order_line_id, product_id, qu
   (1, 1, 1, 2), (2, 2, 2, 2), (3, 3, 1, 1), (3, 4, 4, 1);
 
 INSERT INTO shop.support_ticket
-  (customer_id, sales_order_id, assigned_to, subject, priority, status, created_at, updated_at) VALUES
-  (1, 1, 3, 'Article manquant', 'high', 'resolved', now() - interval '13 days', now() - interval '11 days'),
-  (2, 2, 3, 'Suivi de livraison', 'normal', 'waiting_customer', now() - interval '1 day', now() - interval '6 hours'),
-  (3, NULL, NULL, 'Conseil de conservation', 'low', 'open', now() - interval '2 hours', now() - interval '2 hours');
+  (customer_id, sales_order_id, assigned_to, subject, severity, first_response_within,
+   priority, status, created_at, updated_at) VALUES
+  (1, 1, 3, 'Article manquant', 'major', interval '2 hours',
+   'high', 'resolved', now() - interval '13 days', now() - interval '11 days'),
+  (2, 2, 3, 'Suivi de livraison', 'minor', interval '1 day',
+   'normal', 'waiting_customer', now() - interval '1 day', now() - interval '6 hours'),
+  (3, NULL, NULL, 'Conseil de conservation', 'cosmetic', interval '3 days 4 hours 30 minutes',
+   'low', 'open', now() - interval '2 hours', now() - interval '2 hours');
 
 INSERT INTO shop.support_message
   (ticket_id, author_user_id, author_customer_id, body, internal, created_at) VALUES

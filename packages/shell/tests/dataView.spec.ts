@@ -759,7 +759,12 @@ test("carries a copied row into a new one, by keyboard alone", async ({ page }) 
   await openEmpty(page);
   const table = await add(page, "shop.address");
   await enterEditMode(page);
-  const bordeaux = await table.cellsWithText("Bordeaux").count();
+  // Whichever row the fixture puts there: what is copied is read off the screen, not assumed.
+  const copied = await page
+    .locator("tbody tr:not(.result-spacer)")
+    .nth(3)
+    .locator("td[data-column]")
+    .allTextContents();
 
   // The whole journey a reader makes, with nothing in between: pick a row, copy it, press the
   // button that makes an empty one, paste into it. Pressing the button must not carry the
@@ -776,13 +781,11 @@ test("carries a copied row into a new one, by keyboard alone", async ({ page }) 
   // Every value lands in the column it was copied from, none shifted along — and a column the
   // source had nothing in is left to the database rather than set to an empty string.
   const added = page.locator("tbody tr.added").first();
-  const source = page.locator("tbody tr:not(.result-spacer)").nth(4);
-  await expect(added).toContainText("Bob");
-  const wanted = (await source.locator("td[data-column]").allTextContents()).map((text) =>
-    text === "NULL" ? "DEFAULT" : text,
-  );
+  await expect(added).toContainText(copied[0] ?? "");
+  const wanted = copied.map((text) => (text === "NULL" ? "DEFAULT" : text));
   expect(await added.locator("td[data-column]").allTextContents()).toEqual(wanted);
-  await expect(table.cellsWithText("Bordeaux")).toHaveCount(bordeaux + 1);
+  // The row it was copied from is still there, one place down, beside its copy.
+  await expect(table.cellsWithText(copied[4] ?? "")).toHaveCount(2);
 });
 
 test("writes the row it was given, and takes it away again", async ({ page }) => {
