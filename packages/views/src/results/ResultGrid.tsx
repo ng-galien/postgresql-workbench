@@ -12,6 +12,7 @@ import {
   useState,
 } from "react";
 import type { DebugResultCell } from "../../../dap/src/debugger/launch/index.js";
+import { isWebAddress } from "../../../rows/src/cellDetail.js";
 import { clamp } from "../../../rows/src/clamp.js";
 import type {
   DataViewColumnPolicy,
@@ -27,6 +28,7 @@ import type { ResultTable } from "../../../rows/src/resultPayload.js";
 import { rowOrder } from "../../../rows/src/rowOrder.js";
 import { shownValues } from "../../../rows/src/shownValues.js";
 import { CellEditor } from "./CellEditor.js";
+import { CellInspector } from "./CellInspector.js";
 import {
   cellIsSelected,
   cellSelection,
@@ -42,7 +44,6 @@ import {
 } from "./gridSelection.js";
 import {
   columnWidthsCh,
-  formattedCellValue,
   nextResultSort,
   type ResultSort,
   resultSortNotice,
@@ -109,6 +110,13 @@ export interface ResultGridProps {
    */
   selection?: GridSelection;
   onSelect?: (next: GridSelection) => void;
+  /*
+   * Whether the value under the cursor is shown beside the grid. A row can only show one line cut
+   * off where the column ends; whoever put the grid on screen decides whether a reader also gets
+   * the whole of what the cursor is on.
+   */
+  inspecting?: boolean;
+  onInspecting?: (on: boolean) => void;
   /** When set, sorting is delegated to the host (server-side) instead of sorting loaded rows. */
   serverSort?: {
     /** Active server-side sorts in priority order. */
@@ -137,10 +145,11 @@ export function ResultGrid({
   layout,
   selection: heldSelection,
   onSelect,
+  inspecting,
+  onInspecting,
 }: ResultGridProps) {
   /** Which cell of which added row is being filled in right now. */
   const [activeAdded, setActiveAdded] = useState<{ localId: string; ordinal: number }>();
-  const [detail, setDetail] = useState<string>();
   const [localSort, setLocalSort] = useState<ResultSort>();
   const [activeCell, setActiveCell] = useState<{ row: number; ordinal: number }>();
   /** Where the grid points when nobody is holding a selection for it. */
@@ -172,23 +181,20 @@ export function ResultGrid({
     scrollHeight: RESULT_VIEWPORT_HEIGHT,
   });
   const scroller = useRef<HTMLElement>(null);
-  const detailElement = useRef<HTMLPreElement>(null);
   const scrollbarDrag = useRef<
     { pointerId: number; startY: number; startScrollTop: number } | undefined
   >(undefined);
   const scrollerId = useId();
-  const detailId = useId();
-  const inspect = (cell: DebugResultCell) => setDetail(formattedCellValue(cell));
+  /* Reading a value whole is the panel's business; opening it is all a cell has to do. */
+  const inspect = () => onInspecting?.(true);
   /*
    * Turning the grid writable is an act on the grid, so the grid takes the keystrokes: a reader
    * who opens edit mode and pastes has not clicked a cell, and would otherwise be pasting into
-   * the page. The panel showing what a cell held closes at the same time — it is the reading of a
-   * value, and a value is about to be written.
+   * the page.
    */
   const editable = Boolean(editing);
   useEffect(() => {
     if (!editable) return;
-    setDetail(undefined);
     clipboard.current?.focus({ preventScroll: true });
     clipboard.current?.select();
   }, [editable]);
@@ -196,7 +202,7 @@ export function ResultGrid({
   const activate = (rowIndex: number, ordinal: number, cell: DebugResultCell) => {
     const policy = editing?.policies[ordinal];
     if (policy?.editable && !cell.truncated) setActiveCell({ row: rowIndex, ordinal });
-    else inspect(cell);
+    else inspect();
   };
   const columns = keyedValues(
     payload.columns,
@@ -516,6 +522,26 @@ export function ResultGrid({
   // The rows are virtualised, so a cursor that left the window scrolls it back into view. It
   // belongs in an effect: a state updater may run more than once. Rows waiting to be added sit
   // above the window rather than inside it, so only what the window holds can be scrolled to.
+  /*
+   * The cell the cursor is on, for whatever is showing it whole. A row waiting to be added has no
+   * loaded cell behind it, so what it has been filled with stands in for one.
+   */
+  const cursorCell = ((): DebugResultCell | undefined => {
+    const shown = order.at(selection.anchor.row);
+    if ("added" in shown) {
+      const filled = shown.added.values[payload.columns[selection.anchor.ordinal]?.name ?? ""];
+      return {
+        kind: filled === undefined || filled === null ? "null" : "text",
+        value: filled ?? null,
+      };
+    }
+    const row = rows[shown.loaded];
+    const cell = row?.[selection.anchor.ordinal];
+    if (!cell) return undefined;
+    const edit = editing?.editFor(row ?? [], shown.loaded, selection.anchor.ordinal);
+    return edit ? { ...cell, value: edit.value } : cell;
+  })();
+
   const focusedShownRow = order.at(focus.row);
   const loadedFocusRow = "loaded" in focusedShownRow ? focusedShownRow.loaded : -1;
   useEffect(() => {
@@ -531,7 +557,6 @@ export function ResultGrid({
 
   useEffect(() => {
     if (!scrollResetKey) return;
-    setDetail(undefined);
     setActiveCell(undefined);
     setScrollTop(0);
     const element = scroller.current;
@@ -549,10 +574,6 @@ export function ResultGrid({
     if (element.firstElementChild) observer.observe(element.firstElementChild);
     return () => observer.disconnect();
   }, [scrollResetKey]);
-
-  useEffect(() => {
-    if (detail !== undefined) detailElement.current?.focus();
-  }, [detail]);
 
   const handleScroll = (event: UIEvent<HTMLElement>) => {
     setScrollTop(event.currentTarget.scrollTop);
@@ -979,11 +1000,21 @@ export function ResultGrid({
                                   className="cell-value inspectable"
                                   type="button"
                                   title={`Inspect ${payload.columns[ordinal]?.name ?? "value"}`}
-                                  aria-controls={detailId}
-                                  onClick={() => inspect(cell)}
+                                  onClick={inspect}
                                 >
                                   {value}
                                 </button>
+                              ) : shown !== null && isWebAddress(shown) ? (
+                                /* An address is somewhere to go, so it reads and behaves as one. */
+                                <a
+                                  className="cell-value cell-link"
+                                  href={shown}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  title={`Open ${shown}`}
+                                >
+                                  {value}
+                                </a>
                               ) : (
                                 <span className="cell-value">{value}</span>
                               )}
@@ -1032,6 +1063,14 @@ export function ResultGrid({
             }
           />
         </div>
+        {inspecting ? (
+          <CellInspector
+            column={payload.columns[selection.anchor.ordinal]?.name ?? ""}
+            typeName={payload.columns[selection.anchor.ordinal]?.typeName}
+            cell={cursorCell}
+            onClose={() => onInspecting?.(false)}
+          />
+        ) : null}
       </div>
       {sort && !serverSort && resultSortNotice(payload) ? (
         <p className="sort-notice">{resultSortNotice(payload)}</p>
@@ -1070,18 +1109,6 @@ export function ResultGrid({
           </div>
         </>
       ) : null}
-      {detail === undefined ? null : (
-        <pre
-          id={detailId}
-          ref={detailElement}
-          className="result-detail"
-          role="status"
-          aria-label="Inspected cell value"
-          tabIndex={-1}
-        >
-          {detail}
-        </pre>
-      )}
     </>
   );
 }

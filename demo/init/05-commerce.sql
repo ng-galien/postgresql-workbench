@@ -359,7 +359,8 @@ UPDATE shop.product SET sku = 'FA-SAUMON-250', brand_id = 1,
     "received": "2026-03-04" }',
   tags = ARRAY['fumé', 'poisson', 'bretagne', 'sans gluten'],
   datasheet_url = 'https://example.test/fiches/saumon-fume.pdf',
-  thumbnail = decode('89504e470d0a1a0a0000000d49484452', 'hex')
+  -- A real 16x16 PNG, not a header: a grid that says "PNG image" should be able to show it.
+  thumbnail = decode('89504e470d0a1a0a0000000d4948445200000010000000100802000000909168360000001e4944415478da63b8571642126218911a7e3dba44121a8c1a46639a0804002c82e9903a3822de0000000049454e44ae426082', 'hex')
   WHERE name = 'Saumon fumé';
 UPDATE shop.product SET sku = 'MM-MAGRET-180', brand_id = 2,
   description = 'Magret de canard séché',

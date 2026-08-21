@@ -318,6 +318,8 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
   const [showSql, setShowSql] = useState(false);
   /** Whether the reader turned editing on; the gutter, the edit bar and cell editing follow it. */
   const [editMode, setEditMode] = useState(false);
+  /** Whether the value the cursor is on is shown whole, beside the grid. */
+  const [inspecting, setInspecting] = useState(false);
   /** What is selected in the grid, held here because the edit bar acts on it. */
   const [selection, setSelection] = useState<GridSelection>();
   const [moreOpen, setMoreOpen] = useState(false);
@@ -913,6 +915,18 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
                 </>
               ) : null}
             </div>
+          </div>
+          <div className="toolbar-group">
+            <IconButton
+              icon="inspect"
+              label={
+                inspecting
+                  ? "Stop showing the value under the cursor"
+                  : "Show the value under the cursor, whole"
+              }
+              primary={inspecting}
+              onClick={() => setInspecting((on) => !on)}
+            />
           </div>
           {editable ? (
             <div className="toolbar-group">
@@ -1525,6 +1539,8 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
             payload={payload}
             selection={selection}
             onSelect={setSelection}
+            inspecting={inspecting}
+            onInspecting={setInspecting}
             serverSort={{ sorts: gridSorts, onSort: requestSort }}
             editing={editing}
             layout={layout}

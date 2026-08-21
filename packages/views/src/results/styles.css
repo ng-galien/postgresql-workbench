@@ -156,6 +156,185 @@
   max-height: 360px;
 }
 
+/*
+ * What the cursor is on, whole. It floats in the corner over the rows rather than taking a column
+ * beside them: a table is read across, and a panel that narrowed it would cost a reader the very
+ * columns they are moving between. The corner it sits in is the one furthest from where a reader
+ * works — the rows above it and the columns to its left stay uncovered.
+ */
+.cell-inspector {
+  position: absolute;
+  overflow: visible;
+  z-index: 3;
+  right: 18px;
+  bottom: 12px;
+  display: flex;
+  width: min(26em, calc(100% - 36px));
+  max-height: min(15em, calc(100% - 24px));
+  flex-direction: column;
+  border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
+  border-radius: 5px;
+  background: var(--vscode-editorWidget-background);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 45%);
+}
+
+/*
+ * The grip, on the corner nearest the rows. The panel is pinned to the far corner, so dragging
+ * this one towards the rows makes it larger and the pinned corner never moves.
+ */
+.cell-inspector-grip {
+  position: absolute;
+  z-index: 1;
+  top: -1px;
+  left: -1px;
+  width: 14px;
+  height: 14px;
+  border-top: 2px solid color-mix(in srgb, var(--vscode-foreground) 35%, transparent);
+  border-left: 2px solid color-mix(in srgb, var(--vscode-foreground) 35%, transparent);
+  border-top-left-radius: 5px;
+  cursor: nwse-resize;
+  touch-action: none;
+}
+
+.cell-inspector-grip:hover {
+  border-color: var(--vscode-focusBorder);
+}
+
+.cell-inspector-image {
+  display: block;
+  max-width: 100%;
+  /* Kept crisp: a thumbnail out of a database is usually small, and smoothing it hides its pixels. */
+  border: 1px solid var(--vscode-panel-border);
+  image-rendering: pixelated;
+}
+
+.cell-inspector-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 5px 4px 5px 10px;
+  border-bottom: 1px solid var(--vscode-panel-border);
+}
+
+.cell-inspector-column {
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cell-inspector-type {
+  flex: none;
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.85em;
+}
+
+.cell-inspector-spacer {
+  flex: 1;
+}
+
+.cell-inspector-action {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  padding: 2px 4px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.7;
+}
+
+.cell-inspector-action:hover {
+  background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
+  opacity: 1;
+}
+
+.cell-inspector-body {
+  min-height: 0;
+  flex: 1;
+  padding: 7px 10px;
+  overflow: auto;
+  user-select: text;
+}
+
+.cell-inspector-json,
+.cell-inspector-text,
+.cell-inspector-hex {
+  margin: 0;
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 0.92em;
+  line-height: 1.5;
+  /* A document keeps its shape; a sentence wraps rather than running off the side. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.cell-inspector-hex {
+  color: var(--vscode-descriptionForeground);
+}
+
+/*
+ * The document, coloured the way the editor colours one. The names are the workbench's own token
+ * colours, so a reader's theme decides what a string looks like here as everywhere else.
+ */
+.json-key {
+  color: var(--vscode-symbolIcon-propertyForeground, var(--vscode-charts-blue));
+}
+
+.json-string {
+  color: var(--vscode-charts-orange, var(--vscode-debugTokenExpression-string));
+}
+
+.json-number {
+  color: var(--vscode-charts-green, var(--vscode-debugTokenExpression-number));
+}
+
+.json-word {
+  color: var(--vscode-charts-purple, var(--vscode-debugTokenExpression-boolean));
+}
+
+.cell-inspector-count {
+  margin: 0 0 6px;
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.9em;
+}
+
+.cell-inspector-list {
+  margin: 0;
+  padding-left: 2.2em;
+}
+
+.cell-inspector-list li {
+  padding: 1px 0;
+  overflow-wrap: anywhere;
+}
+
+.cell-inspector-null {
+  margin: 0;
+  color: var(--vscode-descriptionForeground);
+  font-style: italic;
+}
+
+.cell-inspector-invalid {
+  margin: 0 0 8px;
+  color: var(--vscode-errorForeground);
+  font-size: 0.9em;
+}
+
+.cell-inspector-link {
+  color: var(--vscode-textLink-foreground);
+  overflow-wrap: anywhere;
+}
+
+.cell-inspector-foot {
+  padding: 5px 10px;
+  border-top: 1px solid var(--vscode-panel-border);
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.88em;
+}
+
 .result-scroller {
   min-width: 0;
   max-height: 360px;
@@ -327,6 +506,17 @@ td.null {
 .cell-value.inspectable {
   color: var(--vscode-textLink-foreground);
   cursor: pointer;
+}
+
+/* An address in a cell reads as one and behaves as one; nothing is added beside it. */
+.cell-value.cell-link {
+  color: var(--vscode-textLink-foreground, var(--vscode-charts-blue));
+  text-decoration: none;
+}
+
+.cell-value.cell-link:hover,
+.cell-value.cell-link:focus-visible {
+  text-decoration: underline;
 }
 
 td.truncated {
