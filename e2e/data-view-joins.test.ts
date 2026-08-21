@@ -211,6 +211,39 @@ describe("Data View JOIN composition on PostgreSQL", () => {
     expect(removed).toBeGreaterThan(10);
   }, 120_000);
 
+  it("writes a NULLS ordering only when asked, and reads back the one it wrote", async () => {
+    const base = snapshot.objects.find((object) => object.columns.length > 1);
+    if (!base) throw new Error("no table to sort");
+    const text = tableProjection(base, DEFAULT_SQL_AUTHORING_SETTINGS).replace(/;\s*$/u, "");
+    const column = (await analyze(text)).targets[0]?.label;
+    if (!column) throw new Error("no projection to sort by");
+
+    /*
+     * A criterion that says nothing about NULLs reads as PostgreSQL reads it, and is written that
+     * way — the grid used to force NULLS FIRST on every ascending sort, which is the opposite of
+     * what PostgreSQL does and what nothing on screen said.
+     */
+    const plain = formatSqlQuery(
+      setSort(text, await analyze(text), [{ column, direction: "ascending" }]),
+    );
+    expect(plain).toMatch(/ORDER BY[\s\S]*ASC\s*$/u);
+    expect(plain).not.toMatch(/NULLS/iu);
+    expect((await analyze(plain)).sortItems[0]?.nulls).toBeUndefined();
+    await runs(plain);
+
+    // And one that does say so keeps saying it, through the writer and back out of the parser.
+    for (const nulls of ["first", "last"] as const) {
+      const written = formatSqlQuery(
+        setSort(text, await analyze(text), [{ column, direction: "descending", nulls }]),
+      );
+      expect(written).toMatch(new RegExp(`DESC NULLS ${nulls.toUpperCase()}`, "u"));
+      const read = (await analyze(written)).sortItems[0];
+      expect(read?.direction).toBe("descending");
+      expect(read?.nulls).toBe(nulls);
+      await runs(written);
+    }
+  });
+
   it("offers every shortest path and joins through a mapping table with reserved identifiers", async () => {
     const product = snapshot.objects.find((object) => object.name === "product");
     const category = snapshot.objects.find((object) => object.name === "category");

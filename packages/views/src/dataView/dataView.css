@@ -336,8 +336,9 @@ body,
 
 .data-view-order .data-view-clause {
   cursor: default;
-  gap: 4px;
+  gap: 3px;
   padding-right: 2px;
+  padding-left: 4px;
 }
 
 .data-view-clause-action {
@@ -349,10 +350,112 @@ body,
   border: 0;
   border-radius: 8px;
   cursor: pointer;
+  opacity: 0.7;
+  transition: opacity 90ms ease-out;
+}
+
+.data-view-clause:hover .data-view-clause-action,
+.data-view-clause-action:focus-visible {
+  opacity: 1;
 }
 
 .data-view-clause-action:hover {
   background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
+}
+
+/*
+ * The criterion itself, which turns over when pressed. It is the whole of what a reader reads —
+ * the arrow and the column together — so there is nothing beside it to reach for instead.
+ */
+.data-view-clause-turn {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+  padding: 0 3px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+
+.data-view-clause-turn:hover {
+  background: color-mix(in srgb, var(--column-accent, var(--vscode-focusBorder)) 22%, transparent);
+}
+
+.data-view-clause-turn:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+}
+
+.data-view-clause-turn .codicon {
+  flex: none;
+  font-size: 13px;
+}
+
+/*
+ * Where the NULLs of this criterion go. It says so even when nothing was asked for — a reader
+ * should not have to know that ascending puts them last to know where they are — and it says it
+ * quietly until it is the reader's own answer rather than PostgreSQL's.
+ */
+.data-view-clause-nulls {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  height: 16px;
+  padding: 0 3px 0 4px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--vscode-descriptionForeground);
+  cursor: pointer;
+  font: inherit;
+  font-size: 9px;
+  letter-spacing: 0.05em;
+  opacity: 0.65;
+  transition:
+    opacity 90ms ease-out,
+    border-color 90ms ease-out;
+}
+
+.data-view-clause:hover .data-view-clause-nulls {
+  opacity: 1;
+}
+
+.data-view-clause-nulls:hover {
+  border-color: color-mix(
+    in srgb,
+    var(--column-accent, var(--vscode-focusBorder)) 45%,
+    transparent
+  );
+  background: color-mix(in srgb, var(--column-accent, var(--vscode-focusBorder)) 16%, transparent);
+}
+
+.data-view-clause-nulls:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+}
+
+/* Asked for rather than inherited: it stops being a whisper and takes a border of its own. */
+.data-view-clause-nulls.overridden {
+  border-color: color-mix(
+    in srgb,
+    var(--column-accent, var(--vscode-focusBorder)) 55%,
+    transparent
+  );
+  background: color-mix(in srgb, var(--column-accent, var(--vscode-focusBorder)) 18%, transparent);
+  color: var(--vscode-foreground);
+  opacity: 1;
+}
+
+.data-view-clause-nulls .codicon {
+  font-size: 11px;
+}
+
+.data-view-clause-nulls-label {
+  font-weight: 600;
 }
 
 .filter-input {

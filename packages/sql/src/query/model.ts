@@ -5,6 +5,7 @@ import {
   formatSqlQuery,
   removeRelation,
   reorderTargets,
+  type SqlNullsOrder,
   type SqlQueryAnalysis,
   type SqlQueryAnalysisBudget,
   type SqlQuerySort,
@@ -97,7 +98,12 @@ export class SqlQueryModel {
   }
 
   /** ORDER BY criteria, each resolved to its projected column when it names one. */
-  orderBy(): { text: string; direction: "ascending" | "descending"; column?: string }[] {
+  orderBy(): {
+    text: string;
+    direction: "ascending" | "descending";
+    nulls?: SqlNullsOrder;
+    column?: string;
+  }[] {
     const analysis = this.currentAnalysis;
     const sortColumn = (expression: string): string | undefined =>
       analysis?.targets.find(
@@ -107,7 +113,12 @@ export class SqlQueryModel {
       )?.label;
     return (analysis?.sortItems ?? []).map((item) => {
       const column = sortColumn(item.expression);
-      return { text: item.expression, direction: item.direction, ...(column ? { column } : {}) };
+      return {
+        text: item.expression,
+        direction: item.direction,
+        ...(item.nulls ? { nulls: item.nulls } : {}),
+        ...(column ? { column } : {}),
+      };
     });
   }
 

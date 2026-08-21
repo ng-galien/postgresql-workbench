@@ -154,6 +154,49 @@ test("sorts on a column, and says so in the SQL", async ({ page }) => {
   await expect(rows.cell(0, 2)).toHaveText("6.40");
 });
 
+test("turns a criterion over when it is pressed, with nothing else to reach for", async ({
+  page,
+}) => {
+  await openEmpty(page);
+  await add(page, "shop.product");
+  await page.getByTitle(/^Sort by price/u).click();
+
+  const criterion = page.locator(".data-view-order .data-view-clause").first();
+  // The criterion is the control: no second icon beside it doing what pressing it does.
+  await expect(criterion.getByRole("button", { name: /Invert/u })).toHaveCount(0);
+
+  await criterion.getByRole("button", { name: /Sorted ascending/u }).click();
+
+  await expect.poll(async () => runningSql(page)).toMatch(/product\.price DESC/u);
+  await expect(criterion.getByRole("button", { name: /Sorted descending/u })).toBeVisible();
+});
+
+test("writes a NULLS ordering only where it is not what PostgreSQL would do", async ({ page }) => {
+  await openEmpty(page);
+  await add(page, "shop.product");
+  await page.getByTitle(/^Sort by price/u).click();
+
+  /*
+   * Ascending puts NULLs last on its own, so nothing is written — and the criterion says where
+   * they are all the same, because a reader should not have to know the rule to read the query.
+   */
+  await expect.poll(async () => runningSql(page)).toMatch(/product\.price ASC/u);
+  expect(await runningSql(page)).not.toMatch(/NULLS/iu);
+  const nulls = page.locator(".data-view-clause-nulls").first();
+  await expect(nulls).toHaveAttribute("title", /NULLs last — what PostgreSQL does/u);
+
+  await nulls.click();
+
+  await expect.poll(async () => runningSql(page)).toMatch(/price ASC NULLS FIRST/u);
+  await expect(nulls).toHaveClass(/overridden/u);
+
+  // And pressing it again gives PostgreSQL its say back rather than writing the default out.
+  await nulls.click();
+
+  await expect.poll(async () => runningSql(page)).not.toMatch(/NULLS/iu);
+  await expect(nulls).not.toHaveClass(/overridden/u);
+});
+
 test("filters on a WHERE the reader types", async ({ page }) => {
   await openEmpty(page);
   const rows = await add(page, "shop.product");

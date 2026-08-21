@@ -15,6 +15,7 @@ import {
   dataViewRowKey,
   dataViewSourceTitle,
   dataViewWritableTable,
+  defaultNullsOrder,
   describeDataViewChanges,
 } from "../../../rows/src/dataView.js";
 import { rowOrder } from "../../../rows/src/rowOrder.js";
@@ -290,6 +291,24 @@ function FilterInput({
   );
 }
 
+/** What pressing a criterion does, said the same way to a pointer and to a screen reader. */
+function turningOver(item: { text: string; direction: "ascending" | "descending" }): string {
+  const other = item.direction === "ascending" ? "descending" : "ascending";
+  return `Sorted ${item.direction} by ${item.text} — click for ${other}`;
+}
+
+/** Where this criterion's NULLs go, and what pressing it would change. */
+function whereNullsGo(
+  asWritten: "first" | "last",
+  isDefault: boolean,
+  direction: "ascending" | "descending",
+): string {
+  if (isDefault) {
+    return `NULLs ${asWritten} — what PostgreSQL does for ${direction} order. Click to put them ${asWritten === "last" ? "first" : "last"}.`;
+  }
+  return `NULLs ${asWritten}, asked for. Click to leave them where PostgreSQL puts them.`;
+}
+
 export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
   const [state, setState] = useState<DataViewState>();
   const [progress, setProgress] = useState<number>();
@@ -534,7 +553,15 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
   const columnNames = payload?.columns.map((column) => column.name) ?? [];
   /** Grid-column sorts, in ORDER BY order (items that are not grid columns are kept as text only). */
   const columnSorts = query.orderBy.flatMap((item) =>
-    item.column ? [{ column: item.column, direction: item.direction }] : [],
+    item.column
+      ? [
+          {
+            column: item.column,
+            direction: item.direction,
+            ...(item.nulls ? { nulls: item.nulls } : {}),
+          },
+        ]
+      : [],
   );
   const gridSorts = columnSorts.flatMap((sort) => {
     const columnIndex = columnNames.indexOf(sort.column);
@@ -1236,7 +1263,7 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
                 : -1;
               return (
                 <li
-                  key={`${item.text}:${item.direction}`}
+                  key={`${item.text}:${item.direction}:${item.nulls ?? ""}`}
                   className={`data-view-clause active${sortOrder.isTarget(sortIndex) ? " drag-over" : ""}`}
                   style={
                     table
@@ -1246,35 +1273,91 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
                   {...sortOrder.itemProps(sortIndex, item.text)}
                 >
                   <span className="data-view-order-rank">{index + 1}</span>
-                  <span
-                    className={`codicon codicon-${item.direction === "ascending" ? "arrow-up" : "arrow-down"}`}
-                    aria-hidden="true"
-                  />
-                  <span className="data-view-clause-text" title={item.text}>
-                    {item.column ?? item.text}
-                  </span>
+                  {item.column ? (
+                    /*
+                     * The criterion itself turns over: a reader who wants the other direction
+                     * reaches for the thing they are reading, not for a second icon beside it.
+                     */
+                    <button
+                      type="button"
+                      className="data-view-clause-turn"
+                      title={turningOver(item)}
+                      aria-label={turningOver(item)}
+                      onClick={() =>
+                        applySorts(
+                          columnSorts.map((sort) =>
+                            sort.column === item.column
+                              ? {
+                                  ...sort,
+                                  direction:
+                                    sort.direction === "ascending" ? "descending" : "ascending",
+                                }
+                              : sort,
+                          ),
+                        )
+                      }
+                    >
+                      <span
+                        className={`codicon codicon-${item.direction === "ascending" ? "arrow-up" : "arrow-down"}`}
+                        aria-hidden="true"
+                      />
+                      <span className="data-view-clause-text">{item.column}</span>
+                    </button>
+                  ) : (
+                    <>
+                      <span
+                        className={`codicon codicon-${item.direction === "ascending" ? "arrow-up" : "arrow-down"}`}
+                        aria-hidden="true"
+                      />
+                      <span className="data-view-clause-text" title={item.text}>
+                        {item.text}
+                      </span>
+                    </>
+                  )}
                   {item.column ? (
                     <>
-                      <button
-                        type="button"
-                        className="data-view-clause-action"
-                        title="Invert direction"
-                        onClick={() =>
-                          applySorts(
-                            columnSorts.map((sort) =>
-                              sort.column === item.column
-                                ? {
-                                    column: sort.column,
-                                    direction:
-                                      sort.direction === "ascending" ? "descending" : "ascending",
-                                  }
-                                : sort,
-                            ),
-                          )
-                        }
-                      >
-                        <span className="codicon codicon-arrow-swap" aria-hidden="true" />
-                      </button>
+                      {(() => {
+                        /*
+                         * Where the NULLs of this column go. It always says where they are, the
+                         * one PostgreSQL would choose included — a reader should not have to know
+                         * that ascending puts them last to know where they are.
+                         */
+                        const asWritten = item.nulls ?? defaultNullsOrder(item.direction);
+                        const isDefault = asWritten === defaultNullsOrder(item.direction);
+                        return (
+                          <button
+                            type="button"
+                            className={`data-view-clause-nulls${isDefault ? "" : " overridden"}`}
+                            title={whereNullsGo(asWritten, isDefault, item.direction)}
+                            aria-label={whereNullsGo(asWritten, isDefault, item.direction)}
+                            onClick={() =>
+                              applySorts(
+                                columnSorts.map((sort) =>
+                                  sort.column === item.column
+                                    ? {
+                                        column: sort.column,
+                                        direction: sort.direction,
+                                        ...(isDefault
+                                          ? {
+                                              nulls: (asWritten === "last" ? "first" : "last") as
+                                                | "first"
+                                                | "last",
+                                            }
+                                          : {}),
+                                      }
+                                    : sort,
+                                ),
+                              )
+                            }
+                          >
+                            <span className="data-view-clause-nulls-label">NULL</span>
+                            <span
+                              className={`codicon codicon-fold-${asWritten === "first" ? "up" : "down"}`}
+                              aria-hidden="true"
+                            />
+                          </button>
+                        );
+                      })()}
                       <button
                         type="button"
                         className="data-view-clause-action"

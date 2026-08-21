@@ -15,10 +15,15 @@ export function stripStatementTerminator(sql: string): string {
   return sql.trim().replace(/[\s;]+$/u, "");
 }
 
+/** Where NULLs go within a criterion; absent means wherever PostgreSQL puts them. */
+export type SqlNullsOrder = "first" | "last";
+
 /** One ORDER BY criterion expressed on a projected column. */
 export interface SqlQuerySort {
   column: string;
   direction: "ascending" | "descending";
+  /** Written out only when it differs from what PostgreSQL would do on its own. */
+  nulls?: SqlNullsOrder;
 }
 
 /** Character range in the query text. */
@@ -45,6 +50,8 @@ export interface SqlQueryTarget extends TextRange {
 export interface SqlQuerySortItem {
   expression: string;
   direction: "ascending" | "descending";
+  /** The NULLS ordering as written; absent when the criterion leaves it to PostgreSQL. */
+  nulls?: SqlNullsOrder;
   /** Full item text as written (expression, direction, NULLS ordering). */
   text: string;
   /** Relations this criterion names, from its column references. */
@@ -291,9 +298,16 @@ export async function analyzeSqlQuery(
     ? collectItems(sortNode, "sortby_list", "sortby").map((node): SqlQuerySortItem => {
         const expression = node.children.find((child) => child.kind === "a_expr");
         const direction = directSyntaxChild(node, "opt_asc_desc");
+        const nulls = directSyntaxChild(node, "opt_nulls_order");
+        const written = nulls ? slice(nulls) : "";
         return {
           expression: expression ? slice(expression).trim() : slice(node).trim(),
           direction: direction && /desc/iu.test(slice(direction)) ? "descending" : "ascending",
+          ...(/first/iu.test(written)
+            ? { nulls: "first" as const }
+            : /last/iu.test(written)
+              ? { nulls: "last" as const }
+              : {}),
           text: slice(node).trim(),
           qualifiers: qualifiersIn(expression ?? node),
         };
@@ -400,9 +414,14 @@ export function setSort(
     const target = analysis.targets.find((candidate) => candidate.label === sort.column);
     if (!target) return [];
     const expression = target.alias ? quoteSqlIdentifierIfNeeded(target.alias) : target.expression;
-    return [
-      `${expression} ${sort.direction === "descending" ? "DESC NULLS LAST" : "ASC NULLS FIRST"}`,
-    ];
+    /*
+     * A NULLS ordering is written when the criterion carries one, and not otherwise. Whether one
+     * is worth writing — whether it differs from what PostgreSQL would do anyway — is not this
+     * function's to judge: it composes what it is handed.
+     */
+    const direction = sort.direction === "descending" ? "DESC" : "ASC";
+    const nulls = sort.nulls ? ` NULLS ${sort.nulls.toUpperCase()}` : "";
+    return [`${expression} ${direction}${nulls}`];
   });
   const clause = items.length > 0 ? `ORDER BY ${items.join(", ")}` : "";
   if (analysis.sort) {

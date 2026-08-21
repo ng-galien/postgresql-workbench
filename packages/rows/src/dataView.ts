@@ -26,9 +26,21 @@ export type DataViewSource =
 
 export type DataViewSortDirection = "ascending" | "descending";
 
+/**
+ * Where PostgreSQL puts NULLs when a criterion says nothing: last when ascending, first when
+ * descending — as though a NULL were the largest value of all. It belongs to what a sort means to
+ * a reader, which is why it is said here and not in the composer: the composer writes the ordering
+ * it is handed, and this is what decides whether handing it one says anything.
+ */
+export function defaultNullsOrder(direction: DataViewSortDirection): "first" | "last" {
+  return direction === "ascending" ? "last" : "first";
+}
+
 export interface DataViewSort {
   column: string;
   direction: DataViewSortDirection;
+  /** Where NULLs go; absent means wherever PostgreSQL puts them for this direction. */
+  nulls?: "first" | "last";
 }
 
 /** How a Data View column can be edited; derived from the projection and the catalog. */
@@ -151,7 +163,13 @@ export interface DataViewQueryInfo {
   /** WHERE expression of the loaded query, if any. */
   whereText?: string;
   /** ORDER BY items as written in the query, in order; `column` is set when it is a grid column. */
-  orderBy: { text: string; direction: DataViewSortDirection; column?: string }[];
+  orderBy: {
+    text: string;
+    direction: DataViewSortDirection;
+    /** Where NULLs go, as the criterion was written; absent when it leaves it to PostgreSQL. */
+    nulls?: "first" | "last";
+    column?: string;
+  }[];
   /** Column keys (see dataViewColumnKey) hidden in the grid; they stay projected so rows remain identified. */
   hidden: string[];
   /** False when the query could not be analyzed: grid actions that rewrite SQL are disabled. */
