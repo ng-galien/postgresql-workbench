@@ -11,6 +11,9 @@ import { IconButton } from "./IconButton.js";
  * stop that abandons a load. One control for every surface that reads rows through a cursor, so a
  * rule fixed once is fixed everywhere. What a surface shows between the pages — a row count, a
  * truncation mark — it composes as children.
+ *
+ * It belongs beside the rows it moves through. A control put with the connection and the query
+ * says it acts on those, and this one does not.
  */
 export function ResultNavigation({
   state,
@@ -38,17 +41,15 @@ export function ResultNavigation({
         onClick={() => onAction("next")}
       />
       <IconButton
-        icon="expand-all"
+        icon="cloud-download"
         label="Load every remaining row (may use significant memory)"
         disabled={!canNavigate("load-all", state)}
         onClick={() => onAction("load-all")}
       />
-      <IconButton
-        icon="stop-circle"
-        label="Cancel loading"
-        disabled={!canNavigate("cancel", state)}
-        onClick={() => onAction("cancel")}
-      />
+      {/* A stop is worth showing while there is something to stop, and takes no room otherwise. */}
+      {canNavigate("cancel", state) ? (
+        <IconButton icon="stop-circle" label="Cancel loading" onClick={() => onAction("cancel")} />
+      ) : null}
     </div>
   );
 }

@@ -185,8 +185,6 @@ export function ResultGrid({
     { pointerId: number; startY: number; startScrollTop: number } | undefined
   >(undefined);
   const scrollerId = useId();
-  /* Reading a value whole is the panel's business; opening it is all a cell has to do. */
-  const inspect = () => onInspecting?.(true);
   /*
    * Turning the grid writable is an act on the grid, so the grid takes the keystrokes: a reader
    * who opens edit mode and pastes has not clicked a cell, and would otherwise be pasting into
@@ -198,11 +196,14 @@ export function ResultGrid({
     clipboard.current?.focus({ preventScroll: true });
     clipboard.current?.select();
   }, [editable]);
-  /** Acting on a cell: edit it when its policy allows, otherwise show what it holds. */
+  /*
+   * Acting on a cell edits it, where its policy allows. Reading one whole is the panel's business,
+   * and the panel is the reader's to open — a cell never decides on their behalf that they wanted
+   * to see it.
+   */
   const activate = (rowIndex: number, ordinal: number, cell: DebugResultCell) => {
     const policy = editing?.policies[ordinal];
     if (policy?.editable && !cell.truncated) setActiveCell({ row: rowIndex, ordinal });
-    else inspect();
   };
   const columns = keyedValues(
     payload.columns,
@@ -234,6 +235,12 @@ export function ResultGrid({
   const scrollResetKey = `${payload.navigation?.sessionId ?? "static"}:${payload.navigation?.pageStart ?? 0}:${rows.length}:${sort?.columnIndex ?? -1}:${sort?.direction ?? "source"}`;
   const scrollbar = resultScrollbarGeometry(scrollMetrics, scrollTop);
 
+  /*
+   * What a row is called. A page is a window on a result, not a result of its own, so the twentieth
+   * row of the second page is the seventieth row — numbering every page from one would say the
+   * reader had gone nowhere.
+   */
+  const firstRowNumber = payload.navigation?.pageStart ?? 1;
   const gridRef = useRef<HTMLTableElement>(null);
   const clipboard = useRef<HTMLTextAreaElement>(null);
   const gridId = useId();
@@ -902,7 +909,7 @@ export function ResultGrid({
                       addedRowElement(added, order.ofAdded(position)),
                     )}
                     <tr
-                      aria-rowindex={rowIndex + 2}
+                      aria-rowindex={firstRowNumber + rowIndex + 1}
                       className={[removed ? "removed" : "", selectedRow ? "row-selected" : ""]
                         .filter(Boolean)
                         .join(" ")}
@@ -911,7 +918,7 @@ export function ResultGrid({
                         scope="row"
                         className={`row-gutter${selectedRow ? " selected" : ""}${rowInSelection(selectionRow) ? " in-selection" : ""}`}
                         aria-selected={selectedRow}
-                        title={`Row ${rowIndex + 1} — click to select it, shift-click to extend`}
+                        title={`Row ${firstRowNumber + rowIndex} — click to select it, shift-click to extend`}
                         onMouseDown={(event) => {
                           takeKeys(event);
                           const at = { row: selectionRow, ordinal: visibleOrdinals[0] ?? 0 };
@@ -931,7 +938,7 @@ export function ResultGrid({
                             ✕
                           </span>
                         ) : (
-                          <span className="row-gutter-number">{rowIndex + 1}</span>
+                          <span className="row-gutter-number">{firstRowNumber + rowIndex}</span>
                         )}
                       </th>
                       {keyedValues(row, (cell) => `${cell.kind}:${cell.value ?? "NULL"}`)
@@ -940,9 +947,6 @@ export function ResultGrid({
                           const edit = editing?.editFor(row, rowIndex, ordinal);
                           const shown = edit ? edit.value : cell.value;
                           const value = shown === null ? "NULL" : shown;
-                          const inspectable =
-                            !editing &&
-                            (cell.kind === "json" || cell.kind === "binary" || cell.truncated);
                           const policy = editing?.policies[ordinal];
                           const isActive =
                             activeCell?.row === rowIndex && activeCell.ordinal === ordinal;
@@ -995,15 +999,6 @@ export function ResultGrid({
                                   }}
                                   onCancel={() => setActiveCell(undefined)}
                                 />
-                              ) : inspectable ? (
-                                <button
-                                  className="cell-value inspectable"
-                                  type="button"
-                                  title={`Inspect ${payload.columns[ordinal]?.name ?? "value"}`}
-                                  onClick={inspect}
-                                >
-                                  {value}
-                                </button>
                               ) : shown !== null && isWebAddress(shown) ? (
                                 /* An address is somewhere to go, so it reads and behaves as one. */
                                 <a

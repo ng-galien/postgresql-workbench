@@ -365,24 +365,39 @@ test("puts what is reached for often within reach, and the rest out of the way",
   await openEmpty(page);
   await add(page, "shop.sales_order");
 
-  // Composing, walking the rows and choosing the columns is the work; reading the SQL and
-  // exporting happen once in a session. The bar is ordered by how often a control is used.
+  /*
+   * A control sits with what it acts on. The bar at the top is about the view and the query; the
+   * line above the rows is about the rows, so walking them and opening them for writing are there
+   * — not beside the connection, which they have nothing to do with.
+   */
   const often = page.locator(".toolbar-side-often");
   const seldom = page.locator(".toolbar-side-seldom");
+  const rows = page.locator(".data-view-rows-line");
   await expect(often.getByTitle("Refresh")).toBeVisible();
-  await expect(often.getByTitle(/^Next page$/u)).toBeVisible();
   await expect(often.getByTitle(/^(Show or hide columns|Columns \()/u)).toBeVisible();
   await expect(seldom.getByTitle(/the SQL$/u)).toBeVisible();
   await expect(seldom.getByTitle("More actions")).toBeVisible();
+
+  await expect(rows.getByTitle(/^Next page$/u)).toBeVisible();
+  await expect(rows.getByTitle(/^Edit mode$/u)).toBeVisible();
+  // And nothing about the rows is left in the bar that is not about them.
+  await expect(often.getByTitle(/^Next page$/u)).toHaveCount(0);
+  await expect(
+    page.getByRole("toolbar", { name: "Data view actions" }).getByTitle(/^Edit mode$/u),
+  ).toHaveCount(0);
+
+  // A stop is shown while there is a load to stop, and takes no room the rest of the time.
+  await expect(page.getByTitle("Cancel loading")).toHaveCount(0);
 });
 
 test("moves rows in and out through dialogs of their own", async ({ page }) => {
   await openEmpty(page);
   await add(page, "shop.sales_order");
 
-  // Six near-identical export lines used to bury everything else in the actions menu.
+  // Six near-identical export lines used to bury everything else in the actions menu, and a
+  // seventh copied the loaded rows as TSV — which the export panel and Ctrl+C both do better.
   await page.getByTitle("More actions").click();
-  await expect(page.getByRole("menu").getByRole("menuitem")).toHaveCount(3);
+  await expect(page.getByRole("menu").getByRole("menuitem")).toHaveCount(2);
   await page.keyboard.press("Escape");
 
   await page.getByTitle("Export rows to a file…").click();

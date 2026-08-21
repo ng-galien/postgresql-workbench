@@ -301,6 +301,26 @@ body,
   padding-left: 12px;
 }
 
+/*
+ * The rows: how many, how to walk them, and whether they may be written. It sits between the query
+ * that chose them and the rows themselves, so what it acts on is directly under it — and when the
+ * edit bar opens it comes just below, keeping everything about the rows in one place.
+ */
+.data-view-rows-line {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 2px 8px 2px 10px;
+  border-bottom: 1px solid var(--vscode-panel-border);
+  background: var(--vscode-editor-background);
+}
+
+.data-view-rows-spacer {
+  flex: 1;
+}
+
 .data-view-order {
   margin: 0;
   list-style: none;

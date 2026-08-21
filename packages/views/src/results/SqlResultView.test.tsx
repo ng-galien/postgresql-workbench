@@ -32,14 +32,18 @@ function payload(overrides: Partial<SqlNotebookResultPayload> = {}): SqlNotebook
 }
 
 describe("SqlResultView", () => {
-  it("renders scalar cells as text and inspectable values as buttons", () => {
+  it("renders every value as a value, whatever shape it is", () => {
     const html = renderToStaticMarkup(<SqlResultView payload={payload()} />);
 
     expect(html).toContain("Result binding: Test PostgreSQL · testdb");
     expect(html).toContain('<span class="cell-value">7</span>');
-    expect(html).toContain('class="cell-value inspectable"');
-    expect(html).toContain("Inspect details");
-    expect(html).toContain("aria-controls=");
+    /*
+     * A document is a value like any other in a row: it is not dressed as a link, and clicking it
+     * opens nothing. Reading one whole is the value panel's business, and that panel is opened by
+     * the reader rather than by the cell deciding on their behalf.
+     */
+    expect(html).not.toContain("inspectable");
+    expect(html).not.toContain("Inspect details");
     expect(html).toContain("Copy TSV");
     expect(html).not.toContain("aria-sort");
     expect(html).toContain("Sort loaded rows by id");

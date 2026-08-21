@@ -31,7 +31,7 @@ import { IconButton } from "../results/IconButton.js";
 import { Modal } from "../results/Modal.js";
 import { type GridEditing, type GridLayout, ResultGrid } from "../results/ResultGrid.js";
 import { ResultNavigation } from "../results/ResultNavigation.js";
-import { nextResultSort, resultAsTsv, resultRowSummary } from "../results/resultFormatting.js";
+import { nextResultSort, resultRowSummary } from "../results/resultFormatting.js";
 import type { WebviewMessaging } from "../webviewPage.js";
 import { ExportDialog, type ExportSource } from "./ExportDialog.js";
 import type { DataViewRequest, DataViewResponse, DataViewState } from "./protocol.js";
@@ -799,26 +799,6 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
               disabled={disabled}
               primary={query.editorDirty}
             />
-            <ResultNavigation
-              state={navigationState}
-              onAction={(action) => post({ type: "data-view/navigate", action })}
-            >
-              <span
-                className="result-navigation-summary"
-                title={payload?.truncated ? payload.truncationReasons.join(", ") : undefined}
-              >
-                {payload ? resultRowSummary(payload) : ""}
-                {payload?.truncated ? (
-                  <span className="codicon codicon-warning" title="Preview truncated" />
-                ) : null}
-                {navigationState.closed ? (
-                  <span
-                    className="codicon codicon-debug-disconnect"
-                    title="Cursor closed; refresh to load again"
-                  />
-                ) : null}
-              </span>
-            </ResultNavigation>
           </div>
 
           <div className="toolbar-group">
@@ -928,20 +908,6 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
               onClick={() => setInspecting((on) => !on)}
             />
           </div>
-          {editable ? (
-            <div className="toolbar-group">
-              <IconButton
-                icon="edit"
-                label={editMode ? "Leave edit mode" : "Edit mode"}
-                text="Edit"
-                primary={editMode}
-                onClick={() => {
-                  setEditMode((on) => !on);
-                  setSelection(undefined);
-                }}
-              />
-            </div>
-          ) : null}
         </div>
 
         <div className="toolbar-side toolbar-side-seldom">
@@ -953,7 +919,7 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
               onClick={() => setTransfer("import")}
             />
             <IconButton
-              icon="export"
+              icon="arrow-circle-up"
               label="Export rows to a file…"
               disabled={!payload || payload.columns.length === 0}
               onClick={() => setTransfer("export")}
@@ -983,14 +949,6 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
                     onSelect={() => {
                       setMoreOpen(false);
                       post({ type: "data-view/edit-query" });
-                    }}
-                  />
-                  <MenuItem
-                    label="Copy loaded rows as TSV"
-                    disabled={!payload || payload.columns.length === 0}
-                    onSelect={() => {
-                      setMoreOpen(false);
-                      if (payload) post({ type: "data-view/copy", text: resultAsTsv(payload) });
                     }}
                   />
                   <MenuItem
@@ -1400,6 +1358,46 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
             </button>
           ) : null}
         </ol>
+      </div>
+      {/*
+        The rows: how many there are, how to walk them, and whether they may be written. Every one
+        of these acts on what is under it, so it sits between the query that chose the rows and the
+        rows themselves — a control put beside the connection would say it acted on the connection.
+      */}
+      <div className="data-view-rows-line">
+        <ResultNavigation
+          state={navigationState}
+          onAction={(action) => post({ type: "data-view/navigate", action })}
+        >
+          <span
+            className="result-navigation-summary"
+            title={payload?.truncated ? payload.truncationReasons.join(", ") : undefined}
+          >
+            {payload ? resultRowSummary(payload) : ""}
+            {payload?.truncated ? (
+              <span className="codicon codicon-warning" title="Preview truncated" />
+            ) : null}
+            {navigationState.closed ? (
+              <span
+                className="codicon codicon-debug-disconnect"
+                title="Cursor closed; refresh to load again"
+              />
+            ) : null}
+          </span>
+        </ResultNavigation>
+        <span className="data-view-rows-spacer" />
+        {editable ? (
+          <IconButton
+            icon="edit"
+            label={editMode ? "Leave edit mode" : "Edit mode"}
+            text="Edit"
+            primary={editMode}
+            onClick={() => {
+              setEditMode((on) => !on);
+              setSelection(undefined);
+            }}
+          />
+        ) : null}
       </div>
       {showSql ? <SqlPanel sql={query.text} onClose={() => setShowSql(false)} /> : null}
       {/*

@@ -503,11 +503,6 @@ td.null {
   cursor: default;
 }
 
-.cell-value.inspectable {
-  color: var(--vscode-textLink-foreground);
-  cursor: pointer;
-}
-
 /* An address in a cell reads as one and behaves as one; nothing is added beside it. */
 .cell-value.cell-link {
   color: var(--vscode-textLink-foreground, var(--vscode-charts-blue));
