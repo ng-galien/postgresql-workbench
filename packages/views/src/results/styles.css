@@ -599,40 +599,63 @@ tr.row-selected td {
   background: color-mix(in srgb, var(--vscode-focusBorder) 26%, transparent);
 }
 
-tr.row-selected th.row-gutter,
-th.row-gutter.selected {
-  background: color-mix(in srgb, var(--vscode-focusBorder) 45%, transparent);
-}
-
 td.anchor {
   box-shadow: inset 0 0 0 2px var(--vscode-focusBorder);
 }
 
 /*
- * A two-pixel border on one cell is not enough to find in four thousand rows, so the column header
- * and the row gutter the selection covers are lit too — the way a spreadsheet lights its headings.
- * The cursor's own column is lit harder still, and only while the grid holds the keystrokes.
+ * The headings say how far the selection reaches, the way a spreadsheet's do. Which heading says
+ * it depends on what is selected: a rectangle of cells is bounded by columns, so the column
+ * headings light; a selection of whole rows reaches every column, so lighting every one of them
+ * would say nothing, and the gutter speaks alone.
  */
-thead th.in-selection,
-th.row-gutter.in-selection {
+thead th.in-selection {
   background: color-mix(
     in srgb,
-    var(--vscode-focusBorder) 30%,
+    var(--vscode-focusBorder) 26%,
     var(--vscode-editorWidget-background)
   );
   color: var(--vscode-foreground);
 }
 
+/*
+ * The cursor's own column, marked along the bottom edge while the grid holds the keystrokes. The
+ * accent along the top edge says which table the column comes from, and is not the cursor's to
+ * take: both are drawn, one on each edge.
+ */
 thead th.at-cursor {
   background: color-mix(
     in srgb,
-    var(--vscode-focusBorder) 55%,
+    var(--vscode-focusBorder) 45%,
     var(--vscode-editorWidget-background)
   );
-  box-shadow: inset 0 -2px 0 var(--vscode-focusBorder);
+  box-shadow:
+    inset 0 2px 0 var(--column-accent, transparent),
+    inset 0 -2px 0 var(--vscode-focusBorder);
 }
 
-th.row-gutter.in-selection .row-gutter-number {
+/* The gutter, at two strengths: rows the selection passes through, and rows wholly selected. */
+th.row-gutter.in-selection {
+  background: color-mix(
+    in srgb,
+    var(--vscode-focusBorder) 26%,
+    var(--vscode-editorWidget-background)
+  );
+  color: var(--vscode-foreground);
+}
+
+tr.row-selected th.row-gutter,
+th.row-gutter.selected {
+  background: color-mix(
+    in srgb,
+    var(--vscode-focusBorder) 45%,
+    var(--vscode-editorWidget-background)
+  );
+  color: var(--vscode-foreground);
+}
+
+th.row-gutter.in-selection .row-gutter-number,
+th.row-gutter.selected .row-gutter-number {
   opacity: 1;
 }
 

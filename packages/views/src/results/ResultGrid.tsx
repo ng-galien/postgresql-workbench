@@ -279,7 +279,14 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
    * column header and the row gutter of whatever the selection covers are lit as well. These are
    * the bands the cursor is in.
    */
-  const ordinalsInSelection = new Set(selectedOrdinals(selection, visibleOrdinals));
+  /*
+   * Only a rectangle of cells has columns to speak of. A selection of whole rows reaches every
+   * column, so lighting every heading would say nothing about it; the gutter says it instead.
+   */
+  const overCells = selection.kind === "cells";
+  const ordinalsInSelection = new Set(
+    overCells ? selectedOrdinals(selection, visibleOrdinals) : [],
+  );
   const rowBand = selectedRows(selection);
   const rowInSelection = (row: number) => row >= rowBand.first && row <= rowBand.last;
   /*
@@ -771,7 +778,9 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
                       editing?.policies[ordinal]?.editable === false ? "read-only" : "",
                       dragOver === ordinal ? "drag-over" : "",
                       ordinalsInSelection.has(ordinal) ? "in-selection" : "",
-                      hasFocus && selection.anchor.ordinal === ordinal ? "at-cursor" : "",
+                      hasFocus && overCells && selection.anchor.ordinal === ordinal
+                        ? "at-cursor"
+                        : "",
                     ]
                       .filter(Boolean)
                       .join(" ")}

@@ -372,6 +372,33 @@ test("says what each provisioned change will do, not only how many there are", a
   await expect(drawer.locator(".pending-edit-value")).toHaveText("Saint-Nazaire");
 });
 
+test("lights the headings a cell selection reaches, and leaves them to whole rows", async ({
+  page,
+}) => {
+  await openEmpty(page);
+  const table = await add(page, "shop.address");
+  const lit = page.locator("thead th.in-selection");
+
+  // A rectangle of cells is bounded by columns, so the headings it reaches light up.
+  await table.cellsWithText("Lille").first().click();
+  await expect(lit).toHaveCount(1);
+  await page.keyboard.press("Shift+ArrowRight");
+  await expect(lit).toHaveCount(2);
+
+  // The accent saying which table a column comes from is not the cursor's to take: the heading
+  // carries both marks, the accent on top and the cursor underneath.
+  const marks = await page
+    .locator("thead th.at-cursor")
+    .evaluate((heading) => getComputedStyle(heading).boxShadow.split("inset").length - 1);
+  expect(marks).toBe(2);
+
+  // Whole rows reach every column, so lighting every heading would say nothing about them.
+  await selectRows(page, 0, 1);
+  await expect(lit).toHaveCount(0);
+  await expect(page.locator("thead th.at-cursor")).toHaveCount(0);
+  await expect(page.locator("tbody th.row-gutter.selected")).toHaveCount(2);
+});
+
 test("selects and copies rows without opening the grid for writing", async ({ page }) => {
   await openEmpty(page);
   await add(page, "shop.address");
@@ -642,6 +669,9 @@ test("carries a copied row into a new one, by keyboard alone", async ({ page }) 
   await page.keyboard.press("ControlOrMeta+c");
 
   await editBar(page).add.click();
+  // The row has to be there to be pasted into. A reader waits to see it appear; a test that does
+  // not pastes onto the loaded row that still holds the place, and edits it instead.
+  await expect(page.locator("tbody tr.added")).toHaveCount(1);
   await page.keyboard.press("ControlOrMeta+v");
 
   // Every value lands in the column it was copied from, none shifted along — and a column the
@@ -671,6 +701,7 @@ test("writes the row it was given, and takes it away again", async ({ page }) =>
 
   // The whole journey, ending where it is supposed to end: in the database.
   await bar.add.click();
+  await expect(page.locator("tbody tr.added")).toHaveCount(1);
   await page.keyboard.press("ControlOrMeta+v");
   await bar.apply.click();
 
