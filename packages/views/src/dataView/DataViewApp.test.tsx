@@ -43,7 +43,9 @@ describe("the Data View", () => {
     const grid = screen.getByRole("grid");
     expect(within(grid).getByText("Espresso")).toBeDefined();
     expect(within(grid).getByText("Ristretto")).toBeDefined();
-    expect(screen.getByText("2 rows")).toBeDefined();
+    // Between the two arrows the count is said in as few characters as it can be: paging must not
+    // move them, so what is there never changes width.
+    expect(document.querySelector(".result-navigation-summary")?.textContent).toBe("2");
   });
 
   it("asks the host to sort when a column header is activated", async () => {
@@ -88,7 +90,7 @@ describe("the Data View", () => {
   it("says so when the query returned no rows", () => {
     open(dataViewState({ payload: dataViewPayload([]) }));
 
-    expect(screen.getByText("0 rows")).toBeDefined();
+    expect(document.querySelector(".result-navigation-summary")?.textContent).toBe("0");
   });
 
   it("sends the filter the reader typed", async () => {

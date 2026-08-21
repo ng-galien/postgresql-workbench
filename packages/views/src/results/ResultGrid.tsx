@@ -241,6 +241,12 @@ export function ResultGrid({
    * reader had gone nowhere.
    */
   const firstRowNumber = payload.navigation?.pageStart ?? 1;
+  /*
+   * How wide the gutter has to be: the longest number it will show. A fixed width clips the row
+   * numbers of any result past ninety-nine, and a reader who has paged to row four thousand is
+   * exactly the reader who needs to read it.
+   */
+  const rowNumberWidth = `${String(firstRowNumber + Math.max(0, rows.length - 1)).length}ch`;
   const gridRef = useRef<HTMLTableElement>(null);
   const clipboard = useRef<HTMLTextAreaElement>(null);
   const gridId = useId();
@@ -784,9 +790,12 @@ export function ResultGrid({
             aria-rowcount={rows.length + 1}
             aria-colcount={columns.length + 1}
             className={editing ? "editable" : undefined}
-            style={{
-              width: `${columns.reduce((total, { ordinal }) => total + (widths[ordinal] ?? 12), 0)}ch`,
-            }}
+            style={
+              {
+                width: `${columns.reduce((total, { ordinal }) => total + (widths[ordinal] ?? 12), 0)}ch`,
+                "--row-number-width": rowNumberWidth,
+              } as CSSProperties
+            }
           >
             <colgroup>
               <col className="row-gutter-column" />

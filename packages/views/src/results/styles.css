@@ -747,8 +747,9 @@ th.drag-over {
  */
 th.row-gutter,
 td.row-gutter {
-  width: 2.8em;
-  min-width: 2.8em;
+  /* Wide enough for the longest number it shows, and never narrower than a mark needs. */
+  width: max(2.8em, calc(var(--row-number-width, 2ch) + 1.4em));
+  min-width: max(2.8em, calc(var(--row-number-width, 2ch) + 1.4em));
   padding: 0 0.55em 0 0;
   border-right: 1px solid var(--vscode-panel-border);
   background: var(--vscode-editorWidget-background);

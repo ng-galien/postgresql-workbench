@@ -321,6 +321,21 @@ body,
   flex: 1;
 }
 
+/*
+ * The proposal the arrow keys are on. It is lit the way a hover lights one, because it is the same
+ * thing said two ways: this is what Enter will take.
+ */
+.addition-item.highlighted {
+  background: var(--vscode-list-activeSelectionBackground, var(--vscode-list-hoverBackground));
+  color: var(--vscode-list-activeSelectionForeground, inherit);
+}
+
+/* What is said about the result but not between its arrows, so nothing there changes width. */
+.data-view-rows-mark {
+  flex: none;
+  color: var(--vscode-descriptionForeground);
+}
+
 .data-view-order {
   margin: 0;
   list-style: none;

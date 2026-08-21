@@ -46,14 +46,22 @@
   align-items: center;
 }
 
+/*
+ * Where the reader is, between the two arrows that move them. It keeps a fixed slot and figures of
+ * one width, so paging changes what it says without moving what is either side of it — an arrow
+ * that walks away from the pointer between two presses is an arrow a reader stops trusting.
+ */
 .result-navigation-summary {
   display: inline-flex;
+  min-width: 15ch;
   gap: 6px;
   align-items: center;
+  justify-content: center;
   padding: 0 4px;
   white-space: nowrap;
   color: var(--vscode-descriptionForeground);
   font-size: 12px;
+  font-variant-numeric: tabular-nums;
 }
 
 .result-navigation-summary .codicon-warning {

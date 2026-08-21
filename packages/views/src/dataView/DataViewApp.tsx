@@ -31,7 +31,7 @@ import { IconButton } from "../results/IconButton.js";
 import { Modal } from "../results/Modal.js";
 import { type GridEditing, type GridLayout, ResultGrid } from "../results/ResultGrid.js";
 import { ResultNavigation } from "../results/ResultNavigation.js";
-import { nextResultSort, resultRowSummary } from "../results/resultFormatting.js";
+import { nextResultSort, resultRowRange, resultRowSummary } from "../results/resultFormatting.js";
 import type { WebviewMessaging } from "../webviewPage.js";
 import { ExportDialog, type ExportSource } from "./ExportDialog.js";
 import type { DataViewRequest, DataViewResponse, DataViewState } from "./protocol.js";
@@ -331,6 +331,8 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
   const [dropActive, setDropActive] = useState(false);
   const [additions, setAdditions] = useState<DataViewAddition[]>();
   const [additionFilter, setAdditionFilter] = useState("");
+  /** Which proposal the arrow keys are on: a reader types, walks down, and presses Enter. */
+  const [highlighted, setHighlighted] = useState(0);
   const [choices, setChoices] = useState<{
     addition: DataViewAddition;
     title: string;
@@ -479,6 +481,50 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
   );
 
   /** Where each row sits in the grid, which is what a selection and a new row are counted in. */
+  /*
+   * The proposals as they are shown: grouped under the table or the schema they belong to, and in
+   * one flat order besides. A reader walking down with the arrow keys walks the order they read,
+   * which is only knowable once the grouping has been done — so it is done once, here, and the
+   * rendering below reads it rather than working it out again.
+   */
+  const additionGroups = useMemo(() => {
+    if (!additions) return [];
+    const needle = additionFilter.trim().toLowerCase();
+    const matches = additions.filter(
+      (item) =>
+        !needle ||
+        item.label.toLowerCase().includes(needle) ||
+        item.detail.toLowerCase().includes(needle),
+    );
+    const groups: { key: string; heading: string; accent?: string; items: DataViewAddition[] }[] =
+      [];
+    for (const tableIndex of [...(state?.projection.tables ?? []).map((_t, index) => index), -1]) {
+      const table = tableIndex >= 0 ? state?.projection.tables[tableIndex] : undefined;
+      const mine = matches.filter((item) => item.tableIndex === tableIndex);
+      /*
+       * Relations that join nothing in the query are every other relation of the database: one
+       * list of them is unreadable, so they are shown under the schema they belong to.
+       */
+      const byGroup = new Map<string | undefined, DataViewAddition[]>();
+      for (const item of mine) byGroup.set(item.group, [...(byGroup.get(item.group) ?? []), item]);
+      for (const [group, items] of byGroup) {
+        groups.push({
+          key: table ? String(table.tableOid) : `others:${group ?? ""}`,
+          heading: table ? `${table.schema}.${table.name}` : (group ?? "Other tables and views"),
+          ...(table ? { accent: tableAccent(table.accent) } : {}),
+          items,
+        });
+      }
+    }
+    return groups;
+  }, [additions, additionFilter, state?.projection.tables]);
+  const flatAdditions = additionGroups.flatMap((group) => group.items);
+  /* A different list is a different walk: the highlight goes back to the first proposal. */
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the list's shape is the subject.
+  useEffect(() => {
+    setHighlighted(0);
+  }, [additionFilter, additions]);
+
   const shownRows = useMemo(
     () => rowOrder(state?.addedRows ?? [], state?.payload?.rows.length ?? 0),
     [state],
@@ -896,18 +942,6 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
               ) : null}
             </div>
           </div>
-          <div className="toolbar-group">
-            <IconButton
-              icon="inspect"
-              label={
-                inspecting
-                  ? "Stop showing the value under the cursor"
-                  : "Show the value under the cursor, whole"
-              }
-              primary={inspecting}
-              onClick={() => setInspecting((on) => !on)}
-            />
-          </div>
         </div>
 
         <div className="toolbar-side toolbar-side-seldom">
@@ -1092,78 +1126,83 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
                     placeholder="Filter columns and related tables…"
                     spellCheck={false}
                     onChange={(event) => setAdditionFilter(event.target.value)}
+                    /*
+                     * A reader types, walks down and presses Enter without leaving the field: the
+                     * arrows move the highlight rather than the caret, because there is nowhere in
+                     * a one-line filter for an up arrow to go.
+                     */
                     onKeyDown={(event) => {
-                      if (event.key === "Escape") setAdditions(undefined);
+                      if (event.key === "Escape") {
+                        setAdditions(undefined);
+                        return;
+                      }
+                      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                        event.preventDefault();
+                        if (flatAdditions.length === 0) return;
+                        const step = event.key === "ArrowDown" ? 1 : -1;
+                        setHighlighted(
+                          (at) => (at + step + flatAdditions.length) % flatAdditions.length,
+                        );
+                        return;
+                      }
+                      if (event.key === "Enter") {
+                        const chosen = flatAdditions[highlighted];
+                        if (!chosen) return;
+                        event.preventDefault();
+                        setAdditions(undefined);
+                        post({ type: "data-view/compose", addition: chosen });
+                      }
                     }}
                   />
                 )}
-                {[...state.projection.tables.map((_table, index) => index), -1].map(
-                  (tableIndex) => {
-                    const table = tableIndex >= 0 ? state.projection.tables[tableIndex] : undefined;
-                    const needle = additionFilter.trim().toLowerCase();
-                    const items = additions.filter(
-                      (item) =>
-                        item.tableIndex === tableIndex &&
-                        (!needle ||
-                          item.label.toLowerCase().includes(needle) ||
-                          item.detail.toLowerCase().includes(needle)),
-                    );
-                    if (items.length === 0) return null;
-                    /**
-                     * Relations that join nothing in the query are every other relation of the
-                     * database: a single list of them is unreadable, so they are shown under the
-                     * schema they belong to, in the order the engine listed them.
-                     */
-                    const byGroup = new Map<string | undefined, DataViewAddition[]>();
-                    for (const item of items) {
-                      byGroup.set(item.group, [...(byGroup.get(item.group) ?? []), item]);
+                {additionGroups.map((group) => (
+                  <div
+                    key={group.key}
+                    className="columns-menu-group"
+                    style={
+                      group.accent
+                        ? ({ "--column-accent": group.accent } as CSSProperties)
+                        : undefined
                     }
-                    return [...byGroup].map(([group, groupItems]) => (
-                      <div
-                        key={table ? table.tableOid : `others:${group ?? ""}`}
-                        className="columns-menu-group"
-                        style={
-                          table
-                            ? ({ "--column-accent": tableAccent(table.accent) } as CSSProperties)
-                            : undefined
-                        }
-                      >
-                        <div className="columns-menu-heading">
-                          {table
-                            ? `${table.schema}.${table.name}`
-                            : (group ?? "Other tables and views")}
-                        </div>
-                        {groupItems.map((item) => (
-                          <button
-                            key={`${item.kind}:${item.label}:${item.detail}`}
-                            type="button"
-                            role="menuitem"
-                            className="column-menu-item addition-item"
-                            title={
-                              item.kind !== "table"
-                                ? `Add column ${item.label} (${item.detail})`
-                                : emptyQuery
-                                  ? // Nothing to join to yet: this relation becomes the base.
-                                    `Start the query with ${item.label}`
-                                  : `JOIN ${item.label} through ${item.detail}`
-                            }
-                            onClick={() => {
-                              setAdditions(undefined);
-                              post({ type: "data-view/compose", addition: item });
-                            }}
-                          >
-                            <span
-                              className={`codicon codicon-${item.kind === "table" ? "table" : "symbol-field"}`}
-                              aria-hidden="true"
-                            />
-                            <span className="addition-label">{item.label}</span>
-                            <span className="addition-detail">{item.detail}</span>
-                          </button>
-                        ))}
-                      </div>
-                    ));
-                  },
-                )}
+                  >
+                    <div className="columns-menu-heading">{group.heading}</div>
+                    {group.items.map((item) => {
+                      const at = flatAdditions.indexOf(item);
+                      return (
+                        <button
+                          key={`${item.kind}:${item.label}:${item.detail}`}
+                          type="button"
+                          role="menuitem"
+                          className={`column-menu-item addition-item${at === highlighted ? " highlighted" : ""}`}
+                          /* The one the arrows are on scrolls itself into view as they move. */
+                          ref={(node) => {
+                            if (at === highlighted) node?.scrollIntoView({ block: "nearest" });
+                          }}
+                          title={
+                            item.kind !== "table"
+                              ? `Add column ${item.label} (${item.detail})`
+                              : emptyQuery
+                                ? // Nothing to join to yet: this relation becomes the base.
+                                  `Start the query with ${item.label}`
+                                : `JOIN ${item.label} through ${item.detail}`
+                          }
+                          onMouseEnter={() => setHighlighted(at)}
+                          onClick={() => {
+                            setAdditions(undefined);
+                            post({ type: "data-view/compose", addition: item });
+                          }}
+                        >
+                          <span
+                            className={`codicon codicon-${item.kind === "table" ? "table" : "symbol-field"}`}
+                            aria-hidden="true"
+                          />
+                          <span className="addition-label">{item.label}</span>
+                          <span className="addition-detail">{item.detail}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ))}
                 {additions.length === 0 && !choices ? (
                   <div className="columns-menu-heading">Nothing to add</div>
                 ) : null}
@@ -1371,21 +1410,49 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
         >
           <span
             className="result-navigation-summary"
-            title={payload?.truncated ? payload.truncationReasons.join(", ") : undefined}
+            title={
+              payload
+                ? [
+                    resultRowSummary(payload),
+                    ...(payload.truncated ? payload.truncationReasons : []),
+                  ].join(" · ")
+                : undefined
+            }
           >
-            {payload ? resultRowSummary(payload) : ""}
-            {payload?.truncated ? (
-              <span className="codicon codicon-warning" title="Preview truncated" />
-            ) : null}
-            {navigationState.closed ? (
-              <span
-                className="codicon codicon-debug-disconnect"
-                title="Cursor closed; refresh to load again"
-              />
-            ) : null}
+            {payload ? resultRowRange(payload) : ""}
           </span>
         </ResultNavigation>
+        {/*
+          What stands outside the count, so that nothing beside the arrows changes width as a
+          reader pages: a mark for a result cut short, and one for a cursor that has closed.
+        */}
+        {payload?.truncated ? (
+          <span
+            className="codicon codicon-warning data-view-rows-mark"
+            title={`Cut short: ${payload.truncationReasons.join(", ")}`}
+          />
+        ) : null}
+        {navigationState.closed ? (
+          <span
+            className="codicon codicon-debug-disconnect data-view-rows-mark"
+            title="Cursor closed; refresh to load again"
+          />
+        ) : null}
         <span className="data-view-rows-spacer" />
+        {/*
+          The value panel shows what a cell holds, so it belongs with the rows and not with the
+          view — beside the control that decides whether those rows may be written.
+        */}
+        <IconButton
+          icon="inspect"
+          label={
+            inspecting
+              ? "Stop showing the value under the cursor"
+              : "Show the value under the cursor, whole"
+          }
+          primary={inspecting}
+          onClick={() => setInspecting((on) => !on)}
+        />
         {editable ? (
           <IconButton
             icon="edit"

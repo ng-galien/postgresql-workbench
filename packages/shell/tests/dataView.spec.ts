@@ -101,8 +101,35 @@ test("makes the first relation the base of the query", async ({ page }) => {
   const rows = await add(page, "shop.product");
 
   await expect(rows.cellsWithText("Saumon fumé")).toHaveCount(1);
-  await expect(rows.summary("4 rows")).toBeVisible();
+  await expect(rows.summary("4")).toBeVisible();
   expect(await runningSql(page)).toMatch(/FROM\s+shop\.product AS product/u);
+});
+
+test("composes a table by keyboard alone: type, walk down, press Enter", async ({ page }) => {
+  await openEmpty(page);
+  await page.getByTitle(/Add (the first table|a column or a related table)/u).click();
+
+  // The filter has the focus when it opens, so a reader types straight into it.
+  await page.keyboard.type("order");
+  const proposals = page.locator(".addition-item");
+  await expect(proposals.first()).toContainText("shop.order_line");
+
+  // The walk starts on the first proposal, and wraps rather than stopping — never a dead press.
+  await expect(proposals.first()).toHaveClass(/highlighted/u);
+  await page.keyboard.press("ArrowUp");
+  await expect(proposals.last()).toHaveClass(/highlighted/u);
+  await page.keyboard.press("ArrowDown");
+  await expect(proposals.first()).toHaveClass(/highlighted/u);
+
+  // The arrows move the highlight, not the caret: a one-line filter has nowhere for them to go.
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("ArrowDown");
+  await expect(proposals.nth(2)).toHaveClass(/highlighted/u);
+  const chosen = (await proposals.nth(2).locator(".addition-label").textContent()) ?? "";
+
+  await page.keyboard.press("Enter");
+
+  await expect(page.getByTitle(new RegExp(`^${chosen} — its columns`, "u"))).toBeVisible();
 });
 
 test("joins a related table on the key the planner chose", async ({ page }) => {
@@ -140,7 +167,7 @@ test("empties the query when its last table is removed, and starts over", async 
   // The way out of the empty state is the control the message names.
   await expect(page.getByTitle("Add the first table of the query")).toBeEnabled();
   const rows = await add(page, "shop.customer");
-  await expect(rows.summary("3 rows")).toBeVisible();
+  await expect(rows.summary("3")).toBeVisible();
 });
 
 test("sorts on a column, and says so in the SQL", async ({ page }) => {
@@ -262,19 +289,28 @@ test("pages a relation too large to load at once, and loads the rest on demand",
   await openEmpty(page);
   const rows = await add(page, "shop.inventory_movement");
 
-  // A movement table is the one that really grows: the first page is a page, not the whole thing.
-  await expect(rows.summary("Rows 1–200 · more available")).toBeVisible();
+  /*
+   * A movement table is the one that really grows: the first page is a page, not the whole thing.
+   * Where the reader is is said between the two arrows, in a slot that keeps its width — so what
+   * is asserted is the text of that slot and, just as much, that the arrows do not move.
+   */
+  const summary = page.locator(".result-navigation-summary");
+  const nextArrow = page.locator('.data-view-rows-line button[title="Next page"]');
+  const where = () => nextArrow.evaluate((b) => Math.round(b.getBoundingClientRect().x));
+  await expect(summary).toHaveText("1–200 / ?");
+  const arrowAt = await where();
 
   await rows.next();
-  await expect(rows.summary("Rows 201–400 · more available")).toBeVisible();
+  await expect(summary).toHaveText("201–400 / ?");
+  expect(await where()).toBe(arrowAt);
   await rows.previous();
-  await expect(rows.summary("Rows 1–200 · more available")).toBeVisible();
+  await expect(summary).toHaveText("1–200 / ?");
+  expect(await where()).toBe(arrowAt);
 
   await rows.loadAll();
   // The whole table, however many rows the seed holds and whatever a reader has since deleted:
   // what matters is that nothing is left to fetch.
-  await expect(page.getByText(/^\d[\d,]* rows$/u)).toBeVisible({ timeout: 20_000 });
-  await expect(page.getByText(/more available/u)).toBeHidden();
+  await expect(summary).toHaveText(/^\d+$/u, { timeout: 20_000 });
 });
 
 test("hides the key columns a reader has no use for, and offers them back", async ({ page }) => {

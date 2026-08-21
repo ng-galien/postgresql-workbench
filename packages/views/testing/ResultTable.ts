@@ -22,8 +22,9 @@ export class ResultTable {
   }
 
   /** The row count the navigation shows: `Rows 1–200 · more available`, `1000 rows`, and so on. */
+  /** Where the reader is in the result, as the slot between the two paging arrows says it. */
   summary(text: string): Locator {
-    return this.root.getByText(text, { exact: true });
+    return this.root.locator(".result-navigation-summary").getByText(text, { exact: true });
   }
 
   async next(): Promise<void> {

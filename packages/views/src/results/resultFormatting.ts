@@ -136,6 +136,30 @@ export function resultRowSummary(payload: ResultTable): string {
   return `Rows ${navigation.pageStart}–${navigation.pageEnd} · more available`;
 }
 
+/**
+ * Where the reader is in the result, in as few characters as it can be said: the rows on screen
+ * over the rows there are. It goes between the two arrows that page through them, and those arrows
+ * must not move as a reader uses them — so the shape is always the same, whichever page they are
+ * on, and the sentence explaining it is left to `resultRowSummary` and a title.
+ */
+export function resultRowRange(payload: ResultTable): string {
+  const navigation = payload.navigation;
+  const total = payload.rowCount;
+  if (!navigation) {
+    const count = total ?? payload.capturedRowCount;
+    return payload.truncated && total !== undefined && payload.capturedRowCount < count
+      ? `${payload.capturedRowCount} / ${count}`
+      : `${count}`;
+  }
+  if (navigation.pageEnd === 0) return "0";
+  // One page holding everything is not a range: there is nowhere else to be.
+  if (total !== undefined && navigation.pageStart === 1 && navigation.pageEnd === total) {
+    return `${total}`;
+  }
+  // A question mark rather than an ellipsis: the total is not yet known, not cut off.
+  return `${navigation.pageStart}–${navigation.pageEnd} / ${total ?? "?"}`;
+}
+
 export function resultSortNotice(payload: ResultTable): string | undefined {
   if (payload.navigation?.mode === "paged") {
     const qualifier = payload.truncationReasons.includes("cell")
