@@ -15,6 +15,10 @@ import {
   EMPTY_DATA_VIEW_EDITABILITY,
   withRequiredColumnsRevealed,
 } from "../../../packages/rows/src/dataView.js";
+import type {
+  DataViewExportChoice,
+  DataViewExportScope,
+} from "../../../packages/rows/src/export.js";
 import { initialDataViewQuery } from "../../../packages/rows/src/initialProjection.js";
 import {
   navigateResult,
@@ -22,6 +26,8 @@ import {
 } from "../../../packages/rows/src/navigation.js";
 import { openDataViewResult, TableAccents } from "../../../packages/rows/src/openRows.js";
 import { type DataViewWriteHost, PendingEdits } from "../../../packages/rows/src/pendingEdits.js";
+import { rowOrder } from "../../../packages/rows/src/rowOrder.js";
+import { shownValues } from "../../../packages/rows/src/shownValues.js";
 import { type QueryRewrite, SqlQueryModel } from "../../../packages/sql/src/query/model.js";
 import type {
   SqlAuthoringDragPayload,
@@ -36,7 +42,7 @@ import type {
 import type { SqlNotebookResultPayload, SqlResultSession } from "../scratchpad/index.js";
 import { completeDataViewFilter } from "./completion/filterCompletion.js";
 import { dataViewCompletionUri, dataViewQueryUri } from "./dataViewUri.js";
-import { exportAllRows, exportLoadedRows, pickExportTarget } from "./export/exportResult.js";
+import { exportAllRows, exportHeldRows, pickExportTarget } from "./export/exportResult.js";
 import { type DataViewHostServices, errorMessage } from "./hostServices.js";
 
 class LoadCancelledError extends Error {}
@@ -297,7 +303,7 @@ export class DataViewDocument implements vscode.CustomDocument {
         await vscode.env.clipboard.writeText(request.text);
         return;
       case "data-view/export":
-        await this.export(request.format, request.scope);
+        await this.export(request.choice, request.scope, request.selected);
         return;
       case "data-view/open-sql":
         await this.services.openSql(this.source, this.query.effectiveSql());
@@ -672,27 +678,55 @@ export class DataViewDocument implements vscode.CustomDocument {
 
   // --- Export --------------------------------------------------------------------------------
 
-  private async export(format: "csv" | "tsv" | "json", scope: "loaded" | "all"): Promise<void> {
-    const payload = this.payload;
-    if (!payload) return;
-    const target = await pickExportTarget(this.title, format, scope);
+  private async export(
+    choice: DataViewExportChoice,
+    scope: DataViewExportScope,
+    selected: { from: number; to: number; ordinals: number[] } | undefined,
+  ): Promise<void> {
+    if (!this.payload) return;
+    const target = await pickExportTarget(this.title, choice.format, scope);
     if (!target) return;
     try {
-      if (scope === "loaded") {
-        await exportLoadedRows(target, format, payload, this.query.effectiveSql());
-      } else {
-        await exportAllRows({
-          target,
-          format,
-          sql: this.query.effectiveSql(),
-          title: this.title,
-          openClient: () => this.services.openClient(this.source.serverId),
-        });
-      }
-      this.notify(`Exported to ${target.fsPath}`, "info");
+      const written =
+        scope === "all"
+          ? await exportAllRows({
+              target,
+              choice,
+              sql: this.query.effectiveSql(),
+              title: this.title,
+              openClient: () => this.services.openClient(this.source.serverId),
+            })
+          : await exportHeldRows(target, choice, this.heldValues(scope, selected));
+      this.notify(`Exported ${written.toLocaleString("en-US")} rows to ${target.fsPath}`, "info");
     } catch (error) {
       this.notify(`Export failed: ${errorMessage(error)}`, "error");
     }
+  }
+
+  /*
+   * The rows this document already holds, as the grid shows them: the reader's selection, or every
+   * loaded row. The order and the values come from the same place the view previewed them, so a
+   * preview and a file cannot disagree.
+   */
+  private heldValues(
+    scope: DataViewExportScope,
+    selected: { from: number; to: number; ordinals: number[] } | undefined,
+  ) {
+    const columns = this.payload?.columns ?? [];
+    const loadedRows = this.payload?.rows ?? [];
+    const order = rowOrder(this.edits.addedRows, loadedRows.length);
+    const hidden = new Set(
+      columns.flatMap((column, ordinal) => (this.hidden.includes(column.name) ? [ordinal] : [])),
+    );
+    const shown =
+      scope === "selection" && selected
+        ? selected
+        : {
+            from: 0,
+            to: order.count - 1,
+            ordinals: columns.flatMap((_column, ordinal) => (hidden.has(ordinal) ? [] : [ordinal])),
+          };
+    return shownValues({ columns, rows: loadedRows, order, ...shown });
   }
 
   // --- Webview messaging ---------------------------------------------------------------------

@@ -1,4 +1,4 @@
-import type { DataViewRowInsertion } from "../../../rows/src/dataView.js";
+import type { DataViewRowInsertion } from "./dataView.js";
 
 /**
  * The order the grid shows its rows in. A row the reader added sits just above the loaded row it

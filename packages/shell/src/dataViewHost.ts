@@ -1,3 +1,6 @@
+import { writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { Client } from "pg";
 import {
   ensureLocalCodeMonikerWorkspace,
@@ -15,10 +18,19 @@ import {
   EMPTY_DATA_VIEW_EDITABILITY,
   withRequiredColumnsRevealed,
 } from "../../rows/src/dataView.js";
+import {
+  type DataViewExportChoice,
+  type DataViewExportScope,
+  dataViewExportText,
+  dataViewExportWriter,
+  exportFileExtension,
+} from "../../rows/src/export.js";
 import { localFilterCompletions } from "../../rows/src/filterCompletions.js";
 import { initialDataViewQuery } from "../../rows/src/initialProjection.js";
 import { openDataViewResult, TableAccents } from "../../rows/src/openRows.js";
 import { type DataViewWriteHost, PendingEdits } from "../../rows/src/pendingEdits.js";
+import { rowOrder } from "../../rows/src/rowOrder.js";
+import { shownValues } from "../../rows/src/shownValues.js";
 import { createCodeMonikerSyntaxParser } from "../../sql/src/analysis/codeMonikerSyntax.js";
 import type { SyntaxParser } from "../../sql/src/analysis/syntaxTree.js";
 import { type SqlQueryAnalysis, setWhere } from "../../sql/src/query/analysis.js";
@@ -161,6 +173,98 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
     changed: () => broadcast(),
     reload: () => load(),
     serverName: () => serverName,
+  };
+
+  /*
+   * Writing the chosen rows out. Everything on screen is already held, so those scopes are written
+   * from it; every row of the query is read back from PostgreSQL a batch at a time, so a result
+   * larger than this process can hold still reaches the file.
+   */
+  const writeExport = async (
+    choice: DataViewExportChoice,
+    scope: DataViewExportScope,
+    selected: { from: number; to: number; ordinals: number[] } | undefined,
+  ): Promise<{ path: string; rows: number }> => {
+    const payload = state.payload;
+    if (!payload) throw new Error("There is nothing loaded to export.");
+    /*
+     * Where a browser would have put it, unless the caller says otherwise — which is how a test
+     * run writes into its own directory rather than into the reader's downloads.
+     */
+    const path = join(
+      process.env.PGWB_EXPORT_DIR ?? join(homedir(), "Downloads"),
+      `${(state.editability.tables[0]?.name ?? "result").replace(/[^\w.-]+/gu, "_")}.${exportFileExtension(choice.format)}`,
+    );
+    if (scope === "all") {
+      const rows = await streamExportToFile(path, choice);
+      return { path, rows };
+    }
+    const values = heldValues(scope, selected);
+    await writeFile(path, dataViewExportText(values.columns, values.rows, choice), "utf8");
+    return { path, rows: values.rows.length };
+  };
+
+  /*
+   * The rows the surface already holds, as the grid shows them: the reader's selection, or every
+   * loaded row. The order and the values come from the same place the view previewed them, so a
+   * preview and a file cannot disagree.
+   */
+  const heldValues = (
+    scope: DataViewExportScope,
+    selected: { from: number; to: number; ordinals: number[] } | undefined,
+  ) => {
+    const payload = state.payload;
+    const columns = payload?.columns ?? [];
+    const loadedRows = payload?.rows ?? [];
+    const order = rowOrder(edits.addedRows, loadedRows.length);
+    const hidden = new Set(
+      columns.flatMap((column, ordinal) => (state.hidden.includes(column.name) ? [ordinal] : [])),
+    );
+    const shown =
+      scope === "selection" && selected
+        ? selected
+        : {
+            from: 0,
+            to: order.count - 1,
+            ordinals: columns.flatMap((_column, ordinal) => (hidden.has(ordinal) ? [] : [ordinal])),
+          };
+    return shownValues({ columns, rows: loadedRows, order, ...shown });
+  };
+
+  /** Every row of the query, read back a batch at a time and written as it arrives. */
+  const streamExportToFile = async (
+    path: string,
+    choice: DataViewExportChoice,
+  ): Promise<number> => {
+    const columns = (state.payload?.columns ?? []).map((column) => column.name);
+    const writer = dataViewExportWriter(columns, choice);
+    const client = await writeHost.openClient();
+    let written = 0;
+    try {
+      const result = await client.query(query.effectiveSql());
+      const pieces = [
+        writer.opening(),
+        ...result.rows.map((row, index) => {
+          written += 1;
+          return writer.row(
+            columns.map((name) => {
+              const value = (row as Record<string, unknown>)[name];
+              return value === null || value === undefined ? null : String(value);
+            }),
+            index,
+          );
+        }),
+        writer.closing(),
+      ];
+      await writeFile(
+        path,
+        choice.finalNewline ? pieces.join("") : pieces.join("").replace(/\n$/u, ""),
+        "utf8",
+      );
+    } finally {
+      await client.end().catch(() => {});
+    }
+    return written;
   };
 
   const broadcast = () =>
@@ -473,13 +577,27 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
           // The reader has already been told what happened; the shell has no save of its own.
           await edits.apply(writeHost, state.editability).catch(() => {});
           return;
-        case "data-view/export":
-          emit({
-            type: "data-view/notice",
-            message: `Exported ${request.scope} rows as ${request.format.toUpperCase()}.`,
-            severity: "info",
-          });
+        case "data-view/export": {
+          /*
+           * The shell writes the file itself: it runs on the reader's machine, so an export that
+           * only said it had happened would be the one thing in this harness that is not real.
+           */
+          try {
+            const written = await writeExport(request.choice, request.scope, request.selected);
+            emit({
+              type: "data-view/notice",
+              message: `Exported ${written.rows.toLocaleString("en-US")} rows to ${written.path}.`,
+              severity: "info",
+            });
+          } catch (error) {
+            emit({
+              type: "data-view/notice",
+              message: `The export failed: ${error instanceof Error ? error.message : String(error)}`,
+              severity: "error",
+            });
+          }
           return;
+        }
         default:
           emit({
             type: "data-view/notice",

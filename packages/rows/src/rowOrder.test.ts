@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { DataViewRowInsertion } from "../../../rows/src/dataView.js";
+import type { DataViewRowInsertion } from "./dataView.js";
 import { rowOrder } from "./rowOrder.js";
 
 function added(...above: number[]): DataViewRowInsertion[] {

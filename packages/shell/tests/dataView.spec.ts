@@ -1,5 +1,8 @@
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { expect, type Page, test } from "@playwright/test";
 import { ResultTable } from "../../views/testing/ResultTable.js";
+import { EXPORTS } from "./playwright.config.js";
 
 /**
  * The Data View journey, against the real engines and from nothing: PostgreSQL answers the rows,
@@ -44,6 +47,12 @@ async function putOnClipboard(page: Page, text: string) {
 /** Reads back what the grid put on the clipboard. */
 function readClipboard(page: Page): Promise<string> {
   return page.evaluate(() => navigator.clipboard.readText());
+}
+
+/** Opens the export dialog from the toolbar. */
+async function openExport(page: Page) {
+  await page.getByRole("button", { name: /Export rows to a file/u }).click();
+  await expect(page.getByRole("dialog", { name: "Export rows" })).toBeVisible();
 }
 
 async function selectRows(page: Page, first: number, last = first) {
@@ -335,9 +344,11 @@ test("moves rows in and out through dialogs of their own", async ({ page }) => {
 
   await page.getByTitle("Export rows to a file…").click();
   const dialog = page.getByRole("dialog", { name: "Export rows" });
-  await expect(dialog.getByText("Loaded rows")).toBeVisible();
-  await expect(dialog.getByText("All rows")).toBeVisible();
-  await expect(dialog.getByRole("menuitem", { name: "CSV…" })).toHaveCount(2);
+  // Which rows, which shape, and what that gives — three questions, not six near-identical lines.
+  await expect(dialog.getByRole("radio", { name: /The rows loaded/u })).toBeVisible();
+  await expect(dialog.getByRole("radio", { name: /Every row of the query/u })).toBeVisible();
+  await expect(dialog.getByRole("radio", { name: "CSV" })).toBeVisible();
+  await expect(dialog.locator(".export-preview")).not.toBeEmpty();
 
   await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
@@ -717,6 +728,66 @@ test("writes the row it was given, and takes it away again", async ({ page }) =>
   await bar.apply.click();
 
   await expect(table.cellsWithText(mark)).toHaveCount(0);
+});
+
+test("shows what an export will give, before it is written", async ({ page }) => {
+  await openEmpty(page);
+  await add(page, "shop.address");
+
+  await selectRows(page, 2, 4);
+  await openExport(page);
+
+  // The reader's selection is the scope offered first, and it says how much it covers.
+  const dialog = page.getByRole("dialog", { name: "Export rows" });
+  await expect(dialog.getByRole("radio", { name: /The selection/u })).toBeChecked();
+  await expect(dialog.getByText(/The selection/u).locator("..")).toContainText("3 rows");
+
+  // And the preview is the file: a header line, then the three rows picked out.
+  const preview = dialog.locator(".export-preview");
+  await expect(preview).toContainText("label,line1");
+  expect((await preview.textContent())?.trim().split("\n")).toHaveLength(4);
+
+  // A different shape, the same rows, read back before anything is written.
+  await dialog.getByRole("radio", { name: "Markdown" }).check();
+  await expect(preview).toContainText("|---");
+  await dialog.getByRole("radio", { name: "JSON" }).check();
+  await expect(preview).toContainText('"label"');
+});
+
+test("offers no INSERT statements where no one table owns the rows", async ({ page }) => {
+  await openEmpty(page);
+  await add(page, "shop.address");
+  await openExport(page);
+  const dialog = page.getByRole("dialog", { name: "Export rows" });
+  await expect(dialog.getByRole("radio", { name: "SQL" })).toBeEnabled();
+
+  await dialog.getByRole("button", { name: "Close" }).click();
+  await add(page, "shop.warehouse");
+  await openExport(page);
+
+  // Over a join there is no single table to insert into, and the dialog says so rather than
+  // offering a shape it would refuse afterwards.
+  const joined = page.getByRole("dialog", { name: "Export rows" });
+  await expect(joined.getByRole("radio", { name: "SQL" })).toBeDisabled();
+  await expect(joined.getByText(/INSERT statements need one table/u)).toBeVisible();
+});
+
+test("writes the rows the reader picked out, in the shape they chose", async ({ page }) => {
+  await openEmpty(page);
+  await add(page, "shop.address");
+
+  await selectRows(page, 0, 1);
+  await openExport(page);
+  const dialog = page.getByRole("dialog", { name: "Export rows" });
+  await dialog.getByRole("radio", { name: "TSV" }).check();
+  const written = (await dialog.locator(".export-preview").textContent()) ?? "";
+  await dialog.getByRole("button", { name: "Export" }).click();
+
+  await expect(page.locator(".data-view-statusline-text")).toContainText(/Exported 2 rows/u);
+  // The file holds what the preview showed: it is written by the same module that showed it.
+  const file = join(EXPORTS, "address.tsv");
+  await expect(async () => expect(existsSync(file)).toBe(true)).toPass();
+  expect(readFileSync(file, "utf8").trim()).toBe(written.trim());
 });
 
 test("says a refused write in a band across the top, not in a corner", async ({ page }) => {

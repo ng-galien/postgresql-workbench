@@ -5,63 +5,57 @@ import {
   formatQueryResultRow,
   queryResultColumns,
 } from "../../../../packages/dap/src/debugger/launch/boundedQueryResult.js";
-import type { DebugResultColumn } from "../../../../packages/dap/src/debugger/launch/index.js";
+import {
+  type DataViewExportChoice,
+  type DataViewExportFormat,
+  type DataViewExportScope,
+  type DataViewExportWriter,
+  dataViewExportText,
+  dataViewExportWriter,
+  exportFileExtension,
+} from "../../../../packages/rows/src/export.js";
 import { TEXT_PASSTHROUGH_TYPES } from "../../../../packages/rows/src/openRows.js";
-import { delimitedHeader, delimitedRow, resultAsDelimited } from "../../debug/index.js";
-import type { SqlNotebookResultPayload } from "../../scratchpad/index.js";
 import { PostgresCursorReader } from "../../scratchpad/index.js";
-
-export type DataViewExportFormat = "csv" | "tsv" | "json";
 
 const EXPORT_BATCH_ROWS = 5_000;
 
-/** Asks where to export; undefined when the user cancels. */
+/** Asks where to export; undefined when the reader cancels. */
 export async function pickExportTarget(
   title: string,
   format: DataViewExportFormat,
-  scope: "loaded" | "all",
+  scope: DataViewExportScope,
 ): Promise<vscode.Uri | undefined> {
   const workspaceUri = vscode.workspace.workspaceFolders?.[0]?.uri;
-  const baseName = `${title.replace(/[^\w.-]+/gu, "_")}.${format}`;
+  const extension = exportFileExtension(format);
+  const baseName = `${title.replace(/[^\w.-]+/gu, "_")}.${extension}`;
   return vscode.window.showSaveDialog({
     defaultUri: workspaceUri ? vscode.Uri.joinPath(workspaceUri, baseName) : undefined,
-    saveLabel: scope === "all" ? "Export all rows" : "Export loaded rows",
-    filters: { [format.toUpperCase()]: [format] },
+    saveLabel: scope === "all" ? "Export every row" : "Export these rows",
+    filters: { [format.toUpperCase()]: [extension] },
   });
 }
 
-/** Writes the rows currently loaded in the grid. */
-export async function exportLoadedRows(
+/** Writes rows the view already holds — the reader's selection, or everything on screen. */
+export async function exportHeldRows(
   target: vscode.Uri,
-  format: DataViewExportFormat,
-  payload: SqlNotebookResultPayload,
-  query: string,
-): Promise<void> {
-  const contents =
-    format === "json"
-      ? JSON.stringify(
-          {
-            query,
-            columns: payload.columns,
-            rows: payload.rows.map((row) => row.map((cell) => cell.value)),
-          },
-          null,
-          2,
-        )
-      : resultAsDelimited(payload, format === "tsv" ? "\t" : ",");
+  choice: DataViewExportChoice,
+  values: { columns: readonly string[]; rows: readonly (readonly (string | null)[])[] },
+): Promise<number> {
+  const contents = dataViewExportText(values.columns, values.rows, choice);
   await vscode.workspace.fs.writeFile(target, Buffer.from(contents, "utf8"));
+  return values.rows.length;
 }
 
 /** Streams the complete result of the query to a file, batch by batch, with progress and cancel. */
 export async function exportAllRows(options: {
   target: vscode.Uri;
-  format: DataViewExportFormat;
+  choice: DataViewExportChoice;
   sql: string;
   title: string;
   openClient(): Promise<Client>;
-}): Promise<void> {
-  const { target, format, sql, title } = options;
-  const delimiter = format === "tsv" ? "\t" : ",";
+}): Promise<number> {
+  const { target, choice, sql, title } = options;
+  let exported = 0;
   await vscode.window.withProgress(
     {
       location: vscode.ProgressLocation.Notification,
@@ -71,8 +65,7 @@ export async function exportAllRows(options: {
     async (progress, token) => {
       const client = await options.openClient();
       const reader = new PostgresCursorReader(client, sql, { types: TEXT_PASSTHROUGH_TYPES });
-      let exported = 0;
-      let columns: DebugResultColumn[] | undefined;
+      let writer: DataViewExportWriter | undefined;
       try {
         const stream = createWriteStream(target.fsPath, { encoding: "utf8" });
         const write = (text: string) =>
@@ -80,31 +73,32 @@ export async function exportAllRows(options: {
             stream.write(text, (error) => (error ? reject(error) : resolve()));
           });
         try {
-          if (format === "json") await write("[\n");
           while (!token.isCancellationRequested) {
             const batch = await reader.read(EXPORT_BATCH_ROWS);
-            if (!columns && batch.fields.length > 0) {
-              columns = queryResultColumns(batch.fields);
-              if (format !== "json") await write(`${delimitedHeader(columns, delimiter)}\n`);
+            if (!writer && batch.fields.length > 0) {
+              // The columns are only known once the first batch has arrived with its fields.
+              writer = dataViewExportWriter(
+                queryResultColumns(batch.fields).map((column) => column.name),
+                choice,
+              );
+              await write(writer.opening());
             }
             const chunks: string[] = [];
             for (const raw of batch.rows) {
               const cells = formatQueryResultRow(raw, batch.fields);
-              if (format === "json") {
-                const record = Object.fromEntries(
-                  cells.map((cell, index) => [columns?.[index]?.name ?? String(index), cell.value]),
-                );
-                chunks.push(`${exported > 0 ? ",\n" : ""}${JSON.stringify(record)}`);
-              } else {
-                chunks.push(`${delimitedRow(cells, delimiter)}\n`);
-              }
+              chunks.push(
+                writer?.row(
+                  cells.map((cell) => cell.value),
+                  exported,
+                ) ?? "",
+              );
               exported += 1;
             }
             await write(chunks.join(""));
             progress.report({ message: `${exported.toLocaleString("en-US")} rows` });
             if (batch.rows.length < EXPORT_BATCH_ROWS) break;
           }
-          if (format === "json") await write("\n]\n");
+          await write(writer?.closing() ?? "");
         } finally {
           await new Promise<void>((resolve) => stream.end(resolve));
         }
@@ -114,4 +108,5 @@ export async function exportAllRows(options: {
       if (token.isCancellationRequested) throw new Error("Export cancelled.");
     },
   );
+  return exported;
 }

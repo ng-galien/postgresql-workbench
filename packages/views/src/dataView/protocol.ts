@@ -10,7 +10,9 @@ import type {
   DataViewSort,
   DataViewSource,
 } from "../../../rows/src/dataView.js";
+import type { DataViewExportChoice, DataViewExportScope } from "../../../rows/src/export.js";
 import type { ResultNavigationCommand } from "../../../rows/src/navigation.js";
+
 import type { SqlNotebookResultPayload } from "../../../rows/src/resultPayload.js";
 
 /** What the Data View webview and the Extension Host send each other. */
@@ -78,7 +80,16 @@ export type DataViewRequest =
   | { type: "data-view/copy"; text: string }
   /** A Workbench tree item was dropped on the view: compose it into the query. */
   | { type: "data-view/drop-tree" }
-  | { type: "data-view/export"; format: "csv" | "tsv" | "json"; scope: "loaded" | "all" }
+  | {
+      type: "data-view/export";
+      choice: DataViewExportChoice;
+      scope: DataViewExportScope;
+      /*
+       * Which rows and columns the reader picked out, counted as the grid shows them. The host
+       * knows the rows and the order they are in; only what is selected lives in the view.
+       */
+      selected?: { from: number; to: number; ordinals: number[] };
+    }
   | { type: "data-view/open-sql" };
 
 export type DataViewResponse =

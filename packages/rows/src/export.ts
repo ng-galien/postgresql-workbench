@@ -12,6 +12,9 @@ import { quoteSqlIdentifierIfNeeded } from "../../sql/src/text/identifiers.js";
 /** The shapes a result can be written out in. */
 export type DataViewExportFormat = "csv" | "tsv" | "json" | "sql" | "markdown";
 
+/** Which rows an export writes: the ones picked out, the ones on screen, or all of them. */
+export type DataViewExportScope = "selection" | "loaded" | "all";
+
 /** What a NULL is written as, where the shape does not say it for itself. */
 export type DataViewExportNull = "empty" | "null" | "backslash-n";
 

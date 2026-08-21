@@ -873,3 +873,137 @@ body,
 .edit-bar-changes {
   position: relative;
 }
+
+/*
+ * Choosing an export. Three questions down the panel — which rows, which shape, how it is written
+ * — and under them what the answer gives, written by the module that will write the file. A reader
+ * who can read the first lines does not have to open the file to find out what they asked for.
+ */
+.export-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+}
+
+/* This one asks three questions and shows the answer, so it is given more room than a plain panel. */
+.modal-panel:has(.export-dialog) {
+  max-width: min(680px, 92vw);
+}
+
+.export-group {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.export-legend {
+  padding: 0 0 4px;
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.85em;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.export-option {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 3px 2px;
+  cursor: pointer;
+}
+
+.export-option:has(input:disabled) {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.export-option input {
+  flex: none;
+  margin: 0;
+  accent-color: var(--vscode-focusBorder);
+}
+
+.export-option-label {
+  flex: none;
+  min-width: 12ch;
+}
+
+.export-option-hint {
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.92em;
+}
+
+.export-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 2px 1px;
+}
+
+.export-row-label {
+  margin-right: 2px;
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.92em;
+}
+
+.export-pill {
+  padding: 2px 9px;
+  border: 1px solid color-mix(in srgb, var(--vscode-foreground) 25%, transparent);
+  border-radius: 10px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.92em;
+}
+
+.export-pill.chosen {
+  border-color: var(--vscode-focusBorder);
+  background: color-mix(in srgb, var(--vscode-focusBorder) 26%, transparent);
+}
+
+.export-preview-frame {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.export-preview-heading {
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.85em;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.export-preview {
+  max-height: 220px;
+  margin: 0;
+  padding: 8px 10px;
+  overflow: auto;
+  border: 1px solid var(--vscode-panel-border);
+  background: var(--vscode-textCodeBlock-background, var(--vscode-editorWidget-background));
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 0.9em;
+  line-height: 1.5;
+  /* Long lines are what a wide result looks like; they scroll rather than wrap into a puzzle. */
+  white-space: pre;
+  tab-size: 8;
+  user-select: text;
+}
+
+.export-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.export-target {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.92em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

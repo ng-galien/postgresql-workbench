@@ -24,6 +24,8 @@ import {
   parseDelimitedText,
 } from "../../../rows/src/export.js";
 import type { ResultTable } from "../../../rows/src/resultPayload.js";
+import { rowOrder } from "../../../rows/src/rowOrder.js";
+import { shownValues } from "../../../rows/src/shownValues.js";
 import { CellEditor } from "./CellEditor.js";
 import {
   cellIsSelected,
@@ -46,8 +48,6 @@ import {
   resultSortNotice,
   sortedResultRows,
 } from "./resultFormatting.js";
-import { rowOrder } from "./rowOrder.js";
-import { shownValues } from "./shownValues.js";
 
 const RESULT_ROW_HEIGHT = 28;
 const RESULT_VIEWPORT_HEIGHT = 360;
@@ -96,18 +96,19 @@ export interface GridEditing {
     fill(localId: string, values: Record<string, string | null>): void;
     /** Adds a row already filled in — a line of a paste that fell past the last loaded row. */
     appendPasted(values: Record<string, string | null>, above: number): void;
-    /**
-     * What is selected, held by whoever shows the controls that act on it — the count and the
-     * delete control live in the edit bar above the grid, not in the grid.
-     */
-    selection: GridSelection | undefined;
-    select(next: GridSelection | undefined): void;
   };
 }
 
 export interface ResultGridProps {
   /** Only the table: a grid never needed the Connexion or the Statement behind it. */
   payload: ResultTable;
+  /*
+   * What is picked out, held by whoever shows what acts on it — the count in the edit bar, the
+   * rows an export writes. Picking rows out is not editing them, so this is the grid's own
+   * capability and not the writable surface's; a grid nobody is holding one for holds its own.
+   */
+  selection?: GridSelection;
+  onSelect?: (next: GridSelection) => void;
   /** When set, sorting is delegated to the host (server-side) instead of sorting loaded rows. */
   serverSort?: {
     /** Active server-side sorts in priority order. */
@@ -129,7 +130,14 @@ export interface GridLayout {
   columnAccent?(ordinal: number): string | undefined;
 }
 
-export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridProps) {
+export function ResultGrid({
+  payload,
+  serverSort,
+  editing,
+  layout,
+  selection: heldSelection,
+  onSelect,
+}: ResultGridProps) {
   /** Which cell of which added row is being filled in right now. */
   const [activeAdded, setActiveAdded] = useState<{ localId: string; ordinal: number }>();
   const [detail, setDetail] = useState<string>();
@@ -261,9 +269,9 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
     addedRows.filter((added) => added.above >= end && added.above < rows.length).length;
   const topSpacer = notDrawnAbove * RESULT_ROW_HEIGHT;
   const bottomSpacer = notDrawnBelow * RESULT_ROW_HEIGHT;
-  const held = editing?.rows?.selection ?? ownSelection;
+  const held = heldSelection ?? ownSelection;
   const setSelection = (next: GridSelection) => {
-    if (editing?.rows) editing.rows.select(next);
+    if (onSelect) onSelect(next);
     else setOwnSelection(next);
   };
   /*
@@ -300,8 +308,7 @@ export function ResultGrid({ payload, serverSort, editing, layout }: ResultGridP
    * on the first render, and again whenever a shorter result or a hidden column has clamped it.
    * Otherwise the host would describe one selection while the reader looks at another.
    */
-  const reportSelection = editing?.rows?.select;
-  const heldSelection = editing?.rows?.selection;
+  const reportSelection = onSelect;
   // biome-ignore lint/correctness/useExhaustiveDependencies: the clamped selection is the subject.
   useEffect(() => {
     if (reportSelection && !sameSelection(heldSelection, selection)) reportSelection(selection);

@@ -17,6 +17,8 @@ import {
   dataViewWritableTable,
   describeDataViewChanges,
 } from "../../../rows/src/dataView.js";
+import { rowOrder } from "../../../rows/src/rowOrder.js";
+import { shownValues } from "../../../rows/src/shownValues.js";
 import { hasWorkbenchTreeDrag } from "../cockpit/dragAndDrop.js";
 import {
   type GridSelection,
@@ -29,8 +31,8 @@ import { Modal } from "../results/Modal.js";
 import { type GridEditing, type GridLayout, ResultGrid } from "../results/ResultGrid.js";
 import { ResultNavigation } from "../results/ResultNavigation.js";
 import { nextResultSort, resultAsTsv, resultRowSummary } from "../results/resultFormatting.js";
-import { rowOrder } from "../results/rowOrder.js";
 import type { WebviewMessaging } from "../webviewPage.js";
+import { ExportDialog, type ExportSource } from "./ExportDialog.js";
 import type { DataViewRequest, DataViewResponse, DataViewState } from "./protocol.js";
 import { useReorderable } from "./reorder.js";
 import { SqlPanel } from "./SqlPanel.js";
@@ -430,13 +432,11 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
                 messaging.post({ type: "data-view/fill-row", localId, values }),
               appendPasted: (values, above) =>
                 messaging.post({ type: "data-view/add-row", values, above }),
-              selection,
-              select: setSelection,
             },
           }
         : {}),
     };
-  }, [state, messaging, selection, editMode]);
+  }, [state, messaging, editMode]);
 
   // Both live above the early return, where hooks must be: what may move and what moving means are
   // read from this render's own state, so the handlers a list spreads are always the fresh ones.
@@ -553,6 +553,45 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
   const visibleOrdinals = columnNames.flatMap((_name, ordinal) =>
     hiddenOrdinals.has(ordinal) ? [] : [ordinal],
   );
+  /*
+   * What the export dialog needs to know about the rows behind each of its scopes. The values come
+   * from the same place the clipboard takes them, so what is previewed and written is what the
+   * grid shows — pending edits and rows waiting to be added included.
+   */
+  /* The table INSERT statements would be written into; a query over several has no single one. */
+  const exportTable =
+    state.editability.tables.length === 1 && state.editability.tables[0]
+      ? `${state.editability.tables[0].schema}.${state.editability.tables[0].name}`
+      : undefined;
+  const exportSource = ((): ExportSource => {
+    const columns = payload?.columns ?? [];
+    const loadedRows = payload?.rows ?? [];
+    const order = shownRows;
+    const shownOrdinals = visibleOrdinals;
+    const band = selection ? selectedRows(selection) : undefined;
+    const selectedOnly =
+      selection && band
+        ? { ordinals: selectedOrdinals(selection, shownOrdinals), from: band.first, to: band.last }
+        : { ordinals: [], from: 0, to: -1 };
+    return {
+      valuesFor: (scope) =>
+        shownValues({
+          columns,
+          rows: loadedRows,
+          order,
+          editFor: editing?.editFor,
+          ...(scope === "selection"
+            ? selectedOnly
+            : { ordinals: shownOrdinals, from: 0, to: order.count - 1 }),
+        }),
+      counts: {
+        selection: selectedOnly.to - selectedOnly.from + 1,
+        loaded: order.count,
+        all: payload?.rowCount,
+      },
+      table: exportTable,
+    };
+  })();
   const selectionSummary = !selection
     ? "Nothing selected"
     : selection.kind === "rows"
@@ -951,31 +990,29 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
         </Modal>
       ) : null}
 
-      {transfer === "export" ? (
-        <Modal
-          title="Export rows"
-          description="Choose what to write, and in which format."
+      {transfer === "export" && payload ? (
+        <ExportDialog
+          source={exportSource}
+          title={query.structured ? (state.projection.tables[0]?.name ?? "result") : "result"}
           onClose={() => setTransfer(undefined)}
-        >
-          {(["loaded", "all"] as const).map((scope) => (
-            <div className="columns-menu-group" key={scope}>
-              <div className="columns-menu-heading">
-                {scope === "loaded" ? "Loaded rows" : "All rows"}
-              </div>
-              {(["csv", "tsv", "json"] as const).map((format) => (
-                <MenuItem
-                  key={format}
-                  label={`${format.toUpperCase()}…`}
-                  disabled={!payload || payload.columns.length === 0}
-                  onSelect={() => {
-                    setTransfer(undefined);
-                    post({ type: "data-view/export", format, scope });
-                  }}
-                />
-              ))}
-            </div>
-          ))}
-        </Modal>
+          onExport={(choice, scope) => {
+            setTransfer(undefined);
+            post({
+              type: "data-view/export",
+              choice,
+              scope,
+              ...(scope === "selection" && selection
+                ? {
+                    selected: {
+                      from: selectedRows(selection).first,
+                      to: selectedRows(selection).last,
+                      ordinals: selectedOrdinals(selection, visibleOrdinals),
+                    },
+                  }
+                : {}),
+            });
+          }}
+        />
       ) : null}
 
       <section
@@ -1397,6 +1434,8 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
         {payload && payload.columns.length > 0 ? (
           <ResultGrid
             payload={payload}
+            selection={selection}
+            onSelect={setSelection}
             serverSort={{ sorts: gridSorts, onSort: requestSort }}
             editing={editing}
             layout={layout}

@@ -1,3 +1,5 @@
+import { mkdirSync } from "node:fs";
+import { resolve } from "node:path";
 import { defineConfig } from "@playwright/test";
 
 /**
@@ -6,6 +8,9 @@ import { defineConfig } from "@playwright/test";
  * journey costs seconds. What the VS Code lanes still prove is that the message crosses the wire.
  */
 const PORT = Number(process.env.PGWB_SHELL_PORT ?? 5176);
+/* Where an export lands during a run: beside the run's other output, never in a reader's folder. */
+export const EXPORTS = resolve(__dirname, "../../../test-results/shell-exports");
+mkdirSync(EXPORTS, { recursive: true });
 
 export default defineConfig({
   testDir: ".",
@@ -35,6 +40,7 @@ export default defineConfig({
     cwd: "../../..",
     reuseExistingServer: false,
     timeout: 120_000,
-    env: { PGWB_DEV_PORT: String(PORT) },
+    // Exports land in the run's own directory: a test must not write into the reader's downloads.
+    env: { PGWB_DEV_PORT: String(PORT), PGWB_EXPORT_DIR: EXPORTS },
   },
 });
