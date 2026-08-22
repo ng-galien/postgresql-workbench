@@ -61,6 +61,32 @@ export function isWebAddress(value: string): boolean {
   return /^https?:\/\/\S+$/u.test(value.trim());
 }
 
+/**
+ * The class the anchor a cell draws for an address carries, and the two ways of following it.
+ *
+ * Both sides of that gesture are named here rather than agreed on in passing: the row draws the
+ * anchor and decides which clicks belong to it, the grid's menu clicks it. A rename that broke
+ * them apart would break them here, in one place, instead of quietly doing nothing.
+ */
+export const CELL_LINK = "cell-link";
+
+/**
+ * Whether a click on that anchor is asking for the address rather than for the cell: the chord
+ * every editor uses, or a click the grid made itself, which carries no pointer behind it.
+ */
+export function followsCellLink(event: {
+  detail: number;
+  metaKey: boolean;
+  ctrlKey: boolean;
+}): boolean {
+  return event.metaKey || event.ctrlKey || event.detail === 0;
+}
+
+/** Follows the address a cell draws, by the anchor it draws it with. */
+export function followCellLink(cell: HTMLElement | null): void {
+  cell?.querySelector<HTMLAnchorElement>(`a.${CELL_LINK}`)?.click();
+}
+
 /** A document laid out over several lines, or the text as it stands with why it would not parse. */
 function jsonDetail(value: string): CellDetail {
   try {

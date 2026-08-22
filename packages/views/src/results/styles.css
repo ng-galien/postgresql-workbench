@@ -1078,7 +1078,7 @@ tr.row-selected td:first-of-type {
 }
 
 .menu-item .codicon-pass-filled {
-  color: var(--column-accent, var(--vscode-textLink-foreground));
+  color: var(--menu-accent, var(--vscode-textLink-foreground));
 }
 
 .menu-item .codicon-circle-large-outline {
@@ -1100,7 +1100,7 @@ tr.row-selected td:first-of-type {
 .menu-item.detailed .codicon {
   grid-row: 1 / span 2;
   margin-top: 2px;
-  color: var(--column-accent, var(--vscode-icon-foreground, var(--vscode-foreground)));
+  color: var(--menu-accent, var(--vscode-icon-foreground, var(--vscode-foreground)));
 }
 
 .menu-item.detailed .menu-label {
@@ -1132,7 +1132,7 @@ tr.row-selected td:first-of-type {
 
 .menu-group {
   padding: 4px 0 6px;
-  border-left: 3px solid var(--column-accent, transparent);
+  border-left: 3px solid var(--menu-accent, transparent);
 }
 
 .menu-group + .menu-group {
@@ -1157,7 +1157,7 @@ tr.row-selected td:first-of-type {
   content: "";
   width: 9px;
   height: 9px;
-  background: var(--column-accent);
+  background: var(--menu-accent);
   border-radius: 2px;
 }
 
@@ -1181,11 +1181,6 @@ tr.row-selected td:first-of-type {
 .menu-header :is(input, textarea):focus {
   outline: 1px solid var(--vscode-focusBorder);
   outline-offset: -1px;
-}
-
-/* Something to read rather than to run, shaped by whoever put it there. */
-.menu-note {
-  padding: 0;
 }
 
 .menu-separator {

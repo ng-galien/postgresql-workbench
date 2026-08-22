@@ -3,7 +3,7 @@ import type { DebugResultCell } from "../../../dap/src/debugger/launch/index.js"
 import type { DataViewRowInsertion } from "../../../rows/src/dataView/dataView.js";
 import { chordName } from "../platform.js";
 import { CellEditor } from "./CellEditor.js";
-import { isWebAddress } from "./cellDetail.js";
+import { CELL_LINK, followsCellLink, isWebAddress } from "./cellDetail.js";
 import type { HeaderColumn } from "./GridHeader.js";
 import {
   cellIsSelected,
@@ -180,22 +180,21 @@ export function GridRow({
               />
             ) : shown !== null && isWebAddress(shown) ? (
               <a
-                className="cell-value cell-link"
+                className={`cell-value ${CELL_LINK}`}
                 href={shown}
                 target="_blank"
                 rel="noreferrer"
                 /*
                  * An address is somewhere to go, and a cell is something to select: a plain click
-                 * belongs to the grid, and the chord every editor uses for a link opens it.
+                 * belongs to the grid, and only what asks for the address gets it.
                  *
                  * The grid is one stop in the tabbing order, so the link is not another one: the
-                 * keys reach it through the cell menu, whose `Open` clicks this very anchor. That
-                 * click carries no pointer (`detail` 0), which is what tells it from a plain one.
+                 * keys reach it through the cell menu, whose `Open` clicks this very anchor.
                  */
                 tabIndex={-1}
                 title={`${chordName()}+click to open ${shown}`}
                 onClick={(event) => {
-                  if (event.detail > 0 && !event.metaKey && !event.ctrlKey) event.preventDefault();
+                  if (!followsCellLink(event)) event.preventDefault();
                 }}
               >
                 {shown}

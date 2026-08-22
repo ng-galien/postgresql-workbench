@@ -105,10 +105,10 @@ export function Menu({
     const element = menu.current;
     if (!element) return;
     const { width, height } = element.getBoundingClientRect();
-    setPlaced({
-      x: Math.max(EDGE, Math.min(at.x, window.innerWidth - width - EDGE)),
-      y: at.y + height > window.innerHeight - EDGE ? Math.max(EDGE, at.y - height) : at.y,
-    });
+    const x = Math.max(EDGE, Math.min(at.x, window.innerWidth - width - EDGE));
+    const y = at.y + height > window.innerHeight - EDGE ? Math.max(EDGE, at.y - height) : at.y;
+    /* A menu that already fits where it was asked for is not drawn a second time to say so. */
+    setPlaced((current) => (current.x === x && current.y === y ? current : { x, y }));
     /* Whoever holds the focus reads the keys: the field when there is one, the first entry else. */
     const first = walking
       ? element.querySelector<HTMLElement>(".menu-header :is(input, textarea, select)")
@@ -192,12 +192,9 @@ function MenuLines({ entries, ...drawing }: { entries: readonly MenuEntry[] } & 
     <MenuLine
       entry={entry}
       {...drawing}
+      /* An action is known by its label; everything else by where it is in the list it was given in. */
       key={
-        entry.kind === "separator" || entry.kind === "note"
-          ? `${entry.kind}-${index}`
-          : entry.kind === "group"
-            ? (entry.heading ?? `group-${index}`)
-            : entry.label
+        entry.kind === "action" || entry.kind === "check" ? entry.label : `${entry.kind}-${index}`
       }
     />
   ));
@@ -216,7 +213,7 @@ function MenuLine({
     return (
       <div
         className={`menu-group${entry.accent ? " accented" : ""}`}
-        style={entry.accent ? ({ "--column-accent": entry.accent } as CSSProperties) : undefined}
+        style={entry.accent ? ({ "--menu-accent": entry.accent } as CSSProperties) : undefined}
       >
         {entry.heading ? <div className="menu-heading">{entry.heading}</div> : null}
         <MenuLines
@@ -247,10 +244,8 @@ function MenuLine({
       className={`menu-item${detail ? " detailed" : ""}${lit ? " highlighted" : ""}`}
       disabled={entry.disabled !== undefined}
       title={entry.disabled ?? (entry.kind === "action" ? entry.title : undefined)}
-      /* The one the arrows are on scrolls itself into view as they move. */
-      ref={(node) => {
-        if (lit) node?.scrollIntoView({ block: "nearest" });
-      }}
+      /* The one the arrows are on scrolls itself into view as they move; nothing else is asked. */
+      ref={lit ? (node) => node?.scrollIntoView({ block: "nearest" }) : undefined}
       onMouseEnter={at === undefined || !onHighlight ? undefined : () => onHighlight(at)}
       onClick={() => onRun(entry)}
     >
@@ -267,6 +262,18 @@ interface Highlighting {
   count: number;
   to(at: number): void;
   run(): void;
+}
+
+/**
+ * Where a key lands in a list of `count` entries when the walk is on `from`. One arithmetic, so
+ * the two walks below cannot disagree about what Home means or where the end wraps to.
+ */
+function nextInWalk(key: string, from: number, count: number): number | undefined {
+  if (key === "Home") return 0;
+  if (key === "End") return count - 1;
+  const step = key === "ArrowDown" ? 1 : key === "ArrowUp" ? -1 : undefined;
+  if (step === undefined) return undefined;
+  return from < 0 ? (step > 0 ? 0 : count - 1) : (from + step + count) % count;
 }
 
 /**
@@ -294,21 +301,12 @@ function walk(
     highlighting.run();
     return;
   }
-  const steps: Record<string, number> = { ArrowDown: 1, ArrowUp: -1 };
-  const step = steps[event.key];
-  const ends = event.key === "Home" || event.key === "End";
-  if (step === undefined && !ends) return;
 
   if (highlighting) {
-    if (highlighting.count === 0) return;
+    const next = nextInWalk(event.key, highlighting.on, highlighting.count);
+    if (next === undefined || highlighting.count === 0) return;
     event.preventDefault();
-    highlighting.to(
-      ends
-        ? event.key === "Home"
-          ? 0
-          : highlighting.count - 1
-        : (highlighting.on + (step ?? 0) + highlighting.count) % highlighting.count,
-    );
+    highlighting.to(next);
     return;
   }
 
@@ -317,19 +315,13 @@ function walk(
       "[role=menuitem]:not(:disabled), [role=menuitemcheckbox]:not(:disabled)",
     ) ?? []),
   ];
-  if (items.length === 0) return;
+  const next = nextInWalk(
+    event.key,
+    items.indexOf(document.activeElement as HTMLButtonElement),
+    items.length,
+  );
+  if (next === undefined || items.length === 0) return;
   event.preventDefault();
-  if (ends) {
-    (event.key === "Home" ? items[0] : items.at(-1))?.focus();
-    return;
-  }
-  const current = items.indexOf(document.activeElement as HTMLButtonElement);
-  const next =
-    current < 0
-      ? (step ?? 0) > 0
-        ? 0
-        : items.length - 1
-      : (current + (step ?? 0) + items.length) % items.length;
   items[next]?.focus();
 }
 
