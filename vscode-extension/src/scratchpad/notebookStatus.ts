@@ -14,7 +14,7 @@ import {
   type ScratchpadDebugEligibility,
   SET_SCRATCHPAD_CELL_EXECUTION_INTENT_COMMAND,
   SET_SCRATCHPAD_STATEMENT_TIMEOUT_COMMAND,
-} from "./register.js";
+} from "./registerCommands.js";
 import { configuredScratchpadStatementTimeoutMs } from "./scratchpadSettings.js";
 
 /**

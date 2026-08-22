@@ -89,8 +89,35 @@ export function registerSqlWorkbenchCommands(options: SqlWorkbenchCommandOptions
     coverage,
     resultStore,
     resultsView,
+    codeLens,
   } = options;
   context.subscriptions.push(
+    /*
+     * Pointing a document, or one call inside it, at the Connexion it runs on. Registered here
+     * because assignDocumentConnection is this module's, not the entry point's.
+     */
+    vscode.commands.registerCommand(
+      "postgresql-workbench.assignDocumentConnection",
+      (target: DocumentConnectionTarget, requestedServerId?: string) =>
+        assignDocumentConnection(
+          connections,
+          documentConnections,
+          codeLens,
+          target,
+          requestedServerId,
+        ),
+    ),
+    vscode.commands.registerCommand(
+      "postgresql-workbench.assignCallConnection",
+      (target: DocumentConnectionTarget, requestedServerId?: string) =>
+        assignDocumentConnection(
+          connections,
+          documentConnections,
+          codeLens,
+          target,
+          requestedServerId,
+        ),
+    ),
     vscode.commands.registerCommand("postgresql-workbench.refreshTree", () => tree.refresh()),
     vscode.commands.registerCommand("postgresql-workbench.refreshTests", () => coverage.refresh()),
     vscode.commands.registerCommand("postgresql-workbench.executeSqlSelection", async () => {

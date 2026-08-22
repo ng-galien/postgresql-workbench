@@ -27,6 +27,7 @@ import {
   POSTGRES_SOURCE_LANGUAGE_IDS,
   postgresSourceLanguageId,
 } from "../../../packages/sql/src/text/documentLanguage.js";
+import { truncationReasonLabel } from "../../../packages/views/src/results/resultFormatting.js";
 import type { CommandCallSite, CommandFunctionDefinition } from "../codeLens/index.js";
 import {
   type CallSiteConnectionStore,
@@ -770,4 +771,73 @@ export function debugLaunchToken(config: vscode.DebugConfiguration): string | un
 }
 export function routineName(routine: { schema: string | null; name: string }): string {
   return routine.schema ? `${routine.schema}.${routine.name}` : routine.name;
+}
+
+/**
+ * What a reader can do with the result a debugged call captured: forget it, copy it, write it
+ * out. They act on the store the debug results view renders, which is why they are registered
+ * with the rest of the debugger rather than at the extension's front door.
+ */
+export function registerResultCommands(
+  context: vscode.ExtensionContext,
+  resultStore: DebugResultStore,
+): void {
+  context.subscriptions.push(
+    vscode.commands.registerCommand("postgresql-workbench.results.clear", () =>
+      resultStore.clear(),
+    ),
+    vscode.commands.registerCommand("postgresql-workbench.results.copy", async () => {
+      const text = resultStore.selectedAsTsv();
+      if (text === undefined) {
+        await vscode.window.showInformationMessage("No successful PL/pgSQL result to copy.");
+        return false;
+      }
+      const selected = resultStore.selected;
+      if (selected?.truncated && !(await confirmIncompleteResult(selected, "Copy"))) return false;
+      await vscode.env.clipboard.writeText(text);
+      vscode.window.setStatusBarMessage("PL/pgSQL captured result copied", 2_000);
+      return true;
+    }),
+    vscode.commands.registerCommand("postgresql-workbench.results.export", async () => {
+      const selected = resultStore.selected;
+      if (!selected) {
+        await vscode.window.showInformationMessage("No successful PL/pgSQL result to export.");
+        return false;
+      }
+      if (selected.truncated && !(await confirmIncompleteResult(selected, "Export"))) return false;
+      const workspaceUri = vscode.workspace.workspaceFolders?.[0]?.uri;
+      const defaultUri = workspaceUri
+        ? vscode.Uri.joinPath(workspaceUri, `postgresql-workbench-result-${selected.id}.csv`)
+        : undefined;
+      const target = await vscode.window.showSaveDialog({
+        defaultUri,
+        saveLabel: "Export captured result",
+        filters: {
+          CSV: ["csv"],
+          JSON: ["json"],
+        },
+      });
+      if (!target) return false;
+      const contents = target.path.toLowerCase().endsWith(".json")
+        ? resultStore.selectedAsJson()
+        : resultStore.selectedAsCsv();
+      if (contents === undefined) return false;
+      await vscode.workspace.fs.writeFile(target, new TextEncoder().encode(contents));
+      vscode.window.setStatusBarMessage(
+        `PL/pgSQL captured result exported to ${target.fsPath}`,
+        3_000,
+      );
+      return true;
+    }),
+  );
+}
+
+async function confirmIncompleteResult(result: DebugResult, action: string): Promise<boolean> {
+  const reasons = result.truncationReasons.map(truncationReasonLabel).join(", ");
+  const choice = await vscode.window.showWarningMessage(
+    `${action} the captured preview? The SQL result is incomplete (${reasons}).`,
+    { modal: true, detail: "NULL values are exported as \\N; empty strings remain empty." },
+    `${action} captured preview`,
+  );
+  return choice === `${action} captured preview`;
 }

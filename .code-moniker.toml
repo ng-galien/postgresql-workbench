@@ -197,6 +197,7 @@ forbids = [
   "being imported as a service locator by a product module",
   "owning feature persistence or semantic caches",
   "holding logic that does not adapt anything to VS Code",
+  "registering a VS Code command anywhere but a module's registerCommands",
 ]
 forbid_rules = ["extension-entry-is-not-a-service"]
 rationale = """
@@ -212,6 +213,13 @@ scratchpad/notebookFile needs catalog, dap, rows and views at once. And the exte
 package symbols from 39 of its modules, 56 times, which is what let engine code look like extension
 code in the first place. None of these three is expressible as a reference rule today, so they are
 named here instead of enforced.
+
+A command is registered in a module's registerCommands. Five modules follow that; four
+registrations do not and are counted here, because `vscode` is an ambient module and
+`registerCommand` has no indexed symbol, so no reference rule can see any of the sixty-two.
+sqlAuthoring is one file and registers its own two; dataView/queryLens registers the one action its
+own lens offers; and the entry point keeps one, which closes over the Scratchpad tree view and its
+filter that activation itself creates.
 """
 symbols = ["ts:vscode-extension/src/extension.interface:PlpgsqlExtensionApi"]
 rules = ["extension-entry-is-not-a-service"]

@@ -14,21 +14,16 @@ import {
   type WorkbenchObjectModel,
 } from "../../packages/catalog/src/objectModel.js";
 import { getConnectionName } from "../../packages/catalog/src/savedConnection.js";
-import type {
-  DebugResult,
-  DebugSessionStatus,
-} from "../../packages/dap/src/debugger/launch/index.js";
+import type { DebugSessionStatus } from "../../packages/dap/src/debugger/launch/index.js";
 import { DebugSessionController } from "../../packages/dap/src/debugger/launch/sessionController.js";
 import type { DebugResultStore } from "../../packages/rows/src/capturedResults.js";
 import { planSqlResultExecution } from "../../packages/sql/src/analysis/sqlStatements.js";
 import { POSTGRES_SOURCE_LANGUAGE_IDS } from "../../packages/sql/src/text/documentLanguage.js";
-import { truncationReasonLabel } from "../../packages/views/src/results/resultFormatting.js";
 import { createAcceptanceProbes, registerAcceptanceControl } from "./acceptanceControl.js";
 import { registerWorkbenchGraphDropBridge, WorkbenchGraphView } from "./cockpit/index.js";
 import { registerGraphWorkbenchCommands } from "./cockpit/registerCommands.js";
 import { WorkbenchGraphTreeSync } from "./cockpit/treeSync.js";
 import {
-  type DocumentConnectionTarget,
   debuggableSqlCall,
   debuggableSqlDefinition,
   PlpgsqlDiagnosticsProvider,
@@ -46,6 +41,7 @@ import {
   debugLaunchToken,
   registerDebugCommands,
   registerDebugInfrastructure,
+  registerResultCommands,
   revealStoppedSource,
 } from "./debug/registerCommands.js";
 import { createScratchpadDebugging } from "./scratchpad/debugBridge.js";
@@ -72,10 +68,7 @@ import {
   WorkbenchTreeDragAndDropController,
   WorkbenchTreeProvider,
 } from "./workbench/index.js";
-import {
-  assignDocumentConnection,
-  registerSqlWorkbenchCommands,
-} from "./workbench/registerCommands.js";
+import { registerSqlWorkbenchCommands } from "./workbench/registerCommands.js";
 
 const out = vscode.window.createOutputChannel("PostgreSQL Workbench");
 
@@ -104,60 +97,6 @@ export interface PlpgsqlExtensionApi {
   ): Promise<unknown>;
   workbenchSearchQuery(): string;
   resultsViewVisible(): boolean;
-}
-
-function registerResultCommands(
-  context: vscode.ExtensionContext,
-  resultStore: DebugResultStore,
-): void {
-  context.subscriptions.push(
-    vscode.commands.registerCommand("postgresql-workbench.results.clear", () =>
-      resultStore.clear(),
-    ),
-    vscode.commands.registerCommand("postgresql-workbench.results.copy", async () => {
-      const text = resultStore.selectedAsTsv();
-      if (text === undefined) {
-        await vscode.window.showInformationMessage("No successful PL/pgSQL result to copy.");
-        return false;
-      }
-      const selected = resultStore.selected;
-      if (selected?.truncated && !(await confirmIncompleteResult(selected, "Copy"))) return false;
-      await vscode.env.clipboard.writeText(text);
-      vscode.window.setStatusBarMessage("PL/pgSQL captured result copied", 2_000);
-      return true;
-    }),
-    vscode.commands.registerCommand("postgresql-workbench.results.export", async () => {
-      const selected = resultStore.selected;
-      if (!selected) {
-        await vscode.window.showInformationMessage("No successful PL/pgSQL result to export.");
-        return false;
-      }
-      if (selected.truncated && !(await confirmIncompleteResult(selected, "Export"))) return false;
-      const workspaceUri = vscode.workspace.workspaceFolders?.[0]?.uri;
-      const defaultUri = workspaceUri
-        ? vscode.Uri.joinPath(workspaceUri, `postgresql-workbench-result-${selected.id}.csv`)
-        : undefined;
-      const target = await vscode.window.showSaveDialog({
-        defaultUri,
-        saveLabel: "Export captured result",
-        filters: {
-          CSV: ["csv"],
-          JSON: ["json"],
-        },
-      });
-      if (!target) return false;
-      const contents = target.path.toLowerCase().endsWith(".json")
-        ? resultStore.selectedAsJson()
-        : resultStore.selectedAsCsv();
-      if (contents === undefined) return false;
-      await vscode.workspace.fs.writeFile(target, new TextEncoder().encode(contents));
-      vscode.window.setStatusBarMessage(
-        `PL/pgSQL captured result exported to ${target.fsPath}`,
-        3_000,
-      );
-      return true;
-    }),
-  );
 }
 
 function showCockpitObjectActions(
@@ -822,16 +761,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
     ),
     cm.onChanged(() => codeLens.refresh()),
     workbenchIndex.onDidChangeState(() => codeLens.refresh()),
-    vscode.commands.registerCommand(
-      "postgresql-workbench.assignDocumentConnection",
-      (target: DocumentConnectionTarget, requestedServerId?: string) =>
-        assignDocumentConnection(cm, callSiteConnections, codeLens, target, requestedServerId),
-    ),
-    vscode.commands.registerCommand(
-      "postgresql-workbench.assignCallConnection",
-      (target: DocumentConnectionTarget, requestedServerId?: string) =>
-        assignDocumentConnection(cm, callSiteConnections, codeLens, target, requestedServerId),
-    ),
   );
 
   registerConnectionCommands({
@@ -980,14 +909,4 @@ async function revealSqlAuthoringReference(
   if (!child) return false;
   await tree.reveal(child, { select: true, focus: true, expand: false });
   return true;
-}
-
-async function confirmIncompleteResult(result: DebugResult, action: string): Promise<boolean> {
-  const reasons = result.truncationReasons.map(truncationReasonLabel).join(", ");
-  const choice = await vscode.window.showWarningMessage(
-    `${action} the captured preview? The SQL result is incomplete (${reasons}).`,
-    { modal: true, detail: "NULL values are exported as \\N; empty strings remain empty." },
-    `${action} captured preview`,
-  );
-  return choice === `${action} captured preview`;
 }

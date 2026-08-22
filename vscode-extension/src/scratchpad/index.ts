@@ -27,7 +27,7 @@ export {
   type ScratchpadDebugger,
   type ScratchpadDebugOutcome,
   type ScratchpadFeature,
-} from "./register.js";
+} from "./registerCommands.js";
 export { sqlResultSettings } from "./scratchpadSettings.js";
 export {
   type ScratchpadTransaction,
