@@ -18,6 +18,11 @@ import {
   EMPTY_DATA_VIEW_EDITABILITY,
   withRequiredColumnsRevealed,
 } from "../../rows/src/dataView.js";
+import type {
+  DataViewRequest,
+  DataViewResponse,
+  DataViewState,
+} from "../../rows/src/dataViewProtocol.js";
 import {
   type DataViewExportChoice,
   type DataViewExportScope,
@@ -41,11 +46,6 @@ import {
   type SqlAuthoringDragPayload,
   type SqlAuthoringSnapshot,
 } from "../../sql/src/snapshot.js";
-import type {
-  DataViewRequest,
-  DataViewResponse,
-  DataViewState,
-} from "../../views/src/dataView/protocol.js";
 import { startSqlLanguageServer } from "./languageServer.js";
 
 /**

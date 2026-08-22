@@ -9,11 +9,11 @@ import type {
   DataViewRowRemoval,
   DataViewSort,
   DataViewSource,
-} from "../../../rows/src/dataView.js";
-import type { DataViewExportChoice, DataViewExportScope } from "../../../rows/src/export.js";
-import type { ResultNavigationCommand } from "../../../rows/src/navigation.js";
+} from "./dataView.js";
+import type { DataViewExportChoice, DataViewExportScope } from "./export.js";
+import type { ResultNavigationCommand } from "./navigation.js";
 
-import type { SqlNotebookResultPayload } from "../../../rows/src/resultPayload.js";
+import type { SqlNotebookResultPayload } from "./resultPayload.js";
 
 /** What the Data View webview and the Extension Host send each other. */
 

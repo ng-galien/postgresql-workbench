@@ -35,6 +35,7 @@ enable = [
   "package-depends-only-on-what-it-reads",
   "shell-composes-and-is-composed-by-nothing",
   "row-writes-are-assembled-in-one-place",
+  "data-view-protocol-has-one-home",
 ]
 
 [[views]]

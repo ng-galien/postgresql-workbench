@@ -18,6 +18,11 @@ import {
   defaultNullsOrder,
   describeDataViewChanges,
 } from "../../../rows/src/dataView.js";
+import type {
+  DataViewRequest,
+  DataViewResponse,
+  DataViewState,
+} from "../../../rows/src/dataViewProtocol.js";
 import { rowOrder } from "../../../rows/src/rowOrder.js";
 import { shownValues } from "../../../rows/src/shownValues.js";
 import { hasWorkbenchTreeDrag } from "../cockpit/dragAndDrop.js";
@@ -34,7 +39,6 @@ import { ResultNavigation } from "../results/ResultNavigation.js";
 import { nextResultSort, resultRowRange, resultRowSummary } from "../results/resultFormatting.js";
 import type { WebviewMessaging } from "../webviewPage.js";
 import { ExportDialog, type ExportSource } from "./ExportDialog.js";
-import type { DataViewRequest, DataViewResponse, DataViewState } from "./protocol.js";
 import { useReorderable } from "./reorder.js";
 import { SqlPanel } from "./SqlPanel.js";
 

@@ -18,3 +18,10 @@ severity = "error"
 expr = "kind = 'imports_symbol' AND target.segment('path') = 'buildRowUpdates' => $rows_package_source"
 message = "Only packages/rows assembles the statements that write rows back to PostgreSQL."
 rationale = "The Extension Host and the composition shell both hold changes and both apply them. The moment either builds its own UPDATE the two drift, and a reader gets a different guarantee depending on which surface they opened. Surfaces supply what they can do — a connection, a way to speak, a way to reload — and the write sequence stays here."
+
+[[ts.refs.where]]
+id = "data-view-protocol-has-one-home"
+severity = "error"
+expr = "kind = 'imports_symbol' AND (target.segment('path') = 'DataViewRequest' OR target.segment('path') = 'DataViewResponse' OR target.segment('path') = 'DataViewState') => target ~ '**/dir:packages/dir:rows/**'"
+message = "The Data View protocol is the engine's: every host imports it from packages/rows and none declares its own."
+rationale = "The protocol is what a host adapts to, so it cannot live in the view a host happens to render. It sat in packages/views, where the engine could not reach it, and the two hosts that speak it — the VS Code extension and the composition shell — each grew their own answer to twenty-six of its messages. A protocol with one home is what makes a second host an adapter instead of a second implementation."

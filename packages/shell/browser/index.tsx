@@ -1,7 +1,7 @@
 import { createRoot } from "react-dom/client";
+import type { DataViewRequest, DataViewResponse } from "../../rows/src/dataViewProtocol.js";
 import { DataViewApp, type DataViewMessaging } from "../../views/src/dataView/DataViewApp.js";
 import dataViewStyles from "../../views/src/dataView/dataView.css";
-import type { DataViewRequest, DataViewResponse } from "../../views/src/dataView/protocol.js";
 import modalStyles from "../../views/src/results/modal.css";
 import { resultViewStyles } from "../../views/src/results/resultStyles.js";
 import { postgresSourceStyles } from "../../views/src/source/sourceStyles.js";

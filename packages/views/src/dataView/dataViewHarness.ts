@@ -1,8 +1,12 @@
 import type { DebugResultCell } from "../../../dap/src/debugger/launch/index.js";
 import { EMPTY_DATA_VIEW_EDITABILITY } from "../../../rows/src/dataView.js";
+import type {
+  DataViewRequest,
+  DataViewResponse,
+  DataViewState,
+} from "../../../rows/src/dataViewProtocol.js";
 import type { SqlNotebookResultPayload } from "../../../rows/src/resultPayload.js";
 import type { DataViewMessaging } from "./DataViewApp.js";
-import type { DataViewRequest, DataViewResponse, DataViewState } from "./protocol.js";
 
 /**
  * The Data View behind its port. The component reaches VS Code only through `messaging`, so a

@@ -16,6 +16,11 @@ import {
   withRequiredColumnsRevealed,
 } from "../../../packages/rows/src/dataView.js";
 import type {
+  DataViewRequest,
+  DataViewResponse,
+  DataViewState,
+} from "../../../packages/rows/src/dataViewProtocol.js";
+import type {
   DataViewExportChoice,
   DataViewExportScope,
 } from "../../../packages/rows/src/export.js";
@@ -34,11 +39,6 @@ import type {
   SqlAuthoringSnapshot,
 } from "../../../packages/sql/src/snapshot.js";
 import { quoteSqlIdentifierIfNeeded } from "../../../packages/sql/src/text/identifiers.js";
-import type {
-  DataViewRequest,
-  DataViewResponse,
-  DataViewState,
-} from "../../../packages/views/src/dataView/protocol.js";
 import type { SqlNotebookResultPayload, SqlResultSession } from "../scratchpad/index.js";
 import { completeDataViewFilter } from "./completion/filterCompletion.js";
 import { dataViewCompletionUri, dataViewQueryUri } from "./dataViewUri.js";
