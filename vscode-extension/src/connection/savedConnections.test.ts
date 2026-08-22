@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   getConnectionName,
   getConnectionUrl,
-  ServerStore,
   sameConnectionIdentity,
-} from "./savedConnections.js";
+} from "../../../packages/catalog/src/savedConnection.js";
+import { ServerStore } from "./savedConnections.js";
 
 const CONTEXT = {
   host: "localhost",

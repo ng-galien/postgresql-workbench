@@ -1,9 +1,12 @@
 import type { Client } from "pg";
 import * as vscode from "vscode";
+import type {
+  WorkbenchIndexController,
+  WorkbenchSourceDescriptor,
+} from "../../../packages/catalog/src/indexController.js";
 import { validateManagedRoutineDeployment } from "../../../packages/sql/src/routines/validateDeployment.js";
 import type { ConnectionManager } from "../connection/index.js";
 import { openCoverageClient } from "../coverage/index.js";
-import type { WorkbenchIndexController, WorkbenchSourceDescriptor } from "../workbench/index.js";
 import type { WorkbenchSourceUris } from "../workbench/sourceUris.js";
 import { CODE_MONIKER_URI_SCHEME, codeMonikerUriString } from "./uri.js";
 

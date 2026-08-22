@@ -1,10 +1,25 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import * as vscode from "vscode";
+import { WorkbenchDdlSyncController } from "../../packages/catalog/src/ddlSync.js";
+import { WorkbenchIndexController } from "../../packages/catalog/src/indexController.js";
+import {
+  buildWorkbenchObjectActions,
+  type WorkbenchObjectAction,
+  type WorkbenchObjectActionId,
+} from "../../packages/catalog/src/objectActions.js";
+import {
+  buildWorkbenchObjects,
+  buildWorkbenchTableMembers,
+  type WorkbenchObjectModel,
+} from "../../packages/catalog/src/objectModel.js";
+import { getConnectionName } from "../../packages/catalog/src/savedConnection.js";
 import type {
   DebugResult,
   DebugSessionStatus,
 } from "../../packages/dap/src/debugger/launch/index.js";
+import { DebugSessionController } from "../../packages/dap/src/debugger/launch/sessionController.js";
+import type { DebugResultStore } from "../../packages/rows/src/capturedResults.js";
 import { planSqlResultExecution } from "../../packages/sql/src/analysis/sqlStatements.js";
 import { POSTGRES_SOURCE_LANGUAGE_IDS } from "../../packages/sql/src/text/documentLanguage.js";
 import { truncationReasonLabel } from "../../packages/views/src/results/resultFormatting.js";
@@ -20,18 +35,13 @@ import {
   SqlCodeLensProvider,
   type SqlDebugAvailability,
 } from "./codeLens/index.js";
-import {
-  CallSiteConnectionStore,
-  ConnectionManager,
-  getConnectionName,
-} from "./connection/index.js";
+import { CallSiteConnectionStore, ConnectionManager } from "./connection/index.js";
 import { registerConnectionCommands } from "./connection/registerCommands.js";
 import { openCoverageClient, PgTapTestController } from "./coverage/index.js";
 import { DataViewEditorProvider } from "./dataView/dataViewEditorProvider.js";
 import { dataViewSqlLabel } from "./dataView/dataViewUri.js";
 import { DataViewQueryFileSystem } from "./dataView/queryFileSystem.js";
 import { registerDataViewQueryLens } from "./dataView/queryLens.js";
-import { type DebugResultStore, DebugSessionController } from "./debug/index.js";
 import {
   debugLaunchToken,
   registerDebugCommands,
@@ -56,16 +66,8 @@ import {
   sqlSyntaxAnalysisBudget,
 } from "./sqlAuthoring/client.js";
 import {
-  buildWorkbenchObjectActions,
-  buildWorkbenchObjects,
-  buildWorkbenchTableMembers,
   FunctionItem,
   type PlpgsqlTreeItem,
-  WorkbenchDdlSyncController,
-  WorkbenchIndexController,
-  type WorkbenchObjectAction,
-  type WorkbenchObjectActionId,
-  type WorkbenchObjectModel,
   WorkbenchSourceUris,
   WorkbenchTreeDragAndDropController,
   WorkbenchTreeProvider,

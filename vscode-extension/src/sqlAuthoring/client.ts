@@ -6,6 +6,8 @@ import {
   type ServerOptions,
   TransportKind,
 } from "vscode-languageclient/node";
+import type { WorkbenchIndexController } from "../../../packages/catalog/src/indexController.js";
+import { getConnectionName } from "../../../packages/catalog/src/savedConnection.js";
 import type { SyntaxParser } from "../../../packages/sql/src/analysis/syntaxTree.js";
 import {
   answerSyntaxRequest,
@@ -47,14 +49,12 @@ import {
 import { canonicalSqlIdentifier } from "../../../packages/sql/src/text/identifiers.js";
 import { sqlStatementSlices } from "../../../packages/sql/src/text/sqlLexing.js";
 import type { ConnectionManager } from "../connection/index.js";
-import { getConnectionName } from "../connection/index.js";
 import { PlpgsqlSemanticTokensProvider } from "../plpgsql/index.js";
 import {
   resolveScratchpadAssociation,
   SQL_NOTEBOOK_TYPE,
   type SqlNotebookMetadata,
 } from "../scratchpad/index.js";
-import type { WorkbenchIndexController } from "../workbench/index.js";
 
 const SQL_DOCUMENT_SELECTOR = [
   { language: "sql", scheme: "file" },

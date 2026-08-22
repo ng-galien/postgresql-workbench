@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { ServerConfig } from "../connection/savedConnections.js";
+import type { ServerConfig } from "../../../packages/catalog/src/savedConnection.js";
 import {
   buildRoutineArgs,
   buildRoutineTarget,

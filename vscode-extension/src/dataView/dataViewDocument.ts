@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import type { SqlResultSession } from "../../../packages/rows/src/cursor.js";
 import {
   composeIntoDataViewQuery,
   dataViewAdditions,
@@ -35,13 +36,13 @@ import {
   navigateResult,
   type ResultNavigationCommand,
 } from "../../../packages/rows/src/navigation.js";
+import type { SqlNotebookResultPayload } from "../../../packages/rows/src/resultPayload.js";
 import { type QueryRewrite, SqlQueryModel } from "../../../packages/sql/src/query/model.js";
 import type {
   SqlAuthoringDragPayload,
   SqlAuthoringSnapshot,
 } from "../../../packages/sql/src/snapshot.js";
 import { quoteSqlIdentifierIfNeeded } from "../../../packages/sql/src/text/identifiers.js";
-import type { SqlNotebookResultPayload, SqlResultSession } from "../scratchpad/index.js";
 import { completeDataViewFilter } from "./completion/filterCompletion.js";
 import { dataViewCompletionUri, dataViewQueryUri } from "./dataViewUri.js";
 import { exportAllRows, exportHeldRows, pickExportTarget } from "./export/exportResult.js";

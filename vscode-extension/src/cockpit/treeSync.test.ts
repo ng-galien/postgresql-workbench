@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import type { PlpgsqlTreeItem, WorkbenchObjectModel } from "../workbench/index.js";
+import type { WorkbenchObjectModel } from "../../../packages/catalog/src/objectModel.js";
+import type { PlpgsqlTreeItem } from "../workbench/index.js";
 import { WorkbenchGraphTreeSync } from "./treeSync.js";
 
 const snapshot = {

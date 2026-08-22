@@ -25,6 +25,7 @@ enable = ["\\.smell-"]
 enable = [
   "code-moniker-syntax-provider-owned-by-runtime-boundary",
   "extension-entry-is-not-a-service",
+  "the-extension-does-not-re-export-the-engine",
   "postgres-ddl-sync-core-remains-pure",
   "connection-service-owned-by-connection-manager",
   "scratchpad-file-remains-passive",

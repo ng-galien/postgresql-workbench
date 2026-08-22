@@ -1,4 +1,6 @@
 import * as vscode from "vscode";
+import type { WorkbenchIndexController } from "../../../packages/catalog/src/indexController.js";
+import { getConnectionName } from "../../../packages/catalog/src/savedConnection.js";
 import type {
   DebugLaunchRoutineArgument,
   DebugResult,
@@ -13,6 +15,12 @@ import {
   type DebugLaunchRoutineTarget,
   type DebugSessionStatus,
 } from "../../../packages/dap/src/debugger/launch/index.js";
+import {
+  DEBUG_LAUNCH_TOKEN_PROPERTY,
+  type DebugLaunchDescriptor,
+  type DebugSessionController,
+} from "../../../packages/dap/src/debugger/launch/sessionController.js";
+import { DebugResultStore } from "../../../packages/rows/src/capturedResults.js";
 import type { SyntaxParser } from "../../../packages/sql/src/analysis/syntaxTree.js";
 import { type FunctionDefinition, parseCall } from "../../../packages/sql/src/callParser.js";
 import {
@@ -23,7 +31,6 @@ import type { CommandCallSite, CommandFunctionDefinition } from "../codeLens/ind
 import {
   type CallSiteConnectionStore,
   type ConnectionManager,
-  getConnectionName,
   ServerStore,
 } from "../connection/index.js";
 import {
@@ -31,12 +38,8 @@ import {
   buildRoutineTarget,
   configNameFromRoutine,
   configNameFromSql,
-  DEBUG_LAUNCH_TOKEN_PROPERTY,
   DEBUG_RESULTS_VIEW_ID,
-  type DebugLaunchDescriptor,
-  DebugResultStore,
   DebugResultsViewProvider,
-  type DebugSessionController,
   manageDebugSessions,
   resolveDebugConfiguration,
 } from "../debug/index.js";
@@ -52,7 +55,6 @@ import { CodeMonikerContentProvider, closePostgresqlDapTabs } from "../sources/i
 import type {
   FunctionItem,
   ServerItem,
-  WorkbenchIndexController,
   WorkbenchSourceUris,
   WorkbenchTreeProvider,
 } from "../workbench/index.js";

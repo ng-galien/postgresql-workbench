@@ -8,15 +8,6 @@
  */
 
 export {
-  PostgresCursorReader,
-  type SqlCursorTypes,
-  SqlResultSession,
-} from "../../../packages/rows/src/cursor.js";
-export {
-  executeSqlSelection,
-  prepareSqlSelection,
-} from "../../../packages/rows/src/runSelection.js";
-export {
   type NotebookBindingSnapshot,
   nextSqlNotebookName,
   normalizeSqlNotebookName,
@@ -27,7 +18,6 @@ export {
   SQL_NOTEBOOK_RESULT_MIME,
   SQL_NOTEBOOK_TYPE,
   type SqlNotebookMetadata,
-  type SqlNotebookResultPayload,
   scratchpadExecutionMode,
 } from "./notebookFile.js";
 export {
@@ -39,7 +29,6 @@ export {
   type ScratchpadFeature,
   sqlResultSettings,
 } from "./register.js";
-export { postgresCursorSafetyTimeoutMs } from "./resultHost.js";
 export {
   type ScratchpadTransaction,
   ScratchpadTransactionManager,

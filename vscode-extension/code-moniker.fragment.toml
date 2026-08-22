@@ -29,3 +29,10 @@ severity = "error"
 expr = "$architectural_dependency AND $extension_entry_target => $extension_entry_owner"
 message = "Product modules must not import the extension entry point; receive explicit collaborators from activation wiring."
 rationale = "extension.ts is the composition root and command-registration boundary. Importing it from a feature would turn the exported extension API into a service locator and invert the activation dependency direction."
+
+[[ts.refs.where]]
+id = "the-extension-does-not-re-export-the-engine"
+severity = "error"
+expr = "kind = 'reexports' AND source ~ '**/dir:vscode-extension/**' => NOT target ~ '**/dir:packages/**'"
+message = "A module of this extension exports what it owns; a package's symbols are imported from the package that owns them."
+rationale = "The extension adapts the engine to VS Code, and the same engine is meant to run under a host that is not VS Code. Fifty-six times, across thirty-nine of its modules, it re-exported a package's symbols beside its own — and a reader importing from such a barrel could not tell which side of the seam they were on. That is how 104 lines of pure catalogue logic came to live in workbench/objectActions.ts: the barrel next to it already exported buildWorkbenchObjects from the catalogue, so buildWorkbenchObjectActions sitting in the extension looked exactly the same. It also gave a second host two paths to one symbol, which is where a second copy begins. Every import now names the package the thing lives in."

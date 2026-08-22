@@ -1,16 +1,18 @@
 import * as vscode from "vscode";
+import type { WorkbenchIndexController } from "../../../packages/catalog/src/indexController.js";
+import { getConnectionName } from "../../../packages/catalog/src/savedConnection.js";
 import {
   DEBUG_RESULT_EVENT,
   DEBUG_RESULT_STATUS_EVENT,
   type DebugResultEntry,
 } from "../../../packages/dap/src/debugger/launch/index.js";
+import type { DebugSessionController } from "../../../packages/dap/src/debugger/launch/sessionController.js";
 import { type ParsedCallSite, parseSqlCalls } from "../../../packages/sql/src/callParser.js";
 import type {
   SqlAuthoringObject,
   SqlAuthoringSnapshot,
 } from "../../../packages/sql/src/snapshot.js";
-import { type ConnectionManager, getConnectionName } from "../connection/index.js";
-import type { DebugSessionController } from "../debug/index.js";
+import type { ConnectionManager } from "../connection/index.js";
 import {
   isDebugResult,
   isDebugResultStatus,
@@ -22,7 +24,6 @@ import type {
   ScratchpadDebugger,
   ScratchpadDebugOutcome,
 } from "../scratchpad/index.js";
-import type { WorkbenchIndexController } from "../workbench/index.js";
 
 /**
  * Running a Scratchpad cell under the PL/pgSQL debugger: whether a cell is debuggable, which of

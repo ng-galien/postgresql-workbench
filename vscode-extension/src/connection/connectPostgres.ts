@@ -1,6 +1,6 @@
 import { Client } from "pg";
 import type * as vscode from "vscode";
-import type { SslMode } from "./savedConnections.js";
+import type { SslMode } from "../../../packages/catalog/src/savedConnection.js";
 
 export type ConnectionErrorKind = "auth" | "network" | "database" | "unknown";
 export interface ConnectionError {

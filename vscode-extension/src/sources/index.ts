@@ -5,7 +5,6 @@
  * VS Code; `uri.ts` and `presentation.ts` are pure doors.
  */
 
-export { postgresVisual } from "../../../packages/views/src/presentation.js";
 export { CodeMonikerContentProvider } from "./contentProvider.js";
 export { closePostgresqlDapTabs } from "./dapSource.js";
 export {

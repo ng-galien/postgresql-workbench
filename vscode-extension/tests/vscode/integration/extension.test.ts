@@ -2,10 +2,12 @@ import * as assert from "node:assert";
 import * as vscode from "vscode";
 import { analyzePlpgsqlDocument } from "../../../../packages/sql/src/routines/documentAnalysis.js";
 import {
-  PlpgsqlInlineValuesProvider,
-  PlpgsqlSemanticTokensProvider,
   TOKEN_MODIFIERS,
   TOKEN_TYPES,
+} from "../../../../packages/sql/src/text/plpgsqlTokenLegend.js";
+import {
+  PlpgsqlInlineValuesProvider,
+  PlpgsqlSemanticTokensProvider,
 } from "../../../src/plpgsql/index.js";
 import { CodeMonikerContentProvider } from "../../../src/sources/index.js";
 import { EXT_ID } from "./testUtils.js";

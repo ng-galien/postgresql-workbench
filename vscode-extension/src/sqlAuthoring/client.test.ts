@@ -3,10 +3,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { ensureLocalCodeMonikerWorkspace } from "../../../packages/catalog/src/localCodeMoniker.js";
+import type { ServerConfig } from "../../../packages/catalog/src/savedConnection.js";
 import { createCodeMonikerSyntaxParser } from "../../../packages/sql/src/analysis/codeMonikerSyntax.js";
 import type { SyntaxParser } from "../../../packages/sql/src/analysis/syntaxTree.js";
 import type { SqlAuthoringSnapshot } from "../../../packages/sql/src/snapshot.js";
-import type { ServerConfig } from "../connection/savedConnections.js";
 
 const vscodeMock = vi.hoisted(() => ({ notebookDocuments: [] as unknown[] }));
 

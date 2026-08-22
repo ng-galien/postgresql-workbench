@@ -1,4 +1,3 @@
-export type { DataViewResultSettings } from "../../../packages/rows/src/dataView/openRows.js";
 export { errorMessage } from "../errorMessage.js";
 
 import type { Client } from "pg";

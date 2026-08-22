@@ -1,9 +1,13 @@
 import type { Client } from "pg";
 import * as vscode from "vscode";
+import {
+  getConnectionName,
+  type ServerConfig,
+} from "../../../packages/catalog/src/savedConnection.js";
 import { ConnectionCommands } from "./commands.js";
 import { ConnectionService } from "./connectPostgres.js";
 import { PostgresConnectionRegistry } from "./registry.js";
-import { getConnectionName, type ServerConfig, ServerStore } from "./savedConnections.js";
+import { ServerStore } from "./savedConnections.js";
 
 export type DebugCapabilityStatus = "unknown" | "checking" | "available" | "unavailable" | "error";
 

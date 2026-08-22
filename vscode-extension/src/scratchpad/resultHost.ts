@@ -1,18 +1,17 @@
-export { postgresCursorSafetyTimeoutMs } from "../../../packages/rows/src/cursor.js";
-
 import * as vscode from "vscode";
 import type { SqlResultSession } from "../../../packages/rows/src/cursor.js";
 import { navigateResult } from "../../../packages/rows/src/navigation.js";
-import {
-  associationFingerprint,
-  type ScratchpadAssociationSnapshot,
-  SQL_NOTEBOOK_RENDERER_ID,
-  type SqlNotebookRendererRequest,
-  type SqlNotebookRendererResponse,
-  type SqlNotebookResultPayload,
-  type SqlNotebookResultRequest,
-  type SqlResultDataViewRequest,
-} from "./notebookFile.js";
+import type {
+  ScratchpadAssociationSnapshot,
+  SqlNotebookResultPayload,
+} from "../../../packages/rows/src/resultPayload.js";
+import type {
+  SqlNotebookRendererRequest,
+  SqlNotebookRendererResponse,
+  SqlNotebookResultRequest,
+  SqlResultDataViewRequest,
+} from "../../../packages/views/src/results/payload.js";
+import { associationFingerprint, SQL_NOTEBOOK_RENDERER_ID } from "./notebookFile.js";
 
 export type OpenDataViewFromResult = (request: {
   sql: string;

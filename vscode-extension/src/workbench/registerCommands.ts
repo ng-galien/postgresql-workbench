@@ -6,9 +6,18 @@ import type {
 } from "../../../packages/catalog/src/objectActions.js";
 import type { WorkbenchObjectModel } from "../../../packages/catalog/src/objectModel.js";
 import {
+  getConnectionName,
+  type ServerConfig,
+} from "../../../packages/catalog/src/savedConnection.js";
+import {
   clampDebugResultRows,
   DEBUG_RESULT_LIMITS,
 } from "../../../packages/dap/src/debugger/launch/index.js";
+import type { DebugResultStore } from "../../../packages/rows/src/capturedResults.js";
+import {
+  executeSqlSelection,
+  prepareSqlSelection,
+} from "../../../packages/rows/src/runSelection.js";
 import { classifySqlStatementCount } from "../../../packages/sql/src/analysis/sqlStatements.js";
 import { postgresSourceLanguageId } from "../../../packages/sql/src/text/documentLanguage.js";
 import { sqlStatementAtOffset } from "../../../packages/sql/src/text/sqlLexing.js";
@@ -18,19 +27,13 @@ import type {
   DocumentConnectionTarget,
   SqlCodeLensProvider,
 } from "../codeLens/index.js";
-import {
-  type CallSiteConnectionStore,
-  type ConnectionManager,
-  getConnectionName,
-  type ServerConfig,
-} from "../connection/index.js";
+import type { CallSiteConnectionStore, ConnectionManager } from "../connection/index.js";
 import type { PgTapTestController } from "../coverage/index.js";
 import { openCoverageClient } from "../coverage/index.js";
 import type { DataViewEditorProvider } from "../dataView/dataViewEditorProvider.js";
 import { dataViewSqlLabel } from "../dataView/dataViewUri.js";
-import type { DebugResultStore, DebugResultsViewProvider } from "../debug/index.js";
+import type { DebugResultsViewProvider } from "../debug/index.js";
 import { debugResultSource } from "../debug/resultSource.js";
-import { executeSqlSelection, prepareSqlSelection } from "../scratchpad/index.js";
 import { CodeMonikerContentProvider } from "../sources/index.js";
 import {
   REFRESH_SQL_AUTHORING_CONTEXT_COMMAND,

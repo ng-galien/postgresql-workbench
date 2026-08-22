@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type * as vscode from "vscode";
 import type { SqlResultSession } from "../../../packages/rows/src/cursor.js";
-import type { SqlNotebookResultAction, SqlNotebookResultPayload } from "./notebookFile.js";
+import type { SqlNotebookResultPayload } from "../../../packages/rows/src/resultPayload.js";
+import type { SqlNotebookResultAction } from "../../../packages/views/src/results/payload.js";
 
 const renderer = vi.hoisted(() => ({
   listener: undefined as

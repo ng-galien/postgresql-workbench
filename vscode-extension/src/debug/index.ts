@@ -5,23 +5,6 @@
  */
 
 export {
-  DEBUG_LAUNCH_TOKEN_PROPERTY,
-  type DebugLaunchDescriptor,
-  DebugSessionController,
-} from "../../../packages/dap/src/debugger/launch/sessionController.js";
-export {
-  type DebugSessionInfo,
-  enrichDebugSessions,
-  listDebugSessions,
-} from "../../../packages/dap/src/orphanSessions.js";
-export {
-  DebugResultStore,
-  delimitedHeader,
-  delimitedRow,
-  resultAsDelimited,
-  resultAsJson,
-} from "../../../packages/rows/src/capturedResults.js";
-export {
   buildRoutineArgs,
   buildRoutineTarget,
   configNameFromRoutine,

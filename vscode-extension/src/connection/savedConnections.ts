@@ -1,14 +1,5 @@
 import type * as vscode from "vscode";
 
-export {
-  getConnectionName,
-  getConnectionUrl,
-  getCustomConnectionName,
-  type ServerConfig,
-  type SslMode,
-  sameConnectionIdentity,
-} from "../../../packages/catalog/src/savedConnection.js";
-
 import {
   getConnectionName,
   getConnectionUrl,

@@ -1,5 +1,6 @@
 import type { Client } from "pg";
 import * as vscode from "vscode";
+import { getConnectionName } from "../../../packages/catalog/src/savedConnection.js";
 import {
   DEFAULT_PGTAP_TEST_PATTERNS,
   discoverPgTapTests,
@@ -13,7 +14,6 @@ import { destroyClientSocket, withTimeout } from "../../../packages/rows/src/clo
 import { countLabel } from "../../../packages/rows/src/countLabel.js";
 import type { SyntaxParser } from "../../../packages/sql/src/analysis/syntaxTree.js";
 import type { ConnectionManager } from "../connection/index.js";
-import { getConnectionName } from "../connection/index.js";
 import { errorMessage } from "../errorMessage.js";
 import { CODE_MONIKER_URI_SCHEME } from "../sources/index.js";
 import { openCoverageClient } from "./client.js";

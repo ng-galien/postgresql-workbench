@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import type { WorkbenchIndexController } from "../../../packages/catalog/src/indexController.js";
 import type {} from "../../../packages/catalog/src/objectModel.js";
 import { buildWorkbenchObjects } from "../../../packages/catalog/src/objectModel.js";
 import { parseSqlDefinitions } from "../../../packages/sql/src/callParser.js";
@@ -9,7 +10,6 @@ import {
 } from "../../../packages/sql/src/routines/compareSource.js";
 import type { CommandFunctionDefinition } from "../codeLens/index.js";
 import type { ConnectionManager } from "../connection/index.js";
-import type { WorkbenchIndexController } from "../workbench/index.js";
 import type { WorkbenchSourceUris } from "../workbench/sourceUris.js";
 
 export function createRoutineComparisonHandler(

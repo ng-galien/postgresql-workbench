@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { rmSync, unwatchFile, watchFile, writeFileSync } from "node:fs";
 import { readFile, rm } from "node:fs/promises";
 import * as vscode from "vscode";
-import type { WorkbenchIndexPhase } from "./workbench/index.js";
+import type { WorkbenchIndexPhase } from "../../packages/catalog/src/indexController.js";
 
 const RELOAD_WINDOW_COMMAND = "workbench.action.reloadWindow";
 const SAVE_ALL_COMMAND = "workbench.action.files.saveAll";

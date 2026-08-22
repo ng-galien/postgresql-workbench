@@ -1,6 +1,10 @@
 import { TextDecoder, TextEncoder } from "node:util";
 import * as vscode from "vscode";
 import {
+  getConnectionName,
+  type ServerConfig,
+} from "../../../packages/catalog/src/savedConnection.js";
+import {
   clampDebugResultRows,
   DEBUG_RESULT_LIMITS,
   type DebugResult,
@@ -20,7 +24,10 @@ import {
 } from "../../../packages/rows/src/notebookClient.js";
 import {
   notebookErrorPayload,
+  type ScratchpadAssociationSnapshot,
   type SqlFailure,
+  type SqlNotebookErrorPayload,
+  type SqlNotebookResultPayload,
   sqlFailurePayload,
 } from "../../../packages/rows/src/resultPayload.js";
 import { executeSqlSelection } from "../../../packages/rows/src/runSelection.js";
@@ -30,7 +37,6 @@ import type {
 } from "../../../packages/sql/src/analysis/sqlStatements.js";
 import { resultRowSummary } from "../../../packages/views/src/results/resultFormatting.js";
 import type { ConnectionManager } from "../connection/index.js";
-import { getConnectionName, type ServerConfig } from "../connection/index.js";
 import { errorMessage } from "../errorMessage.js";
 import { SQL_NOTEBOOK_SCHEME, SqlNotebookFileSystemProvider } from "./fileSystem.js";
 import {
@@ -44,15 +50,12 @@ import {
   parseSqlNotebookFile,
   resolveScratchpadAssociation,
   type ScratchpadAssociation,
-  type ScratchpadAssociationSnapshot,
   type ScratchpadCellExecutionIntent,
   type ScratchpadExecutionMode,
   SQL_NOTEBOOK_RESULT_MIME,
   SQL_NOTEBOOK_TYPE,
-  type SqlNotebookErrorPayload,
   type SqlNotebookFile,
   type SqlNotebookMetadata,
-  type SqlNotebookResultPayload,
   scratchpadCellExecutionIntent,
   scratchpadCreationAssociation,
   scratchpadExecutionMode,

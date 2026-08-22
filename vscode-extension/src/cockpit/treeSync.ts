@@ -1,10 +1,7 @@
 import type * as vscode from "vscode";
-import type {
-  PlpgsqlTreeItem,
-  WorkbenchIndexController,
-  WorkbenchObjectModel,
-  WorkbenchTreeProvider,
-} from "../workbench/index.js";
+import type { WorkbenchIndexController } from "../../../packages/catalog/src/indexController.js";
+import type { WorkbenchObjectModel } from "../../../packages/catalog/src/objectModel.js";
+import type { PlpgsqlTreeItem, WorkbenchTreeProvider } from "../workbench/index.js";
 import type { WorkbenchGraphView } from "./view.js";
 
 export class WorkbenchGraphTreeSync {

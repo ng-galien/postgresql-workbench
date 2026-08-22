@@ -24,15 +24,23 @@ import type {
   WorkbenchRelationKind,
   WorkbenchRelationTarget,
 } from "../../../packages/catalog/src/relations.js";
+import {
+  getConnectionName,
+  type ServerConfig,
+} from "../../../packages/catalog/src/savedConnection.js";
 import type { DebugSessionStatus } from "../../../packages/dap/src/debugger/launch/debugSessionStatus.js";
+import {
+  type DebugSessionInfo,
+  enrichDebugSessions,
+  listDebugSessions,
+} from "../../../packages/dap/src/orphanSessions.js";
 import { countLabel } from "../../../packages/rows/src/countLabel.js";
+import { postgresVisual } from "../../../packages/views/src/presentation.js";
 import type {
   ConnectionChange,
   ConnectionManager,
   DebugCapabilitySnapshot,
 } from "../connection/index.js";
-import { getConnectionName, type ServerConfig } from "../connection/index.js";
-import { type DebugSessionInfo, enrichDebugSessions, listDebugSessions } from "../debug/index.js";
 import type { ScratchpadTransaction, ScratchpadTransactionManager } from "../scratchpad/index.js";
 import {
   OPEN_SQL_NOTEBOOK_COMMAND,
@@ -43,7 +51,6 @@ import {
   scratchpadExecutionMode,
   sqlNotebookDisplayName,
 } from "../scratchpad/index.js";
-import { postgresVisual } from "../sources/index.js";
 
 export class ServerItem extends vscode.TreeItem {
   readonly kind = "server" as const;

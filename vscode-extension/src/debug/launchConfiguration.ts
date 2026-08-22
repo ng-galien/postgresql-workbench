@@ -1,11 +1,14 @@
 import {
+  getConnectionName,
+  type ServerConfig,
+} from "../../../packages/catalog/src/savedConnection.js";
+import {
   type DebugLaunchRoutineArgument,
   type DebugLaunchRoutineTarget,
   type DebugResultSource,
   routineDisplayName,
 } from "../../../packages/dap/src/debugger/launch/index.js";
 import type { FunctionDefinition, ParsedCall } from "../../../packages/sql/src/callParser.js";
-import { getConnectionName, type ServerConfig } from "../connection/savedConnections.js";
 
 export interface DebugConfigurationLike {
   type?: string;

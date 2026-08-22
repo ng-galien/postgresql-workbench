@@ -1,8 +1,8 @@
 import type { Client } from "pg";
 import * as vscode from "vscode";
 import { createDedicatedNotebookClient } from "../../../packages/rows/src/notebookClient.js";
+import type { ScratchpadAssociationSnapshot } from "../../../packages/rows/src/resultPayload.js";
 import type { ConnectionManager } from "../connection/index.js";
-import type { ScratchpadAssociationSnapshot } from "./notebookFile.js";
 
 const SHUTDOWN_DRAIN_TIMEOUT_MS = 2_000;
 const SHUTDOWN_DATABASE_STEP_TIMEOUT_MS = 1_000;

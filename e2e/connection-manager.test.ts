@@ -57,11 +57,9 @@ vi.mock("vscode", () => {
   };
 });
 
+import type { ServerConfig } from "../packages/catalog/src/savedConnection.js";
 import { ConnectionManager } from "../vscode-extension/src/connection/openConnections.js";
-import {
-  type ServerConfig,
-  ServerStore,
-} from "../vscode-extension/src/connection/savedConnections.js";
+import { ServerStore } from "../vscode-extension/src/connection/savedConnections.js";
 
 const ADMIN_CONFIG = {
   host: "127.0.0.1",

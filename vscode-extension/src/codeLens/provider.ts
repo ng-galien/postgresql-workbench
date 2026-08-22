@@ -11,7 +11,6 @@ import {
   shouldProvideSqlCodeLenses,
 } from "./policy.js";
 
-export type { FunctionDefinition, ParsedCallSite as CallSite };
 export interface CommandFunctionDefinition extends FunctionDefinition {
   serverId?: string;
   oid?: number;

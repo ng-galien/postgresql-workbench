@@ -1,9 +1,10 @@
 import * as vscode from "vscode";
 import type { WorkbenchDdlSyncController } from "../../../packages/catalog/src/ddlSync.js";
+import { getConnectionName } from "../../../packages/catalog/src/savedConnection.js";
 import type { SqlCodeLensProvider } from "../codeLens/index.js";
 import { startDockerDebugDatabase } from "../docker/index.js";
 import type { ServerItem, WorkbenchDdlSyncItem } from "../workbench/index.js";
-import { type ConnectionManager, getConnectionName } from "./index.js";
+import type { ConnectionManager } from "./index.js";
 
 /**
  * The VS Code commands that manage Connexions: adding one, connecting and disconnecting, renaming

@@ -1,12 +1,12 @@
 import * as vscode from "vscode";
-import type { ConnectionManager } from "./openConnections.js";
 import {
   getConnectionName,
   getCustomConnectionName,
   type ServerConfig,
-  ServerStore,
   sameConnectionIdentity,
-} from "./savedConnections.js";
+} from "../../../packages/catalog/src/savedConnection.js";
+import type { ConnectionManager } from "./openConnections.js";
+import { ServerStore } from "./savedConnections.js";
 
 export class ConnectionCommands {
   constructor(private readonly connections: ConnectionManager) {}
@@ -215,7 +215,7 @@ interface ConnectionInput {
   database: string;
   user: string;
   password: string;
-  ssl?: import("./savedConnections.js").SslMode;
+  ssl?: import("../../../packages/catalog/src/savedConnection.js").SslMode;
 }
 
 type ServerEditKey = "host" | "port" | "database" | "user" | "password" | "ssl";
@@ -324,7 +324,7 @@ function editedServer(server: ServerConfig, edit: ServerEdit): ServerConfig | un
     edit.key === "ssl"
       ? edit.value === "disable"
         ? undefined
-        : (edit.value as import("./savedConnections.js").SslMode)
+        : (edit.value as import("../../../packages/catalog/src/savedConnection.js").SslMode)
       : server.ssl;
   return {
     id: ServerStore.makeId(host, port, database, user),
@@ -344,7 +344,7 @@ function parsePort(raw: string): number | undefined {
 }
 
 async function pickSslMode(): Promise<
-  "disable" | import("./savedConnections.js").SslMode | undefined
+  "disable" | import("../../../packages/catalog/src/savedConnection.js").SslMode | undefined
 > {
   const picked = await vscode.window.showQuickPick(
     [
@@ -354,7 +354,10 @@ async function pickSslMode(): Promise<
     ],
     { placeHolder: "SSL mode", ignoreFocusOut: true },
   );
-  return picked?.label as "disable" | import("./savedConnections.js").SslMode | undefined;
+  return picked?.label as
+    | "disable"
+    | import("../../../packages/catalog/src/savedConnection.js").SslMode
+    | undefined;
 }
 
 function parseConnectionString(input: string): ConnectionInput | undefined {

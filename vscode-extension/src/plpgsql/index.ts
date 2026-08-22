@@ -4,11 +4,7 @@
  * the comparison itself live in `packages/sql/src/routines`; this module only wires them to
  * VS Code. This file is the module's public surface.
  */
+
 export { createRoutineComparisonHandler } from "./compareCommand.js";
 export { PlpgsqlInlineValuesProvider } from "./inlineValues.js";
-export {
-  LEGEND,
-  PlpgsqlSemanticTokensProvider,
-  TOKEN_MODIFIERS,
-  TOKEN_TYPES,
-} from "./semanticTokens.js";
+export { LEGEND, PlpgsqlSemanticTokensProvider } from "./semanticTokens.js";

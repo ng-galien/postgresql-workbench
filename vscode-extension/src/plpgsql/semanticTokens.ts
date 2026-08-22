@@ -1,8 +1,3 @@
-export {
-  TOKEN_MODIFIERS,
-  TOKEN_TYPES,
-} from "../../../packages/sql/src/text/plpgsqlTokenLegend.js";
-
 import * as vscode from "vscode";
 import type { SyntaxParser } from "../../../packages/sql/src/analysis/syntaxTree.js";
 import {

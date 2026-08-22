@@ -1,35 +1,12 @@
+import {
+  getConnectionName,
+  type ServerConfig,
+} from "../../../packages/catalog/src/savedConnection.js";
 import type { DebugResult } from "../../../packages/dap/src/debugger/launch/index.js";
 import type {
   ScratchpadAssociationSnapshot,
-  SqlNotebookErrorPayload,
-  SqlNotebookOutputPayload,
-  SqlNotebookResultNavigation,
   SqlNotebookResultPayload,
 } from "../../../packages/rows/src/resultPayload.js";
-import type {
-  SqlNotebookRendererRequest,
-  SqlNotebookRendererResponse,
-  SqlNotebookResultAction,
-  SqlNotebookResultRequest,
-  SqlNotebookSettingsRequest,
-  SqlResultDataViewRequest,
-} from "../../../packages/views/src/results/payload.js";
-
-export type {
-  ScratchpadAssociationSnapshot,
-  SqlNotebookErrorPayload,
-  SqlNotebookOutputPayload,
-  SqlNotebookRendererRequest,
-  SqlNotebookRendererResponse,
-  SqlNotebookResultAction,
-  SqlNotebookResultNavigation,
-  SqlNotebookResultPayload,
-  SqlNotebookResultRequest,
-  SqlNotebookSettingsRequest,
-  SqlResultDataViewRequest,
-};
-
-import { getConnectionName, type ServerConfig } from "../connection/savedConnections.js";
 
 export const SQL_NOTEBOOK_TYPE = "postgresql-workbench-sql";
 export const SQL_NOTEBOOK_EXTENSION = ".pgsql-notebook";

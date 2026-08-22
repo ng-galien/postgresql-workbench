@@ -20,12 +20,4 @@ export {
   ConnectionManager,
   type DebugCapabilitySnapshot,
 } from "./openConnections.js";
-export {
-  getConnectionName,
-  getConnectionUrl,
-  getCustomConnectionName,
-  type ServerConfig,
-  ServerStore,
-  type SslMode,
-  sameConnectionIdentity,
-} from "./savedConnections.js";
+export { ServerStore } from "./savedConnections.js";

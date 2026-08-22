@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { getConnectionName } from "../../../packages/catalog/src/savedConnection.js";
 import type { DebugSessionStatus } from "../../../packages/dap/src/debugger/launch/debugSessionStatus.js";
 import {
   type DebugSessionInfo,
@@ -9,7 +10,6 @@ import {
 } from "../../../packages/dap/src/orphanSessions.js";
 import { countLabel } from "../../../packages/rows/src/countLabel.js";
 import type { ConnectionManager } from "../connection/index.js";
-import { getConnectionName } from "../connection/index.js";
 
 interface RefreshableTree {
   refresh(): void;

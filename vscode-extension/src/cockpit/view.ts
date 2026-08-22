@@ -11,6 +11,10 @@ import {
   sourcePreviewPresentation,
 } from "../../../packages/catalog/src/cockpitGraph.js";
 import type {
+  WorkbenchIndexController,
+  WorkbenchIndexResult,
+} from "../../../packages/catalog/src/indexController.js";
+import type {
   CodeMonikerGraphResult,
   CodeMonikerIdentityGraphResult,
   CodeMonikerSymbol,
@@ -37,7 +41,6 @@ import type {
   WorkbenchGraphWebviewMessage,
 } from "../../../packages/views/src/cockpit/protocol.js";
 import { DEFAULT_WORKBENCH_GRAPH_APPEARANCE } from "../../../packages/views/src/cockpit/protocol.js";
-import type { WorkbenchIndexController, WorkbenchIndexResult } from "../workbench/index.js";
 import { GraphNavigation } from "./navigation.js";
 import { WorkbenchGraphPanel } from "./panel.js";
 

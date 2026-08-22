@@ -1,6 +1,6 @@
 import { Client } from "pg";
+import { getConnectionName } from "../../../packages/catalog/src/savedConnection.js";
 import type { ConnectionManager } from "../connection/index.js";
-import { getConnectionName } from "../connection/index.js";
 
 export async function openCoverageClient(
   connections: ConnectionManager,

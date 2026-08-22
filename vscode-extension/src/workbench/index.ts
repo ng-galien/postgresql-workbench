@@ -8,28 +8,6 @@
  * them. Nothing else under `workbench/` may be imported from outside.
  */
 
-export { WorkbenchDdlSyncController } from "../../../packages/catalog/src/ddlSync.js";
-export {
-  WorkbenchIndexController,
-  type WorkbenchIndexPhase,
-  type WorkbenchIndexResult,
-  type WorkbenchSourceDescriptor,
-} from "../../../packages/catalog/src/indexController.js";
-export {
-  actionsForWorkbenchSurface,
-  buildWorkbenchObjectActions,
-  type WorkbenchObjectAction,
-  type WorkbenchObjectActionId,
-  type WorkbenchObjectActionSurface,
-} from "../../../packages/catalog/src/objectActions.js";
-export {
-  buildWorkbenchObjects,
-  buildWorkbenchTableMembers,
-  type WorkbenchDatabaseIdentity,
-  type WorkbenchObjectKind,
-  type WorkbenchObjectModel,
-  workbenchObjectFromSymbol,
-} from "../../../packages/catalog/src/objectModel.js";
 export { WorkbenchSourceUris } from "./sourceUris.js";
 export {
   FunctionItem,

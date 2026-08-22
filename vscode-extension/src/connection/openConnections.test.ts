@@ -74,8 +74,9 @@ vi.mock("vscode", () => {
   };
 });
 
+import type { ServerConfig } from "../../../packages/catalog/src/savedConnection.js";
 import { ConnectionManager } from "./openConnections.js";
-import { type ServerConfig, ServerStore } from "./savedConnections.js";
+import { ServerStore } from "./savedConnections.js";
 
 function stateStore() {
   const values = new Map<string, unknown>();
