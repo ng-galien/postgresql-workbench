@@ -45,6 +45,8 @@
     "site:build": "node scripts/site/build.mjs",
     "site:dev": "node scripts/site/dev.mjs",
     "shell": "node --watch-path=packages packages/shell/server.mjs",
+    "shell:up": "docker compose -f docker/demo/compose.yml up -d --build --wait",
+    "shell:down": "docker compose -f docker/demo/compose.yml down -v",
     "test:shell": "playwright test --config packages/shell/tests/playwright.config.ts"
   },
   "dependencies": {

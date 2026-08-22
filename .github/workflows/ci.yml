@@ -142,6 +142,41 @@ jobs:
       - run: npm run test:e2e:legacy
         timeout-minutes: 25
 
+  # The Data View driven in a real browser against the real PostgreSQL and the real parser, with no
+  # VS Code and no Electron. Fifty-odd journeys in under a minute, where the Electron lanes below
+  # cost minutes apiece — so this is where behaviour is proven, and those prove only that the
+  # message crosses the wire.
+  shell:
+    name: Playwright Components
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: "24.19.0"
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+      - run: npm ci
+      - name: Install the browser the lane drives
+        run: npx playwright install --with-deps chromium
+      - name: Start the demo database
+        run: npm run shell:up
+      - name: Run the component lane
+        run: npm run test:shell
+        timeout-minutes: 10
+      - name: Upload evidence
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: shell-results
+          path: test-results/**
+          if-no-files-found: ignore
+      - name: Stop the demo database
+        if: always()
+        run: npm run shell:down
+
   workbench-bootstrap:
     name: Playwright Bootstrap
     runs-on: ubuntu-24.04
