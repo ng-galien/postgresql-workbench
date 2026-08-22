@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { coverageAsJson, coverageAsLcov, type ExportedCoverageFile } from "./export.js";
+import { coverageAsJson, coverageAsLcov, type ExportedCoverageFile } from "./coverageReport.js";
 
 const files: ExportedCoverageFile[] = [
   {

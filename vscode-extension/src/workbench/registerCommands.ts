@@ -35,10 +35,7 @@ import { dataViewSqlLabel } from "../dataView/dataViewUri.js";
 import type { DebugResultsViewProvider } from "../debug/index.js";
 import { debugResultSource } from "../debug/resultSource.js";
 import { CodeMonikerContentProvider } from "../sources/index.js";
-import {
-  REFRESH_SQL_AUTHORING_CONTEXT_COMMAND,
-  sqlSyntaxAnalysisBudget,
-} from "../sqlAuthoring/client.js";
+import { REFRESH_SQL_AUTHORING_CONTEXT_COMMAND, sqlSyntaxAnalysisBudget } from "../sqlAuthoring.js";
 import type {
   FunctionItem,
   PlpgsqlTreeItem,

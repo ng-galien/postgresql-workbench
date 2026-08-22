@@ -43,9 +43,9 @@ import type {
   SqlAuthoringSnapshot,
 } from "../../../packages/sql/src/snapshot.js";
 import { quoteSqlIdentifierIfNeeded } from "../../../packages/sql/src/text/identifiers.js";
-import { completeDataViewFilter } from "./completion/filterCompletion.js";
 import { dataViewCompletionUri, dataViewQueryUri } from "./dataViewUri.js";
-import { exportAllRows, exportHeldRows, pickExportTarget } from "./export/exportResult.js";
+import { exportAllRows, exportHeldRows, pickExportTarget } from "./exportResult.js";
+import { completeDataViewFilter } from "./filterCompletion.js";
 import { type DataViewHostServices, errorMessage } from "./hostServices.js";
 
 class LoadCancelledError extends Error {}

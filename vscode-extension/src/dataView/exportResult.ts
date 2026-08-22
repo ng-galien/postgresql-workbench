@@ -4,9 +4,9 @@ import * as vscode from "vscode";
 import {
   formatQueryResultRow,
   queryResultColumns,
-} from "../../../../packages/dap/src/debugger/launch/boundedQueryResult.js";
-import { PostgresCursorReader } from "../../../../packages/rows/src/cursor.js";
-import { TEXT_PASSTHROUGH_TYPES } from "../../../../packages/rows/src/dataView/openRows.js";
+} from "../../../packages/dap/src/debugger/launch/boundedQueryResult.js";
+import { PostgresCursorReader } from "../../../packages/rows/src/cursor.js";
+import { TEXT_PASSTHROUGH_TYPES } from "../../../packages/rows/src/dataView/openRows.js";
 import {
   type DataViewExportChoice,
   type DataViewExportFormat,
@@ -16,7 +16,7 @@ import {
   dataViewExportWriter,
   type ExportColumn,
   exportFileExtension,
-} from "../../../../packages/rows/src/export.js";
+} from "../../../packages/rows/src/export.js";
 
 const EXPORT_BATCH_ROWS = 5_000;
 

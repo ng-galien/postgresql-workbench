@@ -64,7 +64,7 @@ import {
   type SqlAuthoringNavigationTarget,
   type SqlAuthoringRegistration,
   sqlSyntaxAnalysisBudget,
-} from "./sqlAuthoring/client.js";
+} from "./sqlAuthoring.js";
 import {
   FunctionItem,
   type PlpgsqlTreeItem,

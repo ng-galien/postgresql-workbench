@@ -23,8 +23,8 @@ import type { SyntaxParser } from "../../../packages/sql/src/analysis/syntaxTree
 import type { ConnectionManager } from "../connection/index.js";
 import { errorMessage } from "../errorMessage.js";
 import { openCoverageClient } from "./client.js";
+import { coverageAsJson, coverageAsLcov, type ExportedCoverageFile } from "./coverageReport.js";
 import { coverageDelta, indexCoverageSnapshot } from "./delta.js";
-import { coverageAsJson, coverageAsLcov, type ExportedCoverageFile } from "./export.js";
 import { mapCoverageToSource } from "./mapToSource.js";
 import { matchesCoveragePatterns } from "./selection.js";
 

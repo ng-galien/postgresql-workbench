@@ -6,19 +6,19 @@ import {
   type ServerOptions,
   TransportKind,
 } from "vscode-languageclient/node";
-import type { WorkbenchIndexController } from "../../../packages/catalog/src/indexController.js";
-import { getConnectionName } from "../../../packages/catalog/src/savedConnection.js";
-import type { SyntaxParser } from "../../../packages/sql/src/analysis/syntaxTree.js";
+import type { WorkbenchIndexController } from "../../packages/catalog/src/indexController.js";
+import { getConnectionName } from "../../packages/catalog/src/savedConnection.js";
+import type { SyntaxParser } from "../../packages/sql/src/analysis/syntaxTree.js";
 import {
   answerSyntaxRequest,
   type SqlAuthoringSyntaxRequest,
-} from "../../../packages/sql/src/languageServer/answerSyntax.js";
-import { sqlAuthoringEditStillApplies } from "../../../packages/sql/src/languageServer/composeRequest.js";
+} from "../../packages/sql/src/languageServer/answerSyntax.js";
+import { sqlAuthoringEditStillApplies } from "../../packages/sql/src/languageServer/composeRequest.js";
 import {
   type SqlAuthoringScope,
   sqlAuthoringLanguageStatus,
   sqlAuthoringRejectionAction,
-} from "../../../packages/sql/src/languageServer/languageStatus.js";
+} from "../../packages/sql/src/languageServer/languageStatus.js";
 import {
   decodeSemanticTokenData,
   SQL_AUTHORING_COMPOSE_REQUEST,
@@ -33,28 +33,28 @@ import {
   type SqlAuthoringPlpgsqlTokensResult,
   type SqlAuthoringSyntaxResult,
   sqlAuthoringContextMatchesToken,
-} from "../../../packages/sql/src/languageServer/protocol.js";
+} from "../../packages/sql/src/languageServer/protocol.js";
 import {
   documentRelations,
   type SqlColumnMention,
   type SqlRelationMention,
   type SqlRoutineMention,
-} from "../../../packages/sql/src/query/relations.js";
+} from "../../packages/sql/src/query/relations.js";
 import {
   DEFAULT_SQL_AUTHORING_SETTINGS,
   parseSqlAuthoringDrag,
   SQL_AUTHORING_OBJECT_MIME,
   type SqlAuthoringSettings,
-} from "../../../packages/sql/src/snapshot.js";
-import { canonicalSqlIdentifier } from "../../../packages/sql/src/text/identifiers.js";
-import { sqlStatementSlices } from "../../../packages/sql/src/text/sqlLexing.js";
-import type { ConnectionManager } from "../connection/index.js";
-import { PlpgsqlSemanticTokensProvider } from "../plpgsql/index.js";
+} from "../../packages/sql/src/snapshot.js";
+import { canonicalSqlIdentifier } from "../../packages/sql/src/text/identifiers.js";
+import { sqlStatementSlices } from "../../packages/sql/src/text/sqlLexing.js";
+import type { ConnectionManager } from "./connection/index.js";
+import { PlpgsqlSemanticTokensProvider } from "./plpgsql/index.js";
 import {
   resolveScratchpadAssociation,
   SQL_NOTEBOOK_TYPE,
   type SqlNotebookMetadata,
-} from "../scratchpad/index.js";
+} from "./scratchpad/index.js";
 
 const SQL_DOCUMENT_SELECTOR = [
   { language: "sql", scheme: "file" },

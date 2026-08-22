@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  postgresSourcePresentation,
-  postgresVisual,
-} from "../../../packages/views/src/presentation.js";
+import { postgresSourcePresentation, postgresVisual } from "./presentation.js";
 
 describe("PostgreSQL presentation", () => {
   it("gives schemas and routines distinct SQL-oriented tree icons", () => {

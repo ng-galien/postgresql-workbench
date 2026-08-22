@@ -3,9 +3,10 @@
  * graph view, and the DDL synchronization that keeps the index fresh. This file is the module's
  * public surface for everything that runs inside VS Code.
  *
- * `treeModel.ts`, `objectActions.ts`, `relations.ts` and `ddlSyncSettings.ts` are the module's
- * pure doors: they carry no VS Code import, so the graph webview and pure tests enter through
- * them. Nothing else under `workbench/` may be imported from outside.
+ * What it indexes, what a Workbench object is and what may be done to one are the catalogue's:
+ * import those from `packages/catalog`. What is left here is the tree, its drag and drop, the
+ * object picker and the source URIs — everything that only means something inside VS Code.
+ * Nothing else under `workbench/` may be imported from outside.
  */
 
 export { WorkbenchSourceUris } from "./sourceUris.js";
