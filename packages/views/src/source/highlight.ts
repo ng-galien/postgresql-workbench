@@ -14,6 +14,8 @@ export interface PostgresSourceToken {
   offset: number;
   lightColor?: string;
   darkColor?: string;
+  /** Set when the language server named this piece: the class its kind is painted with. */
+  className?: string;
 }
 
 export interface PostgresSourceLine {
@@ -62,14 +64,20 @@ export function plainPostgresSource(
   };
 }
 
+/**
+ * The tokens of one line, each saying where it starts **in that line**. The highlighter counts
+ * from the start of the whole source; a line is what a reader points at, and what the language
+ * server counts against, so that is what is kept.
+ */
 function sourceTokens(
   tokens: ThemedTokenWithVariants[] | undefined,
   fallback: string,
 ): PostgresSourceToken[] {
   if (!tokens) return fallback ? [{ text: fallback, offset: 0 }] : [];
+  const lineStart = tokens[0]?.offset ?? 0;
   return tokens.map((token) => ({
     text: token.content,
-    offset: token.offset,
+    offset: token.offset - lineStart,
     lightColor: token.variants.light?.color,
     darkColor: token.variants.dark?.color,
   }));

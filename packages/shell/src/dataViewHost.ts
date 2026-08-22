@@ -9,6 +9,7 @@ import {
 import { readPostgresCatalog } from "../../catalog/src/postgresCatalog.js";
 import type { SqlResultSession } from "../../rows/src/cursor.js";
 import { composeIntoDataViewQuery, dataViewAdditions } from "../../rows/src/dataView/additions.js";
+import { conditionForCell, withCondition } from "../../rows/src/dataView/cellFilter.js";
 import {
   type DataViewAddition,
   type DataViewCompletion,
@@ -20,10 +21,12 @@ import {
 import type {
   DataViewRequest,
   DataViewResponse,
+  DataViewSqlToken,
   DataViewState,
 } from "../../rows/src/dataView/dataViewProtocol.js";
 import { dataViewState } from "../../rows/src/dataView/dataViewState.js";
 import { localFilterCompletions } from "../../rows/src/dataView/filterCompletions.js";
+import { filterDraft, filterTokensOf } from "../../rows/src/dataView/filterTokens.js";
 import { HiddenColumns } from "../../rows/src/dataView/hiddenColumns.js";
 import { initialDataViewQuery } from "../../rows/src/dataView/initialProjection.js";
 import { openDataViewResult, TableAccents } from "../../rows/src/dataView/openRows.js";
@@ -38,7 +41,7 @@ import {
 } from "../../rows/src/export.js";
 import { createCodeMonikerSyntaxParser } from "../../sql/src/analysis/codeMonikerSyntax.js";
 import type { SyntaxParser } from "../../sql/src/analysis/syntaxTree.js";
-import { type SqlQueryAnalysis, setWhere } from "../../sql/src/query/analysis.js";
+import type { SqlQueryAnalysis } from "../../sql/src/query/analysis.js";
 import { composePostgresSql } from "../../sql/src/query/composition.js";
 import { type QueryRewrite, SqlQueryModel } from "../../sql/src/query/model.js";
 import {
@@ -352,18 +355,19 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
     offset: number,
   ): Promise<DataViewCompletion[]> => {
     if (!languageServer) return localFilterCompletions(analysis, text, offset);
-    const sentinel = "\u0000";
-    const draft = setWhere(query.text, analysis, `${sentinel}${text || " "}`);
-    const start = draft.indexOf(sentinel);
-    if (start < 0) return localFilterCompletions(analysis, text, offset);
-    const candidate = draft.replace(sentinel, "");
+    const draft = filterDraft(query.text, analysis, text);
+    if (!draft) return localFilterCompletions(analysis, text, offset);
     const proposals = await languageServer.complete(
       `${queryUri}.filter`,
-      candidate,
-      start + Math.min(offset, text.length),
+      draft.text,
+      draft.start + Math.min(offset, text.length),
     );
     return proposals.length > 0 ? proposals : localFilterCompletions(analysis, text, offset);
   };
+
+  /** What the server makes of the names in a SQL text; nothing at all when no server answers. */
+  const askTokens = async (uri: string, sql: string): Promise<DataViewSqlToken[]> =>
+    (await languageServer?.semanticTokens(uri, sql)) ?? [];
 
   const compose = async (addition: DataViewAddition, relationChoice?: number) => {
     const outcome = await composeIntoDataViewQuery({
@@ -462,6 +466,41 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
         case "data-view/compose":
           await compose(request.addition, request.relationChoice);
           return;
+        case "data-view/filter-cell": {
+          const written = conditionForCell({
+            columns: state.payload?.columns,
+            projection: state.projection,
+            relations: query.analysis?.relations,
+            ordinal: request.ordinal,
+            value: request.value,
+            negate: request.negate,
+          });
+          if ("refused" in written) {
+            emit({ type: "data-view/notice", message: written.refused, severity: "info" });
+            return;
+          }
+          await rewrite(
+            query.filtered(withCondition(query.whereText() ?? "", written.condition), 2),
+          );
+          return;
+        }
+        case "data-view/tokens": {
+          const of = request.of;
+          emit({
+            type: "data-view/tokens",
+            requestId: request.requestId,
+            tokens:
+              of === "query"
+                ? await askTokens(queryUri, query.text)
+                : await filterTokensOf({
+                    queryText: query.text,
+                    analysis: query.analysis,
+                    text: of.filter,
+                    ask: (sql) => askTokens(`${queryUri}.filter-tokens`, sql),
+                  }),
+          });
+          return;
+        }
         case "data-view/complete": {
           const analysis = query.analysis;
           emit({

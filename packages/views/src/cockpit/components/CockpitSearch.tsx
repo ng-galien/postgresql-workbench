@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
+import { chordCap } from "../../platform.js";
 import { applySearchFacet, searchFacetSuggestions } from "../graph/searchSuggestions.js";
 import { useCockpitStore } from "../graph/store.js";
 import { focusSymbol } from "../graph/transport.js";
@@ -104,7 +105,7 @@ export function CockpitSearch() {
           }
         }}
       />
-      <kbd>{navigator.platform.toLocaleLowerCase().includes("mac") ? "⌘K" : "Ctrl K"}</kbd>
+      <kbd>{chordCap("K")}</kbd>
       {open && (
         <div className="cockpit-results">
           <div id={resultsId} className="search-options" role="listbox">

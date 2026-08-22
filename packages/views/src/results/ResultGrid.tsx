@@ -30,6 +30,7 @@ import { GridFinder } from "./GridFinder.js";
 import { GridHeader } from "./GridHeader.js";
 import { GridRow, type GridRowContext } from "./GridRow.js";
 import {
+  cellIsSelected,
   cellSelection,
   extendedTo,
   type GridSelection,
@@ -39,6 +40,7 @@ import {
   selectedOrdinals,
   selectedRows,
 } from "./gridSelection.js";
+import { Menu, type MenuEntry, useMenu } from "./Menu.js";
 import { ResultScrollbar, type ScrollMetrics } from "./ResultScrollbar.js";
 import {
   columnWidthsCh,
@@ -117,7 +119,13 @@ export interface ResultGridProps {
 export interface GridLayout {
   hidden: ReadonlySet<number>;
   onReorder(from: number, to: number): void;
-  menuItems(ordinal: number): { label: string; action: () => void }[];
+  /** What the surface around the grid offers on one column heading. */
+  columnMenu(ordinal: number): MenuEntry[];
+  /**
+   * What it offers on one cell — filtering on what it holds, and whatever else only that surface
+   * can do. The grid adds what it can do itself.
+   */
+  cellMenu?(ordinal: number, value: string | null): MenuEntry[];
   /** Accent color (CSS value) of the table a column comes from; undefined for computed values. */
   columnAccent?(ordinal: number): string | undefined;
 }
@@ -138,7 +146,7 @@ export function ResultGrid({
   const [activeCell, setActiveCell] = useState<{ row: number; ordinal: number }>();
   /** Where the grid points when nobody is holding a selection for it. */
   const [ownSelection, setOwnSelection] = useState<GridSelection>(cellSelection(0, 0));
-  const [menu, setMenu] = useState<{ ordinal: number; x: number; y: number }>();
+  const menu = useMenu();
   /*
    * The width a reader has chosen for a column, where they have chosen one. A column nobody has
    * touched keeps the width its content asks for, so a result that changes shape still fits.
@@ -361,6 +369,11 @@ export function ResultGrid({
    * selection on the clipboard in its place. Nothing ever reads the space.
    */
   const clipboardHolder = " ";
+  /** The copy a reader asks for by menu is the copy Ctrl+C makes: the same event, the same text. */
+  const copySelection = () => {
+    focusClipboard();
+    document.execCommand("copy");
+  };
   const focusClipboard = () => {
     const proxy = clipboard.current;
     if (!proxy) return;
@@ -507,6 +520,21 @@ export function ResultGrid({
     cellId,
     matched: matchedCells,
     ...(editing ? { editing } : {}),
+    onCellMenu(event, shownRow, ordinal, value) {
+      if (!cellIsSelected(selection, shownRow, ordinal, visibleOrdinals)) {
+        setSelection(cellSelection(shownRow, ordinal));
+      }
+      focusClipboard();
+      const offered = layout?.cellMenu?.(ordinal, value) ?? [];
+      menu.open(event, {
+        label: `Actions for ${payload.columns[ordinal]?.name ?? "cell"}`,
+        entries: [
+          ...offered,
+          ...(offered.length > 0 ? [{ kind: "separator" as const }] : []),
+          { kind: "action", label: "Copy", run: () => copySelection() },
+        ],
+      });
+    },
     isEditingCell(subject, ordinal) {
       return subject.of === "added"
         ? activeAdded?.localId === subject.added.localId && activeAdded.ordinal === ordinal
@@ -761,7 +789,12 @@ export function ResultGrid({
               }
               ordinalsInSelection={ordinalsInSelection}
               cursorOrdinal={hasFocus && overCells ? selection.anchor.ordinal : undefined}
-              onMenu={(ordinal, at) => setMenu({ ordinal, x: at.x, y: at.y })}
+              onMenu={(ordinal, at) =>
+                menu.openAt(at, {
+                  label: `Actions for ${payload.columns[ordinal]?.name ?? "column"}`,
+                  entries: layout?.columnMenu(ordinal) ?? [],
+                })
+              }
             />
             <tbody>
               {topSpacer > 0 ? (
@@ -842,40 +875,7 @@ export function ResultGrid({
       {sort && !serverSort && resultSortNotice(payload) ? (
         <p className="sort-notice">{resultSortNotice(payload)}</p>
       ) : null}
-      {menu && layout ? (
-        <>
-          <button
-            type="button"
-            className="column-menu-backdrop"
-            aria-label="Close column menu"
-            onClick={() => setMenu(undefined)}
-          />
-          <div
-            className="column-menu"
-            role="menu"
-            style={{ left: menu.x, top: menu.y }}
-            aria-label={`Actions for ${payload.columns[menu.ordinal]?.name ?? "column"}`}
-            onKeyDown={(event) => {
-              if (event.key === "Escape") setMenu(undefined);
-            }}
-          >
-            {layout.menuItems(menu.ordinal).map((item) => (
-              <button
-                key={item.label}
-                type="button"
-                role="menuitem"
-                className="column-menu-item"
-                onClick={() => {
-                  setMenu(undefined);
-                  item.action();
-                }}
-              >
-                {item.label}
-              </button>
-            ))}
-          </div>
-        </>
-      ) : null}
+      {menu.menu ? <Menu {...menu.menu} onClose={menu.close} /> : null}
     </>
   );
 }

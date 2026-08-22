@@ -225,12 +225,17 @@ body,
  * the strip's colour and the code on the page's, so the seam ran down the middle of the query.
  */
 
+/*
+ * The panel takes what its statement needs and no more, up to a share of the window: a fixed
+ * height leaves a two-line query in a tall empty box on a large screen, and buries the rows on a
+ * small one.
+ */
 .data-view-sql {
   display: flex;
-  flex: 0 0 auto;
+  flex: 0 1 auto;
   flex-direction: column;
   min-height: 0;
-  max-height: 240px;
+  max-height: min(45vh, 360px);
   background: var(--vscode-editor-background);
   border-bottom: 1px solid var(--vscode-panel-border);
 }
@@ -268,6 +273,7 @@ body,
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
+  scrollbar-gutter: stable;
 }
 
 /*
@@ -322,8 +328,25 @@ body,
   border-bottom: 1px solid var(--vscode-panel-border);
 }
 
+/*
+ * WHERE and ORDER BY are two lines of the same kind: each says one clause of the query, each is
+ * empty until a reader gives it something. So they are marked the same way — the same slot, the
+ * same size, the same colour. Only the glyph differs, because only the clause differs.
+ *
+ * The mark stays the colour of a label. What the clause holds is written beside it, so colouring
+ * the glyph would say a second time what the line already says, and a colour that says nothing is
+ * a colour a reader has to ask about.
+ *
+ * The offset lines the marks up under each other: the filter's sits inside a bordered field, this
+ * one on the bare line, and a reader sees the two icons, not the boxes around them.
+ */
 .data-view-order-line {
-  padding-left: 12px;
+  padding-left: 17px;
+}
+
+.data-view-clause-mark {
+  flex: 0 0 auto;
+  color: var(--vscode-descriptionForeground);
 }
 
 /*
@@ -528,42 +551,86 @@ body,
   color: var(--vscode-input-foreground);
 }
 
-/* The filter is a wide badge of the same family (neutral tint, same radius and border). */
+/*
+ * The filter is a wide badge of the same family as the table badges: same radius, same border
+ * weight. Its tint is neutral, not the theme's accent — an accent belongs to a table, and a
+ * filter is not one. Mixed from the accent it stayed invisible on a dark background and washed
+ * a light one blue, so an idle input read as a focused one. Focus is said by the border.
+ */
 .data-view-query-line .filter-input {
   min-height: 24px;
   padding: 0 4px 0 8px;
   color: var(--vscode-input-foreground);
-  background: color-mix(in srgb, var(--vscode-focusBorder) 6%, var(--vscode-input-background));
-  border: 1px solid color-mix(in srgb, var(--vscode-focusBorder) 30%, transparent);
+  background: var(--vscode-input-background);
+  border: 1px solid
+    var(--vscode-input-border, color-mix(in srgb, var(--vscode-foreground) 22%, transparent));
   border-radius: 6px;
 }
 
 .data-view-query-line .filter-input:focus-within {
   border-color: var(--vscode-focusBorder);
 }
+
+/*
+ * A condition typed and not yet run says so on the field itself. Enter is what runs it — the
+ * control that used to sit at the end of the line said the same thing twice, next to the one that
+ * empties it, and two buttons for one field is one too many.
+ */
+.data-view-query-line .filter-input.dirty {
+  border-color: var(--postgres-field-unapplied, var(--vscode-focusBorder));
+}
 .filter-input > .codicon-filter {
   margin-top: 4px;
-  color: var(--vscode-descriptionForeground);
 }
 
-.filter-input.active > .codicon-filter {
-  color: var(--vscode-textLink-foreground);
+/*
+ * The condition is drawn twice: painted underneath, typed in a transparent field over it. Every
+ * metric that decides where a character lands is declared once here and inherited by both, so the
+ * two can never drift apart — a difference of one pixel is a colour under the wrong letter.
+ */
+.filter-field {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--vscode-editor-font-family);
+  font-size: var(--vscode-editor-font-size);
+  line-height: 18px;
+}
+
+.filter-field > * {
+  padding: 2px 4px;
+  font: inherit;
+  line-height: inherit;
+  letter-spacing: inherit;
+  tab-size: inherit;
+  white-space: pre;
+}
+
+.filter-highlight {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  color: var(--vscode-input-foreground);
+  pointer-events: none;
+}
+
+.filter-highlight-line {
+  min-height: 18px;
 }
 
 .filter-textarea {
+  position: relative;
   flex: 1 1 auto;
   min-width: 0;
   min-height: 22px;
-  padding: 2px 4px;
-  color: inherit;
+  /* The letters are the paint's; the field keeps the caret, the selection and the placeholder. */
+  color: transparent;
+  caret-color: var(--vscode-input-foreground);
   background: transparent;
   border: 0;
   outline: none;
   resize: none;
-  font-family: var(--vscode-editor-font-family);
-  font-size: var(--vscode-editor-font-size);
-  line-height: 18px;
-  white-space: pre;
   overflow-x: hidden;
 }
 
@@ -1192,4 +1259,23 @@ body,
   font-size: 0.92em;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/*
+ * Every scrollable pane of the view wears the same scrollbar — the colours come from one rule for
+ * all these views; what is said here is how much room one takes.
+ */
+.data-view ::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+/*
+ * Except down the rows, where the bar is drawn by hand: the grid loads its rows as a reader walks
+ * them, so the height of what is scrolled says nothing about how many there are. Giving that axis
+ * a browser scrollbar as well would put two beside each other, one of them lying.
+ */
+.data-view .result-scroller::-webkit-scrollbar {
+  width: 0;
+  height: 10px;
 }

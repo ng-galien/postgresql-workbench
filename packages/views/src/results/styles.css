@@ -335,17 +335,57 @@
   font-size: 0.88em;
 }
 
+/*
+ * The grid scrolls both ways, and only one of them is drawn by hand: rows are virtualised, so the
+ * scroller's own height says nothing about how many there are and a scrollbar beside it does the
+ * counting. Columns are all there, so the browser's own bar is the right one — hiding it left a
+ * result wider than the pane with nothing to say so.
+ *
+ * Which is why only the vertical bar is taken away, by width, and not by `scrollbar-width: none` —
+ * that one hides both, and it hid this one.
+ */
 .result-scroller {
   min-width: 0;
   max-height: 360px;
   overflow-x: auto;
   overflow-y: scroll;
-  scrollbar-width: none;
 }
 
 .result-scroller::-webkit-scrollbar {
   width: 0;
   height: 10px;
+}
+
+/*
+ * Every scrollbar of every pane these views draw, in one place: the colours are the views' own
+ * names, valued by whoever hosts them. A host that says nothing falls back to the editor's own
+ * slider colours where they reach — a notebook renderer mounts into a shadow root that inherits
+ * them — and to a neutral grey where nothing does.
+ */
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(
+    --postgres-scroll-thumb,
+    var(--vscode-scrollbarSlider-background, rgba(121, 121, 121, 0.4))
+  );
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(
+    --postgres-scroll-thumb-hover,
+    var(--vscode-scrollbarSlider-hoverBackground, rgba(100, 100, 100, 0.7))
+  );
+}
+
+::-webkit-scrollbar-thumb:active {
+  background: var(
+    --postgres-scroll-thumb-active,
+    var(--vscode-scrollbarSlider-activeBackground, rgba(191, 191, 191, 0.4))
+  );
 }
 
 .result-scrollbar {
@@ -513,9 +553,15 @@ td.null {
 }
 
 /* An address in a cell reads as one and behaves as one; nothing is added beside it. */
+/*
+ * An address is drawn as one and followed with the chord, not with a plain click: a click in the
+ * grid selects the cell it lands on, and a cell holding a URL is a cell like any other. So it does
+ * not offer the hand a link offers — that hand promises a plain click would go somewhere.
+ */
 .cell-value.cell-link {
   color: var(--vscode-textLink-foreground, var(--vscode-charts-blue));
   text-decoration: none;
+  cursor: inherit;
 }
 
 .cell-value.cell-link:hover,
@@ -995,4 +1041,67 @@ th.row-gutter.selected .row-gutter-number {
 
 tr.row-selected td:first-of-type {
   box-shadow: inset 2px 0 0 var(--vscode-focusBorder);
+}
+
+/*
+ * A menu, wherever one is needed: a column heading, a cell, the gutter, a toolbar button. One
+ * block, so a menu looks the same whatever opened it — and so a menu opened on a cell is not
+ * styled by a rule named after columns.
+ */
+.menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  cursor: default;
+}
+
+.menu {
+  position: fixed;
+  z-index: 11;
+  min-width: 160px;
+  max-width: min(420px, calc(100vw - 24px));
+  margin: 0;
+  padding: 4px 0;
+  color: var(--vscode-menu-foreground, var(--vscode-foreground));
+  background: var(--vscode-menu-background, var(--vscode-editorWidget-background));
+  border: 1px solid var(--vscode-menu-border, var(--vscode-panel-border));
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+}
+
+.menu-item {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  padding: 4px 12px;
+  color: inherit;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+}
+
+.menu-item:disabled {
+  color: var(--vscode-disabledForeground);
+  cursor: default;
+}
+
+.menu-item:hover:not(:disabled),
+.menu-item:focus-visible {
+  color: var(--vscode-menu-selectionForeground, var(--vscode-list-activeSelectionForeground));
+  background: var(--vscode-menu-selectionBackground, var(--vscode-list-activeSelectionBackground));
+  outline: none;
+}
+
+.menu-separator {
+  margin: 4px 0;
+  border: 0;
+  border-top: 1px solid var(--vscode-menu-separatorBackground, var(--vscode-panel-border));
 }

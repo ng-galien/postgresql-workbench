@@ -1,3 +1,4 @@
+import type { NamedSqlToken } from "../../../sql/src/languageServer/protocol.js";
 import type { DataViewExportChoice, DataViewExportScope } from "../export.js";
 import type { ResultNavigationCommand } from "../navigation.js";
 import type { SqlNotebookResultPayload } from "../resultPayload.js";
@@ -60,6 +61,8 @@ export type DataViewRequest =
   /** Hides or shows every identity and relationship column at once; the host knows which they are. */
   | { type: "data-view/technical-columns"; hidden: boolean }
   | { type: "data-view/filter"; text: string }
+  /** Filter on what a cell holds: the host writes the condition, so the reader reads it. */
+  | { type: "data-view/filter-cell"; ordinal: number; value: string | null; negate: boolean }
   | { type: "data-view/complete"; requestId: number; text: string; offset: number }
   | { type: "data-view/edit-query"; clause?: "select" }
   | { type: "data-view/apply-query" }
@@ -89,7 +92,19 @@ export type DataViewRequest =
        */
       selected?: { from: number; to: number; ordinals: number[] };
     }
-  | { type: "data-view/open-sql" };
+  | { type: "data-view/open-sql" }
+  /**
+   * Colour some SQL the way the editor colours it: the query as it stands, or a condition being
+   * typed — which the host asks about as part of the query, since a condition alone names aliases
+   * nothing could resolve.
+   */
+  | { type: "data-view/tokens"; requestId: number; of: "query" | { filter: string } };
+
+/**
+ * One semantic token of a SQL statement, as the language server reads it. The host resolves the
+ * kind against the server's legend before sending it, so nothing downstream holds a legend.
+ */
+export type DataViewSqlToken = NamedSqlToken;
 
 export type DataViewResponse =
   | { type: "data-view/state"; state: DataViewState }
@@ -102,5 +117,10 @@ export type DataViewResponse =
       choices: Array<{ index: number; label: string; description: string }>;
     }
   | { type: "data-view/completions"; requestId: number; items: DataViewCompletion[] }
+  /**
+   * What the language server makes of the SQL it was asked about: one token per name it
+   * recognised, carrying the kind it is — a table, a column, an alias.
+   */
+  | { type: "data-view/tokens"; requestId: number; tokens: DataViewSqlToken[] }
   | { type: "data-view/progress"; loadedRowCount: number }
   | { type: "data-view/notice"; message: string; severity: "info" | "error" };

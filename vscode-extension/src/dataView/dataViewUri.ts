@@ -40,11 +40,25 @@ export function dataViewQueryUri(source: DataViewSource): vscode.Uri {
   });
 }
 
-/** Hidden sibling of the query document used for filter completion; never shown to the user. */
-export function dataViewCompletionUri(source: DataViewSource): vscode.Uri {
+/**
+ * A hidden sibling of the query document, never shown to a reader: one per question asked about
+ * the query, because the questions are asked at the same moment about texts that differ — a draft
+ * with a caret in it for completion, the query as it stands for colouring, a draft again for
+ * colouring the filter. One document could only answer the last one asked.
+ */
+export function dataViewScratchUri(source: DataViewSource, purpose: DataViewScratch): vscode.Uri {
   const query = dataViewQueryUri(source);
-  return query.with({ path: query.path.replace(/\.sql$/u, ".completion.sql") });
+  return query.with({ path: query.path.replace(/\.sql$/u, `.${purpose}.sql`) });
 }
+
+export type DataViewScratch = "completion" | "tokens" | "filter-tokens";
+
+/** Every scratch document of a Data View, for opening and for letting go of all of them. */
+export const DATA_VIEW_SCRATCHES: readonly DataViewScratch[] = [
+  "completion",
+  "tokens",
+  "filter-tokens",
+];
 
 export function parseDataViewUri(uri: vscode.Uri): DataViewSource | undefined {
   if (uri.scheme !== DATA_VIEW_URI_SCHEME) return undefined;

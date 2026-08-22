@@ -8,6 +8,7 @@ import {
 } from "react";
 import type { DebugResultCell } from "../../../dap/src/debugger/launch/index.js";
 import { countLabel } from "../../../rows/src/countLabel.js";
+import { whyNotFiltered } from "../../../rows/src/dataView/cellFilter.js";
 import type { DataViewAddition, DataViewCompletion } from "../../../rows/src/dataView/dataView.js";
 import {
   dataViewColumnKeys,
@@ -21,6 +22,7 @@ import {
 import type {
   DataViewRequest,
   DataViewResponse,
+  DataViewSqlToken,
   DataViewState,
 } from "../../../rows/src/dataView/dataViewProtocol.js";
 import { rowOrder } from "../../../rows/src/dataView/rowOrder.js";
@@ -33,13 +35,16 @@ import {
   selectedRows,
 } from "../results/gridSelection.js";
 import { IconButton } from "../results/IconButton.js";
+import type { MenuEntry } from "../results/Menu.js";
 import { Modal } from "../results/Modal.js";
 import { type GridEditing, type GridLayout, ResultGrid } from "../results/ResultGrid.js";
 import { ResultNavigation } from "../results/ResultNavigation.js";
 import { nextResultSort, resultRowRange, resultRowSummary } from "../results/resultFormatting.js";
 import type { WebviewMessaging } from "../webviewPage.js";
 import { ExportDialog, type ExportSource } from "./ExportDialog.js";
+import { FilterHighlight, useScrollFollower } from "./FilterHighlight.js";
 import { useReorderable } from "./reorder.js";
+import { nextRequestId } from "./requests.js";
 import { SqlPanel } from "./SqlPanel.js";
 
 export type DataViewMessaging = WebviewMessaging<DataViewRequest, DataViewResponse>;
@@ -86,6 +91,14 @@ function MenuItem({
   );
 }
 
+/**
+ * Reading rows out of a file and into the table is not built yet, so nothing offers it. The
+ * control and the dialog stay here, and the rule that says where rows could go is the same one
+ * adding a row already asks: what is missing is the file, not the place to put it. Turning this
+ * to true is what offering it will be.
+ */
+const IMPORT_ROWS_OFFERED: boolean = false;
+
 const COMPLETION_DEBOUNCE_MS = 120;
 const COMPLETIONS_ID = "data-view-filter-completions";
 
@@ -97,34 +110,70 @@ function completionId(index: number): string {
 /**
  * WHERE editor: multi-line (Shift+Enter), Enter applies, completions come from the SQL authoring
  * server through the host (Ctrl+Space or while typing).
+ *
+ * Running the filter does not take the caret away from the line it was typed on: while the rows
+ * are being fetched the field refuses keys but keeps them, because a disabled field loses the
+ * focus to the page and a reader who pressed Enter is still writing here. Only a query the engine
+ * cannot rewrite disables it outright — there, the field has nothing to do.
  */
 function FilterInput({
   value,
-  disabled,
+  busy,
+  unavailable,
   messaging,
   onApply,
 }: {
   value: string;
-  disabled: boolean;
+  busy: boolean;
+  unavailable: boolean;
   messaging: DataViewMessaging;
   onApply(text: string): void;
 }) {
   const [draft, setDraft] = useState(value);
   const [items, setItems] = useState<DataViewCompletion[]>([]);
+  const [named, setNamed] = useState<readonly DataViewSqlToken[]>([]);
   const [selected, setSelected] = useState(0);
   const [focused, setFocused] = useState(false);
   const requestId = useRef(0);
+  const tokenRequestId = useRef(0);
   const timer = useRef<number | undefined>(undefined);
   const textarea = useRef<HTMLTextAreaElement>(null);
+  const highlight = useRef<HTMLDivElement>(null);
   const dirty = draft.trim() !== value.trim();
+
+  const followScroll = useScrollFollower(textarea, highlight, draft);
 
   useEffect(() => {
     if (!focused) setDraft(value);
   }, [value, focused]);
 
+  useEffect(() => {
+    tokenRequestId.current = nextRequestId();
+    const requested = tokenRequestId.current;
+    // Nothing typed, nothing to colour: an empty condition would cost a round trip to answer none.
+    if (draft.trim() === "") {
+      setNamed([]);
+      return;
+    }
+    const timer = window.setTimeout(
+      () =>
+        messaging.post({
+          type: "data-view/tokens",
+          requestId: requested,
+          of: { filter: draft },
+        }),
+      COMPLETION_DEBOUNCE_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, [draft, messaging]);
+
   useEffect(
     () =>
       messaging.subscribe((message) => {
+        if (message.type === "data-view/tokens" && message.requestId === tokenRequestId.current) {
+          setNamed(message.tokens);
+          return;
+        }
         if (message.type !== "data-view/completions" || message.requestId !== requestId.current) {
           return;
         }
@@ -144,13 +193,13 @@ function FilterInput({
       return;
     }
     timer.current = window.setTimeout(() => {
-      requestId.current += 1;
+      requestId.current = nextRequestId();
       messaging.post({ type: "data-view/complete", requestId: requestId.current, text, offset });
     }, COMPLETION_DEBOUNCE_MS);
   };
   const close = () => {
     setItems([]);
-    requestId.current += 1;
+    requestId.current = nextRequestId();
   };
   const accept = (item: DataViewCompletion) => {
     const element = textarea.current;
@@ -166,6 +215,7 @@ function FilterInput({
     });
   };
   const handleKey = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (busy) return;
     if (items.length > 0) {
       if (event.key === "ArrowDown") {
         event.preventDefault();
@@ -210,34 +260,40 @@ function FilterInput({
   const rows = Math.min(6, Math.max(1, draft.split("\n").length));
 
   return (
-    <div className={`filter-input${dirty ? " dirty" : ""}${draft ? " active" : ""}`}>
-      <span className="codicon codicon-filter" aria-hidden="true" />
-      <textarea
-        ref={textarea}
-        className="filter-textarea"
-        rows={rows}
-        value={draft}
-        placeholder="WHERE … (Enter runs, Shift+Enter new line, Ctrl+Space completes)"
-        spellCheck={false}
-        disabled={disabled}
-        aria-label="Filter (WHERE)"
-        // A field with proposals is a combobox: the list is its own, and one entry is current.
-        role="combobox"
-        aria-expanded={items.length > 0}
-        aria-controls={COMPLETIONS_ID}
-        aria-autocomplete="list"
-        {...(items.length > 0 ? { "aria-activedescendant": completionId(selected) } : {})}
-        onFocus={() => setFocused(true)}
-        onBlur={() => {
-          setFocused(false);
-          window.setTimeout(close, 150);
-        }}
-        onChange={(event) => {
-          setDraft(event.target.value);
-          requestCompletions(event.target.value, event.target.selectionStart);
-        }}
-        onKeyDown={handleKey}
-      />
+    <div className={`filter-input${dirty ? " dirty" : ""}`}>
+      <span className="codicon codicon-filter data-view-clause-mark" aria-hidden="true" />
+      <div className="filter-field">
+        <FilterHighlight text={draft} named={named} ref={highlight} />
+        <textarea
+          ref={textarea}
+          className="filter-textarea"
+          rows={rows}
+          value={draft}
+          placeholder="WHERE … (Enter runs, Shift+Enter new line, Ctrl+Space completes)"
+          spellCheck={false}
+          disabled={unavailable}
+          readOnly={busy}
+          aria-label="Filter (WHERE)"
+          // A field with proposals is a combobox: the list is its own, and one entry is current.
+          role="combobox"
+          aria-expanded={items.length > 0}
+          aria-controls={COMPLETIONS_ID}
+          aria-autocomplete="list"
+          {...(items.length > 0 ? { "aria-activedescendant": completionId(selected) } : {})}
+          onFocus={() => setFocused(true)}
+          onBlur={() => {
+            setFocused(false);
+            window.setTimeout(close, 150);
+          }}
+          onChange={(event) => {
+            setDraft(event.target.value);
+            requestCompletions(event.target.value, event.target.selectionStart);
+          }}
+          onScroll={followScroll}
+          onSelect={followScroll}
+          onKeyDown={handleKey}
+        />
+      </div>
       {draft || value ? (
         <button
           type="button"
@@ -252,18 +308,6 @@ function FilterInput({
           }}
         >
           <span className="codicon codicon-close" aria-hidden="true" />
-        </button>
-      ) : null}
-      {dirty ? (
-        <button
-          type="button"
-          className="icon-button primary"
-          title="Run with this filter (Enter)"
-          aria-label="Run with this filter"
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={() => onApply(draft.trim())}
-        >
-          <span className="codicon codicon-play" aria-hidden="true" />
         </button>
       ) : null}
       {items.length > 0 ? (
@@ -727,7 +771,32 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
           const table = index === undefined ? undefined : state.projection.tables[index];
           return table ? tableAccent(table.accent) : undefined;
         },
-        menuItems: (ordinal) => {
+        cellMenu: (ordinal, value) => {
+          /*
+           * Two of the three reasons a value cannot be filtered on are visible from here, so the
+           * menu says them rather than offering the action and letting a notice take it back. The
+           * third — a query that no longer names the table — only the host can see.
+           */
+          const refused = whyNotFiltered({
+            name: columnNames[ordinal] ?? "",
+            ...(state.payload?.columns[ordinal]?.typeName === undefined
+              ? {}
+              : { typeName: state.payload.columns[ordinal].typeName }),
+            tableIndex: state.projection.columnTable[ordinal],
+          });
+          const filter = (negate: boolean) => ({
+            kind: "action" as const,
+            label: negate ? "Exclude" : "Filter",
+            ...(refused === undefined ? {} : { disabled: refused }),
+            run: () => post({ type: "data-view/filter-cell", ordinal, value, negate }),
+          });
+          return [
+            filter(false),
+            filter(true),
+            { kind: "action", label: "Inspect", run: () => setInspecting(true) },
+          ];
+        },
+        columnMenu: (ordinal) => {
           const column = columnNames[ordinal] ?? "";
           const visible = columnNames
             .map((_name, index) => index)
@@ -735,43 +804,41 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
           const position = visible.indexOf(ordinal);
           const left = position > 0 ? visible[position - 1] : undefined;
           const right = position >= 0 ? visible[position + 1] : undefined;
+          const does = (label: string, run: () => void): MenuEntry => ({
+            kind: "action",
+            label,
+            run,
+          });
           return [
-            { label: "Sort ascending", action: () => sortBy(ordinal, "ascending") },
-            { label: "Sort descending", action: () => sortBy(ordinal, "descending") },
+            does("Sort ascending", () => sortBy(ordinal, "ascending")),
+            does("Sort descending", () => sortBy(ordinal, "descending")),
             ...(columnSorts.length > 0
               ? [
-                  { label: "Add ascending sort", action: () => sortBy(ordinal, "ascending", true) },
-                  {
-                    label: "Add descending sort",
-                    action: () => sortBy(ordinal, "descending", true),
-                  },
-                  { label: "Clear sort", action: () => applySorts([]) },
+                  does("Add ascending sort", () => sortBy(ordinal, "ascending", true)),
+                  does("Add descending sort", () => sortBy(ordinal, "descending", true)),
+                  does("Clear sort", () => applySorts([])),
                 ]
               : []),
-            {
-              label: "Hide column",
-              action: () => post({ type: "data-view/hide", column: columnKeys[ordinal] ?? column }),
-            },
+            does("Hide column", () =>
+              post({ type: "data-view/hide", column: columnKeys[ordinal] ?? column }),
+            ),
             ...(left === undefined
               ? []
               : [
-                  {
-                    label: "Move left",
-                    action: () => post({ type: "data-view/reorder", from: ordinal, to: left }),
-                  },
+                  does("Move left", () =>
+                    post({ type: "data-view/reorder", from: ordinal, to: left }),
+                  ),
                 ]),
             ...(right === undefined
               ? []
               : [
-                  {
-                    label: "Move right",
-                    action: () => post({ type: "data-view/reorder", from: ordinal, to: right }),
-                  },
+                  does("Move right", () =>
+                    post({ type: "data-view/reorder", from: ordinal, to: right }),
+                  ),
                 ]),
-            {
-              label: "Edit projection in query…",
-              action: () => post({ type: "data-view/edit-query", clause: "select" }),
-            },
+            does("Edit projection in query…", () =>
+              post({ type: "data-view/edit-query", clause: "select" }),
+            ),
           ];
         },
       }
@@ -950,12 +1017,14 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
 
         <div className="toolbar-side toolbar-side-seldom">
           <div className="toolbar-group">
-            <IconButton
-              icon="arrow-circle-down"
-              label={importable ?? "Import rows from a file…"}
-              disabled={importable !== undefined}
-              onClick={() => setTransfer("import")}
-            />
+            {IMPORT_ROWS_OFFERED ? (
+              <IconButton
+                icon="arrow-circle-down"
+                label={importable ?? "Import rows from a file…"}
+                disabled={importable !== undefined}
+                onClick={() => setTransfer("import")}
+              />
+            ) : null}
             <IconButton
               icon="arrow-circle-up"
               label="Export rows to a file…"
@@ -1020,7 +1089,7 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
         </div>
       ) : null}
 
-      {transfer === "import" ? (
+      {IMPORT_ROWS_OFFERED && transfer === "import" ? (
         <Modal
           title="Import rows"
           description="Reading rows out of a file and into the table is not built yet."
@@ -1056,6 +1125,10 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
             });
           }}
         />
+      ) : null}
+
+      {showSql ? (
+        <SqlPanel sql={query.text} messaging={messaging} onClose={() => setShowSql(false)} />
       ) : null}
 
       <section
@@ -1255,14 +1328,15 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
       <div className="data-view-query-line">
         <FilterInput
           value={query.whereText ?? ""}
-          disabled={disabled || !query.structured}
+          busy={disabled}
+          unavailable={!query.structured}
           messaging={messaging}
           onApply={(text) => post({ type: "data-view/filter", text })}
         />
       </div>
       <div className="data-view-query-line data-view-order-line">
         <ol className="data-view-order">
-          <span className="codicon codicon-list-ordered" aria-hidden="true" />
+          <span className="codicon codicon-list-ordered data-view-clause-mark" aria-hidden="true" />
           {query.orderBy.length === 0 ? (
             <span className="data-view-order-empty">
               ORDER BY — click a column header (Shift+click adds a criterion)
@@ -1470,7 +1544,6 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
           />
         ) : null}
       </div>
-      {showSql ? <SqlPanel sql={query.text} onClose={() => setShowSql(false)} /> : null}
       {/*
         The edit bar: what a reader has selected, what they can do to it, and what is waiting to be
         written. It shows only in edit mode, immediately above the rows it acts on.

@@ -109,7 +109,8 @@ test("composes a table by keyboard alone: type, walk down, press Enter", async (
   await openEmpty(page);
   await page.getByTitle(/Add (the first table|a column or a related table)/u).click();
 
-  // The filter has the focus when it opens, so a reader types straight into it.
+  // The filter has the focus when it opens, so a reader types straight into it — once it has it.
+  await expect(page.getByPlaceholder("Filter columns and related tables…")).toBeFocused();
   await page.keyboard.type("order");
   const proposals = page.locator(".addition-item");
   await expect(proposals.first()).toContainText("shop.order_line");
@@ -142,6 +143,26 @@ test("joins a related table on the key the planner chose", async ({ page }) => {
   const sql = await runningSql(page);
   expect(sql).toMatch(/JOIN\s+shop\.brand AS brand/u);
   expect(sql).toMatch(/ON\s+product\.brand_id = brand\.id/u);
+});
+
+test("tells apart two paths that traverse the same relations", async ({ page }) => {
+  await openEmpty(page);
+  await add(page, "shop.address");
+
+  await page.getByTitle(/Add (the first table|a column or a related table)/u).click();
+  await page.getByTitle(/^JOIN shop\.app_user(\s|$)/u).click();
+
+  /*
+   * A sales order holds a billing address and a shipping address, so two of the paths offered
+   * traverse the same relations in the same order. Named by their relations alone they would be
+   * the same line twice, and a reader offered both could not choose between them.
+   */
+  const paths = await page.getByRole("menu").last().getByRole("menuitem").allInnerTexts();
+  const throughOrder = paths.filter((path) => path.includes("via shop.sales_order"));
+  expect(throughOrder).toHaveLength(2);
+  expect(new Set(throughOrder).size).toBe(2);
+  expect(throughOrder.join("\n")).toContain("sales_order.billing_address_id");
+  expect(throughOrder.join("\n")).toContain("sales_order.shipping_address_id");
 });
 
 test("removes a table and everything that referenced it", async ({ page }) => {
@@ -250,6 +271,50 @@ test("reads the SQL in the view, and closes it again", async ({ page }) => {
   await expect(panel).toBeHidden();
 });
 
+test("colours the SQL by what the language server makes of its names", async ({ page }) => {
+  await openEmpty(page);
+  await add(page, "shop.brand");
+  await add(page, "shop.product");
+
+  await page.getByTitle(/Show the SQL/u).click();
+  await expect(page.getByRole("region", { name: "Query SQL" })).toBeVisible();
+
+  /*
+   * The grammar cannot tell a table from the alias standing for it from a column of it: they are
+   * all identifiers to it. The server has the Workbench Index and can, so the names it reports are
+   * painted over what the grammar coloured — and a reader who cannot tell them apart by colour has
+   * gained nothing, so they are also kept apart.
+   */
+  const painted = page.locator(".postgres-source-token[class*=postgres-token-]");
+  await expect(painted.first()).toBeVisible();
+  const colours = await painted.evaluateAll((spans) => {
+    const of = (kind: string) => {
+      const span = spans.find((candidate) =>
+        candidate.classList.contains(`postgres-token-${kind}`),
+      );
+      return span ? getComputedStyle(span).color : undefined;
+    };
+    return { table: of("sqlTable"), alias: of("sqlAlias"), column: of("sqlColumn") };
+  });
+
+  expect(colours.table).toBeDefined();
+  expect(new Set(Object.values(colours)).size).toBe(3);
+
+  /*
+   * And the panel and the field are coloured at the same time. They ask the same question of the
+   * same host, so each has to be able to tell its own answer from the other's: counted apart, both
+   * asked a request 1 and each took the other's tokens.
+   */
+  const inPanel = page.locator(".data-view-sql [class*=postgres-token-]");
+  const namedInPanel = await inPanel.count();
+  expect(namedInPanel).toBeGreaterThan(4);
+
+  await page.getByRole("combobox", { name: /where/iu }).fill("brand.name LIKE 'F%'");
+  await expect(page.locator(".filter-highlight .postgres-token-sqlAlias").first()).toBeVisible();
+  // The panel still holds the query's names, not the two the condition answered with.
+  await expect(inPanel).toHaveCount(namedInPanel);
+});
+
 test("hands over the statement the rows came from", async ({ page }) => {
   await openEmpty(page);
   await add(page, "shop.product");
@@ -267,6 +332,49 @@ test("hands over the statement the rows came from", async ({ page }) => {
 
   // And the control says it happened, because a copy leaves the page looking exactly as it was.
   await expect(panel.getByTitle("SQL copied")).toBeVisible();
+});
+
+test("opens an address with the chord, and selects the cell without it", async ({ page }) => {
+  await openEmpty(page);
+  const table = await add(page, "shop.brand");
+
+  const link = page.locator("a.cell-link").first();
+  await expect(link).toHaveAttribute("title", /(Cmd|Ctrl)\+click to open https:/u);
+
+  /*
+   * A plain click is a click in the grid: it selects the cell it lands on and goes nowhere. The
+   * page would be gone if it did — which is what the assertion after it proves.
+   */
+  await link.click();
+  await expect(page).toHaveURL(/localhost/u);
+  await expect(table.cellsWithText("https://example.test/fumoir").first()).toHaveClass(/selected/u);
+});
+
+test("shows the way across a result wider than the pane", async ({ page }) => {
+  await openEmpty(page);
+  await add(page, "shop.product");
+
+  /*
+   * Rows are loaded as a reader walks them, so the bar beside them is drawn by hand — but every
+   * column is already there, and the browser's own bar is what says a result runs past the edge.
+   * `scrollbar-width: none` hides both axes, and hiding the one down the rows took this one with
+   * it. Whether a bar takes room on screen is the browser's business — some overlay it — so what
+   * is checked here is that nothing asks for it to be gone.
+   */
+  const across = await page.locator(".result-scroller").evaluate((element) => {
+    const style = getComputedStyle(element);
+    return {
+      overflows: element.scrollWidth > element.clientWidth,
+      hiding: style.scrollbarWidth,
+      overflowX: style.overflowX,
+    };
+  });
+
+  expect(across.overflows).toBe(true);
+  expect(across.overflowX).toBe("auto");
+  expect(across.hiding).not.toBe("none");
+  // And the one down the rows is still the hand-drawn one.
+  await expect(page.locator(".result-scrollbar")).toBeVisible();
 });
 
 test("gives a column the width the reader drags it to, and takes it back", async ({ page }) => {
@@ -376,6 +484,115 @@ test("hides a column without dropping it from the query", async ({ page }) => {
   await expect(page.getByRole("columnheader", { name: /description/u })).toBeHidden();
   // Still projected: the rows stay identified, which is what makes them editable.
   expect(await runningSql(page)).toContain("product.description");
+});
+
+test("keeps the caret on the line the filter was typed on", async ({ page }) => {
+  await openEmpty(page);
+  await add(page, "shop.address");
+
+  const where = page.getByRole("combobox", { name: /where/iu });
+  await where.click();
+  await where.fill("city = 'Lyon'");
+  await page.keyboard.press("Enter");
+
+  // The rows are fetched with the caret still here: a reader who ran a filter is still writing it.
+  await expect(where).toBeFocused();
+  await expect(page.locator("tbody tr:not(.result-spacer)")).toHaveCount(1);
+  await expect(where).toBeFocused();
+});
+
+test("filters on what a cell holds, and says so in the WHERE", async ({ page }) => {
+  await openEmpty(page);
+  const table = await add(page, "shop.brand");
+
+  // shop.brand projects id, name, website, country_code…: the country is the fourth column.
+  await table.cellsWithText("FR").first().click({ button: "right" });
+  const menu = page.getByRole("menu");
+  await expect(menu).toBeVisible();
+  // Verbs, and only the ones this cell can be acted on with.
+  await expect(menu.getByRole("menuitem")).toHaveText(["Filter", "Exclude", "Inspect", "Copy"]);
+
+  await menu.getByRole("menuitem", { name: "Filter" }).click();
+
+  /*
+   * The condition is written where the reader can read it, correct it and undo it — the relation
+   * named as the query names it, the value as a literal — not applied behind them.
+   */
+  await expect(page.getByRole("combobox", { name: /where/iu })).toHaveValue(
+    "brand.country_code = 'FR'",
+  );
+  await expect(page.locator("tbody tr:not(.result-spacer)")).toHaveCount(3);
+});
+
+test("colours the condition being typed, the way the SQL is coloured", async ({ page }) => {
+  await openEmpty(page);
+  await add(page, "shop.brand");
+
+  const where = page.getByRole("combobox", { name: /where/iu });
+  await where.fill("brand.name LIKE 'F%'");
+
+  /*
+   * A condition is SQL, and on its own it is not a statement: `brand` is an alias only the query
+   * around it explains. The host asks about it as part of that query and carries the answer back,
+   * so the field shows what the panel shows — the grammar's colours, and the names resolved.
+   */
+  const painted = page.locator(".filter-highlight .postgres-source-token[class*=postgres-token-]");
+  await expect(painted.first()).toBeVisible();
+  await expect(painted.filter({ hasText: "brand" }).first()).toHaveClass(
+    /postgres-token-sqlAlias/u,
+  );
+  await expect(painted.filter({ hasText: "name" }).first()).toHaveClass(
+    /postgres-token-sqlColumn/u,
+  );
+
+  // What is painted is exactly what is typed: the two are drawn on top of each other.
+  const layer = page.locator(".filter-highlight");
+  expect(await layer.innerText()).toBe(await where.inputValue());
+});
+
+test("proposes the language a condition is written in, not only the schema", async ({ page }) => {
+  await openEmpty(page);
+  await add(page, "shop.address");
+
+  const where = page.getByRole("combobox", { name: /where/iu });
+  await where.fill("an");
+
+  /*
+   * No column of shop.address starts with those letters, and a reader writing a condition needs
+   * the words holding it together as much as the names it puts between them.
+   */
+  const proposals = page.getByRole("listbox", { name: /completion/iu });
+  await expect(proposals).toBeVisible();
+  await expect(proposals.getByText("AND", { exact: true })).toBeVisible();
+
+  // The schema still comes first: the language is offered after everything the index knows.
+  await where.fill("l");
+  await expect(proposals.locator(".filter-completion").first()).toContainText("label");
+});
+
+test("puts a proposal in place of what is being typed, phrase and all", async ({ page }) => {
+  await openEmpty(page);
+  await add(page, "shop.address");
+
+  const where = page.getByRole("combobox", { name: /where/iu });
+  const proposals = page.getByRole("listbox", { name: /completion/iu });
+  const accept = async (typed: string, proposal: string) => {
+    await where.fill(typed);
+    await expect(proposals).toBeVisible();
+    await proposals.locator(".filter-completion").filter({ hasText: proposal }).first().click();
+    return where.inputValue();
+  };
+
+  // What was typed goes: a proposal continues the reader's word, it does not follow it.
+  expect(await accept("l", "LIKE")).toBe("LIKE");
+  expect(await accept("ci", "city")).toBe("address.city");
+
+  /*
+   * And a phrase takes every word it continues, not only the last one. The server says the span
+   * for each proposal; a client left to guess would replace the `n` alone and write `id is IS NOT
+   * NULL`.
+   */
+  expect(await accept("id is n", "IS NOT NULL")).toBe("id IS NOT NULL");
 });
 
 test("proposes what the language server knows, not what the view already shows", async ({
@@ -536,7 +753,7 @@ test("puts what is reached for often within reach, and the rest out of the way",
   await expect(page.getByTitle("Cancel loading")).toHaveCount(0);
 });
 
-test("moves rows in and out through dialogs of their own", async ({ page }) => {
+test("moves rows out through a dialog of their own", async ({ page }) => {
   await openEmpty(page);
   await add(page, "shop.sales_order");
 
@@ -556,9 +773,6 @@ test("moves rows in and out through dialogs of their own", async ({ page }) => {
 
   await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
-
-  await page.getByTitle("Import rows from a file…").click();
-  await expect(page.getByRole("dialog", { name: "Import rows" })).toBeVisible();
 });
 
 test("says what each provisioned change will do, not only how many there are", async ({ page }) => {
@@ -1146,26 +1360,22 @@ test("keeps identity and relationship columns out of the way until they are need
   await expect(cell.locator(".cell-value")).toHaveText("1");
 });
 
-test("offers to import only where rows can go", async ({ page }) => {
+test("offers to export where rows can be read, and does not offer to import at all", async ({
+  page,
+}) => {
   await openEmpty(page);
 
-  // Nothing to import into, and the control says so rather than opening on nothing. The sentence
-  // completes one the engine owns, so adding, removing and importing all give the same reason.
-  await expect(
-    page.getByTitle("Rows can only be imported once the query has a table to write them to."),
-  ).toBeDisabled();
+  // Reading rows out of a file is not built yet, so nothing offers it — not even refused.
+  await expect(page.getByTitle(/Import rows|can only be imported/u)).toHaveCount(0);
+
+  // Nothing to export yet, and the control says so rather than opening on nothing.
   await expect(page.getByTitle("Export rows to a file…")).toBeDisabled();
 
   await add(page, "shop.address");
-
-  await expect(page.getByTitle("Import rows from a file…")).toBeEnabled();
   await expect(page.getByTitle("Export rows to a file…")).toBeEnabled();
 
   await add(page, "shop.warehouse");
 
-  // Rows come in one table at a time, exactly as they are added one at a time.
-  await expect(
-    page.getByTitle("Rows can only be imported to one table, and this query joins several."),
-  ).toBeDisabled();
+  // Rows are still readable over a join; only writing them back needs one table to own them.
   await expect(page.getByTitle("Export rows to a file…")).toBeEnabled();
 });

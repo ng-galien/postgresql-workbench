@@ -84,3 +84,22 @@
   --vscode-charts-purple: #b180d7;
   --vscode-charts-yellow: #cca700;
 }
+
+/*
+ * What the views' own colour names are worth here. The harness stands in for VS Code, so it does
+ * what the extension does: the views name the colours, the host says what they are worth.
+ */
+:root {
+  /* The values Dark Modern gives the colours the extension maps these names onto. */
+  --postgres-name-schema: #9d9d9d;
+  --postgres-name-relation: #ee9d28;
+  --postgres-name-alias: #89d185;
+  --postgres-name-column: #75beff;
+  --postgres-name-routine: #b180d7;
+  --postgres-name-parameter: #cca700;
+  --postgres-name-type: #75beff;
+  --postgres-field-unapplied: #cca700;
+  --postgres-scroll-thumb: #79797966;
+  --postgres-scroll-thumb-hover: #646464b3;
+  --postgres-scroll-thumb-active: #bfbfbf66;
+}

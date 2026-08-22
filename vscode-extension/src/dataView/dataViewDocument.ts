@@ -4,6 +4,7 @@ import {
   composeIntoDataViewQuery,
   dataViewAdditions,
 } from "../../../packages/rows/src/dataView/additions.js";
+import { conditionForCell, withCondition } from "../../../packages/rows/src/dataView/cellFilter.js";
 import {
   type DataViewAddition,
   type DataViewEdit,
@@ -17,9 +18,11 @@ import {
 import type {
   DataViewRequest,
   DataViewResponse,
+  DataViewSqlToken,
   DataViewState,
 } from "../../../packages/rows/src/dataView/dataViewProtocol.js";
 import { dataViewState } from "../../../packages/rows/src/dataView/dataViewState.js";
+import { filterTokensOf } from "../../../packages/rows/src/dataView/filterTokens.js";
 import { HiddenColumns } from "../../../packages/rows/src/dataView/hiddenColumns.js";
 import { initialDataViewQuery } from "../../../packages/rows/src/dataView/initialProjection.js";
 import { openDataViewResult, TableAccents } from "../../../packages/rows/src/dataView/openRows.js";
@@ -37,13 +40,14 @@ import {
   type ResultNavigationCommand,
 } from "../../../packages/rows/src/navigation.js";
 import type { SqlNotebookResultPayload } from "../../../packages/rows/src/resultPayload.js";
+import { namedSemanticTokens } from "../../../packages/sql/src/languageServer/protocol.js";
 import { type QueryRewrite, SqlQueryModel } from "../../../packages/sql/src/query/model.js";
 import type {
   SqlAuthoringDragPayload,
   SqlAuthoringSnapshot,
 } from "../../../packages/sql/src/snapshot.js";
 import { quoteSqlIdentifierIfNeeded } from "../../../packages/sql/src/text/identifiers.js";
-import { dataViewCompletionUri, dataViewQueryUri } from "./dataViewUri.js";
+import { DATA_VIEW_SCRATCHES, dataViewQueryUri, dataViewScratchUri } from "./dataViewUri.js";
 import { exportAllRows, exportHeldRows, pickExportTarget } from "./exportResult.js";
 import { completeDataViewFilter } from "./filterCompletion.js";
 import { type DataViewHostServices, errorMessage } from "./hostServices.js";
@@ -61,6 +65,9 @@ export class DataViewDocument implements vscode.CustomDocument {
   readonly queryUri: vscode.Uri;
   /** Hidden SQL document that only exists to ask the SQL authoring server for filter completions. */
   private readonly completionUri: vscode.Uri;
+  private readonly tokensUri: vscode.Uri;
+  private readonly filterTokensUri: vscode.Uri;
+  private legend?: Promise<readonly string[]>;
   private readonly query: SqlQueryModel;
   private readonly edits = new PendingEdits();
   private readonly accents = new TableAccents();
@@ -93,7 +100,9 @@ export class DataViewDocument implements vscode.CustomDocument {
   ) {
     this.source = source;
     this.queryUri = dataViewQueryUri(source);
-    this.completionUri = dataViewCompletionUri(source);
+    this.completionUri = dataViewScratchUri(source, "completion");
+    this.tokensUri = dataViewScratchUri(source, "tokens");
+    this.filterTokensUri = dataViewScratchUri(source, "filter-tokens");
     this.query = new SqlQueryModel(() => services.parser(), {
       budget: () => {
         const settings = services.authoringSettings(this.queryUri.toString());
@@ -160,6 +169,23 @@ export class DataViewDocument implements vscode.CustomDocument {
       case "data-view/filter":
         await this.applyRewrite(this.query.filtered(request.text, tabSize()));
         return;
+      case "data-view/filter-cell": {
+        const written = conditionForCell({
+          columns: this.payload?.columns,
+          projection: this.projection,
+          relations: this.query.analysis?.relations,
+          ordinal: request.ordinal,
+          value: request.value,
+          negate: request.negate,
+        });
+        if ("refused" in written) {
+          this.broadcast({ type: "data-view/notice", message: written.refused, severity: "info" });
+          return;
+        }
+        const where = withCondition(this.query.whereText() ?? "", written.condition);
+        await this.applyRewrite(this.query.filtered(where, tabSize()));
+        return;
+      }
       case "data-view/reorder":
         await this.applyRewrite(
           await this.query.reordered(
@@ -232,6 +258,23 @@ export class DataViewDocument implements vscode.CustomDocument {
             })
           : [];
         this.broadcast({ type: "data-view/completions", requestId: request.requestId, items });
+        return;
+      }
+      case "data-view/tokens": {
+        const of = request.of;
+        this.broadcast({
+          type: "data-view/tokens",
+          requestId: request.requestId,
+          tokens:
+            of === "query"
+              ? await this.semanticTokensOf(this.tokensUri, this.query.text)
+              : await filterTokensOf({
+                  queryText: this.query.text,
+                  analysis: this.query.analysis,
+                  text: of.filter,
+                  ask: (sql: string) => this.semanticTokensOf(this.filterTokensUri, sql),
+                }),
+        });
         return;
       }
       case "data-view/edit-query":
@@ -314,9 +357,56 @@ export class DataViewDocument implements vscode.CustomDocument {
         void this.applyQueryText(saved);
       }
     });
-    this.services.queryFiles.set(this.completionUri, text);
     await this.services.associate(this.queryUri.toString(), source.serverId);
-    await this.services.associate(this.completionUri.toString(), source.serverId);
+    /*
+     * Every scratch document is opened, associated and let go of as a set: a question added to the
+     * three is one more entry in the list, and cannot be the one somebody forgets to release.
+     */
+    for (const scratch of this.scratchUris()) {
+      this.services.queryFiles.set(scratch, text);
+      await this.services.associate(scratch.toString(), source.serverId);
+    }
+  }
+
+  /**
+   * What the language server makes of the names in a SQL text, for a view to colour them with.
+   *
+   * The tokens are asked of a document holding exactly that text, so what a view shows is coloured
+   * by the same answer an editor tab would be. The legend comes back from the provider as well: a
+   * token number means nothing without it, and the kinds are the server's to name.
+   */
+  private async semanticTokensOf(uri: vscode.Uri, sql: string): Promise<DataViewSqlToken[]> {
+    this.services.queryFiles.set(uri, sql);
+    const document = await vscode.workspace.openTextDocument(uri);
+    if (document.languageId !== "sql") {
+      await vscode.languages.setTextDocumentLanguage(document, "sql");
+    }
+    const [legend, answer] = await Promise.all([
+      this.tokenLegend(uri),
+      vscode.commands.executeCommand<vscode.SemanticTokens | undefined>(
+        "vscode.provideDocumentSemanticTokens",
+        uri,
+      ),
+    ]);
+    return namedSemanticTokens(answer?.data, legend);
+  }
+
+  private scratchUris(): vscode.Uri[] {
+    return DATA_VIEW_SCRATCHES.map((purpose) => dataViewScratchUri(this.source, purpose));
+  }
+
+  /**
+   * The kinds the provider numbers its tokens against. It does not change while a view is open, so
+   * it is asked for once instead of on every keystroke of the filter.
+   */
+  private async tokenLegend(uri: vscode.Uri): Promise<readonly string[]> {
+    this.legend ??= Promise.resolve(
+      vscode.commands.executeCommand<vscode.SemanticTokensLegend | undefined>(
+        "vscode.provideDocumentSemanticTokensLegend",
+        uri,
+      ),
+    ).then((legend): readonly string[] => legend?.tokenTypes ?? []);
+    return this.legend;
   }
 
   private async relationColumns(): Promise<string[]> {
@@ -738,9 +828,11 @@ export class DataViewDocument implements vscode.CustomDocument {
       }
     }
     this.services.queryFiles.remove(this.queryUri);
-    this.services.queryFiles.remove(this.completionUri);
     void this.services.dissociate(queryUri);
-    void this.services.dissociate(this.completionUri.toString());
+    for (const scratch of this.scratchUris()) {
+      this.services.queryFiles.remove(scratch);
+      void this.services.dissociate(scratch.toString());
+    }
   }
 }
 

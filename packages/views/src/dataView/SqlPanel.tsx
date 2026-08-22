@@ -1,34 +1,55 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { DataViewSqlToken } from "../../../rows/src/dataView/dataViewProtocol.js";
 import { useClipboardCopy } from "../clipboardCopy.js";
 import { IconButton } from "../results/IconButton.js";
-import {
-  type HighlightedPostgresSource,
-  highlightPostgresSource,
-  plainPostgresSource,
-} from "../source/highlight.js";
 import { PostgresSourceView } from "../source/PostgresSourceView.js";
+import { withSemanticTokens } from "../source/semanticTokens.js";
+import { useHighlightedPostgresSource } from "../source/useHighlightedSource.js";
+import type { DataViewMessaging } from "./DataViewApp.js";
+import { nextRequestId } from "./requests.js";
 
 /**
  * The SQL the view is running, read in the view. It opens and closes where the reader is, instead
  * of in an editor window they have to come back from, and it is coloured by the same highlighter
  * the Cockpit reads sources with. What is copied from here is that same statement, as written —
  * the query the rows below came from, ready to paste into an editor or a Scratchpad.
+ *
+ * The grammar colours what a statement is made of; the language server says what its names are,
+ * and its tokens are laid over the rest as soon as it answers. Until then, and where no server
+ * answers at all, the statement is coloured by the grammar alone and stays readable. Names are
+ * kept only for the statement they were asked about: the panel can have moved on since it asked.
  */
-export function SqlPanel({ sql, onClose }: { sql: string; onClose: () => void }) {
-  const [source, setSource] = useState<HighlightedPostgresSource>(() => plainSql(sql));
+export function SqlPanel({
+  sql,
+  messaging,
+  onClose,
+}: {
+  sql: string;
+  messaging: DataViewMessaging;
+  onClose: () => void;
+}) {
+  const source = useHighlightedPostgresSource(sql);
+  const [named, setNamed] = useState<readonly DataViewSqlToken[]>([]);
+  const asked = useRef(0);
+  const painted = useMemo(() => withSemanticTokens(source, named), [source, named]);
   const clipboard = useClipboardCopy();
 
+  useEffect(
+    () =>
+      messaging.subscribe((message) => {
+        if (message.type === "data-view/tokens" && message.requestId === asked.current) {
+          setNamed(message.tokens);
+        }
+      }),
+    [messaging],
+  );
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a new statement is what has to re-ask.
   useEffect(() => {
-    let current = true;
-    // Plain first, coloured when the highlighter answers: the SQL is readable either way.
-    setSource(plainSql(sql));
-    void highlightPostgresSource(sqlLines(sql)).then((highlighted) => {
-      if (current) setSource(highlighted);
-    });
-    return () => {
-      current = false;
-    };
-  }, [sql]);
+    setNamed([]);
+    asked.current = nextRequestId();
+    messaging.post({ type: "data-view/tokens", requestId: asked.current, of: "query" });
+  }, [sql, messaging]);
 
   return (
     <section className="data-view-sql" aria-label="Query SQL">
@@ -48,7 +69,7 @@ export function SqlPanel({ sql, onClose }: { sql: string; onClose: () => void })
         </span>
       </header>
       <div className="data-view-sql-body">
-        <PostgresSourceView source={source} />
+        <PostgresSourceView source={painted} />
       </div>
     </section>
   );
@@ -61,11 +82,3 @@ const COPY_LABEL = {
   copied: "SQL copied",
   error: "The SQL could not be copied",
 } as const;
-
-function sqlLines(sql: string): { number: number; text: string }[] {
-  return sql.split("\n").map((text, index) => ({ number: index + 1, text }));
-}
-
-function plainSql(sql: string): HighlightedPostgresSource {
-  return plainPostgresSource(sqlLines(sql));
-}

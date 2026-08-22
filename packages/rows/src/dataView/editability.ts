@@ -66,12 +66,21 @@ export const READ_ONLY_REASONS = {
   applying: "Changes are being applied.",
 } as const;
 
-export function valueEditorForType(dataType: string): DataViewValueEditor {
-  const base = dataType
+/**
+ * The type without what does not change what it is: `numeric(8,2)` is a numeric, `text[]` is a
+ * text. Everything that classifies a column asks this first, so they all agree on the spelling —
+ * the one the catalogue declares, `bigint` and `boolean`, not the internal `int8` and `bool`.
+ */
+export function baseTypeName(dataType: string): string {
+  return dataType
     .replace(/\(.*\)/u, "")
     .replace(/\[\]$/u, "")
     .trim()
     .toLowerCase();
+}
+
+export function valueEditorForType(dataType: string): DataViewValueEditor {
+  const base = baseTypeName(dataType);
   if (dataType.endsWith("[]")) return "text";
   switch (base) {
     case "boolean":

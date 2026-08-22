@@ -1,7 +1,8 @@
 import * as vscode from "vscode";
 import type { DataViewCompletion } from "../../../packages/rows/src/dataView/dataView.js";
 import { localFilterCompletions } from "../../../packages/rows/src/dataView/filterCompletions.js";
-import { type SqlQueryAnalysis, setWhere } from "../../../packages/sql/src/query/analysis.js";
+import { filterDraft } from "../../../packages/rows/src/dataView/filterTokens.js";
+import type { SqlQueryAnalysis } from "../../../packages/sql/src/query/analysis.js";
 import { scanPostgresSql } from "../../../packages/sql/src/text/sqlLexing.js";
 
 /**
@@ -19,13 +20,10 @@ export async function completeDataViewFilter(options: {
   log(message: string): void;
 }): Promise<DataViewCompletion[]> {
   const { queryText, analysis, completionUri, text, offset } = options;
-  // A sentinel marks where the typed condition lands, whatever the current WHERE looks like.
-  const sentinel = "\u0000";
-  const draft = setWhere(queryText, analysis, `${sentinel}${text || " "}`);
-  const expressionStart = draft.indexOf(sentinel);
-  if (expressionStart < 0) return [];
-  const candidate = draft.replace(sentinel, "");
-  const caret = expressionStart + Math.min(offset, text.length);
+  const draft = filterDraft(queryText, analysis, text);
+  if (!draft) return [];
+  const candidate = draft.text;
+  const caret = draft.start + Math.min(offset, text.length);
   // Inside a literal or a comment nothing can be proposed: decided before paying for the round-trip.
   const masked = scanPostgresSql(candidate).maskedSource;
   let probeIndex = caret - 1;

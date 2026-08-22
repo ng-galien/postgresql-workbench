@@ -1,4 +1,5 @@
 import { quoteSqlIdentifierIfNeeded } from "../../sql/src/text/identifiers.js";
+import { quoteSqlLiteral } from "../../sql/src/text/literals.js";
 
 /**
  * Writing rows out, in one place. The same shapes serve the clipboard, the preview a reader reads
@@ -313,7 +314,7 @@ export function parseDelimitedText(text: string, delimiter: string): string[][] 
 }
 
 function sqlLiteral(value: string | null): string {
-  return value === null ? "NULL" : `'${value.replace(/'/gu, "''")}'`;
+  return value === null ? "NULL" : quoteSqlLiteral(value);
 }
 
 /** One value in a Markdown cell: a pipe would end the cell, and a line break would end the row. */

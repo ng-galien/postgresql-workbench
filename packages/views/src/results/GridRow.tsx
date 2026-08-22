@@ -1,6 +1,7 @@
 import type { MouseEvent as ReactMouseEvent } from "react";
 import type { DebugResultCell } from "../../../dap/src/debugger/launch/index.js";
 import type { DataViewRowInsertion } from "../../../rows/src/dataView/dataView.js";
+import { chordName } from "../platform.js";
 import { CellEditor } from "./CellEditor.js";
 import { isWebAddress } from "./cellDetail.js";
 import type { HeaderColumn } from "./GridHeader.js";
@@ -45,6 +46,13 @@ export interface GridRowContext {
   setSelection(next: GridSelection): void;
   /** Leaves the keystrokes with the grid when a press lands on a cell. */
   takeKeys(event: ReactMouseEvent<HTMLElement>): void;
+  /** The menu a reader asks for on a cell, wherever they asked for it. */
+  onCellMenu(
+    event: ReactMouseEvent<HTMLElement>,
+    shownRow: number,
+    ordinal: number,
+    value: string | null,
+  ): void;
   cellId(row: number, ordinal: number): string;
   /** Cells holding what the reader is looking for, keyed `shownRow:ordinal`. */
   matched: ReadonlySet<string>;
@@ -145,6 +153,7 @@ export function GridRow({
                   ? policy.reason
                   : undefined
             }
+            onContextMenu={(event) => context.onCellMenu(event, shownRow, ordinal, shown)}
             onMouseDown={(event) => {
               // A click puts the anchor here; a shifted one reaches from where it was.
               takeKeys(event);
@@ -170,13 +179,19 @@ export function GridRow({
                 onCancel={() => context.closeEditor()}
               />
             ) : shown !== null && isWebAddress(shown) ? (
-              /* An address is somewhere to go, so it reads and behaves as one. */
               <a
                 className="cell-value cell-link"
                 href={shown}
                 target="_blank"
                 rel="noreferrer"
-                title={`Open ${shown}`}
+                /*
+                 * An address is somewhere to go, and a cell is something to select: a plain click
+                 * belongs to the grid, and the chord every editor uses for a link opens it.
+                 */
+                title={`${chordName()}+click to open ${shown}`}
+                onClick={(event) => {
+                  if (!event.metaKey && !event.ctrlKey) event.preventDefault();
+                }}
               >
                 {shown}
               </a>
