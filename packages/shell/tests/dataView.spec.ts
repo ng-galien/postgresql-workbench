@@ -1052,6 +1052,33 @@ test("writes the rows the reader picked out, in the shape they chose", async ({ 
   expect(readFileSync(file, "utf8").trim()).toBe(written.trim());
 });
 
+test("leaves a hidden column out of what it writes", async ({ page }) => {
+  await openEmpty(page);
+  await add(page, "shop.address");
+
+  // Hidden through the columns menu, the way a reader hides one.
+  await openColumns(page);
+  const column = page.getByRole("menuitemcheckbox", { name: "city" });
+  await column.click();
+  await expect(column).toHaveAttribute("aria-checked", "false");
+  await page.keyboard.press("Escape");
+
+  await openExport(page);
+  const dialog = page.getByRole("dialog", { name: "Export rows" });
+  await dialog.getByRole("radio", { name: "TSV" }).check();
+  const preview = (await dialog.locator(".export-preview").textContent()) ?? "";
+  await dialog.getByRole("button", { name: "Export" }).click();
+
+  /*
+   * A column the reader cannot see is not a column they asked to be given. What the preview shows
+   * and what the file holds are the same thing, so neither may carry it.
+   */
+  expect(preview).not.toContain("city");
+  const file = join(EXPORTS, "address.tsv");
+  await expect(async () => expect(existsSync(file)).toBe(true)).toPass();
+  expect(readFileSync(file, "utf8")).not.toContain("city");
+});
+
 test("says a refused write in a band across the top, not in a corner", async ({ page }) => {
   await openEmpty(page);
   await add(page, "shop.address");

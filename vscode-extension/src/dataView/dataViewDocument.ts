@@ -13,13 +13,13 @@ import {
   dataViewRelationOwning,
   dataViewSourceTitle,
   EMPTY_DATA_VIEW_EDITABILITY,
-  withRequiredColumnsRevealed,
 } from "../../../packages/rows/src/dataView/dataView.js";
 import type {
   DataViewRequest,
   DataViewResponse,
   DataViewState,
 } from "../../../packages/rows/src/dataView/dataViewProtocol.js";
+import { HiddenColumns } from "../../../packages/rows/src/dataView/hiddenColumns.js";
 import { initialDataViewQuery } from "../../../packages/rows/src/dataView/initialProjection.js";
 import { openDataViewResult, TableAccents } from "../../../packages/rows/src/dataView/openRows.js";
 import {
@@ -64,10 +64,7 @@ export class DataViewDocument implements vscode.CustomDocument {
   private readonly query: SqlQueryModel;
   private readonly edits = new PendingEdits();
   private readonly accents = new TableAccents();
-  private hidden: string[] = [];
-  /** Column keys shown at least once: new technical columns start hidden, known ones keep the user's choice. */
-  private readonly seenColumns = new Set<string>();
-  private technical: string[] = [];
+  private readonly hidden = new HiddenColumns();
   private initialized: Promise<void> | undefined;
   private session: SqlResultSession | undefined;
   private payload: SqlNotebookResultPayload | undefined;
@@ -130,7 +127,7 @@ export class DataViewDocument implements vscode.CustomDocument {
       text: this.query.text,
       ...(whereText === undefined ? {} : { whereText }),
       orderBy: this.query.orderBy(),
-      hidden: [...this.hidden],
+      hidden: [...this.hidden.list],
       structured: this.query.analysis !== undefined,
       ...(this.query.problem === undefined ? {} : { problem: this.query.problem }),
       editorDirty: this.queryDocument()?.isDirty === true,
@@ -207,18 +204,15 @@ export class DataViewDocument implements vscode.CustomDocument {
         return;
       }
       case "data-view/hide":
-        this.hidden = [...this.hidden.filter((key) => key !== request.column), request.column];
+        this.hidden.hide(request.column);
         this.broadcastState();
         return;
       case "data-view/technical-columns":
-        this.hidden = request.hidden
-          ? [...new Set([...this.hidden, ...this.technical])]
-          : this.hidden.filter((key) => !this.technical.includes(key));
+        this.hidden.hideTechnical(request.hidden);
         this.broadcastState();
         return;
       case "data-view/unhide":
-        this.hidden =
-          request.column === undefined ? [] : this.hidden.filter((key) => key !== request.column);
+        this.hidden.unhide(request.column);
         this.broadcastState();
         return;
       case "data-view/additions":
@@ -273,9 +267,7 @@ export class DataViewDocument implements vscode.CustomDocument {
           this.notify(added.reason, "info");
           return;
         }
-        // A reader cannot fill in a column they cannot see.
-        this.hidden = withRequiredColumnsRevealed(
-          this.hidden,
+        this.hidden.revealRequired(
           this.editability,
           this.projection,
           this.payload?.columns.map((column) => column.name) ?? [],
@@ -552,14 +544,7 @@ export class DataViewDocument implements vscode.CustomDocument {
       // The query may have composed away the table a held change was written against.
       const forgotten = this.edits.forget(this.editability);
       if (forgotten) this.notify(forgotten, "info");
-      // Technical columns start hidden the first time they appear (including after a JOIN was
-      // composed); the user's later choices are kept.
-      this.technical = opened.technicalKeys;
-      if (hideKeyColumns()) {
-        const fresh = opened.technicalKeys.filter((key) => !this.seenColumns.has(key));
-        if (fresh.length > 0) this.hidden = [...new Set([...this.hidden, ...fresh])];
-      }
-      for (const key of opened.columnKeys) this.seenColumns.add(key);
+      this.hidden.afterLoad(opened, hideKeyColumns());
       this.status = "ready";
       this.touch(opened.idleTimeoutMs);
     } catch (error) {
@@ -719,16 +704,16 @@ export class DataViewDocument implements vscode.CustomDocument {
     const columns = this.payload?.columns ?? [];
     const loadedRows = this.payload?.rows ?? [];
     const order = rowOrder(this.edits.addedRows, loadedRows.length);
-    const hidden = new Set(
-      columns.flatMap((column, ordinal) => (this.hidden.includes(column.name) ? [ordinal] : [])),
-    );
     const shown =
       scope === "selection" && selected
         ? selected
         : {
             from: 0,
             to: order.count - 1,
-            ordinals: columns.flatMap((_column, ordinal) => (hidden.has(ordinal) ? [] : [ordinal])),
+            ordinals: this.hidden.shownOrdinals(
+              this.projection,
+              columns.map((column) => column.name),
+            ),
           };
     return shownValues({
       columns,

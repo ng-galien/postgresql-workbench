@@ -16,7 +16,6 @@ import {
   type DataViewSource,
   dataViewRelationOwning,
   EMPTY_DATA_VIEW_EDITABILITY,
-  withRequiredColumnsRevealed,
 } from "../../rows/src/dataView/dataView.js";
 import type {
   DataViewRequest,
@@ -24,6 +23,7 @@ import type {
   DataViewState,
 } from "../../rows/src/dataView/dataViewProtocol.js";
 import { localFilterCompletions } from "../../rows/src/dataView/filterCompletions.js";
+import { HiddenColumns } from "../../rows/src/dataView/hiddenColumns.js";
 import { initialDataViewQuery } from "../../rows/src/dataView/initialProjection.js";
 import { openDataViewResult, TableAccents } from "../../rows/src/dataView/openRows.js";
 import { type DataViewWriteHost, PendingEdits } from "../../rows/src/dataView/pendingEdits.js";
@@ -139,25 +139,21 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
   await query.setText(initialText);
 
   const accents = new TableAccents();
+  const hidden = new HiddenColumns();
   const state: {
     projection: DataViewProjection;
-    hidden: string[];
     status: DataViewState["status"];
     message?: string;
     payload?: DataViewState["payload"];
     editability: DataViewState["editability"];
-    technical: string[];
     busy: boolean;
     session?: SqlResultSession;
   } = {
     projection: { tables: [], columnTable: [] },
-    hidden: [],
     status: "loading",
     editability: EMPTY_DATA_VIEW_EDITABILITY,
-    technical: [],
     busy: false,
   };
-  const seenColumns = new Set<string>();
   // The same pending edits the Extension Host keeps: local until they are written in one
   // transaction. A shell that cannot hold a change cannot show what holding one looks like.
   const edits = new PendingEdits();
@@ -223,16 +219,16 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
     const columns = payload?.columns ?? [];
     const loadedRows = payload?.rows ?? [];
     const order = rowOrder(edits.addedRows, loadedRows.length);
-    const hidden = new Set(
-      columns.flatMap((column, ordinal) => (state.hidden.includes(column.name) ? [ordinal] : [])),
-    );
     const shown =
       scope === "selection" && selected
         ? selected
         : {
             from: 0,
             to: order.count - 1,
-            ordinals: columns.flatMap((_column, ordinal) => (hidden.has(ordinal) ? [] : [ordinal])),
+            ordinals: hidden.shownOrdinals(
+              state.projection,
+              columns.map((column) => column.name),
+            ),
           };
     return shownValues({ columns, rows: loadedRows, order, typeFor: declaredType, ...shown });
   };
@@ -287,7 +283,7 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
           text: query.text,
           ...(query.whereText() === undefined ? {} : { whereText: query.whereText() }),
           orderBy: query.orderBy(),
-          hidden: state.hidden,
+          hidden: [...hidden.list],
           structured: query.analysis !== undefined,
           ...(query.problem ? { problem: query.problem } : {}),
           editorDirty: false,
@@ -341,14 +337,7 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
       const forgotten = edits.forget(state.editability);
       if (forgotten) emit({ type: "data-view/notice", message: forgotten, severity: "info" });
       state.projection = opened.projection;
-      state.technical = opened.technicalKeys;
-      // Identity and relationship columns start hidden when the host says so — including after a
-      // JOIN brings new ones in — and whatever the reader chose afterwards is kept.
-      if (hideKeyColumns) {
-        const fresh = opened.technicalKeys.filter((key) => !seenColumns.has(key));
-        if (fresh.length > 0) state.hidden = [...new Set([...state.hidden, ...fresh])];
-      }
-      for (const key of opened.columnKeys) seenColumns.add(key);
+      hidden.afterLoad(opened, hideKeyColumns);
       state.status = "ready";
       state.message = undefined;
     } catch (error) {
@@ -435,9 +424,7 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
   return {
     async reset() {
       edits.clear();
-      state.hidden = [];
-      // Which columns have been seen decides what starts hidden, so a fresh start forgets them.
-      seenColumns.clear();
+      hidden.clear();
       await query.setText(initialText);
       await load();
     },
@@ -477,20 +464,15 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
           return;
         }
         case "data-view/hide":
-          state.hidden = [...state.hidden.filter((key) => key !== request.column), request.column];
+          hidden.hide(request.column);
           broadcast();
           return;
         case "data-view/technical-columns":
-          state.hidden = request.hidden
-            ? [...new Set([...state.hidden, ...state.technical])]
-            : state.hidden.filter((key) => !state.technical.includes(key));
+          hidden.hideTechnical(request.hidden);
           broadcast();
           return;
         case "data-view/unhide":
-          state.hidden =
-            request.column === undefined
-              ? []
-              : state.hidden.filter((key) => key !== request.column);
+          hidden.unhide(request.column);
           broadcast();
           return;
         case "data-view/additions":
@@ -560,9 +542,7 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
             emit({ type: "data-view/notice", message: added.reason, severity: "info" });
             return;
           }
-          // A reader cannot fill in a column they cannot see.
-          state.hidden = withRequiredColumnsRevealed(
-            state.hidden,
+          hidden.revealRequired(
             state.editability,
             state.projection,
             state.payload?.columns.map((column) => column.name) ?? [],

@@ -37,6 +37,7 @@ enable = [
   "row-writes-are-assembled-in-one-place",
   "data-view-protocol-has-one-home",
   "the-data-view-is-read-by-nothing-above-it",
+  "hidden-columns-are-answered-in-one-place",
 ]
 
 [[views]]
@@ -137,30 +138,42 @@ rules = ["package-depends-only-on-what-it-reads"]
 id = "result-rows"
 owns = [
   "the bounded cursor every surface reads rows through",
-  "what a result is: its payload, its navigation, its editability",
-  "pending edits and the SQL that applies them",
+  "what a result is: its payload, its navigation, and writing it out",
+  "the Data View, in src/dataView: its protocol, its query, its editability, its pending edits, and which of its columns are hidden",
 ]
 forbids = [
   "depending on any package other than sql and dap",
   "VS Code, a webview, or the catalog",
+  "reading, above the Data View, anything the Data View owns",
 ]
-forbid_rules = ["package-depends-only-on-what-it-reads"]
-rationale = "A result comes from a query the SQL layer understands or a debugged call the DAP layer captured. The Scratchpad output, the Data View and the debugger output all read rows through the same cursor; depending on the catalog or the views would close a cycle around the thing every result view renders."
-symbols = ["ts:packages/rows/src/cursor.class:SqlResultSession"]
-rules = ["package-depends-only-on-what-it-reads"]
+forbid_rules = [
+  "package-depends-only-on-what-it-reads",
+  "the-data-view-is-read-by-nothing-above-it",
+]
+rationale = "A result comes from a query the SQL layer understands or a debugged call the DAP layer captured. The Scratchpad output, the Data View and the debugger output all read rows through the same cursor; depending on the catalog or the views would close a cycle around the thing every result view renders. Two thirds of the package is the Data View, which is why it sits in a directory of its own: it reaches up for the cursor, the payload, navigation and the export writer, and nothing above it reaches down. What a host may not do is answer for the Data View itself — both of them held their own hidden columns, and both wrote out the ones the reader had hidden."
+symbols = [
+  "ts:packages/rows/src/cursor.class:SqlResultSession",
+  "ts:packages/rows/src/dataView/hiddenColumns.class:HiddenColumns",
+]
+rules = [
+  "package-depends-only-on-what-it-reads",
+  "the-data-view-is-read-by-nothing-above-it",
+  "data-view-protocol-has-one-home",
+  "hidden-columns-are-answered-in-one-place",
+]
 
 [[views.boundaries]]
 id = "webview-rendering"
 owns = [
   "the React result grid, its navigation, and the three views that nest it",
   "the Cockpit graph and its interaction state",
-  "the typed protocol each view publishes to the Extension Host",
   "the shared PostgreSQL visual identities",
 ]
 forbids = [
   "depending on the Extension Host",
   "depending on any package other than catalog, dap and rows",
   "PostgreSQL transport, Code Moniker sessions, or VS Code state",
+  "declaring the protocol it speaks: the Data View's belongs to the engine",
 ]
 forbid_rules = ["package-depends-only-on-what-it-reads"]
 rationale = "A webview is a separate runtime. It renders values and posts messages; connections, sessions and command execution stay in the host and cross the boundary through the protocol each view declares."
