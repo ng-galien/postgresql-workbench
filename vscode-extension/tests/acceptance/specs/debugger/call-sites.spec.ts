@@ -50,7 +50,6 @@ test.describe("PL/pgSQL debugger call sites", () => {
   });
 
   test("navigates to the active routine editor across successive debug sessions", async ({
-    workbench,
     debuggerPage,
   }) => {
     const sessions = [

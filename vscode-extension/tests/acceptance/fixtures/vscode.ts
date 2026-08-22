@@ -605,6 +605,7 @@ export async function launchVSCode(options: LaunchVSCodeOptions = {}): Promise<V
   // CI captures the Xvfb root window and VS Code logs instead.
   const minimalDiagnostics =
     process.env.CI === "true" || process.env.PGWB_PLAYWRIGHT_MINIMAL_DIAGNOSTICS === "1";
+  const tracingAsked = !minimalDiagnostics && process.env.PGWB_PLAYWRIGHT_TRACE === "1";
   const activationTimeout = options.activationTimeout ?? 30_000;
   const viewTimeout = options.viewTimeout ?? 30_000;
   const windowTimeout = options.windowTimeout ?? 30_000;
@@ -641,21 +642,32 @@ export async function launchVSCode(options: LaunchVSCodeOptions = {}): Promise<V
   let app: ElectronApplication | undefined;
   let tracingStarted = false;
   let disposed = false;
+  /** How long each step of the shutdown took, so a slow one is read rather than guessed at. */
+  const timing: Record<string, number> = {};
+  const timed = async (step: string, work: () => Promise<unknown>) => {
+    const start = Date.now();
+    await work().catch(() => undefined);
+    timing[step] = Date.now() - start;
+  };
   const dispose = async () => {
     if (disposed) return;
     disposed = true;
-    if (app && tracingStarted) {
-      await app
-        .context()
-        .tracing.stop({ path: join(artifactsRoot, "trace.zip") })
-        .catch(() => {});
+    const traced = app;
+    if (traced && tracingStarted) {
+      await timed("tracing", () =>
+        traced.context().tracing.stop({ path: join(artifactsRoot, "trace.zip") }),
+      );
     }
-    await app?.close().catch(() => undefined);
+    await timed("close", async () => app?.close());
     const vscodeLogs = join(userDataDir, "logs");
     if (existsSync(vscodeLogs)) {
       cpSync(vscodeLogs, join(artifactsRoot, "vscode-logs"), { recursive: true });
     }
     rmSync(profileRoot, { recursive: true, force: true });
+    writeFileSync(
+      join(artifactsRoot, "teardown-timing.json"),
+      `${JSON.stringify({ traced: tracingStarted, ...timing }, null, 2)}\n`,
+    );
   };
 
   try {
@@ -687,7 +699,14 @@ export async function launchVSCode(options: LaunchVSCodeOptions = {}): Promise<V
     });
     app.process().stdout?.pipe(createWriteStream(join(artifactsRoot, "electron-stdout.log")));
     app.process().stderr?.pipe(createWriteStream(join(artifactsRoot, "electron-stderr.log")));
-    if (!minimalDiagnostics) {
+    /*
+     * One VS Code serves every scenario of a lane, so a trace covers the whole run: minutes of
+     * screenshots and DOM snapshots across every webview VS Code holds. Collecting them costs as
+     * much as the run is long — two minutes of shutdown for a seven-minute lane, paid whether or
+     * not the zip is kept — so it is asked for, by whoever is about to read one. The film of the
+     * run is recorded either way: it costs seconds and shows what happened.
+     */
+    if (tracingAsked) {
       await app.context().tracing.start({ screenshots: true, snapshots: true });
       tracingStarted = true;
     }

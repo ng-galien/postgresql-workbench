@@ -73,12 +73,19 @@ normally use a five-second bound; database indexing explicitly gets thirty
 seconds. Do not introduce shared timeout constants: a failure must name the
 action that timed out so its measured duration can be reviewed independently.
 
-Local runs retain Playwright traces, screenshots and one 1440×900 Electron video
-per lane. CI and the Linux Docker runner disable that rich Electron
-instrumentation because it can make the renderer unresponsive under Xvfb. They
-instead retain VS Code logs, JUnit output and a rolling 1600×1000 Xvfb
-screenshot. On failure, the last live frame is preserved as the final screenshot
-before Electron teardown can replace it with a black root window.
+Local runs retain screenshots and one 1440×900 Electron video per lane. CI and
+the Linux Docker runner disable that rich Electron instrumentation because it
+can make the renderer unresponsive under Xvfb. They instead retain VS Code logs,
+JUnit output and a rolling 1600×1000 Xvfb screenshot. On failure, the last live
+frame is preserved as the final screenshot before Electron teardown can replace
+it with a black root window.
+
+A Playwright trace is asked for rather than always taken: `PGWB_PLAYWRIGHT_TRACE=1`
+records one, covering the whole lane. One VS Code serves every scenario, so
+collecting screenshots and DOM snapshots across every webview it holds costs as
+much as the lane is long — two minutes of shutdown for a seven-minute lane, paid
+whether or not anyone opens the zip. Each run records what its shutdown cost in
+`teardown-timing.json`, beside the other artefacts.
 
 ## Run
 
