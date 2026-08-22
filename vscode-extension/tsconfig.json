@@ -17,6 +17,6 @@
     "forceConsistentCasingInFileNames": true,
     "sourceMap": true
   },
-  "include": ["src/**/*", "tests/vscode/**/*"],
+  "include": ["src/**/*", "tests/vscode/**/*", "showcase/**/*"],
   "exclude": ["node_modules", "dist"]
 }
