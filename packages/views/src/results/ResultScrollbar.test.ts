@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resultScrollbarGeometry } from "./ResultGrid.js";
+import { resultScrollbarGeometry } from "./ResultScrollbar.js";
 
 describe("result scrollbar geometry", () => {
   it("keeps a visible proportional thumb synchronized with the result scroll", () => {

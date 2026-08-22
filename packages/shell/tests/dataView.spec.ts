@@ -269,6 +269,97 @@ test("hands over the statement the rows came from", async ({ page }) => {
   await expect(panel.getByTitle("SQL copied")).toBeVisible();
 });
 
+test("gives a column the width the reader drags it to, and takes it back", async ({ page }) => {
+  await openEmpty(page);
+  await add(page, "shop.product");
+
+  const headings = page.locator("thead th:not(.row-gutter)");
+  const heading = headings.filter({ hasText: "description" }).first();
+  const handle = heading.locator(".column-resize");
+  const widthOf = async () => (await heading.boundingBox())?.width ?? 0;
+  const fitted = await widthOf();
+  const wasAt = await headings.evaluateAll((cells) =>
+    cells.findIndex((cell) => cell.textContent?.includes("description")),
+  );
+
+  // Held by its edge, a column follows the pointer. The heading is draggable — that is how a
+  // column is moved — so this gesture has to be the one that wins on the edge.
+  const grip = await handle.boundingBox();
+  if (!grip) throw new Error("no resize handle");
+  await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(grip.x + grip.width / 2 + 120, grip.y + grip.height / 2, { steps: 8 });
+  await page.mouse.up();
+
+  await expect.poll(widthOf).toBeGreaterThan(fitted + 60);
+  // The order of the columns is what it was: resizing one is not moving it.
+  await expect(headings.nth(wasAt)).toContainText("description");
+
+  // Double-clicking the edge gives the column back the width its content asks for.
+  await handle.dblclick();
+  await expect.poll(widthOf).toBe(fitted);
+});
+
+test("widens and narrows a column from the keyboard alone", async ({ page }) => {
+  await openEmpty(page);
+  await add(page, "shop.product");
+
+  const handle = page.locator("thead th", { hasText: "sku" }).first().locator(".column-resize");
+  await handle.focus();
+  const started = Number(await handle.getAttribute("aria-valuenow"));
+
+  await page.keyboard.press("ArrowRight");
+  await expect(handle).toHaveAttribute("aria-valuenow", String(started + 1));
+  // Held down, the shift key moves it in bigger steps, so a wide column is not forty presses away.
+  await page.keyboard.press("Shift+ArrowRight");
+  await expect(handle).toHaveAttribute("aria-valuenow", String(started + 9));
+  await page.keyboard.press("Escape");
+  await expect(handle).toHaveAttribute("aria-valuenow", String(started));
+});
+
+test("finds what the reader is looking for among the rows, and walks the matches", async ({
+  page,
+}) => {
+  await openEmpty(page);
+  const table = await add(page, "shop.product");
+
+  // Ctrl+F reaches the grid the same way every other keystroke does, through its clipboard proxy.
+  await table.cell(0, 1).click();
+  await page.keyboard.press("Control+f");
+  const finder = page.getByRole("search");
+  await expect(finder).toBeVisible();
+
+  await page.keyboard.type("fum");
+  const count = finder.locator(".grid-finder-count");
+  // Three products are smoked, and one of them says so twice — in its name and its description.
+  await expect(count).toHaveText(/of \d+$/u);
+  const total = Number((await count.innerText()).split(" of ")[1]);
+  expect(total).toBeGreaterThan(1);
+
+  // The cursor lands on a match as the reader types, so they see where they are.
+  await expect(count).toHaveText(`1 of ${total}`);
+  await expect(page.locator("td.match.anchor")).toHaveCount(1);
+  await expect(page.locator("td.match")).toHaveCount(total);
+
+  // Enter walks forward, Shift+Enter back, and both wrap round rather than stopping.
+  await page.keyboard.press("Enter");
+  await expect(count).toHaveText(`2 of ${total}`);
+  await page.keyboard.press("Shift+Enter");
+  await expect(count).toHaveText(`1 of ${total}`);
+  await page.keyboard.press("Shift+Enter");
+  await expect(count).toHaveText(`${total} of ${total}`);
+
+  // Something no row holds says so, rather than leaving the reader to wonder.
+  await page.keyboard.press("Control+a");
+  await page.keyboard.type("zzzz");
+  await expect(count).toHaveText("No match");
+  await expect(page.locator("td.match")).toHaveCount(0);
+
+  await page.keyboard.press("Escape");
+  await expect(finder).toBeHidden();
+  await expect(page.locator("td.match")).toHaveCount(0);
+});
+
 test("hides a column without dropping it from the query", async ({ page }) => {
   await openEmpty(page);
   await add(page, "shop.product");

@@ -693,6 +693,112 @@ th:hover .column-menu-button,
   opacity: 1;
 }
 
+/*
+ * The edge of a column, to take hold of. It sits inside the heading rather than straddling the
+ * border, because a heading clips what overflows it; it is wide enough to catch without being
+ * something a reader hits by accident on their way to the menu.
+ */
+.column-resize {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1;
+  width: 7px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.column-resize::after {
+  position: absolute;
+  top: 4px;
+  right: 2px;
+  bottom: 4px;
+  width: 2px;
+  background: var(--vscode-focusBorder);
+  border-radius: 1px;
+  opacity: 0;
+  content: "";
+  transition: opacity 90ms ease-out;
+}
+
+th:hover > .column-resize::after,
+.column-resize:hover::after {
+  opacity: 0.7;
+}
+
+.column-resize:active::after {
+  opacity: 1;
+}
+
+/* The menu control steps aside for the handle, so neither is reached by hitting the other. */
+.column-menu-button {
+  right: 9px;
+}
+
+/*
+ * Looking for something among the rows. It hangs in the top corner of the grid rather than taking
+ * a line of its own, so opening it never narrows the table or moves a row the reader was reading.
+ */
+.grid-finder {
+  position: absolute;
+  top: 4px;
+  right: 18px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 4px 3px 8px;
+  color: var(--vscode-editorWidget-foreground, inherit);
+  background: var(--vscode-editorWidget-background);
+  border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
+  border-radius: 4px;
+  box-shadow: 0 2px 8px var(--vscode-widget-shadow, rgb(0 0 0 / 25%));
+}
+
+.grid-finder > .codicon-search {
+  color: var(--vscode-descriptionForeground);
+}
+
+.grid-finder-field {
+  width: 18ch;
+  padding: 2px 6px;
+  color: var(--vscode-input-foreground);
+  background: var(--vscode-input-background);
+  border: 1px solid transparent;
+  border-radius: 3px;
+  font: inherit;
+}
+
+.grid-finder-field:focus {
+  border-color: var(--vscode-focusBorder);
+  outline: none;
+}
+
+/* Nothing found is worth saying in the field itself: that is where the reader is looking. */
+.grid-finder-field.empty-handed {
+  border-color: var(--vscode-inputValidation-errorBorder, var(--vscode-errorForeground));
+}
+
+.grid-finder-count {
+  min-width: 8ch;
+  color: var(--vscode-descriptionForeground);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * A cell holding what is being looked for. The one the cursor is on is already the anchor, so it
+ * needs no mark of its own — it only needs to be the stronger of the two.
+ */
+td.match {
+  background: var(--vscode-editor-findMatchHighlightBackground, rgb(234 92 0 / 33%));
+}
+
+td.match.anchor {
+  background: var(--vscode-editor-findMatchBackground, rgb(234 92 0 / 66%));
+}
+
 .column-menu-backdrop {
   position: fixed;
   inset: 0;
