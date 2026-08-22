@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import {
   composeIntoDataViewQuery,
   dataViewAdditions,
-} from "../../../packages/rows/src/additions.js";
+} from "../../../packages/rows/src/dataView/additions.js";
 import {
   type DataViewAddition,
   type DataViewEdit,
@@ -14,25 +14,28 @@ import {
   dataViewSourceTitle,
   EMPTY_DATA_VIEW_EDITABILITY,
   withRequiredColumnsRevealed,
-} from "../../../packages/rows/src/dataView.js";
+} from "../../../packages/rows/src/dataView/dataView.js";
 import type {
   DataViewRequest,
   DataViewResponse,
   DataViewState,
-} from "../../../packages/rows/src/dataViewProtocol.js";
+} from "../../../packages/rows/src/dataView/dataViewProtocol.js";
+import { initialDataViewQuery } from "../../../packages/rows/src/dataView/initialProjection.js";
+import { openDataViewResult, TableAccents } from "../../../packages/rows/src/dataView/openRows.js";
+import {
+  type DataViewWriteHost,
+  PendingEdits,
+} from "../../../packages/rows/src/dataView/pendingEdits.js";
+import { rowOrder } from "../../../packages/rows/src/dataView/rowOrder.js";
+import { shownValues } from "../../../packages/rows/src/dataView/shownValues.js";
 import type {
   DataViewExportChoice,
   DataViewExportScope,
 } from "../../../packages/rows/src/export.js";
-import { initialDataViewQuery } from "../../../packages/rows/src/initialProjection.js";
 import {
   navigateResult,
   type ResultNavigationCommand,
 } from "../../../packages/rows/src/navigation.js";
-import { openDataViewResult, TableAccents } from "../../../packages/rows/src/openRows.js";
-import { type DataViewWriteHost, PendingEdits } from "../../../packages/rows/src/pendingEdits.js";
-import { rowOrder } from "../../../packages/rows/src/rowOrder.js";
-import { shownValues } from "../../../packages/rows/src/shownValues.js";
 import { type QueryRewrite, SqlQueryModel } from "../../../packages/sql/src/query/model.js";
 import type {
   SqlAuthoringDragPayload,

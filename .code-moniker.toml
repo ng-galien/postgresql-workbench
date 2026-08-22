@@ -36,6 +36,7 @@ enable = [
   "shell-composes-and-is-composed-by-nothing",
   "row-writes-are-assembled-in-one-place",
   "data-view-protocol-has-one-home",
+  "the-data-view-is-read-by-nothing-above-it",
 ]
 
 [[views]]

@@ -8,7 +8,7 @@ import {
 } from "react";
 import type { DebugResultCell } from "../../../dap/src/debugger/launch/index.js";
 import { countLabel } from "../../../rows/src/countLabel.js";
-import type { DataViewAddition, DataViewCompletion } from "../../../rows/src/dataView.js";
+import type { DataViewAddition, DataViewCompletion } from "../../../rows/src/dataView/dataView.js";
 import {
   dataViewColumnKeys,
   dataViewKeysAt,
@@ -17,14 +17,14 @@ import {
   dataViewWritableTable,
   defaultNullsOrder,
   describeDataViewChanges,
-} from "../../../rows/src/dataView.js";
+} from "../../../rows/src/dataView/dataView.js";
 import type {
   DataViewRequest,
   DataViewResponse,
   DataViewState,
-} from "../../../rows/src/dataViewProtocol.js";
-import { rowOrder } from "../../../rows/src/rowOrder.js";
-import { shownValues } from "../../../rows/src/shownValues.js";
+} from "../../../rows/src/dataView/dataViewProtocol.js";
+import { rowOrder } from "../../../rows/src/dataView/rowOrder.js";
+import { shownValues } from "../../../rows/src/dataView/shownValues.js";
 import { hasWorkbenchTreeDrag } from "../cockpit/dragAndDrop.js";
 import {
   type GridSelection,

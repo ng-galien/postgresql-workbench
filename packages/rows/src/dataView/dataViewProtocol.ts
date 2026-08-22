@@ -1,3 +1,6 @@
+import type { DataViewExportChoice, DataViewExportScope } from "../export.js";
+import type { ResultNavigationCommand } from "../navigation.js";
+import type { SqlNotebookResultPayload } from "../resultPayload.js";
 import type {
   DataViewAddition,
   DataViewCompletion,
@@ -10,10 +13,6 @@ import type {
   DataViewSort,
   DataViewSource,
 } from "./dataView.js";
-import type { DataViewExportChoice, DataViewExportScope } from "./export.js";
-import type { ResultNavigationCommand } from "./navigation.js";
-
-import type { SqlNotebookResultPayload } from "./resultPayload.js";
 
 /** What the Data View webview and the Extension Host send each other. */
 

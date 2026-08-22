@@ -5,6 +5,7 @@ import {
   formatQueryResultRow,
   queryResultColumns,
 } from "../../../../packages/dap/src/debugger/launch/boundedQueryResult.js";
+import { TEXT_PASSTHROUGH_TYPES } from "../../../../packages/rows/src/dataView/openRows.js";
 import {
   type DataViewExportChoice,
   type DataViewExportFormat,
@@ -15,7 +16,6 @@ import {
   type ExportColumn,
   exportFileExtension,
 } from "../../../../packages/rows/src/export.js";
-import { TEXT_PASSTHROUGH_TYPES } from "../../../../packages/rows/src/openRows.js";
 import { PostgresCursorReader } from "../../scratchpad/index.js";
 
 const EXPORT_BATCH_ROWS = 5_000;

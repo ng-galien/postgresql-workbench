@@ -1,7 +1,7 @@
 import { type CSSProperties, type PointerEvent, useRef, useState } from "react";
 import type { DebugResultColumn } from "../../../dap/src/debugger/launch/index.js";
 import { clamp } from "../../../rows/src/clamp.js";
-import type { DataViewColumnPolicy } from "../../../rows/src/dataView.js";
+import type { DataViewColumnPolicy } from "../../../rows/src/dataView/dataView.js";
 import type { GridLayout } from "./ResultGrid.js";
 import type { ResultSort } from "./resultFormatting.js";
 

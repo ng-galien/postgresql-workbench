@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { stripStatementTerminator } from "../../sql/src/query/analysis.js";
+import { stripStatementTerminator } from "../../../sql/src/query/analysis.js";
 import { dataViewColumnKeys, withRequiredColumnsRevealed } from "./dataView.js";
 import {
   type CatalogColumn,

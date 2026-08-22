@@ -1,4 +1,4 @@
-import { quoteSqlIdentifierIfNeeded } from "../../sql/src/text/identifiers.js";
+import { quoteSqlIdentifierIfNeeded } from "../../../sql/src/text/identifiers.js";
 
 import type {
   DataViewEdit,

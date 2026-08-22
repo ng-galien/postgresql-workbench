@@ -15,17 +15,17 @@ import type {
   DataViewColumnPolicy,
   DataViewEdit,
   DataViewRowInsertion,
-} from "../../../rows/src/dataView.js";
+} from "../../../rows/src/dataView/dataView.js";
+import { rowOrder } from "../../../rows/src/dataView/rowOrder.js";
+import { shownValues } from "../../../rows/src/dataView/shownValues.js";
 import {
   CLIPBOARD_EXPORT,
   dataViewExportText,
   parseDelimitedText,
 } from "../../../rows/src/export.js";
-import { matchFrom, matchingCells } from "../../../rows/src/findInRows.js";
 import type { ResultTable } from "../../../rows/src/resultPayload.js";
-import { rowOrder } from "../../../rows/src/rowOrder.js";
-import { shownValues } from "../../../rows/src/shownValues.js";
 import { CellInspector } from "./CellInspector.js";
+import { matchFrom, matchingCells } from "./findInRows.js";
 import { GridFinder } from "./GridFinder.js";
 import { GridHeader } from "./GridHeader.js";
 import { GridRow, type GridRowContext } from "./GridRow.js";

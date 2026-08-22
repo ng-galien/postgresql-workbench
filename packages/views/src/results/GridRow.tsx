@@ -1,8 +1,8 @@
 import type { MouseEvent as ReactMouseEvent } from "react";
 import type { DebugResultCell } from "../../../dap/src/debugger/launch/index.js";
-import { isWebAddress } from "../../../rows/src/cellDetail.js";
-import type { DataViewRowInsertion } from "../../../rows/src/dataView.js";
+import type { DataViewRowInsertion } from "../../../rows/src/dataView/dataView.js";
 import { CellEditor } from "./CellEditor.js";
+import { isWebAddress } from "./cellDetail.js";
 import type { HeaderColumn } from "./GridHeader.js";
 import {
   cellIsSelected,

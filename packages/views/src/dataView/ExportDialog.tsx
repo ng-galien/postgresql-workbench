@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { countLabel } from "../../../rows/src/countLabel.js";
+import type { ShownValues } from "../../../rows/src/dataView/shownValues.js";
 import {
   type DataViewExportChoice,
   type DataViewExportFormat,
@@ -10,7 +11,6 @@ import {
   exportDelimiterFor,
   exportFileExtension,
 } from "../../../rows/src/export.js";
-import type { ShownValues } from "../../../rows/src/shownValues.js";
 import { Modal } from "../results/Modal.js";
 
 /** What the view can tell the dialog about the rows behind each scope. */

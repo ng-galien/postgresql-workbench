@@ -1,5 +1,8 @@
 import { createRoot } from "react-dom/client";
-import type { DataViewRequest, DataViewResponse } from "../../rows/src/dataViewProtocol.js";
+import type {
+  DataViewRequest,
+  DataViewResponse,
+} from "../../rows/src/dataView/dataViewProtocol.js";
 import { DataViewApp, type DataViewMessaging } from "../../views/src/dataView/DataViewApp.js";
 import dataViewStyles from "../../views/src/dataView/dataView.css";
 import modalStyles from "../../views/src/results/modal.css";

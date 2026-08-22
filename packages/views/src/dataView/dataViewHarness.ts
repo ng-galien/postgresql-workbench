@@ -1,10 +1,10 @@
 import type { DebugResultCell } from "../../../dap/src/debugger/launch/index.js";
-import { EMPTY_DATA_VIEW_EDITABILITY } from "../../../rows/src/dataView.js";
+import { EMPTY_DATA_VIEW_EDITABILITY } from "../../../rows/src/dataView/dataView.js";
 import type {
   DataViewRequest,
   DataViewResponse,
   DataViewState,
-} from "../../../rows/src/dataViewProtocol.js";
+} from "../../../rows/src/dataView/dataViewProtocol.js";
 import type { SqlNotebookResultPayload } from "../../../rows/src/resultPayload.js";
 import type { DataViewMessaging } from "./DataViewApp.js";
 

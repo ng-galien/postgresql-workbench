@@ -7,8 +7,8 @@ import {
   type LocalCodeMonikerSession,
 } from "../../catalog/src/localCodeMoniker.js";
 import { readPostgresCatalog } from "../../catalog/src/postgresCatalog.js";
-import { composeIntoDataViewQuery, dataViewAdditions } from "../../rows/src/additions.js";
 import type { SqlResultSession } from "../../rows/src/cursor.js";
+import { composeIntoDataViewQuery, dataViewAdditions } from "../../rows/src/dataView/additions.js";
 import {
   type DataViewAddition,
   type DataViewCompletion,
@@ -17,12 +17,18 @@ import {
   dataViewRelationOwning,
   EMPTY_DATA_VIEW_EDITABILITY,
   withRequiredColumnsRevealed,
-} from "../../rows/src/dataView.js";
+} from "../../rows/src/dataView/dataView.js";
 import type {
   DataViewRequest,
   DataViewResponse,
   DataViewState,
-} from "../../rows/src/dataViewProtocol.js";
+} from "../../rows/src/dataView/dataViewProtocol.js";
+import { localFilterCompletions } from "../../rows/src/dataView/filterCompletions.js";
+import { initialDataViewQuery } from "../../rows/src/dataView/initialProjection.js";
+import { openDataViewResult, TableAccents } from "../../rows/src/dataView/openRows.js";
+import { type DataViewWriteHost, PendingEdits } from "../../rows/src/dataView/pendingEdits.js";
+import { rowOrder } from "../../rows/src/dataView/rowOrder.js";
+import { shownValues } from "../../rows/src/dataView/shownValues.js";
 import {
   type DataViewExportChoice,
   type DataViewExportScope,
@@ -30,12 +36,6 @@ import {
   dataViewExportWriter,
   exportFileExtension,
 } from "../../rows/src/export.js";
-import { localFilterCompletions } from "../../rows/src/filterCompletions.js";
-import { initialDataViewQuery } from "../../rows/src/initialProjection.js";
-import { openDataViewResult, TableAccents } from "../../rows/src/openRows.js";
-import { type DataViewWriteHost, PendingEdits } from "../../rows/src/pendingEdits.js";
-import { rowOrder } from "../../rows/src/rowOrder.js";
-import { shownValues } from "../../rows/src/shownValues.js";
 import { createCodeMonikerSyntaxParser } from "../../sql/src/analysis/codeMonikerSyntax.js";
 import type { SyntaxParser } from "../../sql/src/analysis/syntaxTree.js";
 import { type SqlQueryAnalysis, setWhere } from "../../sql/src/query/analysis.js";

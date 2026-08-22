@@ -9,7 +9,7 @@ import {
 } from "../../../packages/dap/src/debugger/launch/index.js";
 import { countLabel } from "../../../packages/rows/src/countLabel.js";
 import type { PostgresCursorReader } from "../../../packages/rows/src/cursor.js";
-import { openBoundedCursor } from "../../../packages/rows/src/openRows.js";
+import { openBoundedCursor } from "../../../packages/rows/src/dataView/openRows.js";
 import {
   notebookErrorPayload,
   type SqlFailure,

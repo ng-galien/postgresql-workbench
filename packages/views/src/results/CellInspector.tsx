@@ -1,8 +1,8 @@
 import { type PointerEvent, type ReactNode, useRef, useState } from "react";
 import type { DebugResultCell } from "../../../dap/src/debugger/launch/index.js";
-import { type CellDetail, cellDetail } from "../../../rows/src/cellDetail.js";
 import { countLabel } from "../../../rows/src/countLabel.js";
 import { useClipboardCopy } from "../clipboardCopy.js";
+import { type CellDetail, cellDetail } from "./cellDetail.js";
 
 /**
  * What the cell under the cursor holds, beside the grid rather than in it. A row of a table can

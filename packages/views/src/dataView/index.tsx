@@ -1,4 +1,7 @@
-import type { DataViewRequest, DataViewResponse } from "../../../rows/src/dataViewProtocol.js";
+import type {
+  DataViewRequest,
+  DataViewResponse,
+} from "../../../rows/src/dataView/dataViewProtocol.js";
 import modalStyles from "../results/modal.css";
 import { resultViewStyles } from "../results/resultStyles.js";
 import { postgresSourceStyles } from "../source/sourceStyles.js";

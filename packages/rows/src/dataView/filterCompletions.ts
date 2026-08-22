@@ -1,4 +1,4 @@
-import type { SqlQueryAnalysis } from "../../sql/src/query/analysis.js";
+import type { SqlQueryAnalysis } from "../../../sql/src/query/analysis.js";
 import type { DataViewCompletion } from "./dataView.js";
 
 /**

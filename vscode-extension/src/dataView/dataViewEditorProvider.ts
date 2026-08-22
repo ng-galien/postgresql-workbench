@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
-import type { DataViewSource } from "../../../packages/rows/src/dataView.js";
-import type { DataViewRequest } from "../../../packages/rows/src/dataViewProtocol.js";
+import type { DataViewSource } from "../../../packages/rows/src/dataView/dataView.js";
+import type { DataViewRequest } from "../../../packages/rows/src/dataView/dataViewProtocol.js";
 import viewBundles from "../../../packages/views/viewBundles.json" with { type: "json" };
 import { webviewPage } from "../webviewPage.js";
 import { DataViewDocument } from "./dataViewDocument.js";

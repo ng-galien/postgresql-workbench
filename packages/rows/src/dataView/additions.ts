@@ -1,16 +1,16 @@
-import type { SyntaxParser } from "../../sql/src/analysis/syntaxTree.js";
+import type { SyntaxParser } from "../../../sql/src/analysis/syntaxTree.js";
 import type {
   SqlAuthoringComposeRequest,
   SqlAuthoringComposeResult,
-} from "../../sql/src/languageServer/protocol.js";
-import { analyzeSqlQuery, formatSqlQuery } from "../../sql/src/query/analysis.js";
-import { reachableJoinTargets, shortestJoinPlans } from "../../sql/src/query/joinPlanner.js";
+} from "../../../sql/src/languageServer/protocol.js";
+import { analyzeSqlQuery, formatSqlQuery } from "../../../sql/src/query/analysis.js";
+import { reachableJoinTargets, shortestJoinPlans } from "../../../sql/src/query/joinPlanner.js";
 import type {
   SqlAuthoringDragPayload,
   SqlAuthoringSettings,
   SqlAuthoringSnapshot,
-} from "../../sql/src/snapshot.js";
-import { countLabel } from "./countLabel.js";
+} from "../../../sql/src/snapshot.js";
+import { countLabel } from "../countLabel.js";
 import type { DataViewAddition, DataViewProjection } from "./dataView.js";
 
 /**

@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
-import type { DataViewCompletion } from "../../../../packages/rows/src/dataView.js";
-import { localFilterCompletions } from "../../../../packages/rows/src/filterCompletions.js";
+import type { DataViewCompletion } from "../../../../packages/rows/src/dataView/dataView.js";
+import { localFilterCompletions } from "../../../../packages/rows/src/dataView/filterCompletions.js";
 import { type SqlQueryAnalysis, setWhere } from "../../../../packages/sql/src/query/analysis.js";
 import { scanPostgresSql } from "../../../../packages/sql/src/text/sqlLexing.js";
 

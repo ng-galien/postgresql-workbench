@@ -1,12 +1,13 @@
 import type { Client, FieldDef } from "pg";
 import { types as pgTypes } from "pg";
-import { loadDataViewCatalog } from "./catalogFacts.js";
 import {
   PostgresCursorReader,
   postgresCursorSafetyTimeoutMs,
   type SqlCursorTypes,
   SqlResultSession,
-} from "./cursor.js";
+} from "../cursor.js";
+import type { ScratchpadAssociationSnapshot } from "../resultPayload.js";
+import { loadDataViewCatalog } from "./catalogFacts.js";
 import {
   type DataViewEditability,
   type DataViewProjection,
@@ -14,7 +15,6 @@ import {
   dataViewKeysAt,
 } from "./dataView.js";
 import { resolveDataViewEditability } from "./editability.js";
-import type { ScratchpadAssociationSnapshot } from "./resultPayload.js";
 
 /**
  * Data View cursors keep every value as PostgreSQL text except booleans and binary values, so

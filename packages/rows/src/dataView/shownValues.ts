@@ -1,6 +1,6 @@
-import type { DebugResultCell } from "../../dap/src/debugger/launch/index.js";
+import type { DebugResultCell } from "../../../dap/src/debugger/launch/index.js";
+import type { ExportColumn } from "../export.js";
 import type { DataViewEdit } from "./dataView.js";
-import type { ExportColumn } from "./export.js";
 import type { RowOrder } from "./rowOrder.js";
 
 /** Columns and the values under them, ready to be written out. */

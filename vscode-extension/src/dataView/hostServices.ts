@@ -1,9 +1,9 @@
-export type { DataViewResultSettings } from "../../../packages/rows/src/openRows.js";
+export type { DataViewResultSettings } from "../../../packages/rows/src/dataView/openRows.js";
 
 import type { Client } from "pg";
 import type * as vscode from "vscode";
-import type { DataViewSource } from "../../../packages/rows/src/dataView.js";
-import type { DataViewResultSettings } from "../../../packages/rows/src/openRows.js";
+import type { DataViewSource } from "../../../packages/rows/src/dataView/dataView.js";
+import type { DataViewResultSettings } from "../../../packages/rows/src/dataView/openRows.js";
 import type { SyntaxParser } from "../../../packages/sql/src/analysis/syntaxTree.js";
 import type {
   SqlAuthoringComposeRequest,

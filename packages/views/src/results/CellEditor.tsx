@@ -1,5 +1,5 @@
 import { type KeyboardEvent, useEffect, useRef, useState } from "react";
-import type { DataViewValueEditor } from "../../../rows/src/dataView.js";
+import type { DataViewValueEditor } from "../../../rows/src/dataView/dataView.js";
 
 export interface CellEditorProps {
   editor: DataViewValueEditor;

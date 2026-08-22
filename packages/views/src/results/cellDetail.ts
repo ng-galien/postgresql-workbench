@@ -1,4 +1,4 @@
-import type { DebugResultCell } from "../../dap/src/debugger/launch/index.js";
+import type { DebugResultCell } from "../../../dap/src/debugger/launch/index.js";
 
 /**
  * What a cell holds, once it is worth more than one line. The grid shows every value the same way

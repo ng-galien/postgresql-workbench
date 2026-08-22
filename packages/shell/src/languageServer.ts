@@ -5,7 +5,7 @@ import {
   StreamMessageReader,
   StreamMessageWriter,
 } from "vscode-jsonrpc/node";
-import type { DataViewCompletion } from "../../rows/src/dataView.js";
+import type { DataViewCompletion } from "../../rows/src/dataView/dataView.js";
 import type { SyntaxParser } from "../../sql/src/analysis/syntaxTree.js";
 import {
   answerSyntaxRequest,

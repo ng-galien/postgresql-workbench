@@ -1,5 +1,5 @@
 import type { Client } from "pg";
-import { countLabel } from "./countLabel.js";
+import { countLabel } from "../countLabel.js";
 import {
   type DataViewEdit,
   type DataViewEditability,
