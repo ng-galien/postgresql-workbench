@@ -11,9 +11,9 @@ import type { HiddenColumns } from "./hiddenColumns.js";
 import type { PendingEdits } from "./pendingEdits.js";
 
 /**
- * Everything a host must have in hand to say what its Data View currently is. Two of these come
- * from the host and nothing else does: the name it shows for the server it is connected to, and
- * whether the query has an editor with unsaved text in it.
+ * Everything a host must have in hand to say what its Data View currently is. All of it is state
+ * the host already holds; only two fields differ between one host and another — the name shown for
+ * the server it is connected to, and whether the query has an editor with unsaved text in it.
  */
 export interface DataViewStateOf {
   source: DataViewSource;

@@ -1,18 +1,18 @@
 import { describe, expect, it } from "vitest";
-import type { DataViewProjection } from "./dataView.js";
 import { HiddenColumns } from "./hiddenColumns.js";
 
-/** Two tables of one join, both with a column called `name`. */
-const JOINED: DataViewProjection = {
-  tables: [
-    { tableOid: 11, schema: "shop", name: "product", accent: 0 },
-    { tableOid: 22, schema: "shop", name: "brand", accent: 1 },
-  ],
-  columnTable: [0, 0, 1],
-};
-const NAMES = ["id", "name", "name"];
-/** What the projection above makes of those columns: the table, then the label. */
+/**
+ * Two tables of one join, both with a column called `name`, as the result names their columns:
+ * the table it came from, then the label.
+ */
 const KEYS = ["11:id", "11:name", "22:name"];
+
+/** A result has loaded, so the keys of its columns are known — which is when ordinals mean anything. */
+function loaded(): HiddenColumns {
+  const hidden = new HiddenColumns();
+  hidden.afterLoad({ technicalKeys: [], columnKeys: KEYS }, false);
+  return hidden;
+}
 
 describe("which columns a Data View is not showing", () => {
   it("hides and shows one column, and shows every one of them again", () => {
@@ -28,17 +28,17 @@ describe("which columns a Data View is not showing", () => {
   });
 
   it("tells two columns of the same name apart by the table they come from", () => {
-    const hidden = new HiddenColumns();
+    const hidden = loaded();
 
     hidden.hide("11:name");
 
     // Hiding `product.name` leaves `brand.name` on screen, and out of nothing else.
-    expect(hidden.shownOrdinals(JOINED, NAMES)).toEqual([0, 2]);
+    expect(hidden.shownOrdinals()).toEqual([0, 2]);
   });
 
   it("leaves a hidden column out of what a surface takes", () => {
-    const hidden = new HiddenColumns();
-    expect(hidden.shownOrdinals(JOINED, NAMES)).toEqual([0, 1, 2]);
+    const hidden = loaded();
+    expect(hidden.shownOrdinals()).toEqual([0, 1, 2]);
 
     hidden.hide("11:id");
 
@@ -47,7 +47,7 @@ describe("which columns a Data View is not showing", () => {
      * is what once wrote hidden columns into an exported file while the preview beside it left
      * them out — the two answered the question in two different places.
      */
-    expect(hidden.shownOrdinals(JOINED, NAMES)).toEqual([1, 2]);
+    expect(hidden.shownOrdinals()).toEqual([1, 2]);
   });
 
   it("starts a technical column hidden the first time it appears", () => {

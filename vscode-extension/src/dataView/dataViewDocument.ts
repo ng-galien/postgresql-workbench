@@ -26,8 +26,7 @@ import {
   type DataViewWriteHost,
   PendingEdits,
 } from "../../../packages/rows/src/dataView/pendingEdits.js";
-import { rowOrder } from "../../../packages/rows/src/dataView/rowOrder.js";
-import { shownValues } from "../../../packages/rows/src/dataView/shownValues.js";
+import { declaredColumnType, heldValues } from "../../../packages/rows/src/dataView/shownValues.js";
 import type {
   DataViewExportChoice,
   DataViewExportScope,
@@ -129,8 +128,8 @@ export class DataViewDocument implements vscode.CustomDocument {
       editorDirty: this.queryDocument()?.isDirty === true,
       projection: this.projection,
       status: this.status,
-      ...(this.message === undefined ? {} : { message: this.message }),
-      ...(this.payload === undefined ? {} : { payload: this.payload }),
+      message: this.message,
+      payload: this.payload,
       editability: this.editability,
       edits: this.edits,
       busy: this.busy,
@@ -252,11 +251,7 @@ export class DataViewDocument implements vscode.CustomDocument {
           this.notify(added.reason, "info");
           return;
         }
-        this.hidden.revealRequired(
-          this.editability,
-          this.projection,
-          this.payload?.columns.map((column) => column.name) ?? [],
-        );
+        this.hidden.revealRequired(this.editability);
         this.broadcastState();
         return;
       }
@@ -668,7 +663,12 @@ export class DataViewDocument implements vscode.CustomDocument {
               sql: this.query.effectiveSql(),
               title: this.title,
               openClient: () => this.services.openClient(this.source.serverId),
-              typeFor: (name) => this.declaredType(this.columnOrdinal(name)),
+              typeFor: (name) =>
+                declaredColumnType(
+                  this.editability,
+                  this.payload?.columns ?? [],
+                  this.columnOrdinal(name),
+                ),
             })
           : await exportHeldRows(target, choice, this.heldValues(scope, selected));
       this.notify(`Exported ${written.toLocaleString("en-US")} rows to ${target.fsPath}`, "info");
@@ -686,33 +686,14 @@ export class DataViewDocument implements vscode.CustomDocument {
     scope: DataViewExportScope,
     selected: { from: number; to: number; ordinals: number[] } | undefined,
   ) {
-    const columns = this.payload?.columns ?? [];
-    const loadedRows = this.payload?.rows ?? [];
-    const order = rowOrder(this.edits.addedRows, loadedRows.length);
-    const shown =
-      scope === "selection" && selected
-        ? selected
-        : {
-            from: 0,
-            to: order.count - 1,
-            ordinals: this.hidden.shownOrdinals(
-              this.projection,
-              columns.map((column) => column.name),
-            ),
-          };
-    return shownValues({
-      columns,
-      rows: loadedRows,
-      order,
-      typeFor: (ordinal) => this.declaredType(ordinal),
-      ...shown,
+    return heldValues({
+      payload: this.payload,
+      addedRows: this.edits.addedRows,
+      editability: this.editability,
+      shownOrdinals: () => this.hidden.shownOrdinals(),
+      scope,
+      ...(selected ? { selected } : {}),
     });
-  }
-
-  /* The type a column was declared with — `character(2)`, not `character` — for a CREATE TABLE. */
-  private declaredType(ordinal: number): string | undefined {
-    const policy = this.editability.columns[ordinal];
-    return policy?.editable ? policy.dataType : this.payload?.columns[ordinal]?.typeName;
   }
 
   private columnOrdinal(name: string): number {

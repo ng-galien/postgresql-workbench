@@ -28,8 +28,7 @@ import { HiddenColumns } from "../../rows/src/dataView/hiddenColumns.js";
 import { initialDataViewQuery } from "../../rows/src/dataView/initialProjection.js";
 import { openDataViewResult, TableAccents } from "../../rows/src/dataView/openRows.js";
 import { type DataViewWriteHost, PendingEdits } from "../../rows/src/dataView/pendingEdits.js";
-import { rowOrder } from "../../rows/src/dataView/rowOrder.js";
-import { shownValues } from "../../rows/src/dataView/shownValues.js";
+import { declaredColumnType, heldValues } from "../../rows/src/dataView/shownValues.js";
 import {
   type DataViewExportChoice,
   type DataViewExportScope,
@@ -196,43 +195,23 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
       const rows = await streamExportToFile(path, choice);
       return { path, rows };
     }
-    const values = heldValues(scope, selected);
+    const values = held(scope, selected);
     await writeFile(path, dataViewExportText(values.columns, values.rows, choice), "utf8");
     return { path, rows: values.rows.length };
   };
 
-  /*
-   * The rows the surface already holds, as the grid shows them: the reader's selection, or every
-   * loaded row. The order and the values come from the same place the view previewed them, so a
-   * preview and a file cannot disagree.
-   */
-  /* The type a column was declared with — `character(2)`, not `character` — for a CREATE TABLE. */
-  const declaredType = (ordinal: number): string | undefined => {
-    const policy = state.editability.columns[ordinal];
-    return policy?.editable ? policy.dataType : state.payload?.columns[ordinal]?.typeName;
-  };
-
-  const heldValues = (
+  const held = (
     scope: DataViewExportScope,
     selected: { from: number; to: number; ordinals: number[] } | undefined,
-  ) => {
-    const payload = state.payload;
-    const columns = payload?.columns ?? [];
-    const loadedRows = payload?.rows ?? [];
-    const order = rowOrder(edits.addedRows, loadedRows.length);
-    const shown =
-      scope === "selection" && selected
-        ? selected
-        : {
-            from: 0,
-            to: order.count - 1,
-            ordinals: hidden.shownOrdinals(
-              state.projection,
-              columns.map((column) => column.name),
-            ),
-          };
-    return shownValues({ columns, rows: loadedRows, order, typeFor: declaredType, ...shown });
-  };
+  ) =>
+    heldValues({
+      payload: state.payload,
+      addedRows: edits.addedRows,
+      editability: state.editability,
+      shownOrdinals: () => hidden.shownOrdinals(),
+      scope,
+      ...(selected ? { selected } : {}),
+    });
 
   /** Every row of the query, read back a batch at a time and written as it arrives. */
   const streamExportToFile = async (
@@ -241,7 +220,9 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
   ): Promise<number> => {
     const columns = (state.payload?.columns ?? []).map((column, ordinal) => ({
       name: column.name,
-      ...(declaredType(ordinal) ? { type: declaredType(ordinal) } : {}),
+      ...(declaredColumnType(state.editability, state.payload?.columns ?? [], ordinal)
+        ? { type: declaredColumnType(state.editability, state.payload?.columns ?? [], ordinal) }
+        : {}),
     }));
     const writer = dataViewExportWriter(columns, choice);
     const client = await writeHost.openClient();
@@ -286,8 +267,8 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
         editorDirty: false,
         projection: state.projection,
         status: state.status,
-        ...(state.message === undefined ? {} : { message: state.message }),
-        ...(state.payload === undefined ? {} : { payload: state.payload }),
+        message: state.message,
+        payload: state.payload,
         editability: state.editability,
         edits,
         busy: state.busy,
@@ -535,11 +516,7 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
             emit({ type: "data-view/notice", message: added.reason, severity: "info" });
             return;
           }
-          hidden.revealRequired(
-            state.editability,
-            state.projection,
-            state.payload?.columns.map((column) => column.name) ?? [],
-          );
+          hidden.revealRequired(state.editability);
           broadcast();
           return;
         }

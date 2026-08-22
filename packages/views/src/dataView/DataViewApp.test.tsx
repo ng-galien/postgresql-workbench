@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen, within } from "@testing-librar
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
 import { DataViewApp } from "./DataViewApp.js";
-import { dataViewHarness, dataViewPayload, dataViewState } from "./dataViewHarness.js";
+import { dataViewHarness, dataViewPayload, readyDataView } from "./dataViewHarness.js";
 
 /**
  * The Data View reaches VS Code only through its messaging port, so the whole view runs in a plain
@@ -21,7 +21,7 @@ function dragOnto(source: Element, target: Element) {
 }
 
 /** Opens the view and hands it a state, the way the host answers `data-view/ready`. */
-function open(state = dataViewState()) {
+function open(state = readyDataView()) {
   const harness = dataViewHarness();
   render(<DataViewApp messaging={harness} />);
   act(() => harness.deliver({ type: "data-view/state", state }));
@@ -66,9 +66,9 @@ describe("the Data View", () => {
     act(() =>
       harness.deliver({
         type: "data-view/state",
-        state: dataViewState({
+        state: readyDataView({
           query: {
-            ...dataViewState().query,
+            ...readyDataView().query,
             orderBy: [{ text: "name ASC", direction: "ascending", column: "name" }],
           },
         }),
@@ -82,13 +82,13 @@ describe("the Data View", () => {
   });
 
   it("reports what the host says went wrong, without losing the view", () => {
-    open(dataViewState({ status: "error", message: 'relation "shop.gone" does not exist' }));
+    open(readyDataView({ status: "error", message: 'relation "shop.gone" does not exist' }));
 
     expect(screen.getByRole("status").textContent).toContain("does not exist");
   });
 
   it("says so when the query returned no rows", () => {
-    open(dataViewState({ payload: dataViewPayload([]) }));
+    open(readyDataView({ payload: dataViewPayload([]) }));
 
     expect(document.querySelector(".result-navigation-summary")?.textContent).toBe("0");
   });
@@ -133,7 +133,7 @@ describe("the Data View", () => {
       sql: "SELECT product.id, product.name FROM shop.product AS product",
       label: "SELECT product.id, product.name FROM shop.product AS product",
     };
-    open(dataViewState({ source: fromStatement }));
+    open(readyDataView({ source: fromStatement }));
 
     expect(screen.getByText("product")).toBeDefined();
     expect(document.querySelector(".data-view-title")).toBeNull();
@@ -141,7 +141,7 @@ describe("the Data View", () => {
 
     // With no badge to name it, the label is all the reader has, so it stands in.
     open(
-      dataViewState({
+      readyDataView({
         source: fromStatement,
         projection: { tables: [], columnTable: [] },
       }),
@@ -151,7 +151,7 @@ describe("the Data View", () => {
   });
 
   it("offers no query rewriting when the SQL could not be analyzed", () => {
-    const unstructured = dataViewState();
+    const unstructured = readyDataView();
     open({
       ...unstructured,
       query: {
@@ -169,7 +169,7 @@ describe("the Data View", () => {
 
   it("moves a table onto another position by dragging it there", () => {
     const harness = open(
-      dataViewState({
+      readyDataView({
         projection: {
           tables: [
             { tableOid: 1, schema: "shop", name: "product", accent: 0 },

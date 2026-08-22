@@ -353,11 +353,11 @@ describe("columns a new row cannot go without", () => {
       columnTable: [0, 0, 0],
     };
     const names = ["id", "city", "created_at"];
-    const hidden = dataViewColumnKeys(projection, names);
+    const columnKeys = dataViewColumnKeys(projection, names);
 
-    const revealed = withRequiredColumnsRevealed(hidden, editability, projection, names);
+    const revealed = withRequiredColumnsRevealed(columnKeys, editability, columnKeys);
 
     // `id` and `created_at` have a default of their own and stay out of the way.
-    expect(revealed).toEqual([hidden[0], hidden[2]]);
+    expect(revealed).toEqual([columnKeys[0], columnKeys[2]]);
   });
 });

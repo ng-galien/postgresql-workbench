@@ -327,12 +327,9 @@ export function describeDataViewChanges(
 export function withRequiredColumnsRevealed(
   hidden: readonly string[],
   editability: DataViewEditability,
-  projection: DataViewProjection,
-  columnNames: readonly string[],
+  columnKeys: readonly string[],
 ): string[] {
-  const demanded = new Set(
-    dataViewKeysAt(dataViewColumnKeys(projection, columnNames), editability.requiredOrdinals),
-  );
+  const demanded = new Set(dataViewKeysAt(columnKeys, editability.requiredOrdinals));
   return hidden.filter((key) => !demanded.has(key));
 }
 

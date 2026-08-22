@@ -88,7 +88,7 @@ export function dataViewPayload(
 }
 
 /** A ready view over `shop.product`, with whatever the scenario needs to differ. */
-export function dataViewState(overrides: Partial<DataViewState> = {}): DataViewState {
+export function readyDataView(overrides: Partial<DataViewState> = {}): DataViewState {
   return {
     source: {
       kind: "relation",
