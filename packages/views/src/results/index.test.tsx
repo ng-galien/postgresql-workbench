@@ -19,19 +19,23 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+/** An output element as the notebook hands one over: attached to a document, drawn in a shadow. */
+function outputElement(): HTMLElement {
+  const shadow = { replaceChildren: vi.fn(), append: vi.fn() };
+  return {
+    shadowRoot: null,
+    attachShadow: vi.fn(() => shadow),
+    ownerDocument: {
+      head: { append: vi.fn() },
+      createElement: vi.fn(() => ({ setAttribute: vi.fn() })),
+      querySelector: vi.fn(() => null),
+    },
+  } as unknown as HTMLElement;
+}
+
 describe("SQL notebook renderer lifecycle", () => {
   it("replaces and disposes React roots by output id", () => {
-    const shadow = {
-      replaceChildren: vi.fn(),
-      append: vi.fn(),
-    };
-    const element = {
-      shadowRoot: null,
-      attachShadow: vi.fn(() => shadow),
-    } as unknown as HTMLElement;
-    vi.stubGlobal("document", {
-      createElement: vi.fn(() => ({})),
-    });
+    const element = outputElement();
     const output = { id: "result-1", json: () => ({}) };
     const renderer = activate();
 
@@ -59,12 +63,7 @@ describe("SQL notebook renderer lifecycle", () => {
         return { dispose: disposeMessages };
       },
     });
-    const shadow = { replaceChildren: vi.fn(), append: vi.fn() };
-    const element = {
-      shadowRoot: null,
-      attachShadow: vi.fn(() => shadow),
-    } as unknown as HTMLElement;
-    vi.stubGlobal("document", { createElement: vi.fn(() => ({})) });
+    const element = outputElement();
 
     renderer.renderOutputItem({ id: "result-1", json: () => ({}) }, element);
     const reactElement = roots[0]?.render.mock.calls[0]?.[0];

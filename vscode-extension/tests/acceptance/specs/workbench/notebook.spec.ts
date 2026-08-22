@@ -10,7 +10,6 @@ test.describe("Scratchpads", () => {
     demoDatabase,
     workbench,
     notebook,
-    vscode,
   }) => {
     const scratchpad = await createScratchpad(workbench, notebook, demoAssociationText);
 
@@ -333,7 +332,24 @@ test.describe("Scratchpads", () => {
     await notebook.typeInCell(code, "SELECT value FROM generate_series(1, 1000) AS value");
     await notebook.executeCode(code);
 
-    const result = new ResultTable(await notebook.resultFrame("Rows 1–200 · more available"));
+    const frame = await notebook.resultFrame("Rows 1–200 · more available");
+    /*
+     * The paging controls say what they do with an icon and nothing else, so the font has to be
+     * there: a result draws in a shadow root, and a font declared inside one is parsed and then
+     * ignored — every control came out an empty box.
+     */
+    await expect
+      .poll(
+        () =>
+          frame.evaluate(async () => {
+            await document.fonts.load('16px "codicon"').catch(() => {});
+            return document.fonts.check('16px "codicon"');
+          }),
+        { timeout: 10_000 },
+      )
+      .toBe(true);
+
+    const result = new ResultTable(frame);
     await expect(result.summary("Rows 1–200 · more available")).toBeVisible({ timeout: 10_000 });
     await result.next();
     await expect(result.summary("Rows 201–400 · more available")).toBeVisible({ timeout: 5_000 });

@@ -3,8 +3,9 @@ import type {
   SqlNotebookOutputPayload,
   SqlNotebookResultPayload,
 } from "../../../rows/src/resultPayload.js";
+import { registerCodiconFont } from "./codicons.js";
 import type { SqlNotebookRendererRequest, SqlNotebookRendererResponse } from "./payload.js";
-import { resultViewStyles } from "./resultStyles.js";
+import { resultViewStylesInShadowRoot } from "./resultStyles.js";
 import { SqlErrorView } from "./SqlErrorView.js";
 import { type SqlResultMessaging, SqlResultView } from "./SqlResultView.js";
 
@@ -42,13 +43,17 @@ export function activate(context: RendererContext = {}): RendererApi {
     : undefined;
   return {
     renderOutputItem(outputItem, element) {
+      // The page this output belongs to — a notebook draws its outputs in a frame of its own.
+      const page = element.ownerDocument;
+      // Each output draws in its own shadow root; the font has to be in the page holding them.
+      registerCodiconFont(page);
       roots.get(outputItem.id)?.unmount();
       const shadow = element.shadowRoot ?? element.attachShadow({ mode: "open" });
       shadow.replaceChildren();
 
-      const style = document.createElement("style");
-      style.textContent = resultViewStyles;
-      const mount = document.createElement("div");
+      const style = page.createElement("style");
+      style.textContent = resultViewStylesInShadowRoot;
+      const mount = page.createElement("div");
       shadow.append(style, mount);
 
       const root = createRoot(mount);
