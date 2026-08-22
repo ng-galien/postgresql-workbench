@@ -120,6 +120,36 @@ describe("the Data View", () => {
     });
   });
 
+  it("names where the rows come from once, and lets the badge do it when there is one", () => {
+    /*
+     * A view opened from a Scratchpad result carries the statement as its label. Beside a badge
+     * that names the table in full and can take it out of the query, that label said the same
+     * thing again in a line too short to finish it — and the editor tab already carries it.
+     */
+    const fromStatement = {
+      kind: "sql" as const,
+      serverId: "demo",
+      database: "demo",
+      sql: "SELECT product.id, product.name FROM shop.product AS product",
+      label: "SELECT product.id, product.name FROM shop.product AS product",
+    };
+    open(dataViewState({ source: fromStatement }));
+
+    expect(screen.getByText("product")).toBeDefined();
+    expect(document.querySelector(".data-view-title")).toBeNull();
+    cleanup();
+
+    // With no badge to name it, the label is all the reader has, so it stands in.
+    open(
+      dataViewState({
+        source: fromStatement,
+        projection: { tables: [], columnTable: [] },
+      }),
+    );
+
+    expect(document.querySelector(".data-view-title")?.textContent).toBe(fromStatement.label);
+  });
+
   it("offers no query rewriting when the SQL could not be analyzed", () => {
     const unstructured = dataViewState();
     open({

@@ -1210,11 +1210,6 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
             </>
           ) : null}
         </div>
-        {state.source.kind === "sql" && dataViewSourceTitle(state.source) ? (
-          <span className="data-view-title" title={query.text}>
-            {dataViewSourceTitle(state.source)}
-          </span>
-        ) : null}
         <ol className="data-view-tables-list">
           {state.projection.tables.map((table, index) => (
             <li
@@ -1242,7 +1237,12 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
             </li>
           ))}
         </ol>
-        {state.projection.tables.length === 0 && state.source.kind === "relation" ? (
+        {/*
+         * Where the rows come from, said once. A badge per table says it in full and can act on
+         * it, so the title only stands in when there is no badge to say it — a query over
+         * something that is not a table, or one that has yet to name a table at all.
+         */}
+        {state.projection.tables.length === 0 ? (
           <span className="data-view-title" title={query.text}>
             {emptyQuery ? "No table yet — add one with +" : dataViewSourceTitle(state.source)}
           </span>

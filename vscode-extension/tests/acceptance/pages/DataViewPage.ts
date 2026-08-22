@@ -52,6 +52,16 @@ export class DataViewPage {
     return this.located("tbody th.row-gutter");
   }
 
+  /** One per table the query draws from: what it is, and where it is taken out of the query. */
+  get tableBadges(): Locator {
+    return this.located(".data-view-table-badge");
+  }
+
+  /** Where the rows come from, said in prose — only there when no badge says it. */
+  get sourceTitle(): Locator {
+    return this.located(".data-view-title");
+  }
+
   get statusLine(): Locator {
     return this.located(".data-view-statusline-text");
   }

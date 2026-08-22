@@ -1,8 +1,10 @@
 import {
   demoDatabaseTreeItem as database,
+  demoAssociationText,
   demoConnexionTreeItem as server,
 } from "../../fixtures/demoDatabase";
 import { expect, test } from "../../fixtures/test";
+import { createScratchpad } from "../../journeys/scratchpad";
 import { DataViewPage } from "../../pages/DataViewPage";
 import { SCHEMAS_TREE_ITEM } from "../../pages/WorkbenchTreeLabels";
 
@@ -37,5 +39,31 @@ test.describe("Data View", () => {
     await expect(dataView.rowsLine).toBeVisible();
     await expect(dataView.rowCount).toHaveText(/^\d/u);
     await expect(dataView.gutter.first()).toHaveText("1");
+  });
+
+  test("carries a Scratchpad result over into a Data View", async ({
+    vscode,
+    workbench,
+    notebook,
+  }) => {
+    await createScratchpad(workbench, notebook, demoAssociationText);
+    const code = notebook.cell(0);
+    await notebook.typeInCell(code, "SELECT id, name FROM shop.brand ORDER BY id");
+    await notebook.executeCode(code);
+
+    const result = await notebook.resultFrame("Fumoir Atlantique");
+    await result.getByRole("button", { name: "Open in Data View" }).click();
+
+    const dataView = new DataViewPage(() => vscode.page);
+    await dataView.waitUntilOpen();
+    await expect(dataView.failure).toHaveCount(0);
+    await expect(dataView.cellsWithText("Fumoir Atlantique").first()).toBeVisible();
+
+    /*
+     * The badge names the table the rows come from, and taking it out of the query is done there.
+     * The statement itself is on the editor tab: repeated beside the badge it only cut itself off.
+     */
+    await expect(dataView.tableBadges).toHaveText([/^shop\.\s*brand$/u]);
+    await expect(dataView.sourceTitle).toHaveCount(0);
   });
 });
