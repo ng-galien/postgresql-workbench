@@ -214,12 +214,12 @@ package symbols from 39 of its modules, 56 times, which is what let engine code 
 code in the first place. None of these three is expressible as a reference rule today, so they are
 named here instead of enforced.
 
-A command is registered in a module's registerCommands. Five modules follow that; four
-registrations do not and are counted here, because `vscode` is an ambient module and
-`registerCommand` has no indexed symbol, so no reference rule can see any of the sixty-two.
-sqlAuthoring is one file and registers its own two; dataView/queryLens registers the one action its
-own lens offers; and the entry point keeps one, which closes over the Scratchpad tree view and its
-filter that activation itself creates.
+A command is registered in a module's registerCommands. No reference rule can hold that: `vscode`
+is an ambient module, `registerCommand` has no indexed symbol, and a rule written against it reports
+zero violations while twenty-five sit in front of it. The guard is
+scripts/extension/check-command-registrars.mjs instead, in the same `npm run check` the commit hook
+runs — it names the three files excused from the convention and the reason each is, and it fails
+both on a registration anywhere else and on an excuse that has stopped registering anything.
 """
 symbols = ["ts:vscode-extension/src/extension.interface:PlpgsqlExtensionApi"]
 rules = ["extension-entry-is-not-a-service"]
