@@ -205,14 +205,18 @@ Activation chooses implementations and binds commands; feature state stays in th
 defines its lifecycle. The extension adapts the engine to VS Code and holds nothing else, because
 the same engine is meant to run under a host that is not VS Code at all.
 
-Measured debt against that, August 2026. Five modules that never mentioned VS Code — 731 lines —
-moved to the packages their own imports named, and the package rules now keep them there. Two
-remain with no home the package graph allows: debug/launchConfiguration needs the saved connections
-and the SQL call parser together, and no package may depend on both catalog and sql;
-scratchpad/notebookFile needs catalog, dap, rows and views at once. And the extension re-exports
-package symbols from 39 of its modules, 56 times, which is what let engine code look like extension
-code in the first place. None of these three is expressible as a reference rule today, so they are
-named here instead of enforced.
+Measured against that, August 2026. Five modules that never mentioned VS Code — 731 lines — moved
+to the packages their own imports named, and the package rules now keep them there. The re-exports
+that made engine code look like extension code are gone, and a rule holds that one.
+
+What is left is named and guarded rather than enforced by a rule, because neither fact lives in the
+reference graph. Twelve files still adapt nothing to VS Code, and
+scripts/extension/check-extension-adapts.mjs lists each with its reason: two are legitimate — the
+standalone DAP entry and one line shared by every module — and ten are engine code awaiting a
+package. Two of those ten have no home the graph allows at all:
+debug/launchConfiguration needs the saved connections and the SQL call parser together, and no
+package may depend on both catalog and sql; scratchpad/notebookFile needs catalog, dap, rows and
+views at once. The guard fails on a new one, and on an entry that has started adapting something.
 
 A command is registered in a module's registerCommands. No reference rule can hold that: `vscode`
 is an ambient module, `registerCommand` has no indexed symbol, and a rule written against it reports
