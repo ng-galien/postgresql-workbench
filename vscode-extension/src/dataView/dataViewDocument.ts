@@ -8,7 +8,6 @@ import {
   type DataViewEdit,
   type DataViewEditability,
   type DataViewProjection,
-  type DataViewQueryInfo,
   type DataViewSource,
   dataViewRelationOwning,
   dataViewSourceTitle,
@@ -19,6 +18,7 @@ import type {
   DataViewResponse,
   DataViewState,
 } from "../../../packages/rows/src/dataView/dataViewProtocol.js";
+import { dataViewState } from "../../../packages/rows/src/dataView/dataViewState.js";
 import { HiddenColumns } from "../../../packages/rows/src/dataView/hiddenColumns.js";
 import { initialDataViewQuery } from "../../../packages/rows/src/dataView/initialProjection.js";
 import { openDataViewResult, TableAccents } from "../../../packages/rows/src/dataView/openRows.js";
@@ -119,37 +119,22 @@ export class DataViewDocument implements vscode.CustomDocument {
     return new vscode.Disposable(() => this.webviews.delete(webview));
   }
 
-  /** What the grid shows about the query: the shared model's view, plus this Data View's state. */
-  private queryInfo(): DataViewQueryInfo {
-    const whereText = this.query.whereText();
-    return {
-      uri: this.queryUri.toString(),
-      text: this.query.text,
-      ...(whereText === undefined ? {} : { whereText }),
-      orderBy: this.query.orderBy(),
-      hidden: [...this.hidden.list],
-      structured: this.query.analysis !== undefined,
-      ...(this.query.problem === undefined ? {} : { problem: this.query.problem }),
-      editorDirty: this.queryDocument()?.isDirty === true,
-    };
-  }
-
   state(): DataViewState {
-    return {
+    return dataViewState({
       source: this.source,
       serverName: this.serverName(),
-      query: this.queryInfo(),
+      queryUri: this.queryUri.toString(),
+      query: this.query,
+      hidden: this.hidden,
+      editorDirty: this.queryDocument()?.isDirty === true,
       projection: this.projection,
       status: this.status,
-      ...(this.message !== undefined ? { message: this.message } : {}),
-      ...(this.payload ? { payload: this.payload } : {}),
+      ...(this.message === undefined ? {} : { message: this.message }),
+      ...(this.payload === undefined ? {} : { payload: this.payload }),
       editability: this.editability,
-      edits: [...this.edits.list],
-      removedRows: [...this.edits.removedRows],
-      addedRows: [...this.edits.addedRows],
+      edits: this.edits,
       busy: this.busy,
-      applying: this.edits.applying,
-    };
+    });
   }
 
   /** The grid re-renders when its query editor becomes dirty or clean. */

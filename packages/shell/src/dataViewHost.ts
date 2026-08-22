@@ -22,6 +22,7 @@ import type {
   DataViewResponse,
   DataViewState,
 } from "../../rows/src/dataView/dataViewProtocol.js";
+import { dataViewState } from "../../rows/src/dataView/dataViewState.js";
 import { localFilterCompletions } from "../../rows/src/dataView/filterCompletions.js";
 import { HiddenColumns } from "../../rows/src/dataView/hiddenColumns.js";
 import { initialDataViewQuery } from "../../rows/src/dataView/initialProjection.js";
@@ -275,30 +276,22 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
   const broadcast = () =>
     emit({
       type: "data-view/state",
-      state: {
+      state: dataViewState({
         source,
         serverName,
-        query: {
-          uri: queryUri,
-          text: query.text,
-          ...(query.whereText() === undefined ? {} : { whereText: query.whereText() }),
-          orderBy: query.orderBy(),
-          hidden: [...hidden.list],
-          structured: query.analysis !== undefined,
-          ...(query.problem ? { problem: query.problem } : {}),
-          editorDirty: false,
-        },
+        queryUri,
+        query,
+        hidden,
+        // The shell has no editor over the query, so there is never unsaved text in one.
+        editorDirty: false,
         projection: state.projection,
         status: state.status,
-        ...(state.message ? { message: state.message } : {}),
-        ...(state.payload ? { payload: state.payload } : {}),
+        ...(state.message === undefined ? {} : { message: state.message }),
+        ...(state.payload === undefined ? {} : { payload: state.payload }),
         editability: state.editability,
-        edits: [...edits.list],
-        removedRows: [...edits.removedRows],
-        addedRows: [...edits.addedRows],
+        edits,
         busy: state.busy,
-        applying: edits.applying,
-      },
+      }),
     });
 
   const load = async () => {

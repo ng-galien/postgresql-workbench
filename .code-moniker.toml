@@ -38,6 +38,7 @@ enable = [
   "data-view-protocol-has-one-home",
   "the-data-view-is-read-by-nothing-above-it",
   "hidden-columns-are-answered-in-one-place",
+  "what-a-data-view-is-is-said-in-one-place",
 ]
 
 [[views]]

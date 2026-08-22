@@ -41,3 +41,10 @@ severity = "error"
 expr = "kind = 'imports_symbol' AND target.segment('path') = 'withRequiredColumnsRevealed' => source.segment('module') = 'hiddenColumns'"
 message = "Which columns a Data View is not showing is answered by HiddenColumns, and by no host on its own."
 rationale = "Both hosts kept their own list, their own technical keys and their own memory of what had been seen, and both worked out which ordinals to leave out by comparing bare column labels against a list that holds keys. A key names the table a column comes from, so it never equals a label: an export therefore wrote out the columns the reader had hidden, while the preview beside it — computed in the view, which does compare keys — left them out. One list, asked one way."
+
+[[ts.refs.where]]
+id = "what-a-data-view-is-is-said-in-one-place"
+severity = "error"
+expr = "kind = 'imports_symbol' AND target.segment('path') = 'DataViewQueryInfo' => source.segment('module') = 'dataViewState' OR source.segment('module') = 'dataViewProtocol'"
+message = "A host says what its Data View is through dataViewState; it does not assemble the shape itself."
+rationale = "Saying what a Data View currently is asks nothing, opens nothing and decides nothing — it is a plain reading of what the host already holds, and only two of its fields come from the host at all: the server's name and whether the query's editor has unsaved text. Both hosts wrote it out anyway, and had already drifted: one kept an empty message where the other dropped it. Nothing here ever needed a second author."
