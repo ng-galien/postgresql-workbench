@@ -1,15 +1,13 @@
-import { TextDecoder, TextEncoder } from "node:util";
+import { TextEncoder } from "node:util";
 import * as vscode from "vscode";
 import {
   getConnectionName,
   type ServerConfig,
 } from "../../../packages/catalog/src/savedConnection.js";
-import {
-  clampDebugResultRows,
-  DEBUG_RESULT_LIMITS,
-  type DebugResult,
-  type DebugResultEntry,
-  type DebugResultStatus,
+import type {
+  DebugResult,
+  DebugResultEntry,
+  DebugResultStatus,
 } from "../../../packages/dap/src/debugger/launch/index.js";
 import { countLabel } from "../../../packages/rows/src/countLabel.js";
 import type { PostgresCursorReader } from "../../../packages/rows/src/cursor.js";
@@ -39,18 +37,16 @@ import { SQL_NOTEBOOK_SCHEME, SqlNotebookFileSystemProvider } from "./fileSystem
 import {
   associationFingerprint,
   associationSnapshot,
-  DEFAULT_SCRATCHPAD_STATEMENT_TIMEOUT_MS,
   emptySqlNotebook,
   MAX_SCRATCHPAD_STATEMENT_TIMEOUT_MS,
   MIN_SCRATCHPAD_STATEMENT_TIMEOUT_MS,
+  normalizeMetadata,
   normalizeSqlNotebookName,
-  parseSqlNotebookFile,
   resolveScratchpadAssociation,
   type ScratchpadAssociation,
   type ScratchpadCellExecutionIntent,
   type ScratchpadExecutionMode,
   SQL_NOTEBOOK_TYPE,
-  type SqlNotebookFile,
   type SqlNotebookMetadata,
   scratchpadCellExecutionIntent,
   scratchpadCreationAssociation,
@@ -58,7 +54,6 @@ import {
   scratchpadStatementTimeoutMs,
   serializeSqlNotebookFile,
   sqlNotebookResultPayload,
-  validStatementTimeoutMs,
 } from "./notebookFile.js";
 import {
   errorOutput,
@@ -69,7 +64,14 @@ import {
   resultOutput,
   statementTimeoutRecovery,
 } from "./notebookOutput.js";
+import { SqlNotebookSerializer } from "./notebookSerializer.js";
+import { SqlNotebookStatusProvider } from "./notebookStatus.js";
 import { SqlNotebookResultHost } from "./resultHost.js";
+import {
+  configuredScratchpadStatementTimeoutMs,
+  type SqlResultSettings,
+  sqlResultSettings,
+} from "./scratchpadSettings.js";
 import { ScratchpadTransactionManager } from "./transactions.js";
 import {
   DELETE_SQL_NOTEBOOK_COMMAND,
@@ -119,8 +121,6 @@ export type ScratchpadDebugOutcome =
 export type ScratchpadDebugger = (
   request: ScratchpadDebugRequest,
 ) => Promise<ScratchpadDebugOutcome>;
-
-const DEBUGGABLE_ANALYSIS_DELAY_MS = 500;
 
 /** Tells whether a cell's SQL currently offers one replayable PL/pgSQL entry point. */
 export type ScratchpadDebugEligibility = (request: {
@@ -181,7 +181,7 @@ export function registerSqlNotebook(
           );
           return false;
         }
-        if (scratchpadExecutionMode(notebookMetadata(cell.notebook.metadata)) === "manual") {
+        if (scratchpadExecutionMode(normalizeMetadata(cell.notebook.metadata)) === "manual") {
           void vscode.window.showInformationMessage(
             "Debug is unavailable in Mode MANUAL: the debugger cannot join the Scratchpad Transaction. Change to Mode AUTO first.",
           );
@@ -309,8 +309,8 @@ export function registerSqlNotebook(
           async () => {
             await updateNotebookMetadata(notebook, {
               ...(selected.connection ? associationSnapshot(selected.connection) : {}),
-              executionMode: scratchpadExecutionMode(notebookMetadata(notebook.metadata)),
-              ...scratchpadTimeoutOverride(notebookMetadata(notebook.metadata)),
+              executionMode: scratchpadExecutionMode(normalizeMetadata(notebook.metadata)),
+              ...scratchpadTimeoutOverride(normalizeMetadata(notebook.metadata)),
             });
             statusProvider.refresh();
           },
@@ -356,7 +356,7 @@ export function registerSqlNotebook(
           (await notebookFromTarget(target)) ?? vscode.window.activeNotebookEditor?.notebook;
         if (!notebook || notebook.notebookType !== SQL_NOTEBOOK_TYPE) return false;
         const association = resolveScratchpadAssociation(
-          notebookMetadata(notebook.metadata),
+          normalizeMetadata(notebook.metadata),
           connections.servers,
         );
         if (association.status !== "associated") {
@@ -394,7 +394,7 @@ export function registerSqlNotebook(
           (await notebookFromTarget(target)) ?? vscode.window.activeNotebookEditor?.notebook;
         if (!notebook || notebook.notebookType !== SQL_NOTEBOOK_TYPE) return false;
         const association = resolveScratchpadAssociation(
-          notebookMetadata(notebook.metadata),
+          normalizeMetadata(notebook.metadata),
           connections.servers,
         );
         if (association.status !== "associated") return false;
@@ -504,11 +504,11 @@ async function setScratchpadExecutionMode(
     notebook.uri.toString(),
     "changing its Mode",
     async () => {
-      const current = notebookMetadata(notebook.metadata);
+      const current = normalizeMetadata(notebook.metadata);
       await updateNotebookMetadata(notebook, { ...current, executionMode: mode });
       statusProvider.refresh();
     },
-    () => scratchpadExecutionMode(notebookMetadata(notebook.metadata)) === mode,
+    () => scratchpadExecutionMode(normalizeMetadata(notebook.metadata)) === mode,
   );
   return changed.accepted;
 }
@@ -526,7 +526,7 @@ async function setScratchpadStatementTimeout(
   const notebook =
     (await notebookFromTarget(target)) ?? vscode.window.activeNotebookEditor?.notebook;
   if (!notebook || notebook.notebookType !== SQL_NOTEBOOK_TYPE) return false;
-  const metadata = notebookMetadata(notebook.metadata);
+  const metadata = normalizeMetadata(notebook.metadata);
   const globalTimeoutMs = configuredScratchpadStatementTimeoutMs();
   const effectiveTimeoutMs = scratchpadStatementTimeoutMs(metadata, globalTimeoutMs);
   const selected = await vscode.window.showQuickPick<ScratchpadTimeoutPick>(
@@ -588,7 +588,7 @@ async function setScratchpadStatementTimeout(
     notebook.uri.toString(),
     "changing its Statement timeout",
     async () => {
-      const current = notebookMetadata(notebook.metadata);
+      const current = normalizeMetadata(notebook.metadata);
       const { statementTimeoutMs: _previous, ...withoutTimeout } = current;
       await updateNotebookMetadata(notebook, {
         ...withoutTimeout,
@@ -610,13 +610,6 @@ function scratchpadTimeoutOverride(
   return metadata.statementTimeoutMs === undefined
     ? {}
     : { statementTimeoutMs: metadata.statementTimeoutMs };
-}
-
-function configuredScratchpadStatementTimeoutMs(): number {
-  const value = vscode.workspace
-    .getConfiguration("postgresql-workbench.sql")
-    .get<number>("statementTimeoutMs", DEFAULT_SCRATCHPAD_STATEMENT_TIMEOUT_MS);
-  return validStatementTimeoutMs(value) ?? DEFAULT_SCRATCHPAD_STATEMENT_TIMEOUT_MS;
 }
 
 function scratchpadUriFromTarget(target: unknown): string | undefined {
@@ -775,45 +768,6 @@ function closedScratchpadUris(closed: readonly vscode.Tab[]): string[] {
   return uris;
 }
 
-export class SqlNotebookSerializer implements vscode.NotebookSerializer {
-  deserializeNotebook(content: Uint8Array): vscode.NotebookData {
-    const file = parseSqlNotebookFile(new TextDecoder().decode(content));
-    const data = new vscode.NotebookData(
-      file.cells.map((cell) => {
-        const data = new vscode.NotebookCellData(
-          cell.kind === "markup" ? vscode.NotebookCellKind.Markup : vscode.NotebookCellKind.Code,
-          cell.source,
-          cell.language,
-        );
-        data.metadata = cell.metadata;
-        return data;
-      }),
-    );
-    data.metadata = file.metadata;
-    return data;
-  }
-
-  serializeNotebook(data: vscode.NotebookData): Uint8Array {
-    const file: SqlNotebookFile = {
-      version: 1,
-      metadata: notebookMetadata(data.metadata),
-      cells: data.cells.map((cell) =>
-        cell.kind === vscode.NotebookCellKind.Markup
-          ? { kind: "markup", language: "markdown", source: cell.value }
-          : {
-              kind: "code",
-              language: "plpgsql",
-              source: cell.value,
-              ...(scratchpadCellExecutionIntent(cell.metadata) === "debug"
-                ? { metadata: { executionIntent: "debug" as const } }
-                : {}),
-            },
-      ),
-    };
-    return new TextEncoder().encode(serializeSqlNotebookFile(file));
-  }
-}
-
 class SqlNotebookController implements vscode.Disposable {
   private executionOrder = 0;
   private readonly controller: vscode.NotebookController;
@@ -884,7 +838,7 @@ class SqlNotebookController implements vscode.Disposable {
   ): Promise<void> {
     this.prefer(notebook);
     const association = resolveScratchpadAssociation(
-      notebookMetadata(notebook.metadata),
+      normalizeMetadata(notebook.metadata),
       this.connections.servers,
     );
     if (association.status !== "associated") {
@@ -906,7 +860,7 @@ class SqlNotebookController implements vscode.Disposable {
       await this.executeCell(
         cell,
         association,
-        scratchpadExecutionMode(notebookMetadata(notebook.metadata)),
+        scratchpadExecutionMode(normalizeMetadata(notebook.metadata)),
         () => {
           batchCancelled = true;
         },
@@ -1082,7 +1036,7 @@ class SqlNotebookController implements vscode.Disposable {
 
     const settings = sqlResultSettings();
     const statementTimeoutMs = scratchpadStatementTimeoutMs(
-      notebookMetadata(cell.notebook.metadata),
+      normalizeMetadata(cell.notebook.metadata),
       configuredScratchpadStatementTimeoutMs(),
     );
     const [singleStatement] = plan.statements;
@@ -1316,7 +1270,7 @@ class SqlNotebookController implements vscode.Disposable {
     expected: ScratchpadAssociationSnapshot,
   ): boolean {
     const association = resolveScratchpadAssociation(
-      notebookMetadata(notebook.metadata),
+      normalizeMetadata(notebook.metadata),
       this.connections.servers,
     );
     return (
@@ -1337,7 +1291,7 @@ class SqlNotebookController implements vscode.Disposable {
     if (previous === undefined || previous === next) return;
 
     const association = resolveScratchpadAssociation(
-      notebookMetadata(notebook.metadata),
+      normalizeMetadata(notebook.metadata),
       this.connections.servers,
     );
     await this.resultHost.closeNotebookAssociationMismatch(
@@ -1348,167 +1302,12 @@ class SqlNotebookController implements vscode.Disposable {
 
   private associationStateKey(notebook: vscode.NotebookDocument): string {
     const association = resolveScratchpadAssociation(
-      notebookMetadata(notebook.metadata),
+      normalizeMetadata(notebook.metadata),
       this.connections.servers,
     );
     return association.status === "unassociated"
       ? "unassociated"
       : `${association.status}:${associationFingerprint(association.snapshot)}`;
-  }
-}
-
-class SqlNotebookStatusProvider
-  implements vscode.NotebookCellStatusBarItemProvider, vscode.Disposable
-{
-  private readonly changed = new vscode.EventEmitter<void>();
-  readonly onDidChangeCellStatusBarItems = this.changed.event;
-  private readonly subscriptions: vscode.Disposable[];
-
-  private readonly debuggable = new Map<string, { version: number; value?: boolean }>();
-  private readonly debuggableTimers = new Map<string, ReturnType<typeof setTimeout>>();
-
-  constructor(
-    private readonly connections: ConnectionManager,
-    private readonly canDebug: ScratchpadDebugEligibility,
-  ) {
-    this.subscriptions = [
-      connections.onChanged(() => this.invalidateDebuggable()),
-      vscode.workspace.onDidCloseNotebookDocument((notebook) => {
-        for (const cell of notebook.getCells())
-          this.debuggable.delete(cell.document.uri.toString());
-      }),
-      vscode.workspace.onDidChangeConfiguration((event) => {
-        if (event.affectsConfiguration("postgresql-workbench.sql.statementTimeoutMs")) {
-          this.changed.fire();
-        }
-      }),
-    ];
-  }
-
-  invalidateDebuggable(): void {
-    for (const timer of this.debuggableTimers.values()) clearTimeout(timer);
-    this.debuggableTimers.clear();
-    this.debuggable.clear();
-    this.changed.fire();
-  }
-
-  /** Last known Debug eligibility of a cell; false until the analysis has completed. */
-  isDebuggable(cell: vscode.NotebookCell): boolean {
-    const cached = this.debuggable.get(cell.document.uri.toString());
-    return cached?.version === cell.document.version && cached.value === true;
-  }
-
-  private requestDebuggable(
-    cell: vscode.NotebookCell,
-    association: ScratchpadAssociationSnapshot,
-  ): boolean {
-    const key = cell.document.uri.toString();
-    const version = cell.document.version;
-    const cached = this.debuggable.get(key);
-    if (cached?.version === version) return cached.value === true;
-    // Debounce: typing bumps the version on every keystroke; analyse only the settled text.
-    clearTimeout(this.debuggableTimers.get(key));
-    this.debuggable.set(key, { version });
-    const sql = cell.document.getText();
-    this.debuggableTimers.set(
-      key,
-      setTimeout(() => {
-        this.debuggableTimers.delete(key);
-        if (this.debuggable.get(key)?.version !== version) return;
-        void this.canDebug({ sql, association })
-          .then((value) => {
-            if (this.debuggable.get(key)?.version !== version) return;
-            this.debuggable.set(key, { version, value });
-            if (value) this.changed.fire();
-          })
-          .catch(() => {
-            if (this.debuggable.get(key)?.version === version) this.debuggable.delete(key);
-          });
-      }, DEBUGGABLE_ANALYSIS_DELAY_MS),
-    );
-    return false;
-  }
-
-  provideCellStatusBarItems(
-    cell: vscode.NotebookCell,
-  ): vscode.NotebookCellStatusBarItem[] | undefined {
-    if (cell.kind === vscode.NotebookCellKind.Markup) return undefined;
-    const executionIntent = scratchpadCellExecutionIntent(cell.metadata);
-    const manualMode =
-      scratchpadExecutionMode(notebookMetadata(cell.notebook.metadata)) === "manual";
-    const intentItem = new vscode.NotebookCellStatusBarItem(
-      executionIntent === "debug" ? "$(debug-alt) Debug" : "$(play) Run",
-      vscode.NotebookCellStatusBarAlignment.Right,
-    );
-    intentItem.command = {
-      title: "Change cell execution intent",
-      command: SET_SCRATCHPAD_CELL_EXECUTION_INTENT_COMMAND,
-      arguments: [cell],
-    };
-    intentItem.tooltip =
-      executionIntent === "debug"
-        ? "Execution intent: Debug — the cell action attaches the PL/pgSQL debugger. Click to choose Run or Debug."
-        : "Execution intent: Run — click to choose Run or Debug.";
-    intentItem.priority = 101;
-    const association = resolveScratchpadAssociation(
-      notebookMetadata(cell.notebook.metadata),
-      this.connections.servers,
-    );
-    const connected =
-      association.status === "associated" &&
-      this.connections.isServerConnected(association.connection.id);
-    const label =
-      association.status === "unassociated"
-        ? "Choose a Connexion"
-        : association.snapshot.serverName;
-    const associationItem = new vscode.NotebookCellStatusBarItem(
-      `${association.status === "associated" ? (connected ? "$(pass-filled)" : "$(circle-outline)") : "$(warning)"} ${label}`,
-      vscode.NotebookCellStatusBarAlignment.Right,
-    );
-    associationItem.command = {
-      title: "Change Scratchpad Connexion",
-      command: CHANGE_SQL_NOTEBOOK_CONNECTION_COMMAND,
-      arguments: [cell.notebook],
-    };
-    associationItem.tooltip =
-      association.status === "associated"
-        ? `Scratchpad Connexion ${connected ? "connected" : "disconnected"} — click to change it`
-        : "Scratchpad Association unavailable — click to change its Connexion";
-    associationItem.priority = 100;
-    const metadata = notebookMetadata(cell.notebook.metadata);
-    const globalTimeoutMs = configuredScratchpadStatementTimeoutMs();
-    const timeoutMs = scratchpadStatementTimeoutMs(metadata, globalTimeoutMs);
-    const timeoutItem = new vscode.NotebookCellStatusBarItem(
-      `$(clock) Timeout: ${formatStatementTimeout(timeoutMs)}`,
-      vscode.NotebookCellStatusBarAlignment.Right,
-    );
-    timeoutItem.command = {
-      title: "Change Scratchpad Statement timeout",
-      command: SET_SCRATCHPAD_STATEMENT_TIMEOUT_COMMAND,
-      arguments: [cell.notebook],
-    };
-    timeoutItem.tooltip =
-      metadata.statementTimeoutMs === undefined
-        ? "Scratchpad Statement timeout from the global setting — click to change"
-        : "Scratchpad Statement timeout override — click to change or use the global setting";
-    timeoutItem.priority = 99;
-    if (manualMode) return [associationItem, timeoutItem];
-    const debuggable =
-      association.status === "associated" && this.requestDebuggable(cell, association.snapshot);
-    if (!debuggable) return [associationItem, timeoutItem];
-    return executionIntent === "debug"
-      ? [intentItem, associationItem]
-      : [intentItem, associationItem, timeoutItem];
-  }
-
-  refresh(): void {
-    this.changed.fire();
-  }
-
-  dispose(): void {
-    for (const timer of this.debuggableTimers.values()) clearTimeout(timer);
-    for (const subscription of this.subscriptions) subscription.dispose();
-    this.changed.dispose();
   }
 }
 
@@ -1537,19 +1336,6 @@ async function pickScratchpadCellExecutionIntent(
     },
   );
   return picked?.intent;
-}
-
-function notebookMetadata(value: unknown): SqlNotebookMetadata {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
-  const source = value as Record<string, unknown>;
-  const metadata: SqlNotebookMetadata = {};
-  for (const key of ["serverId", "serverName", "database"] as const) {
-    if (typeof source[key] === "string" && source[key]) metadata[key] = source[key];
-  }
-  if (source.executionMode === "manual") metadata.executionMode = "manual";
-  const statementTimeoutMs = validStatementTimeoutMs(source.statementTimeoutMs);
-  if (statementTimeoutMs !== undefined) metadata.statementTimeoutMs = statementTimeoutMs;
-  return metadata;
 }
 
 async function updateNotebookMetadata(
@@ -1589,38 +1375,4 @@ async function notebookFromTarget(target: unknown): Promise<vscode.NotebookDocum
     return vscode.workspace.openNotebookDocument((target as SqlNotebookEntry).uri);
   }
   return undefined;
-}
-
-export interface SqlResultSettings {
-  pageSize: number;
-  maxCachedRows: number;
-  cursorIdleTimeoutSeconds: number;
-  nonPagedMaxRows: number;
-}
-
-export function sqlResultSettings(): SqlResultSettings {
-  const configuration = vscode.workspace.getConfiguration("postgresql-workbench.results");
-  const pageSizeInspection = configuration.inspect<number>("pageSize");
-  const pageSizeExplicit =
-    pageSizeInspection?.workspaceFolderValue ??
-    pageSizeInspection?.workspaceValue ??
-    pageSizeInspection?.globalValue;
-  const legacyRows = configuration.get<number>("maxRows", DEBUG_RESULT_LIMITS.DEFAULT_ROWS);
-  const pageSize = clampDebugResultRows(
-    pageSizeExplicit ?? configuration.get<number>("pageSize", legacyRows),
-  );
-  return {
-    pageSize,
-    maxCachedRows: Math.max(
-      pageSize,
-      Math.min(100_000, Math.trunc(configuration.get<number>("maxCachedRows", 1_000))),
-    ),
-    cursorIdleTimeoutSeconds: Math.max(
-      30,
-      Math.min(3_600, Math.trunc(configuration.get<number>("cursorIdleTimeoutSeconds", 300))),
-    ),
-    nonPagedMaxRows: clampDebugResultRows(
-      configuration.get<number>("nonPagedMaxRows", DEBUG_RESULT_LIMITS.DEFAULT_ROWS),
-    ),
-  };
 }

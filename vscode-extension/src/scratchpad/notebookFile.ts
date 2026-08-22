@@ -242,7 +242,12 @@ export function sqlNotebookResultPayload(
   };
 }
 
-function normalizeMetadata(value: unknown): SqlNotebookMetadata {
+/**
+ * A notebook's metadata, read from whatever was stored. The file format owns this: the serializer
+ * reads it off a document, the controller and the status bar read it off the one VS Code holds,
+ * and all three must agree on what an absent or malformed field means.
+ */
+export function normalizeMetadata(value: unknown): SqlNotebookMetadata {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   const source = value as Record<string, unknown>;
   return {
