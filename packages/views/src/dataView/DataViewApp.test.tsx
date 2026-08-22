@@ -210,6 +210,6 @@ describe("the Data View", () => {
 
     // The panel is the toolbar's; the menu keeps only what still needs an editor.
     expect(screen.queryByRole("menuitem", { name: /Show SQL/u })).toBeNull();
-    expect(screen.getByRole("menuitem", { name: /Edit the query in a SQL editor/u })).toBeDefined();
+    expect(screen.getByRole("menuitem", { name: /Edit in a SQL editor/u })).toBeDefined();
   });
 });

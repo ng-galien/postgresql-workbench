@@ -187,10 +187,15 @@ export function GridRow({
                 /*
                  * An address is somewhere to go, and a cell is something to select: a plain click
                  * belongs to the grid, and the chord every editor uses for a link opens it.
+                 *
+                 * The grid is one stop in the tabbing order, so the link is not another one: the
+                 * keys reach it through the cell menu, whose `Open` clicks this very anchor. That
+                 * click carries no pointer (`detail` 0), which is what tells it from a plain one.
                  */
+                tabIndex={-1}
                 title={`${chordName()}+click to open ${shown}`}
                 onClick={(event) => {
-                  if (!event.metaKey && !event.ctrlKey) event.preventDefault();
+                  if (event.detail > 0 && !event.metaKey && !event.ctrlKey) event.preventDefault();
                 }}
               >
                 {shown}

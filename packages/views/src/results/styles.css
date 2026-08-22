@@ -853,50 +853,6 @@ td.match.anchor {
   background: var(--vscode-editor-findMatchBackground, rgb(234 92 0 / 66%));
 }
 
-.column-menu-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 10;
-  padding: 0;
-  background: transparent;
-  border: 0;
-  cursor: default;
-}
-
-.column-menu {
-  position: fixed;
-  z-index: 11;
-  min-width: 160px;
-  margin: 0;
-  padding: 4px 0;
-  color: var(--vscode-menu-foreground, var(--vscode-foreground));
-  background: var(--vscode-menu-background, var(--vscode-editorWidget-background));
-  border: 1px solid var(--vscode-menu-border, var(--vscode-panel-border));
-  border-radius: 4px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
-  font-family: var(--vscode-font-family);
-  font-size: var(--vscode-font-size);
-}
-
-.column-menu-item {
-  display: block;
-  width: 100%;
-  padding: 4px 12px;
-  color: inherit;
-  text-align: left;
-  background: transparent;
-  border: 0;
-  cursor: pointer;
-  font: inherit;
-}
-
-.column-menu-item:hover,
-.column-menu-item:focus-visible {
-  color: var(--vscode-menu-selectionForeground, var(--vscode-list-activeSelectionForeground));
-  background: var(--vscode-menu-selectionBackground, var(--vscode-list-activeSelectionBackground));
-  outline: none;
-}
-
 /*
  * Which table a column comes from, along the top edge of its heading. It is a border and not a
  * shadow inside the cell: the heading is filled by a button that spans it, and anything that
@@ -1070,21 +1026,23 @@ tr.row-selected td:first-of-type {
   position: fixed;
   z-index: 11;
   min-width: 160px;
-  max-width: min(420px, calc(100vw - 24px));
+  max-width: min(560px, calc(100vw - 24px));
+  max-height: min(70vh, calc(100vh - 24px));
   margin: 0;
   padding: 4px 0;
+  overflow-y: auto;
   color: var(--vscode-menu-foreground, var(--vscode-foreground));
   background: var(--vscode-menu-background, var(--vscode-editorWidget-background));
   border: 1px solid var(--vscode-menu-border, var(--vscode-panel-border));
-  border-radius: 4px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
   font-family: var(--vscode-font-family);
   font-size: var(--vscode-font-size);
 }
 
 .menu-item {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 10px;
   width: 100%;
   padding: 4px 12px;
@@ -1101,11 +1059,133 @@ tr.row-selected td:first-of-type {
   cursor: default;
 }
 
+/*
+ * Three ways of saying "this is the one": the pointer is on it, the focus is on it, or — in a menu
+ * whose field keeps the focus — the arrows are on it. The same thing said three ways is lit the
+ * same way.
+ */
 .menu-item:hover:not(:disabled),
-.menu-item:focus-visible {
+.menu-item:focus-visible,
+.menu-item.highlighted {
   color: var(--vscode-menu-selectionForeground, var(--vscode-list-activeSelectionForeground));
   background: var(--vscode-menu-selectionBackground, var(--vscode-list-activeSelectionBackground));
   outline: none;
+}
+
+/* What is being turned on and off is named the way the grid names it: in the editor's face. */
+.menu-item[role="menuitemcheckbox"] {
+  font-family: var(--vscode-editor-font-family);
+}
+
+.menu-item .codicon-pass-filled {
+  color: var(--column-accent, var(--vscode-textLink-foreground));
+}
+
+.menu-item .codicon-circle-large-outline {
+  color: var(--vscode-descriptionForeground);
+}
+
+/* A proposal: what it is called, and under it what it is — two lines beside one pictogram. */
+
+.menu-item.detailed {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  column-gap: 10px;
+  align-items: start;
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+
+.menu-item.detailed .codicon {
+  grid-row: 1 / span 2;
+  margin-top: 2px;
+  color: var(--column-accent, var(--vscode-icon-foreground, var(--vscode-foreground)));
+}
+
+.menu-item.detailed .menu-label {
+  font-family: var(--vscode-editor-font-family);
+  font-weight: 600;
+  white-space: normal;
+  word-break: break-word;
+}
+
+.menu-detail {
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.9em;
+  line-height: 15px;
+  white-space: normal;
+  word-break: break-word;
+}
+
+.menu-item:hover .menu-detail,
+.menu-item:focus-visible .menu-detail,
+.menu-item.highlighted .menu-detail {
+  color: inherit;
+  opacity: 0.85;
+}
+
+/*
+ * What a group of entries belongs to: a table, or a schema. The swatch carries the accent the grid
+ * gives that table, so the same colour means the same relation wherever it is read.
+ */
+
+.menu-group {
+  padding: 4px 0 6px;
+  border-left: 3px solid var(--column-accent, transparent);
+}
+
+.menu-group + .menu-group {
+  margin-top: 4px;
+  border-top: 1px solid var(--vscode-panel-border);
+}
+
+.menu-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px 4px;
+  color: var(--vscode-foreground);
+  font-family: var(--vscode-editor-font-family);
+  font-size: 0.92em;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+/* Only where the colour means something: the accent of the table the entries below belong to. */
+.menu-group.accented .menu-heading::before {
+  content: "";
+  width: 9px;
+  height: 9px;
+  background: var(--column-accent);
+  border-radius: 2px;
+}
+
+/* The field a menu is narrowed with. It holds the focus, so the menu is at least as wide as it. */
+
+.menu-header {
+  min-width: 340px;
+  padding: 4px 10px 8px;
+}
+
+.menu-header :is(input, textarea) {
+  width: 100%;
+  padding: 6px 10px;
+  color: var(--vscode-input-foreground);
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border, var(--vscode-panel-border));
+  border-radius: 6px;
+  font: inherit;
+}
+
+.menu-header :is(input, textarea):focus {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+}
+
+/* Something to read rather than to run, shaped by whoever put it there. */
+.menu-note {
+  padding: 0;
 }
 
 .menu-separator {

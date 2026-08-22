@@ -25,6 +25,7 @@ import {
 } from "../../../rows/src/export.js";
 import type { ResultTable } from "../../../rows/src/resultPayload.js";
 import { CellInspector } from "./CellInspector.js";
+import { isWebAddress } from "./cellDetail.js";
 import { matchFrom, matchingCells } from "./findInRows.js";
 import { GridFinder } from "./GridFinder.js";
 import { GridHeader } from "./GridHeader.js";
@@ -40,7 +41,7 @@ import {
   selectedOrdinals,
   selectedRows,
 } from "./gridSelection.js";
-import { Menu, type MenuEntry, useMenu } from "./Menu.js";
+import { anchorUnder, Menu, type MenuEntry, type MenuPoint, useMenu } from "./Menu.js";
 import { ResultScrollbar, type ScrollMetrics } from "./ResultScrollbar.js";
 import {
   columnWidthsCh,
@@ -506,6 +507,44 @@ export function ResultGrid({
     if (matches.length > 0 && currentMatch < 0) stepToMatch(1);
   }, [matches]);
 
+  /**
+   * The menu for one cell, wherever it was asked for: under the pointer, or under the cell itself
+   * when the keys asked. What it offers is the caller's, plus the two things the grid itself can
+   * do with a cell — follow what it holds, when that is an address, and copy what is selected.
+   */
+  const openCellMenu = (at: MenuPoint, shownRow: number, ordinal: number, value: string | null) => {
+    if (!cellIsSelected(selection, shownRow, ordinal, visibleOrdinals)) {
+      setSelection(cellSelection(shownRow, ordinal));
+    }
+    focusClipboard();
+    const offered = layout?.cellMenu?.(ordinal, value) ?? [];
+    menu.openAt(at, {
+      label: `Actions for ${payload.columns[ordinal]?.name ?? "cell"}`,
+      entries: [
+        /*
+         * The link the cell already draws is the one that opens: a click on it is the gesture the
+         * host knows how to answer, and going around it would be a second way of following a link.
+         */
+        ...(value !== null && isWebAddress(value)
+          ? [
+              {
+                kind: "action" as const,
+                label: "Open",
+                run: () =>
+                  document
+                    .getElementById(cellId(shownRow, ordinal))
+                    ?.querySelector<HTMLAnchorElement>("a.cell-link")
+                    ?.click(),
+              },
+            ]
+          : []),
+        ...offered,
+        ...(offered.length > 0 ? [{ kind: "separator" as const }] : []),
+        { kind: "action", label: "Copy", run: () => copySelection() },
+      ],
+    });
+  };
+
   /*
    * Everything a row needs to draw itself and to answer a gesture. One object, built once: a row
    * of a result and a row the reader is adding differ in three answers, not in three hundred
@@ -521,19 +560,9 @@ export function ResultGrid({
     matched: matchedCells,
     ...(editing ? { editing } : {}),
     onCellMenu(event, shownRow, ordinal, value) {
-      if (!cellIsSelected(selection, shownRow, ordinal, visibleOrdinals)) {
-        setSelection(cellSelection(shownRow, ordinal));
-      }
-      focusClipboard();
-      const offered = layout?.cellMenu?.(ordinal, value) ?? [];
-      menu.open(event, {
-        label: `Actions for ${payload.columns[ordinal]?.name ?? "cell"}`,
-        entries: [
-          ...offered,
-          ...(offered.length > 0 ? [{ kind: "separator" as const }] : []),
-          { kind: "action", label: "Copy", run: () => copySelection() },
-        ],
-      });
+      event.preventDefault();
+      event.stopPropagation();
+      openCellMenu({ x: event.clientX, y: event.clientY }, shownRow, ordinal, value);
     },
     isEditingCell(subject, ordinal) {
       return subject.of === "added"
@@ -682,6 +711,23 @@ export function ResultGrid({
                   })
                   .catch(() => {});
               }, 0);
+              return;
+            }
+            /*
+             * The menu a right click opens, opened by the keys every desktop uses for it. It goes
+             * under the cell the cursor is on, which is the cell it acts on.
+             */
+            if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
+              event.preventDefault();
+              /* The cell the box is drawn around, which is the one the inspector reads too. */
+              const on = selection.anchor;
+              const cell = document.getElementById(cellId(on.row, on.ordinal));
+              openCellMenu(
+                cell ? anchorUnder(cell) : { x: 0, y: 0 },
+                on.row,
+                on.ordinal,
+                cursorCell?.value ?? null,
+              );
               return;
             }
             if (chord && event.key.toLowerCase() === "f") {

@@ -35,7 +35,7 @@ import {
   selectedRows,
 } from "../results/gridSelection.js";
 import { IconButton } from "../results/IconButton.js";
-import type { MenuEntry } from "../results/Menu.js";
+import { anchorUnder, Menu, type MenuEntry, type MenuPoint } from "../results/Menu.js";
 import { Modal } from "../results/Modal.js";
 import { type GridEditing, type GridLayout, ResultGrid } from "../results/ResultGrid.js";
 import { ResultNavigation } from "../results/ResultNavigation.js";
@@ -52,43 +52,6 @@ export type DataViewMessaging = WebviewMessaging<DataViewRequest, DataViewRespon
 interface Notice {
   message: string;
   severity: "info" | "error";
-}
-
-/**
- * The ground behind an open menu: a click anywhere else closes it. Every toolbar menu shows one,
- * so the dismissal a reader expects does not depend on which menu they opened.
- */
-function MenuBackdrop({ onClose }: { onClose: () => void }) {
-  return (
-    <button
-      type="button"
-      className="column-menu-backdrop"
-      aria-label="Close menu"
-      onClick={onClose}
-    />
-  );
-}
-
-function MenuItem({
-  label,
-  disabled,
-  onSelect,
-}: {
-  label: string;
-  disabled?: boolean;
-  onSelect: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      role="menuitem"
-      className="column-menu-item"
-      disabled={disabled}
-      onClick={onSelect}
-    >
-      {label}
-    </button>
-  );
 }
 
 /**
@@ -370,17 +333,21 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
   const [inspecting, setInspecting] = useState(false);
   /** What is selected in the grid, held here because the edit bar acts on it. */
   const [selection, setSelection] = useState<GridSelection>();
-  const [moreOpen, setMoreOpen] = useState(false);
-  /** Whether the list of provisioned changes is showing. */
-  const [editsOpen, setEditsOpen] = useState(false);
+  /*
+   * Where each toolbar menu opened, which is also whether it is open: a menu is drawn under the
+   * control that asked for it, and there is nothing else to remember about it.
+   */
+  const [moreAt, setMoreAt] = useState<MenuPoint>();
+  /** Where the list of provisioned changes opened, when the reader asked to read them. */
+  const [editsAt, setEditsAt] = useState<MenuPoint>();
   /** Which dialog is open over the view: rows coming in from a file, or rows going out to one. */
   const [transfer, setTransfer] = useState<"import" | "export">();
-  const [columnsOpen, setColumnsOpen] = useState(false);
+  const [columnsAt, setColumnsAt] = useState<MenuPoint>();
   const [dropActive, setDropActive] = useState(false);
   const [additions, setAdditions] = useState<DataViewAddition[]>();
+  /** Where the proposals were asked for, which is where the paths to choose between open too. */
+  const [additionsAt, setAdditionsAt] = useState<MenuPoint>();
   const [additionFilter, setAdditionFilter] = useState("");
-  /** Which proposal the arrow keys are on: a reader types, walks down, and presses Enter. */
-  const [highlighted, setHighlighted] = useState(0);
   const [choices, setChoices] = useState<{
     addition: DataViewAddition;
     title: string;
@@ -422,24 +389,6 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
     const timer = window.setTimeout(() => setNotice(undefined), 4_000);
     return () => window.clearTimeout(timer);
   }, [notice]);
-
-  const anyMenuOpen = columnsOpen || moreOpen || editsOpen || additions !== undefined;
-  useEffect(() => {
-    if (!anyMenuOpen) return;
-    // A menu a reader opened is a menu they can dismiss without aiming at anything — every menu,
-    // or Escape becomes a thing that works on some of them.
-    // React's KeyboardEvent shadows the DOM one this listener receives.
-    const dismiss = (event: globalThis.KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      setColumnsOpen(false);
-      setMoreOpen(false);
-      setEditsOpen(false);
-      setAdditions(undefined);
-      setChoices(undefined);
-    };
-    document.addEventListener("keydown", dismiss);
-    return () => document.removeEventListener("keydown", dismiss);
-  }, [anyMenuOpen]);
 
   const editing = useMemo<GridEditing | undefined>(() => {
     // Nothing is editable, and no gutter shows, until the reader asks for it.
@@ -530,10 +479,9 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
 
   /** Where each row sits in the grid, which is what a selection and a new row are counted in. */
   /*
-   * The proposals as they are shown: grouped under the table or the schema they belong to, and in
-   * one flat order besides. A reader walking down with the arrow keys walks the order they read,
-   * which is only knowable once the grouping has been done — so it is done once, here, and the
-   * rendering below reads it rather than working it out again.
+   * The proposals as they are shown: grouped under the table or the schema they belong to. The
+   * order they are read in is the order the arrow keys walk, which the menu takes from the order
+   * they are given in.
    */
   const additionGroups = useMemo(() => {
     if (!additions) return [];
@@ -566,13 +514,6 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
     }
     return groups;
   }, [additions, additionFilter, state?.projection.tables]);
-  const flatAdditions = additionGroups.flatMap((group) => group.items);
-  /* A different list is a different walk: the highlight goes back to the first proposal. */
-  // biome-ignore lint/correctness/useExhaustiveDependencies: the list's shape is the subject.
-  useEffect(() => {
-    setHighlighted(0);
-  }, [additionFilter, additions]);
-
   const shownRows = useMemo(
     () => rowOrder(state?.addedRows ?? [], state?.payload?.rows.length ?? 0),
     [state],
@@ -843,6 +784,186 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
         },
       }
     : undefined;
+  /*
+   * What each toolbar menu offers, as entries. The menu draws them, walks them and dismisses
+   * itself; what is worth offering, and what each thing does, is the view's to say.
+   */
+  const columnEntries: MenuEntry[] = [
+    ...[...state.projection.tables.map((_table, index) => index), undefined].flatMap(
+      (tableIndex) => {
+        const ordinals = columnNames.flatMap((_name, ordinal) =>
+          state.projection.columnTable[ordinal] === tableIndex ? [ordinal] : [],
+        );
+        if (ordinals.length === 0) return [];
+        const table = tableIndex === undefined ? undefined : state.projection.tables[tableIndex];
+        const accent = table ? tableAccent(table.accent) : undefined;
+        return [
+          {
+            kind: "group" as const,
+            heading: table ? `${table.schema}.${table.name}` : "Computed values",
+            ...(accent ? { accent } : {}),
+            entries: ordinals.map((ordinal): MenuEntry => {
+              const name = columnNames[ordinal] ?? "";
+              const key = columnKeys[ordinal] ?? name;
+              const hidden = hiddenOrdinals.has(ordinal);
+              return {
+                kind: "check",
+                label: name,
+                checked: !hidden,
+                run: () =>
+                  post(
+                    hidden
+                      ? { type: "data-view/unhide", column: key }
+                      : { type: "data-view/hide", column: key },
+                  ),
+              };
+            }),
+          },
+        ];
+      },
+    ),
+    /* Identity and relationship columns turn on and off together, the way one of them does. */
+    ...(technicalKeys.length > 0
+      ? [
+          {
+            kind: "check" as const,
+            label: countLabel(technicalKeys.length, "key column"),
+            checked: !technicalHidden,
+            run: () => post({ type: "data-view/technical-columns", hidden: !technicalHidden }),
+          },
+        ]
+      : []),
+    /* Bringing them all back is not one more column: it is what to do when too many are gone. */
+    ...(query.hidden.length > 0
+      ? [
+          { kind: "separator" as const },
+          {
+            kind: "action" as const,
+            label: "Show all columns",
+            run: () => post({ type: "data-view/unhide" }),
+          },
+        ]
+      : []),
+  ];
+
+  const moreEntries: MenuEntry[] = [
+    {
+      kind: "action",
+      label: "Edit in a SQL editor…",
+      run: () => post({ type: "data-view/edit-query" }),
+    },
+    {
+      kind: "action",
+      label: "Open in a Scratchpad",
+      run: () => post({ type: "data-view/open-sql" }),
+    },
+  ];
+
+  /* The changes waiting to be applied: a menu to read, so what it holds is read and not run. */
+  const changeEntries: MenuEntry[] = [
+    {
+      kind: "group",
+      heading: `${countLabel(editCount, "change")} waiting to be applied`,
+      entries: describeDataViewChanges(
+        state.edits,
+        state.removedRows,
+        state.addedRows,
+        state.editability,
+      ).map(
+        (change): MenuEntry => ({
+          kind: "note",
+          content: (
+            <div className="pending-edit">
+              <span className="pending-edit-target">
+                {change.table} · {change.row}
+              </span>
+              {change.kind === "delete" ? (
+                <span className="pending-edit-change">
+                  <span className="pending-edit-removal">The whole row goes away</span>
+                </span>
+              ) : change.kind === "insert" ? (
+                <span className="pending-edit-change">
+                  <span className="pending-edit-insertion">A new row</span>
+                </span>
+              ) : (
+                <span className="pending-edit-change">
+                  <span className="pending-edit-column">{change.column}</span>
+                  <span className="pending-edit-original">{change.original ?? "NULL"}</span>
+                  <span className="codicon codicon-arrow-right" aria-hidden="true" />
+                  <span className="pending-edit-value">{change.value ?? "NULL"}</span>
+                </span>
+              )}
+            </div>
+          ),
+        }),
+      ),
+    },
+  ];
+
+  /*
+   * The proposals go, the point they were asked at stays: choosing between join paths closes the
+   * proposals and opens the paths in their place, under the same control.
+   */
+  const closeAdditions = () => {
+    setAdditions(undefined);
+    setChoices(undefined);
+  };
+  /*
+   * What can be added to the query: the proposals, or — when one of them can be reached by more
+   * than one path — the paths to choose between, which take the whole menu until one is taken.
+   */
+  const additionEntries: MenuEntry[] = choices
+    ? [
+        {
+          kind: "group",
+          heading: `${choices.title} — ${choices.addition.label}`,
+          entries: [
+            ...choices.choices.map(
+              (choice): MenuEntry => ({
+                kind: "action",
+                icon: "git-merge",
+                label: choice.label,
+                detail: choice.description,
+                title: choice.description,
+                run: () =>
+                  post({
+                    type: "data-view/compose",
+                    addition: choices.addition,
+                    relationChoice: choice.index,
+                  }),
+              }),
+            ),
+            /* Leaving is all it does: taking an action is what dismisses a menu. */
+            { kind: "action", label: "Cancel", run: () => {} },
+          ],
+        },
+      ]
+    : additionGroups.length > 0
+      ? additionGroups.map(
+          (group): MenuEntry => ({
+            kind: "group",
+            heading: group.heading,
+            ...(group.accent ? { accent: group.accent } : {}),
+            entries: group.items.map(
+              (item): MenuEntry => ({
+                kind: "action",
+                icon: item.kind === "table" ? "table" : "symbol-field",
+                label: item.label,
+                detail: item.detail,
+                title:
+                  item.kind !== "table"
+                    ? `Add column ${item.label} (${item.detail})`
+                    : emptyQuery
+                      ? // Nothing to join to yet: this relation becomes the base.
+                        `Start the query with ${item.label}`
+                      : `JOIN ${item.label} through ${item.detail}`,
+                run: () => post({ type: "data-view/compose", addition: item }),
+              }),
+            ),
+          }),
+        )
+      : [{ kind: "group", heading: "Nothing to add", entries: [] }];
+
   // One fixed status line: messages never push the grid around.
   const statusLine: { text: string; severity: "info" | "error" } =
     // A failure has a band of its own across the top; saying it twice is saying it once too often.
@@ -928,88 +1049,17 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
                     : "Show or hide columns"
                 }
                 disabled={!query.structured || columnNames.length === 0}
-                onClick={() => setColumnsOpen((open) => !open)}
+                expanded={columnsAt !== undefined}
+                onClick={(event) => setColumnsAt(anchorUnder(event.currentTarget))}
                 text={query.hidden.length > 0 ? query.hidden.length : undefined}
               />
-              {columnsOpen ? (
-                <>
-                  <MenuBackdrop onClose={() => setColumnsOpen(false)} />
-                  <div className="column-menu toolbar-menu columns-menu" role="menu">
-                    {[...state.projection.tables.map((_table, index) => index), undefined].map(
-                      (tableIndex) => {
-                        const ordinals = columnNames.flatMap((_name, ordinal) =>
-                          state.projection.columnTable[ordinal] === tableIndex ? [ordinal] : [],
-                        );
-                        if (ordinals.length === 0) return null;
-                        const table =
-                          tableIndex === undefined
-                            ? undefined
-                            : state.projection.tables[tableIndex];
-                        const accent = table ? tableAccent(table.accent) : undefined;
-                        return (
-                          <div
-                            key={table ? table.tableOid : "computed"}
-                            className="columns-menu-group"
-                            style={
-                              accent ? ({ "--column-accent": accent } as CSSProperties) : undefined
-                            }
-                          >
-                            <div className="columns-menu-heading">
-                              {table ? `${table.schema}.${table.name}` : "Computed values"}
-                            </div>
-                            {ordinals.map((ordinal) => {
-                              const name = columnNames[ordinal] ?? "";
-                              const key = columnKeys[ordinal] ?? name;
-                              const hidden = hiddenOrdinals.has(ordinal);
-                              return (
-                                <button
-                                  key={key}
-                                  type="button"
-                                  role="menuitemcheckbox"
-                                  aria-checked={!hidden}
-                                  className="column-menu-item"
-                                  onClick={() =>
-                                    post(
-                                      hidden
-                                        ? { type: "data-view/unhide", column: key }
-                                        : { type: "data-view/hide", column: key },
-                                    )
-                                  }
-                                >
-                                  <span
-                                    className={`codicon codicon-${hidden ? "circle-large-outline" : "pass-filled"}`}
-                                    aria-hidden="true"
-                                  />
-                                  {name}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        );
-                      },
-                    )}
-                    {technicalKeys.length > 0 ? (
-                      <MenuItem
-                        label={`${technicalHidden ? "Show" : "Hide"} ${countLabel(
-                          technicalKeys.length,
-                          "key column",
-                        )}`}
-                        onSelect={() =>
-                          post({ type: "data-view/technical-columns", hidden: !technicalHidden })
-                        }
-                      />
-                    ) : null}
-                    {query.hidden.length > 0 ? (
-                      <MenuItem
-                        label="Show all columns"
-                        onSelect={() => {
-                          setColumnsOpen(false);
-                          post({ type: "data-view/unhide" });
-                        }}
-                      />
-                    ) : null}
-                  </div>
-                </>
+              {columnsAt ? (
+                <Menu
+                  at={columnsAt}
+                  label="Columns"
+                  entries={columnEntries}
+                  onClose={() => setColumnsAt(undefined)}
+                />
               ) : null}
             </div>
           </div>
@@ -1045,28 +1095,16 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
             <IconButton
               icon="ellipsis"
               label="More actions"
-              onClick={() => setMoreOpen((open) => !open)}
+              expanded={moreAt !== undefined}
+              onClick={(event) => setMoreAt(anchorUnder(event.currentTarget))}
             />
-            {moreOpen ? (
-              <>
-                <MenuBackdrop onClose={() => setMoreOpen(false)} />
-                <div className="column-menu toolbar-menu" role="menu">
-                  <MenuItem
-                    label="Edit the query in a SQL editor…"
-                    onSelect={() => {
-                      setMoreOpen(false);
-                      post({ type: "data-view/edit-query" });
-                    }}
-                  />
-                  <MenuItem
-                    label="Open in a new Scratchpad"
-                    onSelect={() => {
-                      setMoreOpen(false);
-                      post({ type: "data-view/open-sql" });
-                    }}
-                  />
-                </div>
-              </>
+            {moreAt ? (
+              <Menu
+                at={moreAt}
+                label="More actions"
+                entries={moreEntries}
+                onClose={() => setMoreAt(undefined)}
+              />
             ) : null}
           </div>
         </div>
@@ -1152,139 +1190,33 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
                 : "Add a column or a related table to the query"
             }
             disabled={!query.structured && !emptyQuery}
-            onClick={() => post({ type: "data-view/additions" })}
+            expanded={additions !== undefined}
+            onClick={(event) => {
+              setAdditionsAt(anchorUnder(event.currentTarget));
+              post({ type: "data-view/additions" });
+            }}
           />
-          {additions ? (
-            <>
-              <MenuBackdrop onClose={() => setAdditions(undefined)} />
-              <div className="column-menu additions-menu" role="menu">
-                {choices ? (
-                  <div className="columns-menu-group">
-                    <div className="columns-menu-heading">
-                      {choices.title} — {choices.addition.label}
-                    </div>
-                    {choices.choices.map((choice) => (
-                      <button
-                        key={choice.index}
-                        type="button"
-                        role="menuitem"
-                        className="column-menu-item addition-item"
-                        title={choice.description}
-                        onClick={() => {
-                          setChoices(undefined);
-                          setAdditions(undefined);
-                          post({
-                            type: "data-view/compose",
-                            addition: choices.addition,
-                            relationChoice: choice.index,
-                          });
-                        }}
-                      >
-                        <span className="codicon codicon-git-merge" aria-hidden="true" />
-                        <span className="addition-label">{choice.label}</span>
-                        <span className="addition-detail">{choice.description}</span>
-                      </button>
-                    ))}
-                    <MenuItem
-                      label="Cancel"
-                      onSelect={() => {
-                        setChoices(undefined);
-                        setAdditions(undefined);
-                      }}
-                    />
-                  </div>
-                ) : null}
-                {choices ? null : (
+          {additions && additionsAt ? (
+            <Menu
+              at={additionsAt}
+              label={emptyQuery ? "Tables to start the query with" : "Columns and tables to add"}
+              entries={additionEntries}
+              /*
+               * A reader types, walks down and presses Enter without leaving the field. Choosing
+               * between paths has nothing to narrow, so there the menu walks itself.
+               */
+              header={
+                choices ? undefined : (
                   <input
-                    className="additions-filter"
-                    // biome-ignore lint/a11y/noAutofocus: the picker is opened by an explicit click
-                    autoFocus
                     value={additionFilter}
                     placeholder="Filter columns and related tables…"
                     spellCheck={false}
                     onChange={(event) => setAdditionFilter(event.target.value)}
-                    /*
-                     * A reader types, walks down and presses Enter without leaving the field: the
-                     * arrows move the highlight rather than the caret, because there is nowhere in
-                     * a one-line filter for an up arrow to go.
-                     */
-                    onKeyDown={(event) => {
-                      if (event.key === "Escape") {
-                        setAdditions(undefined);
-                        return;
-                      }
-                      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-                        event.preventDefault();
-                        if (flatAdditions.length === 0) return;
-                        const step = event.key === "ArrowDown" ? 1 : -1;
-                        setHighlighted(
-                          (at) => (at + step + flatAdditions.length) % flatAdditions.length,
-                        );
-                        return;
-                      }
-                      if (event.key === "Enter") {
-                        const chosen = flatAdditions[highlighted];
-                        if (!chosen) return;
-                        event.preventDefault();
-                        setAdditions(undefined);
-                        post({ type: "data-view/compose", addition: chosen });
-                      }
-                    }}
                   />
-                )}
-                {additionGroups.map((group) => (
-                  <div
-                    key={group.key}
-                    className="columns-menu-group"
-                    style={
-                      group.accent
-                        ? ({ "--column-accent": group.accent } as CSSProperties)
-                        : undefined
-                    }
-                  >
-                    <div className="columns-menu-heading">{group.heading}</div>
-                    {group.items.map((item) => {
-                      const at = flatAdditions.indexOf(item);
-                      return (
-                        <button
-                          key={`${item.kind}:${item.label}:${item.detail}`}
-                          type="button"
-                          role="menuitem"
-                          className={`column-menu-item addition-item${at === highlighted ? " highlighted" : ""}`}
-                          /* The one the arrows are on scrolls itself into view as they move. */
-                          ref={(node) => {
-                            if (at === highlighted) node?.scrollIntoView({ block: "nearest" });
-                          }}
-                          title={
-                            item.kind !== "table"
-                              ? `Add column ${item.label} (${item.detail})`
-                              : emptyQuery
-                                ? // Nothing to join to yet: this relation becomes the base.
-                                  `Start the query with ${item.label}`
-                                : `JOIN ${item.label} through ${item.detail}`
-                          }
-                          onMouseEnter={() => setHighlighted(at)}
-                          onClick={() => {
-                            setAdditions(undefined);
-                            post({ type: "data-view/compose", addition: item });
-                          }}
-                        >
-                          <span
-                            className={`codicon codicon-${item.kind === "table" ? "table" : "symbol-field"}`}
-                            aria-hidden="true"
-                          />
-                          <span className="addition-label">{item.label}</span>
-                          <span className="addition-detail">{item.detail}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                ))}
-                {additions.length === 0 && !choices ? (
-                  <div className="columns-menu-heading">Nothing to add</div>
-                ) : null}
-              </div>
-            </>
+                )
+              }
+              onClose={closeAdditions}
+            />
           ) : null}
         </div>
         <ol className="data-view-tables-list">
@@ -1600,54 +1532,20 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
               type="button"
               className={`edit-bar-button count${editCount > 0 ? " pending" : ""}`}
               aria-live="polite"
-              aria-expanded={editsOpen}
+              aria-expanded={editsAt !== undefined}
               title={`${countLabel(editCount, "change")} — click to read them`}
               disabled={editCount === 0}
-              onClick={() => setEditsOpen((open) => !open)}
+              onClick={(event) => setEditsAt(anchorUnder(event.currentTarget))}
             >
               <span className="codicon codicon-edit" aria-hidden="true" /> {editCount}
             </button>
-            {editsOpen && editCount > 0 ? (
-              <>
-                <MenuBackdrop onClose={() => setEditsOpen(false)} />
-                <div className="column-menu toolbar-menu pending-edits">
-                  <div className="columns-menu-heading">
-                    {countLabel(editCount, "change")} waiting to be applied
-                  </div>
-                  {describeDataViewChanges(
-                    state.edits,
-                    state.removedRows,
-                    state.addedRows,
-                    state.editability,
-                  ).map((change, index) => (
-                    <div
-                      className="pending-edit"
-                      // biome-ignore lint/suspicious/noArrayIndexKey: a change has no identity of its own; its place in the list is it.
-                      key={index}
-                    >
-                      <span className="pending-edit-target">
-                        {change.table} · {change.row}
-                      </span>
-                      {change.kind === "delete" ? (
-                        <span className="pending-edit-change">
-                          <span className="pending-edit-removal">The whole row goes away</span>
-                        </span>
-                      ) : change.kind === "insert" ? (
-                        <span className="pending-edit-change">
-                          <span className="pending-edit-insertion">A new row</span>
-                        </span>
-                      ) : (
-                        <span className="pending-edit-change">
-                          <span className="pending-edit-column">{change.column}</span>
-                          <span className="pending-edit-original">{change.original ?? "NULL"}</span>
-                          <span className="codicon codicon-arrow-right" aria-hidden="true" />
-                          <span className="pending-edit-value">{change.value ?? "NULL"}</span>
-                        </span>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </>
+            {editsAt && editCount > 0 ? (
+              <Menu
+                at={editsAt}
+                label="Pending changes"
+                entries={changeEntries}
+                onClose={() => setEditsAt(undefined)}
+              />
             ) : null}
           </div>
           <button

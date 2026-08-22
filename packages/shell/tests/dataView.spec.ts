@@ -112,7 +112,7 @@ test("composes a table by keyboard alone: type, walk down, press Enter", async (
   // The filter has the focus when it opens, so a reader types straight into it — once it has it.
   await expect(page.getByPlaceholder("Filter columns and related tables…")).toBeFocused();
   await page.keyboard.type("order");
-  const proposals = page.locator(".addition-item");
+  const proposals = page.getByRole("menu").getByRole("menuitem");
   await expect(proposals.first()).toContainText("shop.order_line");
 
   // The walk starts on the first proposal, and wraps rather than stopping — never a dead press.
@@ -126,7 +126,7 @@ test("composes a table by keyboard alone: type, walk down, press Enter", async (
   await page.keyboard.press("ArrowDown");
   await page.keyboard.press("ArrowDown");
   await expect(proposals.nth(2)).toHaveClass(/highlighted/u);
-  const chosen = (await proposals.nth(2).locator(".addition-label").textContent()) ?? "";
+  const chosen = (await proposals.nth(2).locator(".menu-label").textContent()) ?? "";
 
   await page.keyboard.press("Enter");
 
@@ -348,6 +348,31 @@ test("opens an address with the chord, and selects the cell without it", async (
   await link.click();
   await expect(page).toHaveURL(/localhost/u);
   await expect(table.cellsWithText("https://example.test/fumoir").first()).toHaveClass(/selected/u);
+
+  // The grid is one stop in the tabbing order: the keys reach the link through the cell menu.
+  await expect(link).toHaveAttribute("tabindex", "-1");
+});
+
+test("opens the menu of the cell the box is on, from the keys alone", async ({ page }) => {
+  await openEmpty(page);
+  const table = await add(page, "shop.brand");
+
+  await table.cellsWithText("https://example.test/fumoir").first().click();
+  await page.keyboard.press("Shift+F10");
+
+  const menu = page.getByRole("menu");
+  await expect(menu).toBeVisible();
+  // Following the address is what a cell holding one is for, so it is the first thing offered.
+  await expect(menu.getByRole("menuitem").first()).toHaveText("Open");
+  await expect(menu.getByRole("menuitem", { name: "Copy" })).toBeVisible();
+
+  // It opens under the cell it acts on, not in a corner of the page.
+  const cell = await table.cellsWithText("https://example.test/fumoir").first().boundingBox();
+  const box = await menu.boundingBox();
+  expect(box?.y).toBeGreaterThan(cell?.y ?? 0);
+
+  await page.keyboard.press("Escape");
+  await expect(menu).toBeHidden();
 });
 
 test("shows the way across a result wider than the pane", async ({ page }) => {
@@ -651,10 +676,12 @@ test("hides the key columns a reader has no use for, and offers them back", asyn
   expect(await runningSql(page)).toContain("inventory_movement.id");
 
   await openColumns(page);
-  await page.getByRole("menuitem", { name: /^Show \d+ key columns$/u }).click();
+  const keys = page.getByRole("menuitemcheckbox", { name: /^\d+ key columns$/u });
+  await expect(keys).toHaveAttribute("aria-checked", "false");
+  await keys.click();
 
   await expect(page.getByRole("columnheader", { name: /inventory_id/u })).toBeVisible();
-  await page.getByRole("menuitem", { name: /^Hide \d+ key columns$/u }).click();
+  await keys.click();
   await expect(page.getByRole("columnheader", { name: /inventory_id/u })).toBeHidden();
 });
 
@@ -793,7 +820,7 @@ test("says what each provisioned change will do, not only how many there are", a
   await bar.changes.click();
 
   // A reader about to write to a database should be able to read the list before committing to it.
-  const drawer = page.locator(".pending-edits");
+  const drawer = page.getByRole("menu", { name: "Pending changes" });
   await expect(drawer).toContainText("1 change waiting to be applied");
   await expect(drawer.locator(".pending-edit-target")).toContainText("shop.address · id =");
   await expect(drawer.locator(".pending-edit-column")).toHaveText("city");
@@ -1011,7 +1038,7 @@ test("adds an empty row and fills it in, without writing anything yet", async ({
 
   await expect(added.locator(".cell-value").first()).toHaveText("Atelier Est");
   await bar.changes.click();
-  const drawer = page.locator(".pending-edits");
+  const drawer = page.getByRole("menu", { name: "Pending changes" });
   await expect(drawer.locator(".pending-edit-target")).toContainText("label = Atelier Est");
   await expect(drawer.locator(".pending-edit-insertion")).toHaveText("A new row");
 });
@@ -1095,7 +1122,7 @@ test("spreads a tab-separated paste across the columns from where it lands", asy
   await expect(bar.changes).toBeEnabled();
   await bar.changes.click();
   // Only the column that really changed is held: pasting a value a cell already has is no change.
-  const drawer = page.locator(".pending-edits");
+  const drawer = page.getByRole("menu", { name: "Pending changes" });
   await expect(drawer.locator(".pending-edit-column")).toHaveText("city");
   await expect(drawer.locator(".pending-edit-value")).toHaveText("Saint-Herblain");
 });

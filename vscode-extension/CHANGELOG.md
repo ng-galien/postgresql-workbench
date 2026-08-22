@@ -59,9 +59,15 @@ from the Workbench Index and written back in one guarded transaction.
   left an idle filter reading as a focused one on a light theme
 - Added a menu on right-click, on a cell and on a column heading: **Filter** and
   **Exclude** write the condition the cell stands for into the WHERE field —
-  where it can be read, corrected and undone — **Inspect** opens the value, and
-  **Copy** takes the selection. It walks with the arrows and gives the focus
-  back where it came from
+  where it can be read, corrected and undone — **Inspect** opens the value,
+  **Open** follows an address the cell holds, and **Copy** takes the selection.
+  It walks with the arrows and gives the focus back where it came from
+- Opened that menu from the keys, with Shift+F10 or the Menu key, under the cell
+  the cursor is on — which is also how the keyboard now follows a link, so the
+  grid stays a single stop in the tabbing order
+- Drew every menu of the view with the one menu component: the columns picker,
+  the additions picker, the actions menu and the pending-changes list dismiss
+  alike, walk alike, and turn what is on and off with a checkbox that says so
 - Named a Data View opened on a statement after the relations that statement
   draws from, once the query has been read, instead of the statement itself: a
   tab an inch wide showed a wall of column names

@@ -43,7 +43,8 @@ the projection. A column heading menu edits the projection of the column it
 belongs to.
 
 The menu is reachable from the keyboard alone: type to filter, walk down, press
-Enter.
+Enter. Every menu of the view answers the same keys — the arrows walk it, Home
+and End reach its ends, Escape leaves it, and the focus goes back where it was.
 
 **Show the SQL** opens the statement the view is running at that moment, with a
 control that copies it as it stands — ready to paste into a Scratchpad or a SQL
@@ -76,6 +77,9 @@ is found by its new value, and it never goes back to the database.
   a group. Set `postgresql-workbench.dataView.hideKeyColumns` to `false` to show
   them from the start. A column a new row cannot go without is revealed the
   moment you add one.
+- **An address in a cell is a link.** Ctrl/Cmd+click follows it, as in an editor,
+  so a plain click still selects the cell it lands on. From the keyboard, the
+  cell menu's **Open** does the same.
 - **Large relations page.** The view loads a first page and the rest on demand as
   you walk the rows. A cursor that has been closed says so; refresh loads again.
 
@@ -84,10 +88,12 @@ and what an export writes cannot disagree about it.
 
 ## Filter from a cell
 
-Right-click a cell for what can be done with what it holds: **Filter** keeps the
-rows whose column holds that value, **Exclude** keeps the others, **Inspect**
-opens the value whole, and **Copy** takes the selection. An empty cell filters on
-`IS NULL`, which is what a reader asking for the empty ones means.
+Right-click a cell — or press Shift+F10, or the Menu key, on the cell the cursor
+is on — for what can be done with what it holds: **Filter** keeps the rows whose
+column holds that value, **Exclude** keeps the others, **Inspect** opens the
+value whole, **Open** follows an address the cell holds, and **Copy** takes the
+selection. An empty cell filters on `IS NULL`, which is what a reader asking for
+the empty ones means.
 
 The condition is written into the filter box rather than applied behind you: it
 names the relation the way the query names it, it adds to a condition already

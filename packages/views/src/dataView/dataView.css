@@ -179,12 +179,6 @@ body,
   color: var(--vscode-gitDecoration-modifiedResourceForeground, var(--vscode-foreground));
 }
 
-.toolbar-menu {
-  top: 26px;
-  right: 0;
-  left: auto;
-}
-
 /* Messages */
 
 .data-view-info {
@@ -367,15 +361,6 @@ body,
 
 .data-view-rows-spacer {
   flex: 1;
-}
-
-/*
- * The proposal the arrow keys are on. It is lit the way a hover lights one, because it is the same
- * thing said two ways: this is what Enter will take.
- */
-.addition-item.highlighted {
-  background: var(--vscode-list-activeSelectionBackground, var(--vscode-list-hoverBackground));
-  color: var(--vscode-list-activeSelectionForeground, inherit);
 }
 
 /* What is said about the result but not between its arrows, so nothing there changes width. */
@@ -698,42 +683,6 @@ body,
   text-overflow: ellipsis;
 }
 
-/* Popup menus (columns, "+" additions, JOIN choices): roomy, readable, nothing truncated. */
-
-.data-view .column-menu {
-  min-width: 260px;
-  max-width: min(640px, calc(100vw - 24px));
-  padding: 6px 0;
-  border-radius: 8px;
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
-  font-size: 13px;
-}
-
-.data-view .column-menu-item {
-  padding: 5px 14px;
-  line-height: 18px;
-}
-
-.columns-menu {
-  max-height: 70vh;
-  overflow-y: auto;
-}
-
-.columns-menu .column-menu-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-family: var(--vscode-editor-font-family);
-}
-
-.columns-menu .column-menu-item .codicon-pass-filled {
-  color: var(--column-accent, var(--vscode-textLink-foreground));
-}
-
-.columns-menu .column-menu-item .codicon-circle-large-outline {
-  color: var(--vscode-descriptionForeground);
-}
-
 /* Fixed status line: always present, never changes the layout above it */
 
 .data-view-statusline {
@@ -831,112 +780,13 @@ body,
   box-shadow: inset 0 0 0 2px var(--vscode-focusBorder);
 }
 
-.columns-menu-group {
-  padding: 4px 0 6px;
-  border-left: 3px solid var(--column-accent, transparent);
-}
-
-.columns-menu-group + .columns-menu-group {
-  margin-top: 4px;
-  border-top: 1px solid var(--vscode-panel-border);
-}
-
-.columns-menu-heading {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 14px 4px;
-  color: var(--vscode-foreground);
-  font-family: var(--vscode-editor-font-family);
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-}
-
-.columns-menu-heading::before {
-  content: "";
-  width: 9px;
-  height: 9px;
-  background: var(--column-accent, var(--vscode-descriptionForeground));
-  border-radius: 2px;
-}
-
-.additions-menu {
-  top: 28px;
-  left: 0;
-  right: auto;
-  width: min(560px, calc(100vw - 24px));
-  max-height: 70vh;
-  overflow-y: auto;
-}
-
-.additions-filter {
-  width: calc(100% - 20px);
-  margin: 4px 10px 8px;
-  padding: 6px 10px;
-  color: var(--vscode-input-foreground);
-  background: var(--vscode-input-background);
-  border: 1px solid var(--vscode-input-border, var(--vscode-panel-border));
-  border-radius: 6px;
-  font: inherit;
-  font-size: 13px;
-}
-
-.additions-filter:focus {
-  outline: 1px solid var(--vscode-focusBorder);
-  outline-offset: -1px;
-}
-
-/* One item = icon + two readable lines (name, then the relation or type), never clipped. */
-
-.addition-item {
-  display: grid;
-  grid-template-columns: 18px minmax(0, 1fr);
-  grid-template-rows: auto auto;
-  column-gap: 10px;
-  align-items: start;
-  padding-top: 6px;
-  padding-bottom: 6px;
-}
-
-.addition-item .codicon {
-  grid-row: 1 / span 2;
-  margin-top: 2px;
-  color: var(--column-accent, var(--vscode-icon-foreground, var(--vscode-foreground)));
-}
-
-.addition-label {
-  font-family: var(--vscode-editor-font-family);
-  font-size: 13px;
-  font-weight: 600;
-  white-space: normal;
-  word-break: break-word;
-}
-
-.addition-detail {
-  color: var(--vscode-descriptionForeground);
-  font-size: 11.5px;
-  line-height: 15px;
-  white-space: normal;
-  word-break: break-word;
-}
-
-.column-menu-item:hover .addition-detail,
-.column-menu-item:focus-visible .addition-detail {
-  color: inherit;
-  opacity: 0.85;
-}
-
 /*
  * The provisioned changes, read before they are written: what table and row each lands on, and
  * the value it replaces.
  */
-.pending-edits {
-  max-width: 460px;
-}
-
 .pending-edit {
   display: flex;
+  max-width: 440px;
   flex-direction: column;
   padding: 4px 10px;
   gap: 1px;
