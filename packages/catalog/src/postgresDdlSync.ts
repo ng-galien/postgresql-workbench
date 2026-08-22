@@ -1,4 +1,5 @@
 import { quoteSqlIdentifier } from "../../sql/src/text/identifiers.js";
+import { quoteSqlLiteral as sqlLiteral } from "../../sql/src/text/literals.js";
 
 export const WORKBENCH_DDL_CHANNEL = "plpgsql_workbench_ddl";
 export const WORKBENCH_DDL_PAYLOAD_VERSION = 1;
@@ -419,10 +420,6 @@ function postgresResourceKind(value: unknown): PostgresDdlResourceKind | undefin
     return value;
   }
   return undefined;
-}
-
-function sqlLiteral(value: string): string {
-  return `'${value.replaceAll("'", "''")}'`;
 }
 
 function positiveInteger(value: unknown, label: string): number {

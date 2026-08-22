@@ -682,8 +682,27 @@ export function joinPlanDescription(
     const object = objects.find((candidate) => candidate.oid === oid);
     return object ? `${object.schema}.${object.name}` : "?";
   };
+  const name = (oid: number) => objects.find((object) => object.oid === oid)?.name ?? "?";
   const via = plan.viaOids.length > 0 ? ` via ${plan.viaOids.map(label).join(", ")}` : "";
-  return `${keyword} · ${label(plan.startOid)} ↔ ${label(plan.targetOid)}${via}`;
+  const keys = plan.hops.length > 1 ? ` on ${joinPlanHopKeys(plan, name)}` : "";
+  return `${keyword} · ${label(plan.startOid)} ↔ ${label(plan.targetOid)}${via}${keys}`;
+}
+
+/**
+ * The key each hop of a path is taken on, in the order they are taken.
+ *
+ * Two paths can traverse the same relations and still be different joins: a sales order holds a
+ * billing address and a shipping address, so `address → sales_order → app_user` is two ways of
+ * getting there. Named by their relations alone they read as the same sentence twice, and a
+ * reader offered both cannot choose. The keys are the only thing that tells them apart. A path of
+ * one hop is already named by its columns in the label, and asks nothing of this.
+ */
+function joinPlanHopKeys(plan: JoinPlan, name: (oid: number) => string): string {
+  return plan.hops
+    .map(
+      (hop) => `${name(hop.foreignKey.sourceTableOid)}.${hop.foreignKey.sourceColumns.join(", ")}`,
+    )
+    .join(" then ");
 }
 
 /**

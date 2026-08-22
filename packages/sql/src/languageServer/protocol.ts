@@ -59,6 +59,34 @@ export interface SqlAuthoringPlpgsqlTokensResult {
   tokens: SqlAuthoringSemanticToken[];
 }
 
+/**
+ * One token with its kind named rather than numbered: what a consumer outside the protocol needs,
+ * since a token number means nothing without the legend the server declared it against.
+ */
+export interface NamedSqlToken {
+  /** Zero-based, as the language server counts lines. */
+  line: number;
+  character: number;
+  length: number;
+  type: string;
+}
+
+/**
+ * The tokens of a document, resolved against a legend. A token whose kind the legend does not name
+ * is dropped rather than guessed: a consumer that cannot say what it is cannot paint it.
+ */
+export function namedSemanticTokens(
+  data: ArrayLike<number> | undefined,
+  legend: readonly string[],
+): NamedSqlToken[] {
+  return decodeSemanticTokenData(data ?? []).flatMap((token) => {
+    const type = legend[token.tokenType];
+    return type === undefined
+      ? []
+      : [{ line: token.line, character: token.character, length: token.length, type }];
+  });
+}
+
 /** Decodes LSP delta-encoded semantic token data into absolute tokens. */
 export function decodeSemanticTokenData(data: ArrayLike<number>): SqlAuthoringSemanticToken[] {
   const tokens: SqlAuthoringSemanticToken[] = [];
