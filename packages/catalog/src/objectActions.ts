@@ -1,4 +1,4 @@
-import type { WorkbenchObjectModel } from "../../../packages/catalog/src/objectModel.js";
+import type { WorkbenchObjectModel } from "../../catalog/src/objectModel.js";
 
 export type WorkbenchObjectActionId =
   | "open-definition"

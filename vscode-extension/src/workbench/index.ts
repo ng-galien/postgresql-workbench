@@ -16,6 +16,13 @@ export {
   type WorkbenchSourceDescriptor,
 } from "../../../packages/catalog/src/indexController.js";
 export {
+  actionsForWorkbenchSurface,
+  buildWorkbenchObjectActions,
+  type WorkbenchObjectAction,
+  type WorkbenchObjectActionId,
+  type WorkbenchObjectActionSurface,
+} from "../../../packages/catalog/src/objectActions.js";
+export {
   buildWorkbenchObjects,
   buildWorkbenchTableMembers,
   type WorkbenchDatabaseIdentity,
@@ -23,13 +30,6 @@ export {
   type WorkbenchObjectModel,
   workbenchObjectFromSymbol,
 } from "../../../packages/catalog/src/objectModel.js";
-export {
-  actionsForWorkbenchSurface,
-  buildWorkbenchObjectActions,
-  type WorkbenchObjectAction,
-  type WorkbenchObjectActionId,
-  type WorkbenchObjectActionSurface,
-} from "./objectActions.js";
 export { WorkbenchSourceUris } from "./sourceUris.js";
 export {
   FunctionItem,

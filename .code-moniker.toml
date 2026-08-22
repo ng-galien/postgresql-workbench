@@ -195,9 +195,23 @@ owns = [
 forbids = [
   "being imported as a service locator by a product module",
   "owning feature persistence or semantic caches",
+  "holding logic that does not adapt anything to VS Code",
 ]
 forbid_rules = ["extension-entry-is-not-a-service"]
-rationale = "Activation chooses implementations and binds commands; feature state stays in the controller that defines its lifecycle."
+rationale = """
+Activation chooses implementations and binds commands; feature state stays in the controller that
+defines its lifecycle. The extension adapts the engine to VS Code and holds nothing else, because
+the same engine is meant to run under a host that is not VS Code at all.
+
+Measured debt against that, August 2026. Five modules that never mentioned VS Code — 731 lines —
+moved to the packages their own imports named, and the package rules now keep them there. Two
+remain with no home the package graph allows: debug/launchConfiguration needs the saved connections
+and the SQL call parser together, and no package may depend on both catalog and sql;
+scratchpad/notebookFile needs catalog, dap, rows and views at once. And the extension re-exports
+package symbols from 39 of its modules, 56 times, which is what let engine code look like extension
+code in the first place. None of these three is expressible as a reference rule today, so they are
+named here instead of enforced.
+"""
 symbols = ["ts:vscode-extension/src/extension.interface:PlpgsqlExtensionApi"]
 rules = ["extension-entry-is-not-a-service"]
 

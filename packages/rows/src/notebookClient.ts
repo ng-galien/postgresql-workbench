@@ -1,4 +1,5 @@
 import type { Client } from "pg";
+import { destroyClientSocket, withTimeout } from "./closingClient.js";
 
 const NOTEBOOK_CANCELLATION_TIMEOUT_MS = 2_000;
 
@@ -155,29 +156,4 @@ function closeLateClient(pending: Promise<Client>): void {
   void pending
     .then((client) => client.end().catch(() => destroyClientSocket(client)))
     .catch(() => {});
-}
-
-async function withTimeout<T>(
-  operation: Promise<T>,
-  timeoutMs: number,
-  message: string,
-): Promise<T> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    return await Promise.race([
-      operation,
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error(message)), timeoutMs);
-      }),
-    ]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
-}
-
-function destroyClientSocket(client: Client): void {
-  const internal = client as Client & {
-    connection?: { stream?: { destroy: () => void } };
-  };
-  internal.connection?.stream?.destroy();
 }

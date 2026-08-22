@@ -2,7 +2,7 @@ import type {
   DebugLaunchRoutineTarget,
   DebugSessionRuntimeState,
   DebugSessionStatus,
-} from "../../../packages/dap/src/debugger/launch/index.js";
+} from "../../../../dap/src/debugger/launch/index.js";
 
 export type ExtensionDebugSessionState = "starting" | DebugSessionRuntimeState;
 

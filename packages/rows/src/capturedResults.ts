@@ -6,8 +6,8 @@ import {
   type DebugResultEntry,
   type DebugResultStatus,
   debugResultEntryStatus,
-} from "../../../packages/dap/src/debugger/launch/index.js";
-import type { DebugResultViewState } from "../../../packages/rows/src/resultPayload.js";
+} from "../../dap/src/debugger/launch/index.js";
+import type { DebugResultViewState } from "../../rows/src/resultPayload.js";
 
 /**
  * The captured debug results the Extension Host holds: the bounded history it keeps, what it

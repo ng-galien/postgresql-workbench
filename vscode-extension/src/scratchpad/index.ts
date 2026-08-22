@@ -13,6 +13,10 @@ export {
   SqlResultSession,
 } from "../../../packages/rows/src/cursor.js";
 export {
+  executeSqlSelection,
+  prepareSqlSelection,
+} from "../../../packages/rows/src/runSelection.js";
+export {
   type NotebookBindingSnapshot,
   nextSqlNotebookName,
   normalizeSqlNotebookName,
@@ -36,7 +40,6 @@ export {
   sqlResultSettings,
 } from "./register.js";
 export { postgresCursorSafetyTimeoutMs } from "./resultHost.js";
-export { executeSqlSelection, prepareSqlSelection } from "./runSelection.js";
 export {
   type ScratchpadTransaction,
   ScratchpadTransactionManager,

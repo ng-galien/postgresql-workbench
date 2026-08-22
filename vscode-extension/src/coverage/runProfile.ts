@@ -18,8 +18,10 @@ import {
   toCoverageTestReport,
 } from "../../../packages/coverage/src/index.js";
 import { createCoverageSyntaxService } from "../../../packages/coverage/src/syntaxService.js";
+import { destroyClientSocket } from "../../../packages/rows/src/closingClient.js";
 import type { SyntaxParser } from "../../../packages/sql/src/analysis/syntaxTree.js";
 import type { ConnectionManager } from "../connection/index.js";
+import { errorMessage } from "../errorMessage.js";
 import { openCoverageClient } from "./client.js";
 import { coverageDelta, indexCoverageSnapshot } from "./delta.js";
 import { coverageAsJson, coverageAsLcov, type ExportedCoverageFile } from "./export.js";
@@ -732,15 +734,4 @@ async function openClientWithCancellation(
   } finally {
     subscription.dispose();
   }
-}
-
-function destroyClientSocket(client: Client): void {
-  const internal = client as Client & {
-    connection?: { stream?: { destroy: () => void } };
-  };
-  internal.connection?.stream?.destroy();
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

@@ -1,9 +1,6 @@
 import type { Client, FieldDef, Query } from "pg";
 import { describe, expect, it } from "vitest";
-import type {
-  DebugResult,
-  DebugResultStatus,
-} from "../../../packages/dap/src/debugger/launch/index.js";
+import type { DebugResult, DebugResultStatus } from "../../dap/src/debugger/launch/index.js";
 import { executeSqlSelection, prepareSqlSelection } from "./runSelection.js";
 
 const singleStatement = async () => "single-statement" as const;

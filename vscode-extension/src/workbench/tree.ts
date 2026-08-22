@@ -191,7 +191,7 @@ function indexProgressLabel(state: WorkbenchIndexState): string {
   }
 }
 
-function resultSummary(result: WorkbenchIndexResult): string {
+function indexSummary(result: WorkbenchIndexResult): string {
   const milliseconds = Math.round(result.indexingMs);
   return `${countLabel(result.documents, "source")}, ${countLabel(result.symbols, "symbol")}, ${countLabel(milliseconds, "millisecond")}`;
 }
@@ -203,19 +203,19 @@ function sourcesTooltip(database: string, state: WorkbenchIndexState): string {
     case "indexing":
       return [
         `${state.result ? "Refreshing" : "Indexing"} PostgreSQL sources for ${database}: ${indexProgressLabel(state)}`,
-        state.result ? `Previous snapshot available: ${resultSummary(state.result)}` : undefined,
+        state.result ? `Previous snapshot available: ${indexSummary(state.result)}` : undefined,
       ]
         .filter(Boolean)
         .join("\n");
     case "available":
       return state.result
-        ? `Indexed sources for ${database}: ${resultSummary(state.result)}`
+        ? `Indexed sources for ${database}: ${indexSummary(state.result)}`
         : `Indexed sources for ${database}`;
     case "stale":
       return [
         `PostgreSQL sources for ${database} are stale and require reindexing`,
         state.message,
-        state.result ? `Previous snapshot available: ${resultSummary(state.result)}` : undefined,
+        state.result ? `Previous snapshot available: ${indexSummary(state.result)}` : undefined,
       ]
         .filter(Boolean)
         .join("\n");
@@ -223,7 +223,7 @@ function sourcesTooltip(database: string, state: WorkbenchIndexState): string {
       return [
         `PostgreSQL source indexing for ${database} was cancelled`,
         state.result
-          ? `Previous snapshot available: ${resultSummary(state.result)}`
+          ? `Previous snapshot available: ${indexSummary(state.result)}`
           : "Select to retry",
       ].join("\n");
     case "error":
@@ -231,7 +231,7 @@ function sourcesTooltip(database: string, state: WorkbenchIndexState): string {
         state.message
           ? `PostgreSQL source indexing failed for ${database}: ${state.message}`
           : `PostgreSQL source indexing failed for ${database}`,
-        state.result ? `Previous snapshot available: ${resultSummary(state.result)}` : undefined,
+        state.result ? `Previous snapshot available: ${indexSummary(state.result)}` : undefined,
         "Select to retry",
       ]
         .filter(Boolean)
@@ -251,7 +251,7 @@ function sourcesAccessibilityLabel(database: string, state: WorkbenchIndexState)
         .filter(Boolean)
         .join(", ");
     case "available":
-      return `Schemas, ${database}, available${state.result ? `, ${resultSummary(state.result)}` : ""}`;
+      return `Schemas, ${database}, available${state.result ? `, ${indexSummary(state.result)}` : ""}`;
     case "stale":
       return `Schemas, ${database}, stale${state.result ? ", previous snapshot available" : ""}, select to reindex`;
     case "cancelled":

@@ -9,10 +9,12 @@ import {
   type PgTapSourceRoutine,
   type PgTapTestRoutine,
 } from "../../../packages/coverage/src/index.js";
+import { destroyClientSocket, withTimeout } from "../../../packages/rows/src/closingClient.js";
 import { countLabel } from "../../../packages/rows/src/countLabel.js";
 import type { SyntaxParser } from "../../../packages/sql/src/analysis/syntaxTree.js";
 import type { ConnectionManager } from "../connection/index.js";
 import { getConnectionName } from "../connection/index.js";
+import { errorMessage } from "../errorMessage.js";
 import { CODE_MONIKER_URI_SCHEME } from "../sources/index.js";
 import { openCoverageClient } from "./client.js";
 import { PgTapCoverageProfile, type PgTapCoverageTarget } from "./runProfile.js";
@@ -749,31 +751,6 @@ async function settlesWithin(action: Promise<unknown>, timeoutMs: number): Promi
   }
 }
 
-async function withTimeout<T>(
-  operation: Promise<T>,
-  timeoutMs: number,
-  message: string,
-): Promise<T> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    return await Promise.race([
-      operation,
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error(message)), timeoutMs);
-      }),
-    ]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
-}
-
-function destroyClientSocket(client: Client): void {
-  const internal = client as Client & {
-    connection?: { stream?: { destroy: () => void } };
-  };
-  internal.connection?.stream?.destroy();
-}
-
 function appendTapOutput(run: vscode.TestRun, item: vscode.TestItem, report: PgTapReport): void {
   const lines = report.output.slice(0, 200);
   const suffix = report.output.length > lines.length ? "\r\n… output truncated" : "";
@@ -817,8 +794,4 @@ export function normalizePgTapTestPatterns(configured: unknown): string[] {
     );
   }
   return configured.map((pattern) => pattern.trim()).filter((pattern) => pattern.length > 0);
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

@@ -7,7 +7,7 @@ import {
   NotebookClientCancellation,
   NotebookExecutionCancelledError,
   withDedicatedNotebookClient,
-} from "./association.js";
+} from "./notebookClient.js";
 
 describe("dedicated SQL notebook connections", () => {
   it("sets the PostgreSQL Statement timeout for the dedicated Scratchpad session", async () => {

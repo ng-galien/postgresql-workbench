@@ -1,5 +1,9 @@
 import * as vscode from "vscode";
 import type { WorkbenchIndexController } from "../../../packages/catalog/src/indexController.js";
+import type {
+  WorkbenchObjectAction,
+  WorkbenchObjectActionId,
+} from "../../../packages/catalog/src/objectActions.js";
 import type { WorkbenchObjectModel } from "../../../packages/catalog/src/objectModel.js";
 import {
   clampDebugResultRows,
@@ -40,7 +44,6 @@ import type {
   WorkbenchSourceUris,
   WorkbenchTreeProvider,
 } from "./index.js";
-import type { WorkbenchObjectAction, WorkbenchObjectActionId } from "./objectActions.js";
 
 /**
  * The VS Code commands of the Workbench: opening a routine's source, running and profiling it,

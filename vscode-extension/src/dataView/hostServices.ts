@@ -1,4 +1,5 @@
 export type { DataViewResultSettings } from "../../../packages/rows/src/dataView/openRows.js";
+export { errorMessage } from "../errorMessage.js";
 
 import type { Client } from "pg";
 import type * as vscode from "vscode";
@@ -43,8 +44,4 @@ export interface DataViewHostServices {
   dissociate(documentUri: string): Promise<void>;
   output: vscode.OutputChannel;
   extensionUri: vscode.Uri;
-}
-
-export function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

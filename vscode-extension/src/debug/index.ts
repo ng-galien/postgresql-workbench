@@ -5,6 +5,11 @@
  */
 
 export {
+  DEBUG_LAUNCH_TOKEN_PROPERTY,
+  type DebugLaunchDescriptor,
+  DebugSessionController,
+} from "../../../packages/dap/src/debugger/launch/sessionController.js";
+export {
   type DebugSessionInfo,
   enrichDebugSessions,
   listDebugSessions,
@@ -15,7 +20,7 @@ export {
   delimitedRow,
   resultAsDelimited,
   resultAsJson,
-} from "./capturedResults.js";
+} from "../../../packages/rows/src/capturedResults.js";
 export {
   buildRoutineArgs,
   buildRoutineTarget,
@@ -25,8 +30,3 @@ export {
 } from "./launchConfiguration.js";
 export { manageDebugSessions } from "./orphanSessionsUi.js";
 export { DEBUG_RESULTS_VIEW_ID, DebugResultsViewProvider } from "./resultsView.js";
-export {
-  DEBUG_LAUNCH_TOKEN_PROPERTY,
-  type DebugLaunchDescriptor,
-  DebugSessionController,
-} from "./sessionController.js";

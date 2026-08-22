@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type {
-  DebugResult,
-  DebugResultStatus,
-} from "../../../packages/dap/src/debugger/launch/index.js";
+import type { DebugResult, DebugResultStatus } from "../../dap/src/debugger/launch/index.js";
 import { DEBUG_RESULT_NULL_EXPORT, DebugResultStore } from "./capturedResults.js";
 
 function result(id: string, payloadBytes = 100): DebugResult {

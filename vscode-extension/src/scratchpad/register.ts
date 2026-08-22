@@ -11,10 +11,19 @@ import { countLabel } from "../../../packages/rows/src/countLabel.js";
 import type { PostgresCursorReader } from "../../../packages/rows/src/cursor.js";
 import { openBoundedCursor } from "../../../packages/rows/src/dataView/openRows.js";
 import {
+  configureNotebookStatementTimeout,
+  createDedicatedNotebookClient,
+  DedicatedNotebookConnectionError,
+  NotebookClientCancellation,
+  NotebookExecutionCancelledError,
+  withDedicatedNotebookClient,
+} from "../../../packages/rows/src/notebookClient.js";
+import {
   notebookErrorPayload,
   type SqlFailure,
   sqlFailurePayload,
 } from "../../../packages/rows/src/resultPayload.js";
+import { executeSqlSelection } from "../../../packages/rows/src/runSelection.js";
 import type {
   SqlExecutionPlan,
   SqlExecutionStatement,
@@ -22,14 +31,7 @@ import type {
 import { resultRowSummary } from "../../../packages/views/src/results/resultFormatting.js";
 import type { ConnectionManager } from "../connection/index.js";
 import { getConnectionName, type ServerConfig } from "../connection/index.js";
-import {
-  configureNotebookStatementTimeout,
-  createDedicatedNotebookClient,
-  DedicatedNotebookConnectionError,
-  NotebookClientCancellation,
-  NotebookExecutionCancelledError,
-  withDedicatedNotebookClient,
-} from "./association.js";
+import { errorMessage } from "../errorMessage.js";
 import { SQL_NOTEBOOK_SCHEME, SqlNotebookFileSystemProvider } from "./fileSystem.js";
 import {
   associationFingerprint,
@@ -60,7 +62,6 @@ import {
   validStatementTimeoutMs,
 } from "./notebookFile.js";
 import { SqlNotebookResultHost } from "./resultHost.js";
-import { executeSqlSelection } from "./runSelection.js";
 import { ScratchpadTransactionManager } from "./transactions.js";
 import {
   DELETE_SQL_NOTEBOOK_COMMAND,
@@ -1760,8 +1761,4 @@ export function sqlResultSettings(): SqlResultSettings {
       configuration.get<number>("nonPagedMaxRows", DEBUG_RESULT_LIMITS.DEFAULT_ROWS),
     ),
   };
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

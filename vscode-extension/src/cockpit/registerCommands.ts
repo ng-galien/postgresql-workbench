@@ -1,14 +1,14 @@
 import * as vscode from "vscode";
+import {
+  actionsForWorkbenchSurface,
+  type WorkbenchObjectActionSurface,
+} from "../../../packages/catalog/src/objectActions.js";
 import type { WorkbenchObjectModel } from "../../../packages/catalog/src/objectModel.js";
 import type {
   FunctionItem,
   WorkbenchObjectItem,
   WorkbenchRelationTargetItem,
 } from "../workbench/index.js";
-import {
-  actionsForWorkbenchSurface,
-  type WorkbenchObjectActionSurface,
-} from "../workbench/objectActions.js";
 import {
   pickWorkbenchObject,
   routineTreeContext,

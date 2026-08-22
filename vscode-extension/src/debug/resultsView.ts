@@ -1,11 +1,11 @@
 import * as vscode from "vscode";
+import type { DebugResultStore } from "../../../packages/rows/src/capturedResults.js";
 import type {
   DebugResultsRequest,
   DebugResultsResponse,
 } from "../../../packages/views/src/debugResults/protocol.js";
 import viewBundles from "../../../packages/views/viewBundles.json" with { type: "json" };
 import { webviewPage } from "../webviewPage.js";
-import type { DebugResultStore } from "./capturedResults.js";
 
 export const DEBUG_RESULTS_VIEW_ID = "postgresql-workbench-results";
 const DEBUG_RESULTS_CONTAINER_COMMAND =

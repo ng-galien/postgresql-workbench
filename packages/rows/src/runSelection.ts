@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Client } from "pg";
-import { runBoundedQuery } from "../../../packages/dap/src/debugger/launch/boundedQueryResult.js";
+import { runBoundedQuery } from "../../dap/src/debugger/launch/boundedQueryResult.js";
 import {
   createDebugResultContext,
   DEBUG_RESULT_LIMITS,
@@ -8,9 +8,9 @@ import {
   type DebugResultError,
   type DebugResultSource,
   type DebugResultStatus,
-} from "../../../packages/dap/src/debugger/launch/index.js";
-import type { SqlStatementCount } from "../../../packages/sql/src/analysis/sqlStatements.js";
-import { isPostgresSqlLanguage } from "../../../packages/sql/src/text/documentLanguage.js";
+} from "../../dap/src/debugger/launch/index.js";
+import type { SqlStatementCount } from "../../sql/src/analysis/sqlStatements.js";
+import { isPostgresSqlLanguage } from "../../sql/src/text/documentLanguage.js";
 
 export interface SqlEditorSelection {
   languageId: string;
