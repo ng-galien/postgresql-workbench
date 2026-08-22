@@ -8,8 +8,10 @@ import type { SyntaxParser } from "../packages/sql/src/analysis/syntaxTree.js";
 import {
   analyzeSqlQuery,
   formatSqlQuery,
+  relationReference,
   removeRelation,
   type SqlQueryAnalysis,
+  type SqlQueryRelation,
 } from "../packages/sql/src/query/analysis.js";
 import { composePostgresSql } from "../packages/sql/src/query/composition.js";
 import type { SqlAuthoringForeignKey, SqlAuthoringSnapshot } from "../packages/sql/src/snapshot.js";
@@ -161,11 +163,10 @@ describe("SQL composition invariants", () => {
   }
 
   /** The projected columns that belong to one relation, as the Data View reports them. */
-  const ownedOrdinals = (analysis: SqlQueryAnalysis, reference: string): number[] => {
-    const owner = reference.toLowerCase();
+  const ownedOrdinals = (analysis: SqlQueryAnalysis, relation: SqlQueryRelation): number[] => {
+    const owner = relationReference(relation);
     return analysis.targets.flatMap((target, ordinal) =>
-      target.qualifiers.length > 0 &&
-      target.qualifiers.every((qualifier) => qualifier.toLowerCase() === owner)
+      target.qualifiers.length > 0 && target.qualifiers.every((qualifier) => qualifier === owner)
         ? [ordinal]
         : [],
     );
@@ -177,7 +178,7 @@ describe("SQL composition invariants", () => {
    */
   function expectWellFormed(sql: string, analysis: SqlQueryAnalysis, trail: string) {
     const where = (claim: string) => `${claim}\n--- seed trail: ${trail}\n${sql}`;
-    const live = new Set(analysis.relations.map((relation) => relation.reference.toLowerCase()));
+    const live = new Set(analysis.relations.map(relationReference));
 
     // One base relation, and it is the one the FROM starts with.
     const bases = analysis.relations.filter((relation) => !relation.join);
@@ -196,12 +197,11 @@ describe("SQL composition invariants", () => {
      * before it. That is what forbids both a cartesian product — a JOIN with no cardinality — and
      * a cycle: a relation can only attach to the part of the FROM that is already built.
      */
-    const declared = new Set<string>([analysis.relations[0]?.reference.toLowerCase() ?? ""]);
+    const first = analysis.relations[0];
+    const declared = new Set<string>(first ? [relationReference(first)] : []);
     for (const relation of analysis.relations.slice(1)) {
-      const reference = relation.reference.toLowerCase();
-      const qualifiers = (relation.join?.qualifiers ?? []).map((qualifier) =>
-        qualifier.toLowerCase(),
-      );
+      const reference = relationReference(relation);
+      const qualifiers = relation.join?.qualifiers ?? [];
       expect(
         qualifiers.length,
         where(`${reference} is joined without a condition`),
@@ -221,7 +221,7 @@ describe("SQL composition invariants", () => {
 
     // Nothing may name a relation the FROM clause no longer holds.
     const orphans = (qualifiers: readonly string[]) =>
-      qualifiers.filter((qualifier) => !live.has(qualifier.toLowerCase()));
+      qualifiers.filter((qualifier) => !live.has(qualifier));
     for (const target of analysis.targets) {
       expect(orphans(target.qualifiers), where(`projected ${target.text} is orphaned`)).toEqual([]);
     }
@@ -245,10 +245,10 @@ describe("SQL composition invariants", () => {
         ...analysis.sortItems.map((item) => item.qualifiers),
         analysis.where?.qualifiers ?? [],
       ]) {
-        for (const qualifier of qualifiers) carried.add(qualifier.toLowerCase());
+        for (const qualifier of qualifiers) carried.add(qualifier);
       }
       const load = new Set(
-        analysis.relations.filter((relation) => carried.has(relation.reference.toLowerCase())),
+        analysis.relations.filter((relation) => carried.has(relationReference(relation))),
       );
       let grew = true;
       while (grew) {
@@ -256,7 +256,7 @@ describe("SQL composition invariants", () => {
         for (const relation of load) {
           for (const qualifier of relation.join?.qualifiers ?? []) {
             const carrier = analysis.relations.find(
-              (other) => other.reference.toLowerCase() === qualifier.toLowerCase(),
+              (other) => relationReference(other) === qualifier,
             );
             if (carrier && !load.has(carrier)) {
               load.add(carrier);
@@ -330,12 +330,7 @@ describe("SQL composition invariants", () => {
       steps.push(`remove ${relation.reference}`);
       reached.removals += 1;
       if (!relation.join && analysis.relations.length > 1) reached.promotions += 1;
-      const removal = removeRelation(
-        text,
-        analysis,
-        relation,
-        ownedOrdinals(analysis, relation.reference),
-      );
+      const removal = removeRelation(text, analysis, relation, ownedOrdinals(analysis, relation));
       expect(
         removal.status,
         `removing ${relation.reference} was refused: ${
@@ -415,7 +410,7 @@ describe("SQL composition invariants", () => {
       withoutUser.text,
       second,
       inventory,
-      ownedOrdinals(second, inventory.reference),
+      ownedOrdinals(second, inventory),
     );
 
     expect(removal.status, "the mapping table outlived both relations it bridged").toBe("empty");

@@ -171,6 +171,27 @@ describe("SQL query relation removal", () => {
     );
   });
 
+  it("keeps a base relation whose name is quoted, and removes the one joined to it", async () => {
+    /*
+     * A written reference carries its quotes and its capitals; a qualifier read off a column
+     * reference does not. Compared as they are written, the two never meet, and the base relation
+     * looked like a table nobody had asked for — the query came back empty instead of shortened.
+     */
+    const text =
+      'SELECT "Odd Table".id, "Odd Table"."select", address.city ' +
+      'FROM s."Odd Table" JOIN s.address AS address ON address.id = "Odd Table"."order" ' +
+      'WHERE "Odd Table".id IS NOT NULL ORDER BY "Odd Table".id DESC';
+    const removal = await removeJoined(text, "address", [2]);
+
+    expect(removal.status).toBe("removed");
+    if (removal.status !== "removed") return;
+    expect(removal.text).not.toContain("JOIN");
+    expect(removal.text).not.toContain("address.city");
+    expect(removal.text).toContain('"Odd Table".id');
+    expect(removal.text).toContain('WHERE "Odd Table".id IS NOT NULL');
+    expect(removal.text).toMatch(/ORDER BY "Odd Table"\.id DESC/u);
+  });
+
   it("removes a joined relation from the FROM clause, not only from the projection", async () => {
     // The shape a Data View composes: every column of both relations, joined on the foreign key.
     const text =

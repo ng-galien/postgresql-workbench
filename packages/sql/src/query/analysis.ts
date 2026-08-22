@@ -176,13 +176,17 @@ export async function analyzeSqlQuery(
   /**
    * Relations named by the column references of a subtree. Reading `columnref` nodes is what
    * separates a real reference from an identifier that merely occurs in a literal or a comment.
+   *
+   * The names come out canonical — quoted keeps its case, bare folds to lower — because that is
+   * how PostgreSQL compares them, and because everything downstream matches them against a
+   * relation's reference, which is written whichever way the reader wrote it.
    */
   const qualifiersIn = (node: SyntaxNode | undefined): string[] => {
     if (!node) return [];
     const found = new Set<string>();
     for (const reference of findSyntaxNodes(node, "columnref")) {
       const parts = splitSqlQualifiedIdentifier(slice(reference).trim());
-      for (const part of parts.slice(0, -1)) found.add(unquoteSqlIdentifier(part.trim()));
+      for (const part of parts.slice(0, -1)) found.add(canonicalSqlIdentifier(part.trim()));
     }
     return [...found];
   };
@@ -349,7 +353,12 @@ export async function analyzeSqlQuery(
  * unaliased. Folded like PostgreSQL folds an unquoted identifier.
  */
 function removedNames(removed: ReadonlySet<SqlQueryRelation>): Set<string> {
-  return new Set([...removed].map((relation) => (relation.alias ?? relation.name).toLowerCase()));
+  return new Set([...removed].map(relationReference));
+}
+
+/** How a relation is named in the rest of the query, in the form qualifiers are compared in. */
+export function relationReference(relation: SqlQueryRelation): string {
+  return canonicalSqlIdentifier(relation.reference);
 }
 
 /** Byte offset to character offset in one pass, so every node range is an O(1) lookup. */
@@ -480,7 +489,7 @@ export function removeRelation(
     ? undefined
     : analysis.relations.find((candidate) => candidate.join !== undefined);
   const referencesAny = (qualifiers: readonly string[], names: ReadonlySet<string>) =>
-    qualifiers.some((qualifier) => names.has(qualifier.toLowerCase()));
+    qualifiers.some((qualifier) => names.has(qualifier));
   // Cascade: a joined relation whose ON condition references a removed relation goes too.
   const removed = new Set<SqlQueryRelation>([relation]);
   let grew = true;
@@ -496,7 +505,7 @@ export function removeRelation(
     }
   }
   const owned = new Set(ownedOrdinals);
-  const reference = (candidate: SqlQueryRelation) => candidate.reference.toLowerCase();
+  const reference = relationReference;
   /**
    * A relation no column, filter or sort names is only in the query to carry a JOIN — the mapping
    * table the engine crossed to reach something the reader asked for. It has no badge, so a reader
@@ -510,7 +519,7 @@ export function removeRelation(
     /** What a clause still names, once the relations going away are discounted. */
     const carry = (qualifiers: readonly string[]) => {
       if (referencesAny(qualifiers, gone)) return;
-      for (const qualifier of qualifiers) carried.add(qualifier.toLowerCase());
+      for (const qualifier of qualifiers) carried.add(qualifier);
     };
     analysis.targets.forEach((target, ordinal) => {
       if (!owned.has(ordinal)) carry(target.qualifiers);
@@ -527,7 +536,7 @@ export function removeRelation(
     for (const candidate of load) {
       for (const qualifier of candidate.join?.qualifiers ?? []) {
         const carrier = analysis.relations.find(
-          (other) => !removed.has(other) && reference(other) === qualifier.toLowerCase(),
+          (other) => !removed.has(other) && reference(other) === qualifier,
         );
         if (carrier) load.add(carrier);
       }
