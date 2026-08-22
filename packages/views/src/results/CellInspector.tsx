@@ -2,6 +2,7 @@ import { type PointerEvent, type ReactNode, useRef, useState } from "react";
 import type { DebugResultCell } from "../../../dap/src/debugger/launch/index.js";
 import { type CellDetail, cellDetail } from "../../../rows/src/cellDetail.js";
 import { countLabel } from "../../../rows/src/countLabel.js";
+import { useClipboardCopy } from "../clipboardCopy.js";
 
 /**
  * What the cell under the cursor holds, beside the grid rather than in it. A row of a table can
@@ -31,6 +32,7 @@ export function CellInspector({
    */
   const [size, setSize] = useState<{ width: number; height: number }>();
   const drag = useRef<{ x: number; y: number; width: number; height: number }>(undefined);
+  const clipboard = useClipboardCopy();
   return (
     <aside
       className="cell-inspector"
@@ -75,16 +77,14 @@ export function CellInspector({
           <button
             type="button"
             className="cell-inspector-action"
-            title="Copy this value"
-            aria-label="Copy this value"
+            title={COPY_LABEL[clipboard.state]}
+            aria-label={COPY_LABEL[clipboard.state]}
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => {
-              if (cell?.value !== null && cell?.value !== undefined) {
-                void navigator.clipboard?.writeText(cell.value).catch(() => {});
-              }
+              if (cell?.value !== null && cell?.value !== undefined) clipboard.copy(cell.value);
             }}
           >
-            <span className="codicon codicon-copy" aria-hidden="true" />
+            <span className={`codicon codicon-${COPY_ICON[clipboard.state]}`} aria-hidden="true" />
           </button>
         ) : null}
         <button
@@ -107,6 +107,14 @@ export function CellInspector({
     </aside>
   );
 }
+
+/* What the copy control shows, and says, once it has an answer to give. */
+const COPY_ICON = { idle: "copy", copied: "check", error: "error" } as const;
+const COPY_LABEL = {
+  idle: "Copy this value",
+  copied: "Value copied",
+  error: "The value could not be copied",
+} as const;
 
 function shown(detail: CellDetail): ReactNode {
   switch (detail.shape) {

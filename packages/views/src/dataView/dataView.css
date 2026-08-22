@@ -217,7 +217,13 @@ body,
   color: var(--vscode-descriptionForeground);
 }
 
-/* The SQL the view runs, read in the view: a panel of its own height, scrolled inside itself. */
+/*
+ * The SQL the view runs, read in the view: a panel of its own height, scrolled inside itself.
+ *
+ * It reads as one object — a bar naming what is under it, and the statement on the editor's own
+ * ground. It used to be a strip of one colour above a page of another, with the line numbers on
+ * the strip's colour and the code on the page's, so the seam ran down the middle of the query.
+ */
 
 .data-view-sql {
   display: flex;
@@ -225,32 +231,51 @@ body,
   flex-direction: column;
   min-height: 0;
   max-height: 240px;
-  background: var(--vscode-textCodeBlock-background);
+  background: var(--vscode-editor-background);
   border-bottom: 1px solid var(--vscode-panel-border);
 }
 
+/* The same bar every other line of the view has, so the panel belongs to what surrounds it. */
 .data-view-sql-bar {
   display: flex;
   flex: 0 0 auto;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  gap: 6px;
+  min-height: 30px;
   padding: 2px 6px 2px 10px;
+  background: var(--vscode-editorWidget-background);
   border-bottom: 1px solid var(--vscode-panel-border);
+}
+
+.data-view-sql-bar > .codicon {
+  color: var(--vscode-descriptionForeground);
+  font-size: 13px;
 }
 
 .data-view-sql-title {
   color: var(--vscode-descriptionForeground);
   font-size: 11px;
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
+}
+
+.data-view-sql-spacer {
+  flex: 1;
 }
 
 .data-view-sql-body {
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
-  padding: 4px 0 6px;
+}
+
+/*
+ * A statement is a dozen lines, not a file: it needs air around it, not the margin a source page
+ * leaves for what follows it.
+ */
+.data-view-sql .postgres-source-view {
+  padding: 6px 0 8px;
 }
 
 /* Grid fills the remaining height */

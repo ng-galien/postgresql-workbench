@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import type { SqlNotebookResultPayload } from "../../../rows/src/resultPayload.js";
+import { useClipboardCopy } from "../clipboardCopy.js";
 import type {
   SqlNotebookRendererRequest,
   SqlNotebookRendererResponse,
@@ -21,12 +22,11 @@ export interface SqlResultMessaging {
 
 export function SqlResultView({ payload, messaging }: SqlResultViewProps) {
   const [current, setCurrent] = useState(payload);
-  const [copyState, setCopyState] = useState<"idle" | "copied" | "error">("idle");
+  const clipboard = useClipboardCopy();
   const [activeAction, setActiveAction] = useState<SqlNotebookResultAction>();
   const [progress, setProgress] = useState<number>();
   const [resultError, setResultError] = useState<string>();
   const [closed, setClosed] = useState(false);
-  const feedbackTimer = useRef<number | undefined>(undefined);
 
   useEffect(() => setCurrent(payload), [payload]);
 
@@ -56,27 +56,6 @@ export function SqlResultView({ payload, messaging }: SqlResultViewProps) {
     return unsubscribe;
   }, [current.navigation?.sessionId, messaging]);
 
-  useEffect(
-    () => () => {
-      if (feedbackTimer.current !== undefined) window.clearTimeout(feedbackTimer.current);
-    },
-    [],
-  );
-
-  const showTemporaryCopyState = (state: "copied" | "error") => {
-    if (feedbackTimer.current !== undefined) window.clearTimeout(feedbackTimer.current);
-    setCopyState(state);
-    feedbackTimer.current = window.setTimeout(() => setCopyState("idle"), 1_200);
-  };
-
-  const copyResult = async () => {
-    try {
-      await navigator.clipboard.writeText(resultAsTsv(current));
-      showTemporaryCopyState("copied");
-    } catch {
-      showTemporaryCopyState("error");
-    }
-  };
   const navigation = current.navigation;
   const request = (action: SqlNotebookResultAction) => {
     if (!navigation || !messaging) return;
@@ -135,17 +114,21 @@ export function SqlResultView({ payload, messaging }: SqlResultViewProps) {
               </button>
             ) : null}
             <div className="copy-action">
-              <button className="copy-button" type="button" onClick={copyResult}>
-                {copyState === "copied"
+              <button
+                className="copy-button"
+                type="button"
+                onClick={() => clipboard.copy(resultAsTsv(current))}
+              >
+                {clipboard.state === "copied"
                   ? "Copied"
-                  : copyState === "error"
+                  : clipboard.state === "error"
                     ? "Copy failed"
                     : "Copy TSV"}
               </button>
               <span className="sr-only" role="status" aria-live="polite">
-                {copyState === "copied"
+                {clipboard.state === "copied"
                   ? "Result copied as TSV."
-                  : copyState === "error"
+                  : clipboard.state === "error"
                     ? "The result could not be copied."
                     : ""}
               </span>

@@ -250,6 +250,25 @@ test("reads the SQL in the view, and closes it again", async ({ page }) => {
   await expect(panel).toBeHidden();
 });
 
+test("hands over the statement the rows came from", async ({ page }) => {
+  await openEmpty(page);
+  await add(page, "shop.product");
+  const shown = await runningSql(page);
+
+  const panel = page.getByRole("region", { name: "Query SQL" });
+  await panel.getByTitle("Copy this SQL").click();
+
+  // What is on the clipboard is the statement itself, ready to paste into an editor — not the
+  // line numbers beside it, and not a description of it.
+  const copied = await readClipboard(page);
+  expect(copied).toBe(shown);
+  expect(copied).toMatch(/^SELECT\n/u);
+  expect(copied).toContain("shop.product");
+
+  // And the control says it happened, because a copy leaves the page looking exactly as it was.
+  await expect(panel.getByTitle("SQL copied")).toBeVisible();
+});
+
 test("hides a column without dropping it from the query", async ({ page }) => {
   await openEmpty(page);
   await add(page, "shop.product");
