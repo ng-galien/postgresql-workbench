@@ -370,6 +370,21 @@ export function dataViewSourceTitle(source: DataViewSource): string {
   return source.kind === "relation" ? `${source.schema}.${source.name}` : source.label;
 }
 
+/**
+ * What a Data View is called on its tab.
+ *
+ * A view opened on a relation is called by it. A view opened on a statement was called by the
+ * statement, which reads as a wall of columns on a tab an inch wide — so it is called by the
+ * relations it draws from instead, the same ones its badges name. Until the query has been read
+ * there is nothing better than what the statement was labelled with.
+ */
+export function dataViewTitle(source: DataViewSource, projection: DataViewProjection): string {
+  if (source.kind === "relation") return `${source.schema}.${source.name}`;
+  const [first, ...rest] = projection.tables;
+  if (!first) return source.label;
+  return rest.length === 0 ? first.name : `${first.name} +${rest.length}`;
+}
+
 /** Same stored row: same table and same identity values. */
 /** Identity of one row of one table: the key values of its projected unique index. */
 export function dataViewRowKey(row: { tableOid: number; key: readonly (string | null)[] }): string {

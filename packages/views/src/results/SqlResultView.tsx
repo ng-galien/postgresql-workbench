@@ -110,6 +110,7 @@ export function SqlResultView({ payload, messaging }: SqlResultViewProps) {
                   })
                 }
               >
+                <span className="codicon codicon-table" aria-hidden="true" />
                 Open in Data View
               </button>
             ) : null}

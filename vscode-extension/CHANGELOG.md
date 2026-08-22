@@ -62,6 +62,11 @@ from the Workbench Index and written back in one guarded transaction.
   where it can be read, corrected and undone — **Inspect** opens the value, and
   **Copy** takes the selection. It walks with the arrows and gives the focus
   back where it came from
+- Named a Data View opened on a statement after the relations that statement
+  draws from, once the query has been read, instead of the statement itself: a
+  tab an inch wide showed a wall of column names
+- Marked **Open in Data View** in a Scratchpad result with the icon a Data View
+  carries everywhere else
 - Added new commands **Open Data View** and **Open Data View for Statement**
 
 ### SQL authoring

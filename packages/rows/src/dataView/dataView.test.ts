@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   type DataViewEdit,
   type DataViewEditability,
+  type DataViewSource,
+  dataViewTitle,
   describeDataViewChanges,
   describeDeleteConsequences,
 } from "./dataView.js";
@@ -189,5 +191,53 @@ describe("what a deletion drags along", () => {
       "Rows of shop.a, shop.b that point at it are deleted too.",
       "shop.c may point at it, and PostgreSQL then refuses the deletion.",
     ]);
+  });
+});
+
+describe("what a Data View is called", () => {
+  const sql: DataViewSource = {
+    kind: "sql",
+    serverId: "s",
+    database: "demo",
+    sql: "SELECT inventory_movement.id, inventory_movement.inventory_id FROM shop.inventory_movement",
+    label: "SELECT inventory_movement.id, inventory_movement.inventory_id…",
+  };
+  const table = (name: string, accent: number) => ({
+    tableOid: accent + 1,
+    schema: "shop",
+    name,
+    accent,
+  });
+
+  it("names a view opened on a relation by that relation", () => {
+    expect(
+      dataViewTitle(
+        {
+          kind: "relation",
+          serverId: "s",
+          database: "demo",
+          schema: "shop",
+          name: "brand",
+          relationKind: "table",
+        },
+        { tables: [table("brand", 0)], columnTable: [0] },
+      ),
+    ).toBe("shop.brand");
+  });
+
+  it("names a view opened on a statement by what the statement draws from", () => {
+    expect(dataViewTitle(sql, { tables: [table("inventory_movement", 0)], columnTable: [0] })).toBe(
+      "inventory_movement",
+    );
+    expect(
+      dataViewTitle(sql, {
+        tables: [table("inventory_movement", 0), table("organization", 1)],
+        columnTable: [0, 1],
+      }),
+    ).toBe("inventory_movement +1");
+  });
+
+  it("keeps the statement's own label until the query has been read", () => {
+    expect(dataViewTitle(sql, { tables: [], columnTable: [] })).toBe(sql.label);
   });
 });

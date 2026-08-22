@@ -12,7 +12,7 @@ import {
   type DataViewProjection,
   type DataViewSource,
   dataViewRelationOwning,
-  dataViewSourceTitle,
+  dataViewTitle,
   EMPTY_DATA_VIEW_EDITABILITY,
 } from "../../../packages/rows/src/dataView/dataView.js";
 import type {
@@ -83,6 +83,8 @@ export class DataViewDocument implements vscode.CustomDocument {
   private loadGeneration = 0;
   private idleTimer: ReturnType<typeof setTimeout> | undefined;
   private readonly webviews = new Set<vscode.Webview>();
+  private readonly _onDidChangeTitle = new vscode.EventEmitter<string>();
+  private said = "";
   private readonly _onDidEdit = new vscode.EventEmitter<{
     label: string;
     undo: () => void;
@@ -116,8 +118,11 @@ export class DataViewDocument implements vscode.CustomDocument {
   }
 
   get title(): string {
-    return dataViewSourceTitle(this.source);
+    return dataViewTitle(this.source, this.projection);
   }
+
+  /** Fires when the query draws from other relations than it did, so a tab can say the new ones. */
+  readonly onDidChangeTitle = this._onDidChangeTitle.event;
 
   get hasPendingEdits(): boolean {
     return this.edits.size > 0;
@@ -807,6 +812,10 @@ export class DataViewDocument implements vscode.CustomDocument {
 
   private broadcastState(): void {
     this.broadcast({ type: "data-view/state", state: this.state() });
+    const title = this.title;
+    if (title === this.said) return;
+    this.said = title;
+    this._onDidChangeTitle.fire(title);
   }
 
   private broadcast(response: DataViewResponse): void {

@@ -78,7 +78,14 @@ export class DataViewEditorProvider
       enableScripts: true,
       localResourceRoots: [vscode.Uri.joinPath(this.services.extensionUri, "dist")],
     };
+    /*
+     * A view opened on a statement is named by the relations that statement draws from, and it
+     * only knows them once the query has been read — so the tab is renamed when it learns.
+     */
     panel.title = document.title;
+    const renaming = document.onDidChangeTitle((title) => {
+      panel.title = title;
+    });
     // Same visual identity as the object's tab and tree node.
     const iconKind =
       document.source.kind === "relation" && document.source.relationKind === "view"
@@ -122,6 +129,7 @@ export class DataViewEditorProvider
     panel.onDidDispose(() => {
       attachment.dispose();
       messages.dispose();
+      renaming.dispose();
       this.edits.get(document)?.dispose();
       this.edits.delete(document);
       if (this.documents.get(document.uri.toString()) === document) {

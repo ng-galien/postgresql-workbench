@@ -121,6 +121,9 @@
 }
 
 .result-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   padding: 3px 7px;
   color: var(--vscode-button-secondaryForeground);
   background: var(--vscode-button-secondaryBackground);
@@ -128,6 +131,11 @@
   border-radius: 2px;
   cursor: pointer;
   font: inherit;
+}
+
+/* The same mark the tree, the tab and the command carry: a Data View is one thing, drawn once. */
+.result-button > .codicon {
+  font-size: 14px;
 }
 
 .result-button:hover:not(:disabled) {
