@@ -58,6 +58,17 @@ release and artifact-handling actions.
 | `Smoke standalone DAP` | Packs, installs, and smoke-tests the standalone npm DAP on Linux, macOS ARM64/x64, and Windows x64. |
 | `Package extension` | Builds, validates, and smoke-tests one target-specific VSIX for Linux x64, macOS ARM64/x64, and Windows x64. |
 
+The extension runs on the Node its host ships, never on the Node this repository
+builds with. VS Code 1.109.0, the minimum the manifest declares, runs extensions
+on Node 22.21.1, and `engines.node` in `vscode-extension/package.json` states
+exactly that. `npm run check` fails when the two disagree. Raising the minimum
+VS Code therefore means measuring the Node of the new minimum and declaring it
+in `scripts/extension/check-manifest-text.mjs`:
+
+```bash
+ELECTRON_RUN_AS_NODE=1 "$HOME/Applications/Visual Studio Code.app/Contents/MacOS/Electron" -e "console.log(process.versions.node)"
+```
+
 The integration job uploads VS Code logs even when tests fail. Download the
 `vscode-test-logs` artifact from the failed workflow run before rerunning a
 timing-sensitive or lifecycle-sensitive failure.

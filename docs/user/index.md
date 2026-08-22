@@ -31,6 +31,8 @@ and password are all `postgres`.
   understand every control.
 - [SQL scratchpads](notebooks.md) — bind notebooks, execute SQL, and work safely
   with results.
+- [Data View](data-view.md) — open tables, views, and results in an editable
+  grid, compose the query, and write rows back.
 - [SQL authoring](sql-authoring.md) — format, complete, and compose PostgreSQL
   SQL from one indexed context.
 - [Run, debug, and deploy SQL](execution-debugging-and-deployment.md) — understand

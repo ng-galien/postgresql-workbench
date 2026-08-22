@@ -55,8 +55,17 @@ views, columns, functions, and procedures. Qualification and aliases narrow the
 result set. Completion inserts quoted PostgreSQL identifiers when required and
 routine snippets expose their indexed parameters.
 
-Completion is bounded to keep large schemas responsive. An unavailable or stale
-snapshot produces no speculative suggestions from another Connexion.
+Completion also proposes the language a statement is written in — `AND`, `OR`,
+`IS NOT NULL`, `ORDER BY`, `LEFT JOIN`, `CASE` — after everything the index
+knows, since a reader completing inside their own query names their own schema
+more often than the language holding it. Phrases are proposed as they are typed:
+`IS NOT NULL` is one proposal, not three. Where only a relation can stand, after
+`FROM` or `JOIN`, only relations are proposed.
+
+Completion is bounded to keep large schemas responsive, and the language is
+bounded apart from the names so a large schema cannot push it out of the list. An
+unavailable or stale snapshot produces no speculative suggestions from another
+Connexion.
 
 ## Compose SQL by drag and drop
 

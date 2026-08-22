@@ -38,7 +38,7 @@ packages/postgresql-dap/   independently versioned npm DAP package
 
 ## Development commands
 
-Use Node.js 22 or later.
+Use Node.js 24 or later, the version CI installs.
 
 ```bash
 npm install
