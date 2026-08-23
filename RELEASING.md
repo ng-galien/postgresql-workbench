@@ -93,10 +93,10 @@ Start from a clean `main` synchronized with `origin/main`.
 1. Update the extension version and its lockfile:
 
    ```bash
-   npm --prefix vscode-extension version 1.3.0 --no-git-tag-version
+   npm --prefix vscode-extension version 1.4.0 --no-git-tag-version
    ```
 
-2. Add a dated, non-empty `## [1.3.0]` section to
+2. Add a dated, non-empty `## [1.4.0]` section to
    `vscode-extension/CHANGELOG.md`. The release workflow extracts GitHub Release
    notes from this exact heading.
 3. Update user documentation when behavior, requirements, commands, or
@@ -132,7 +132,7 @@ Install the local artifact into a clean VS Code profile:
 
 ```bash
 code --install-extension \
-  vscode-extension/postgresql-workbench-1.3.0-darwin-arm64.vsix \
+  vscode-extension/postgresql-workbench-1.4.0-darwin-arm64.vsix \
   --force
 ```
 
@@ -147,8 +147,8 @@ Create an annotated tag whose version exactly matches
 `vscode-extension/package.json`:
 
 ```bash
-git tag -a extension-v1.3.0 -m "PostgreSQL Workbench 1.3.0"
-git push origin main extension-v1.3.0
+git tag -a extension-v1.4.0 -m "PostgreSQL Workbench 1.4.0"
+git push origin main extension-v1.4.0
 ```
 
 Pushing the tag starts the `Extension Release` workflow. Its jobs:
@@ -319,7 +319,7 @@ release complete.
 The DAP has its own package version and release tag. It is not coupled to the
 VS Code extension version.
 
-1. Update `packages/postgresql-dap/package.json` and validate the package:
+1. Update `packages/dap/package.json` and validate the package:
 
    ```bash
    npm ci

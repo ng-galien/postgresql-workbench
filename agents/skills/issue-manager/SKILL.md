@@ -42,7 +42,7 @@ governance, milestones, or process.
   Confirm the protected `marketplace` environment and `VSCE_PAT` before the
   first extension release tag.
 - **DAP release:** `dap-v<version>` must exactly match
-  `packages/postgresql-dap/package.json`. Follow the DAP release validation,
+  `packages/dap/package.json`. Follow the DAP release validation,
   package, and npm publication path; do not apply the extension VSIX,
   Marketplace, or manual VS Code smoke requirements to it.
 - Never create or push either release tag without explicit authorization.

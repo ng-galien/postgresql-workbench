@@ -14,17 +14,23 @@ The canonical repository is
 ## Repository layout
 
 ```text
-src/                       standalone DAP server and shared services
-  analysis/                Code Moniker syntax boundary
+packages/                  the engine, one package per subject
+  sql/                     Code Moniker syntax boundary, SQL and PL/pgSQL analysis,
+                           and the SQL authoring language server
+  catalog/                 PostgreSQL catalog projection, DDL sync, and the Cockpit graph
+  rows/                    reading and editing relation rows: query composition,
+                           editability, and the Data View engine
+  views/                   the React views every surface renders: result grid,
+                           Data View, Cockpit, debug results
   coverage/                pgTAP coverage analysis and instrumentation
-  debugger/                DAP launch, PostgreSQL backend, and session
-  workbench/               PostgreSQL catalog projection and DDL sync
-vscode-extension/          VS Code extension, notebook renderer, and Cockpit UI
+  dap/                     `@ng-galien/postgresql-dap`, the independently versioned
+                           npm DAP server: launch, PostgreSQL backend, and session
+  shell/                   browser harness driving the views without VS Code
+vscode-extension/          VS Code extension: the host that adapts the engine to VS Code
 e2e/                       PostgreSQL, DAP, coverage, and compatibility tests
 demo/                      deterministic PostgreSQL demo used by showcases
-docs/                      design and Marketplace showcase configuration
-scripts/                   repository-level automation
-packages/postgresql-dap/   independently versioned npm DAP package
+docs/                      user guide, design, and Marketplace showcase configuration
+scripts/                   repository-level automation, one directory per purpose
 ```
 
 ## Documentation

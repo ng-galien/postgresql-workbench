@@ -48,23 +48,26 @@ npm run test:e2e:legacy # DAP compatibility with unpatched EnterpriseDB v1.9
 ## Architecture
 
 ```
-src/
-  main.ts              # Entry point — runs DAP session over stdio
-  debugger/            # Debugger module; public DAP, launch, and PostgreSQL facades
-    index.ts            # Public DAP surface
-    launch/             # Launch contract and target orchestration
-    postgres/           # pldbgapi backend and variable resolution
-    session/            # Internal DAP session implementation
-  analysis/            # Code Moniker syntax boundary and shared SQL/PL/pgSQL helpers
-  callParser.ts        # SQL calls and definitions from Code Moniker syntax trees
-  functionSource.ts    # PL/pgSQL variables, lines, exceptions, and calls from syntax trees
-  deps.ts              # Shared semantic helpers for debugger analysis
-  __fixtures__/        # SQL test fixtures
-  *.test.ts            # Unit tests (vitest) — includes sqlCodeLensProvider tests
+packages/              # The engine, one package per subject; boundaries enforced by code-moniker
+  sql/                 # Code Moniker syntax boundary, SQL and PL/pgSQL analysis, language server
+    analysis/           # The only syntax provider; every feature receives its SyntaxParser
+    callParser.ts       # SQL calls and definitions from Code Moniker syntax trees
+    functionSource.ts   # PL/pgSQL variables, lines, exceptions, and calls from syntax trees
+    text/ query/        # Vocabulary, positions, literals; query composition and join planning
+    languageServer/     # Completion, semantic tokens, diagnostics — the front door
+  catalog/             # PostgreSQL catalog projection, DDL sync, Cockpit graph
+  rows/                # Reading and editing relation rows: editability, edits, Data View engine
+  views/               # The React views: result grid, Data View, Cockpit, debug results
+  coverage/            # pgTAP coverage analysis and instrumentation
+  dap/                 # @ng-galien/postgresql-dap — its own version and release tag
+    main.ts             # Entry point — runs DAP session over stdio
+    debugger/           # Public DAP surface, launch contract, pldbgapi backend, session
+  shell/               # Browser harness driving the views against PostgreSQL without VS Code
 
 e2e/
   init/                # SQL init scripts (extension + test functions)
   e2e.test.ts          # Integration tests against real PostgreSQL
+  dap-client.test.ts   # DAP protocol tests over stdio, without VS Code
 
 scripts/               # Every script, one directory per purpose
   dap/ extension/      # Build and package the DAP npm package and the VSIX
@@ -124,7 +127,9 @@ The `vscode-extension/` is a full-featured VS Code extension:
 - Semantic tokens (variables, params, types, dollar quoting)
 - Inline values during debug, RAISE NOTICE → Debug Console
 - esbuild bundles extension.ts and the extension-specific dapServer.ts entry; the latter reuses the shared stdio DAP host without importing the standalone CLI entry
-- Imports from ../src/ work via esbuild (not tsc rootDir — removed)
+- Imports from ../packages/ work via esbuild (not tsc rootDir — removed)
+- The extension adapts the engine to VS Code and holds nothing else; the views name their
+  colours `--postgres-*` and `webviewPage.ts` says what those names are worth
 
 ## Testing
 
