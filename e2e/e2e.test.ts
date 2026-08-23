@@ -1,8 +1,8 @@
 import { Client } from "pg";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { parseCall } from "../src/callParser.js";
-import { PostgresDebugger } from "../src/debugger/postgres/index.js";
-import { analyzeFunction } from "../src/functionSource.js";
+import { PostgresDebugger } from "../packages/dap/src/debugger/postgres/index.js";
+import { parseCall } from "../packages/sql/src/callParser.js";
+import { analyzeFunction } from "../packages/sql/src/functionSource.js";
 import { type CodeMonikerTestRuntime, startCodeMonikerTestRuntime } from "./codeMonikerRuntime.js";
 import { DEBUG_INTEGRATION_TEST_TIMEOUT_MS, runPacedDebugAction } from "./debugTestTiming.js";
 

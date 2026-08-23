@@ -5,4 +5,4 @@ pre-commit:
       glob: "*.{ts,js,json}"
       run: npx biome check --write --no-errors-on-unmatched {staged_files} && git add {staged_files}
     - name: typecheck
-      run: npx tsc --noEmit && npm --prefix vscode-extension run compile
+      run: npx tsc --noEmit && npx tsc -p packages/views/tsconfig.json && npx tsc -p e2e/tsconfig.json && npm --prefix vscode-extension run compile

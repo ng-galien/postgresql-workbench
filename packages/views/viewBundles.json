@@ -1,0 +1,24 @@
+{
+  "dataView": {
+    "entry": "src/dataView/index.tsx",
+    "script": "data-view.js",
+    "styles": "inlined"
+  },
+  "debugResults": {
+    "entry": "src/debugResults/index.tsx",
+    "script": "debug-results.js",
+    "styles": "inlined"
+  },
+  "notebookResults": {
+    "entry": "src/results/index.tsx",
+    "script": "sql-notebook-renderer.js",
+    "styles": "inlined",
+    "format": "esm"
+  },
+  "cockpitGraph": {
+    "entry": "src/cockpit/index.tsx",
+    "script": "workbench-graph.js",
+    "styles": "linked",
+    "stylesheet": "workbench-graph.css"
+  }
+}

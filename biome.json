@@ -2,19 +2,13 @@
   "$schema": "https://biomejs.dev/schemas/2.5.5/schema.json",
   "files": {
     "includes": [
-      "src/**",
+      "packages/**",
+      "!**/dist",
       "vscode-extension/src/**",
-      "vscode-extension/acceptance/**",
-      "vscode-extension/playwright.acceptance.config.ts",
+      "vscode-extension/tests/**",
       "e2e/**",
+      "scripts/**",
       "site/**",
-      "scripts/build-site.mjs",
-      "scripts/dev-site.mjs",
-      "scripts/create-issue.mjs",
-      "scripts/check-issue-templates.mjs",
-      "scripts/issue-workflow.mjs",
-      "scripts/workbench-index-benchmark.mjs",
-      "scripts/workbench-index-benchmark.node-test.mjs",
       "!!**/dist/",
       "!!**/node_modules/"
     ]

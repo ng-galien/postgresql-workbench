@@ -1,0 +1,13 @@
+fragment = "shell"
+enabled = true
+
+[aliases]
+shell_package_source = "source ~ '**/dir:packages/dir:shell/**'"
+shell_package_target = "target ~ '**/dir:packages/**'"
+
+[[ts.refs.where]]
+id = "shell-composes-and-is-composed-by-nothing"
+severity = "error"
+expr = "$shell_package_source AND $architectural_dependency AND ($workbench_package_target OR $extension_local_target) => $shell_package_target"
+message = "packages/shell composes the other packages into a running application; it may read any of them, and must never reach the Extension Host."
+rationale = "The shell is what runs the Workbench outside VS Code: it opens PostgreSQL, starts Code Moniker, drives the SQL language server, and serves the views. It sits above every package and below no one, so nothing imports it and it imports no host. A dependency on vscode-extension would be the one thing that makes it unable to run on its own."

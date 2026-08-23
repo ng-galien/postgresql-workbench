@@ -13,25 +13,10 @@ uris = [
 typescript = "uri ~ 'lang:ts/**'"
 code_moniker_syntax_factory = "kind = 'imports_symbol' AND target.segment('module') = 'codeMonikerSyntax' AND target.segment('path') = 'createCodeMonikerSyntaxParser'"
 code_moniker_daemon_lifecycle = "kind = 'imports_symbol' AND target.segment('module') = 'localCodeMoniker' AND (target.segment('path') = 'connectLocalCodeMoniker' OR target.segment('path') = 'ensureLocalCodeMonikerWorkspace')"
-syntax_provider_owner = "source.segment('module') = 'localCodeMonikerSyntax' OR source.segment('module') = 'workbenchIndexController' OR source ~ '**/dir:e2e/**' OR source.segment('module') = 'codeMonikerSyntax.test' OR source.segment('module') = 'localCodeMoniker.test'"
+syntax_provider_owner = "source.segment('module') = 'localCodeMonikerSyntax' OR source.segment('module') = 'indexController' OR source ~ '**/dir:packages/dir:shell/**' OR source ~ '**/dir:e2e/**' OR source.segment('module') = 'codeMonikerSyntax.test' OR source.segment('module') = 'localCodeMoniker.test'"
 architectural_dependency = "kind = 'imports_symbol' OR kind = 'imports_module' OR kind = 'uses_type' OR kind = 'calls' OR kind = 'method_call' OR kind = 'instantiates' OR kind = 'extends' OR kind = 'implements'"
+workbench_package_target = "target ~ '**/dir:packages/**'"
 extension_local_target = "target ~ '**/dir:vscode-extension/dir:src/**'"
-workbench_webview_source = "source ~ '**/dir:vscode-extension/dir:src/dir:workbenchGraph/dir:webview/**'"
-workbench_webview_target = "target ~ '**/dir:vscode-extension/dir:src/dir:workbenchGraph/dir:webview/**'"
-workbench_graph_protocol_target = "target ~ '**/dir:vscode-extension/dir:src/dir:workbenchGraph/module:protocol' OR target ~ '**/dir:vscode-extension/dir:src/dir:workbenchGraph/module:protocol/**'"
-workbench_graph_drag_contract_target = "target.segment('module') = 'dragAndDrop' AND target ~ '**/dir:vscode-extension/dir:src/dir:workbenchGraph/**'"
-workbench_shared_presentation_target = "target.segment('module') = 'postgresPresentation' AND target.name = 'postgresVisual'"
-connection_service_target = "target.segment('module') = 'connectionService' AND target.segment('path') = 'ConnectionService'"
-connection_service_owner = "source.segment('module') = 'connectionManager' OR source.segment('module') = 'connectionManager.test'"
-extension_entry_target = "target.segment('module') = 'extension'"
-extension_entry_owner = "source.segment('module') = 'extension' OR source.segment('module') = 'marketplace.showcase' OR source.segment('module') = 'extension.smoke'"
-sql_notebook_model_source = "source.segment('module') = 'sqlNotebookModel'"
-sql_notebook_runtime_target = "target.segment('module') = 'sqlNotebook' OR target.segment('module') = 'sqlNotebookConnection' OR target.segment('module') = 'sqlNotebookResultHost' OR target.segment('module') = 'sqlResultSession' OR target.segment('module') = 'sqlSelectionExecution' OR target.segment('module') = 'connectionManager'"
-postgres_ddl_sync_core_source = "source.segment('module') = 'postgresDdlSync'"
-postgres_ddl_sync_runtime_target = "target.segment('module') = 'localCodeMoniker' OR target.segment('module') = 'codeMonikerRuntime' OR target.segment('module') = 'postgresCatalog' OR target.segment('module') = 'postgresSourceProvider'"
-analysis_source = "source ~ '**/lang:ts/dir:src/dir:analysis/**'"
-workbench_core_target = "target ~ '**/lang:ts/dir:src/dir:workbench/**' OR target ~ '**/lang:ts/dir:vscode-extension/dir:src/module:workbench*' OR target ~ '**/lang:ts/dir:vscode-extension/dir:src/module:localCodeMoniker*' OR target ~ '**/lang:ts/dir:vscode-extension/dir:src/module:codeMonikerRuntime*'"
-shared_dap_source = "source.segment('module') = 'main' OR source.segment('module') = 'stdioDapServer' OR source.segment('module') = 'dapServer' OR source.segment('module') = 'localCodeMonikerSyntax' OR source.segment('module') = 'callParser' OR source.segment('module') = 'functionSource' OR source ~ '**/lang:ts/dir:src/dir:analysis/**' OR source ~ '**/lang:ts/dir:src/dir:debugger/**'"
 
 [profiles.smells]
 enable = ["\\.smell-"]
@@ -39,319 +24,301 @@ enable = ["\\.smell-"]
 [profiles.architecture]
 enable = [
   "code-moniker-syntax-provider-owned-by-runtime-boundary",
-  "workbench-webview-stays-behind-protocol",
-  "connection-service-owned-by-connection-manager",
   "extension-entry-is-not-a-service",
-  "sql-notebook-model-remains-passive",
+  "the-extension-does-not-re-export-the-engine",
   "postgres-ddl-sync-core-remains-pure",
-  "analysis-does-not-depend-on-workbench-runtime",
-  "shared-dap-does-not-depend-on-workbench-runtime",
+  "connection-service-owned-by-connection-manager",
+  "scratchpad-file-remains-passive",
+  # declared by the package fragments
+  "language-server-features-stay-behind-the-server",
+  "query-engine-does-not-depend-on-the-language-server",
+  "package-is-the-leaf-of-the-graph",
+  "package-depends-only-on-what-it-reads",
+  "shell-composes-and-is-composed-by-nothing",
+  "row-writes-are-assembled-in-one-place",
+  "data-view-protocol-has-one-home",
+  "the-data-view-is-read-by-nothing-above-it",
+  "hidden-columns-are-answered-in-one-place",
+  "what-a-data-view-is-is-said-in-one-place",
 ]
-
-[profiles.dap]
-enable = ["shared-dap-does-not-depend-on-workbench-runtime"]
-
-[[ts.refs.where]]
-id = "workbench-webview-stays-behind-protocol"
-severity = "error"
-expr = "$workbench_webview_source AND $architectural_dependency AND $extension_local_target => $workbench_webview_target OR $workbench_graph_protocol_target OR $workbench_graph_drag_contract_target OR $workbench_shared_presentation_target"
-message = "Workbench webview code may depend on local UI modules, the graph protocol, and postgresVisual; it must not consume Extension Host controllers."
-rationale = "The React/Zustand webview is a separate runtime. PostgreSQL connections, Code Moniker sessions, VS Code state, tree coordination, and command execution stay in the Extension Host and cross this boundary through the typed graph protocol. The drag payload contract and postgresVisual are the explicitly shared pure mappings."
-
-[[ts.refs.where]]
-id = "connection-service-owned-by-connection-manager"
-severity = "error"
-expr = "$connection_service_target => $connection_service_owner"
-message = "Consume PostgreSQL transport through ConnectionManager; ConnectionService is its private construction adapter."
-rationale = "ConnectionManager owns the active DatabaseContext, connection events, reconnect state, and dedicated-client factory. Letting feature controllers consume ConnectionService directly would create competing connection lifecycles."
-
-[[ts.refs.where]]
-id = "extension-entry-is-not-a-service"
-severity = "error"
-expr = "$architectural_dependency AND $extension_entry_target => $extension_entry_owner"
-message = "Product modules must not import the extension entry point; receive explicit collaborators from activation wiring."
-rationale = "extension.ts is the composition root and command-registration boundary. Importing it from a feature would turn the exported extension API into a service locator and invert the activation dependency direction."
-
-[[ts.refs.where]]
-id = "sql-notebook-model-remains-passive"
-severity = "error"
-expr = "$sql_notebook_model_source AND $architectural_dependency => NOT $sql_notebook_runtime_target"
-message = "sqlNotebookModel owns serialization and binding value objects, not connections, execution, or result-session lifecycle."
-rationale = "The notebook file and renderer message contract must remain usable without a live PostgreSQL connection or VS Code controller. Execution belongs to sqlNotebook, dedicated connection helpers, and result-session hosts."
-
-[[ts.refs.where]]
-id = "postgres-ddl-sync-core-remains-pure"
-severity = "error"
-expr = "$postgres_ddl_sync_core_source AND $architectural_dependency => NOT $postgres_ddl_sync_runtime_target"
-message = "postgresDdlSync must remain pure DDL SQL and notification reduction; runtime orchestration belongs outside it."
-rationale = "The core DDL unit builds provisioning SQL, validates the support schema, and coalesces notifications. Catalog reads, Code Moniker publication, session lifecycle, and incremental source mutation are coordinated by postgresSourceProvider and the Extension Host controller."
-
-[[ts.refs.where]]
-id = "analysis-does-not-depend-on-workbench-runtime"
-severity = "error"
-expr = "$analysis_source AND $architectural_dependency => NOT $workbench_core_target"
-message = "The shared analysis layer depends on the Workbench runtime; move the runtime adapter outward to restore workbench -> analysis direction."
-rationale = "SyntaxParser is the shared semantic contract consumed by Workbench and debugger features. Runtime adapters that connect Code Moniker sessions live outside analysis so the dependency direction remains workbench/runtime -> analysis."
-
-[[ts.refs.where]]
-id = "shared-dap-does-not-depend-on-workbench-runtime"
-severity = "error"
-expr = "$shared_dap_source AND $architectural_dependency => NOT $workbench_core_target"
-message = "The shared DAP library and standalone host must not depend on Workbench indexing or Code Moniker workspace lifecycle modules."
-rationale = "Both the VS Code adapter entry and the standalone executable reuse this library. It is allowed only a lazy stateless SQL/PL-pgSQL parser; workspace daemons, indexed sources, symbols, graph, usages, catalog projection, and DDL synchronization belong to the Workbench host."
 
 [[views]]
 id = "postgres-workbench-boundaries"
 title = "PostgreSQL Workbench boundaries"
 scope = "."
-intent = "Review Workbench ownership, dependency direction, lifecycle coupling, and operational boundaries before changing extension activation, PostgreSQL contexts, indexing, graph, notebooks, or DDL synchronization."
+intent = "Review ownership and dependency direction before changing a package boundary, the extension's activation, PostgreSQL Connexions, the Workbench Index, the Cockpit, Scratchpads, or DDL synchronization."
 summary = """
-The Extension Host is the composition runtime. ConnectionManager owns the active PostgreSQL
-DatabaseContext; WorkbenchIndexController owns the Code Moniker session and per-context semantic
-registries; tree and graph units project indexed state; notebook units own durable scratchpads,
-dedicated executions, and bounded result sessions; DDL synchronization is split between pure SQL
-construction and an Extension Host listener/controller. The React/Zustand graph webview crosses
-back to the host only through the typed protocol.
+Six packages and one extension. packages/sql is the leaf: it reads SQL and PL/pgSQL and answers
+editor questions through its language server. packages/catalog says what a database contains and
+keeps the Workbench Index of it. packages/dap debugs PL/pgSQL. packages/rows reads and edits result
+rows. packages/coverage maps executed lines back to source. packages/views renders what the others
+produce, in a webview that is a separate runtime and reaches the host only through a typed protocol.
+
+The Extension Host composes them: it owns activation, VS Code commands, the open Connexions, and the
+controllers whose lifecycle outlives a command. No package depends on it, and each package's own
+fragment states what it may depend on.
 """
+
+[[views.boundaries]]
+id = "sql-analysis"
+owns = [
+  "the Code Moniker syntax boundary for SQL and PL/pgSQL",
+  "SQL as text: identifiers, lexing, formatting, document language",
+  "the query engine: analysis, relations, composition, join planning",
+  "the SQL authoring language server and its protocol",
+]
+forbids = [
+  "depending on any other package, or on the Extension Host",
+  "importing what the language server answers with, from outside the server",
+  "the query engine depending on the language server",
+  "secondary SQL or PL/pgSQL syntax providers",
+]
+forbid_rules = [
+  "package-is-the-leaf-of-the-graph",
+  "language-server-features-stay-behind-the-server",
+  "query-engine-does-not-depend-on-the-language-server",
+  "code-moniker-syntax-provider-owned-by-runtime-boundary",
+]
+rationale = "The language server is the front door for editor features; a consumer asks it rather than importing completion or semantic tokens. Anything needed outside that protocol is a worker called directly: `query` to rewrite SQL, `text` to read it as text. The package is a leaf because the standalone DAP executable ships it without VS Code."
+symbols = [
+  "ts:packages/sql/src/localCodeMonikerSyntax.class:StatelessCodeMonikerSyntaxRuntime",
+  "ts:packages/sql/src/analysis/codeMonikerSyntax.function:createCodeMonikerSyntaxParser",
+]
+rules = [
+  "package-is-the-leaf-of-the-graph",
+  "language-server-features-stay-behind-the-server",
+  "query-engine-does-not-depend-on-the-language-server",
+]
+
+[[views.boundaries]]
+id = "catalog-and-index"
+owns = [
+  "reading the PostgreSQL catalog and projecting it into virtual SQL sources",
+  "the Code Moniker session and the per-Connexion Workbench Index",
+  "DDL support-schema provisioning SQL and notification reduction",
+  "the DDL listener lifecycle and the incremental refresh it triggers",
+]
+forbids = [
+  "depending on any package other than sql",
+  "runtime orchestration inside the pure DDL core",
+  "presentation or result-session state",
+]
+forbid_rules = [
+  "ts.refs.catalog.package-depends-only-on-what-it-reads",
+  "postgres-ddl-sync-core-remains-pure",
+]
+rationale = "The catalog answers what a database contains; rows, coverage, debugging and rendering consume that answer. postgresDdlSync builds SQL and coalesces notifications deterministically, while ddlSync owns LISTEN state and refresh coordination."
+symbols = [
+  "ts:packages/catalog/src/indexController.class:WorkbenchIndexController",
+  "ts:packages/catalog/src/localCodeMoniker.class:LocalCodeMonikerSession",
+  "ts:packages/catalog/src/ddlSync.class:WorkbenchDdlSyncController",
+  "ts:packages/catalog/src/postgresCatalog.function:readPostgresCatalog",
+  "ts:packages/catalog/src/postgresDdlSync.function:buildWorkbenchDdlProvisioningSql",
+]
+rules = ["ts.refs.catalog.package-depends-only-on-what-it-reads", "postgres-ddl-sync-core-remains-pure"]
+
+[[views.boundaries]]
+id = "debugger"
+owns = [
+  "the DAP session and the pldbgapi backend",
+  "two-pass variable resolution",
+  "exact preservation of client-owned source URIs, with a sourceReference fallback",
+]
+forbids = [
+  "depending on any package other than sql",
+  "workspace daemons, indexed sources, catalog projection, or DDL synchronization",
+]
+forbid_rules = ["ts.refs.dap.package-depends-only-on-what-it-reads"]
+rationale = "The VS Code adapter and the published standalone executable are two hosts over one library. Neither lets the debugger read or index the user's workspace; a Workbench host may supply canonical source URIs, which the DAP preserves exactly."
+symbols = [
+  "ts:packages/dap/src/debugger/session/PlpgsqlDebugSession.class:PlpgsqlDebugSession",
+  "ts:packages/dap/src/debugger/session/sourceRegistry.function:clientSourceUris",
+]
+rules = ["ts.refs.dap.package-depends-only-on-what-it-reads"]
+
+[[views.boundaries]]
+id = "result-rows"
+owns = [
+  "the bounded cursor every surface reads rows through",
+  "what a result is: its payload, its navigation, and writing it out",
+  "the Data View, in src/dataView: its protocol, its query, its editability, its pending edits, and which of its columns are hidden",
+]
+forbids = [
+  "depending on any package other than sql and dap",
+  "VS Code, a webview, or the catalog",
+  "reading, above the Data View, anything the Data View owns",
+]
+forbid_rules = [
+  "ts.refs.rows.package-depends-only-on-what-it-reads",
+  "the-data-view-is-read-by-nothing-above-it",
+]
+rationale = "A result comes from a query the SQL layer understands or a debugged call the DAP layer captured. The Scratchpad output, the Data View and the debugger output all read rows through the same cursor; depending on the catalog or the views would close a cycle around the thing every result view renders. Two thirds of the package is the Data View, which is why it sits in a directory of its own: it reaches up for the cursor, the payload, navigation and the export writer, and nothing above it reaches down. What a host may not do is answer for the Data View itself — both of them held their own hidden columns, and both wrote out the ones the reader had hidden."
+symbols = [
+  "ts:packages/rows/src/cursor.class:SqlResultSession",
+  "ts:packages/rows/src/dataView/hiddenColumns.class:HiddenColumns",
+]
+rules = [
+  "ts.refs.rows.package-depends-only-on-what-it-reads",
+  "the-data-view-is-read-by-nothing-above-it",
+  "data-view-protocol-has-one-home",
+  "hidden-columns-are-answered-in-one-place",
+]
+
+[[views.boundaries]]
+id = "webview-rendering"
+owns = [
+  "the React result grid, its navigation, and the three views that nest it",
+  "the Cockpit graph and its interaction state",
+  "the shared PostgreSQL visual identities",
+]
+forbids = [
+  "depending on the Extension Host",
+  "depending on any package other than catalog, dap and rows",
+  "PostgreSQL transport, Code Moniker sessions, or VS Code state",
+  "declaring the protocol it speaks: the Data View's belongs to the engine",
+]
+forbid_rules = ["ts.refs.views.package-depends-only-on-what-it-reads"]
+rationale = "A webview is a separate runtime. It renders values and posts messages; connections, sessions and command execution stay in the host and cross the boundary through the protocol each view declares."
+symbols = [
+  "ts:packages/views/src/cockpit/graph/store.interface:CockpitStore",
+  "ts:packages/views/src/presentation.function:postgresVisual",
+]
+rules = ["ts.refs.views.package-depends-only-on-what-it-reads"]
 
 [[views.boundaries]]
 id = "activation"
 owns = [
   "extension activation and disposal",
-  "command registration",
-  "construction and wiring of long-lived controllers",
-  "public extension API assembly",
+  "VS Code command registration",
+  "construction and wiring of the long-lived controllers",
+  "the public extension API",
 ]
 forbids = [
-  "being imported as a service locator by product modules",
+  "being imported as a service locator by a product module",
   "owning feature persistence or semantic caches",
+  "holding logic that does not adapt anything to VS Code",
+  "registering a VS Code command anywhere but a module's registerCommands",
 ]
 forbid_rules = ["extension-entry-is-not-a-service"]
-rationale = "Activation chooses implementations and binds VS Code commands; feature state remains in the controller that defines its lifecycle."
-symbols = [
-  "module:extension/function:activate(context:vscode.ExtensionContext)",
-  "module:extension/interface:PlpgsqlExtensionApi",
-]
+rationale = """
+Activation chooses implementations and binds commands; feature state stays in the controller that
+defines its lifecycle. The extension adapts the engine to VS Code and holds nothing else, because
+the same engine is meant to run under a host that is not VS Code at all.
+
+Measured against that, August 2026. Five modules that never mentioned VS Code — 731 lines — moved
+to the packages their own imports named, and the package rules now keep them there. The re-exports
+that made engine code look like extension code are gone, and a rule holds that one.
+
+What is left is named and guarded rather than enforced by a rule, because neither fact lives in the
+reference graph. Twelve files still adapt nothing to VS Code, and
+scripts/extension/check-extension-adapts.mjs lists each with its reason: two are legitimate — the
+standalone DAP entry and one line shared by every module — and ten are engine code awaiting a
+package. Two of those ten have no home the graph allows at all:
+debug/launchConfiguration needs the saved connections and the SQL call parser together, and no
+package may depend on both catalog and sql; scratchpad/notebookFile needs catalog, dap, rows and
+views at once. The guard fails on a new one, and on an entry that has started adapting something.
+
+A command is registered in a module's registerCommands. No reference rule can hold that: `vscode`
+is an ambient module, `registerCommand` has no indexed symbol, and a rule written against it reports
+zero violations while twenty-five sit in front of it. The guard is
+scripts/extension/check-command-registrars.mjs instead, in the same `npm run check` the commit hook
+runs — it names the three files excused from the convention and the reason each is, and it fails
+both on a registration anywhere else and on an excuse that has stopped registering anything.
+"""
+symbols = ["ts:vscode-extension/src/extension.interface:PlpgsqlExtensionApi"]
 rules = ["extension-entry-is-not-a-service"]
 
 [[views.boundaries]]
-id = "database-context"
+id = "connexions"
 owns = [
-  "saved server configuration and secrets",
-  "active DatabaseContext identity",
-  "shared interactive connection state",
+  "saved server identities and their secrets",
+  "the open Connexions and the events that announce them",
   "dedicated PostgreSQL client construction",
-  "connection change events",
 ]
 forbids = [
-  "feature-owned ConnectionService lifecycles",
-  "semantic index or notebook result ownership",
+  "a feature building its own ConnectionService",
+  "owning the semantic index or a result session",
 ]
 forbid_rules = ["connection-service-owned-by-connection-manager"]
-rationale = "ServerStore persists identities and credentials; ConnectionManager is the single live connection facade and emits the context changes consumed by indexing and presentation."
+rationale = "ConnectionManager is the single live facade over PostgreSQL transport. A feature building its own ConnectionService would create a second lifecycle nothing reconnects or disposes."
 symbols = [
-  "module:connectionManager/class:ConnectionManager",
-  "module:connectionService/class:ConnectionService",
-  "module:serverStore/class:ServerStore",
-  "module:serverStore/interface:ServerConfig",
+  "ts:vscode-extension/src/connection/openConnections.class:ConnectionManager",
+  "ts:vscode-extension/src/connection/connectPostgres.class:ConnectionService",
+  "ts:vscode-extension/src/connection/savedConnections.class:ServerStore",
+  "ts:packages/catalog/src/savedConnection.interface:ServerConfig",
 ]
 rules = ["connection-service-owned-by-connection-manager"]
 
 [[views.boundaries]]
-id = "semantic-index"
+id = "scratchpads"
 owns = [
-  "Code Moniker daemon and client session",
-  "PostgreSQL catalog projection into virtual SQL sources",
-  "per-DatabaseContext indexed registries and snapshots",
-  "symbol, relation, source, and graph query facade",
-  "publication and invalidation of PostgreSQL sources",
+  "the Scratchpad file format and its Association value objects",
+  "workspace persistence of Scratchpads",
+  "dedicated execution connections and Transaction mode",
+  "hosting the bounded result session a notebook cell renders",
 ]
 forbids = [
-  "presentation navigation state",
-  "notebook persistence and result-session state",
-  "secondary SQL or PL/pgSQL syntax providers",
+  "connection or execution lifecycle inside the serialized file",
+  "reusing the shared interactive client for notebook execution",
 ]
-forbid_rules = ["code-moniker-syntax-provider-owned-by-runtime-boundary"]
-rationale = "WorkbenchIndexController is the Extension Host owner of semantic state; the src/workbench units provide catalog, source-publication, and local-client contracts beneath it."
+forbid_rules = ["scratchpad-file-remains-passive"]
+rationale = "A Scratchpad opens before anything connects, so reading and writing one must not need a live Connexion. Execution, transactions and cursors belong to register, association and resultHost."
 symbols = [
-  "module:workbenchIndexController/class:WorkbenchIndexController",
-  "module:localCodeMoniker/class:LocalCodeMonikerSession",
-  "module:postgresCatalog/function:readPostgresCatalog(client:CatalogQueryClient,identity:PostgresCatalogIdentity)",
-  "module:postgresSourceProvider/function:changedPostgresResources(state:PostgresSourceProviderState,objects:readonlyPostgresDdlObject[])",
+  "ts:vscode-extension/src/scratchpad/notebookFile.interface:SqlNotebookFile",
+  "ts:vscode-extension/src/scratchpad/workspace.class:SqlNotebookWorkspace",
+  "ts:vscode-extension/src/scratchpad/resultHost.class:SqlNotebookResultHost",
 ]
-rules = ["code-moniker-syntax-provider-owned-by-runtime-boundary"]
+rules = ["scratchpad-file-remains-passive"]
 
 [[views.boundaries]]
-id = "shared-dap-code-moniker"
+id = "tree-and-cockpit"
 owns = [
-  "shared debugger and DAP session contracts used by distinct hosts",
-  "lazy stateless SQL and PL/pgSQL parsing",
-  "process-owned MCP stdio syntax worker bootstrapped on an empty temporary root",
-  "exact preservation of client-owned source URIs",
-  "standard sourceReference fallback for clients without source URIs",
-]
-forbids = [
-  "user workspace or index state as debugger input",
-  "workspace daemon discovery, connection, or lifecycle",
-  "mandatory Code Moniker source URIs",
-  "symbols, graph, usages, navigation, source-set publication, catalog projection, or DDL synchronization",
-]
-forbid_rules = ["shared-dap-does-not-depend-on-workbench-runtime"]
-rationale = "The extension adapter and published CLI are separate hosts over the same DAP library. The CLI exposes stateless parsing through code_moniker_read on MCP stdio; neither host lets the shared debugger read or index the user's workspace. A Workbench host may provide canonical source URIs, which the DAP preserves exactly, while generic clients remain functional through sourceReference."
-symbols = [
-  "module:localCodeMonikerSyntax/class:StatelessCodeMonikerSyntaxRuntime",
-  "module:codeMonikerSyntax/function:createCodeMonikerSyntaxParser(client:CodeMonikerSyntaxClient)",
-  "module:sourceRegistry/function:standaloneSourceUri(oid:number)",
-]
-rules = ["shared-dap-does-not-depend-on-workbench-runtime"]
-
-[[views.boundaries]]
-id = "tree-and-graph"
-owns = [
-  "Workbench tree projection and item presentation",
-  "graph host navigation and snapshot validation",
-  "typed host-webview protocol",
-  "shared pure PostgreSQL visual identities",
-  "React/Zustand graph interaction state",
-  "tree and graph selection synchronization",
+  "the Workbench tree projection of index snapshots",
+  "the Cockpit host: navigation, snapshot validation, and the webview panel",
+  "selection synchronization between the tree and the graph",
 ]
 forbids = [
   "PostgreSQL transport construction",
-  "Code Moniker daemon ownership",
-  "webview imports of Extension Host controllers",
-  "webview dependencies on shared presentation behavior other than postgresVisual",
+  "owning the Code Moniker session",
 ]
-forbid_rules = [
-  "workbench-webview-stays-behind-protocol",
-  "code-moniker-syntax-provider-owned-by-runtime-boundary",
-]
-rationale = "Tree and graph are projections of index snapshots. The host validates context and performs actions; the webview renders and manipulates protocol values."
+rationale = "Tree and Cockpit project what the index holds. The host validates context and performs actions; the webview renders and manipulates protocol values."
 symbols = [
-  "module:workbenchTreeProvider/class:WorkbenchTreeProvider",
-  "module:workbenchGraphView/class:WorkbenchGraphView",
-  "module:treeSync/class:WorkbenchGraphTreeSync",
-  "module:protocol/type:WorkbenchGraphHostMessage",
-  "module:postgresPresentation/function:postgresVisual(kind:string)",
-  "module:store/interface:CockpitStore",
+  "ts:vscode-extension/src/workbench/tree.class:WorkbenchTreeProvider",
+  "ts:vscode-extension/src/cockpit/view.class:WorkbenchGraphView",
+  "ts:vscode-extension/src/cockpit/treeSync.class:WorkbenchGraphTreeSync",
 ]
-rules = ["workbench-webview-stays-behind-protocol"]
-
-[[views.boundaries]]
-id = "sql-notebooks"
-owns = [
-  "notebook file and renderer message contracts",
-  "scratchpad workspace persistence",
-  "binding snapshots and reconnect decisions",
-  "dedicated execution connections",
-  "cursor-backed result sessions and bounded renderer hosting",
-]
-forbids = [
-  "reuse of the shared interactive PostgreSQL client for notebook execution",
-  "connection lifecycle inside the serialized notebook model",
-  "semantic index ownership",
-]
-forbid_rules = ["sql-notebook-model-remains-passive"]
-rationale = "Durable notebook values, VS Code orchestration, PostgreSQL execution, and result navigation have separate owners so saved scratchpads do not retain live runtime state."
-symbols = [
-  "module:sqlNotebook/function:registerSqlNotebook(context:vscode.ExtensionContext,connections:ConnectionManager,classifyResult:ResultClassifier)",
-  "module:sqlNotebookModel/interface:SqlNotebookFile",
-  "module:sqlNotebookWorkspace/class:SqlNotebookWorkspace",
-  "module:sqlNotebookConnection/function:createDedicatedNotebookClient(provider:DedicatedNotebookClientProvider,serverId:string)",
-  "module:sqlResultSession/class:SqlResultSession",
-  "module:sqlNotebookResultHost/class:SqlNotebookResultHost",
-]
-rules = ["sql-notebook-model-remains-passive"]
-
-[[views.boundaries]]
-id = "persistence-and-configuration"
-owns = [
-  "global saved server identities",
-  "secret password storage",
-  "workspace active-server selection",
-  "workspace scratchpad files",
-  "workspace graph perspectives",
-  "global DDL-sync defaults with per-DatabaseContext overrides",
-]
-forbids = [
-  "persisting live clients, cursors, daemon sessions, or index snapshots",
-  "ambiguous DDL-sync precedence",
-]
-rationale = "Each durable value has an explicit VS Code scope; runtime handles remain memory-owned and DDL-sync configuration reports whether settings or a connection override supplied each value."
-symbols = [
-  "module:serverStore/class:ServerStore",
-  "module:sqlNotebookWorkspace/class:SqlNotebookWorkspace",
-  "module:workbenchDdlSyncConfiguration/function:resolveWorkbenchDdlSyncConfiguration(server:ServerConfig,defaults:WorkbenchDdlSyncDefaults)",
-  "module:workbenchGraphView/class:WorkbenchGraphView/method:savePerspective(state:CockpitPerspectiveState)",
-]
-
-[[views.boundaries]]
-id = "ddl-synchronization"
-owns = [
-  "support-schema validation and provisioning SQL",
-  "DDL notification reduction",
-  "per-server listener lifecycle and retry state",
-  "incremental refresh handoff to the semantic index",
-]
-forbids = [
-  "runtime and catalog dependencies in the pure DDL core",
-  "implicit provisioning",
-  "DDL listener ownership in tree or graph presentation",
-]
-forbid_rules = ["postgres-ddl-sync-core-remains-pure"]
-rationale = "src/workbench/postgresDdlSync is deterministic core logic; WorkbenchDdlSyncController owns privileged provisioning commands, LISTEN state, and index refresh coordination."
-symbols = [
-  "module:postgresDdlSync/function:buildWorkbenchDdlProvisioningSql(supportSchema:string)",
-  "module:postgresDdlSync/function:coalescePostgresDdlNotifications(notifications:readonlyPostgresDdlNotification[])",
-  "module:workbenchDdlSync/class:WorkbenchDdlSyncController",
-  "module:workbenchDdlSyncConfiguration/function:resolveWorkbenchDdlSyncConfiguration(server:ServerConfig,defaults:WorkbenchDdlSyncDefaults)",
-]
-rules = ["postgres-ddl-sync-core-remains-pure"]
 
 [[views.gotchas]]
-id = "runtime-analysis-direction"
-rationale = "LocalCodeMonikerSyntaxRuntime now lives at the src runtime boundary. The blocking rule prevents shared analysis from importing Workbench runtime types and guards against reintroducing the former directory cycle."
-symbols = [
-  "module:localCodeMonikerSyntax/class:LocalCodeMonikerSyntaxRuntime",
-  "module:localCodeMoniker/class:LocalCodeMonikerSession",
-]
-rules = ["analysis-does-not-depend-on-workbench-runtime"]
-check = "code_moniker_rules action=run profile=architecture report=true limit=200"
+id = "the-language-server-is-also-a-worker"
+rationale = "The SQL language server is the front door for consumers, and at the same time a client of the Extension Host: it cannot parse. Code Moniker lives in the host, so the server sends `postgresql-workbench/syntax` back for every completion, every semantic token and every composition. Nothing in the directory layout shows this inversion; the protocol file does."
+symbols = ["ts:packages/sql/src/languageServer/protocol.const:SQL_AUTHORING_SYNTAX_REQUEST"]
+check = "code_moniker_rules uri=\"workspace\" action=\"run\" profile=\"architecture\" report=true limit=200"
+
+[[views.gotchas]]
+id = "a-rule-that-guards-nothing"
+rationale = "Every boundary rule lives in the fragment of the package it constrains, and the workspace file keeps only the vocabulary that is general. A rule whose subject is renamed keeps passing while checking nothing, so `check --report` names any rule whose antecedent never matched, and each rule here was proved by planting a forbidden edge and watching it fire."
+check = "code_moniker_rules uri=\"workspace\" action=\"run\" profile=\"architecture\" report=true limit=200"
 
 [[views.gotchas]]
 id = "lifecycle-concentration"
-rationale = "All smell rules are blocking errors. Activation and interactive connection commands have been decomposed. Narrow source-level exceptions remain for stateful protocol/lifecycle owners; WorkbenchIndexController and WorkbenchGraphView carry explicit technical debt because their snapshot-bound capability surfaces are not yet split."
+rationale = "All smell rules are blocking errors. WorkbenchIndexController and WorkbenchGraphView carry explicit technical debt: their snapshot-bound capability surfaces are not split yet."
 symbols = [
-  "module:workbenchIndexController/class:WorkbenchIndexController",
-  "module:workbenchGraphView/class:WorkbenchGraphView",
-  "module:workbenchDdlSync/class:WorkbenchDdlSyncController",
-  "module:PlpgsqlDebugSession/class:PlpgsqlDebugSession",
+  "ts:packages/catalog/src/indexController.class:WorkbenchIndexController",
+  "ts:vscode-extension/src/cockpit/view.class:WorkbenchGraphView",
 ]
-rules = [
-  "ts.function.smell-long-callable",
-  "ts.method.smell-long-callable",
-  "ts.constructor.smell-long-callable",
-  "smell-large-class",
-  "smell-method-size-disharmony",
-]
-check = "code_moniker_rules action=run profile=smells report=true limit=200"
+check = "code_moniker_rules uri=\"workspace\" action=\"run\" profile=\"smells\" report=true limit=200"
 
 [[views.gotchas]]
 id = "test-coverage-is-layered"
-rationale = "Unit tests cover pure models and host controllers, while the e2e Workbench tests exercise catalog publication, Code Moniker indexing, DDL notifications, and source-resource updates. Some test imports are not linked into semantic callees, so a zero-callee test graph is a coverage limit rather than evidence of no test."
-symbols = [
-  "module:workbenchIndexController.test/class:FakeConnections",
-  "module:workbenchGraphView.test/function:graphView()",
-  "module:sqlResultSession.test/class:FakeCursorReader",
-  "module:workbench-ddl-sync.test/function:applyNotificationsFromCodeMoniker()",
-]
+rationale = "Unit tests sit beside the code they cover and run under vitest. The e2e suites need a real PostgreSQL or a real Code Moniker parser; the VS Code suites need a real VS Code; the Playwright lanes drive it. A module with no unit callers is a layering fact, not evidence of no test."
 check = "npm test && npm run test:e2e:run"
 
 [[ts.function.where]]
 id = "name-camelcase"
 severity = "error"
-expr = "$camel OR $ts_callback OR ((moniker ~ '**/dir:workbenchGraph/dir:webview/**' OR moniker ~ '**/dir:sqlNotebookRenderer/**') AND name =~ ^[A-Z][A-Za-z0-9]*$)"
+expr = "$camel OR $ts_callback OR (moniker ~ '**/dir:packages/dir:views/**' AND name =~ ^[A-Z][A-Za-z0-9]*$)"
 message = "Functions use camelCase; React components in the Workbench webview use PascalCase. Rename `{name}`."
-rationale = "PascalCase is part of the React component contract and allows the hooks linter to identify stateful components without weakening naming rules outside the webview."
+rationale = "PascalCase is part of the React component contract and lets the hooks linter recognise stateful components. packages/views holds every React view, so the exemption stops exactly at that package."
 
 [[ts.shape.annotation.where]]
 id = "no-comment-inside-callable"

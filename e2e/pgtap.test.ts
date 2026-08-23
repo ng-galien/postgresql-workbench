@@ -1,6 +1,6 @@
 import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { discoverPgTapTests, executePgTapTest } from "../src/coverage/index.js";
+import { discoverPgTapTests, executePgTapTest } from "../packages/coverage/src/index.js";
 import { type CodeMonikerTestRuntime, startCodeMonikerTestRuntime } from "./codeMonikerRuntime.js";
 
 const PG_CONFIG = {

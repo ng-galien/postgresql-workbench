@@ -8,6 +8,7 @@ vscode-extension/runtime/
 vscode-extension/.vscode-test/
 /.vscode-test/
 vscode-extension/test-results/
+test-results/
 *.vsix
 *.vsix.sha256
 .env
@@ -17,3 +18,6 @@ vscode-extension/test-results/
 test-workspace/*
 !test-workspace/.gitkeep
 private/
+
+# built artefact of the published DAP package
+packages/dap/dist/

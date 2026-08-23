@@ -8,7 +8,11 @@ import * as path from "node:path";
 import { DebugClient } from "@vscode/debugadapter-testsupport";
 import { Client } from "pg";
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { DEBUG_RESULT_EVENT, DEBUG_RESULT_STATUS_EVENT } from "../src/debugger/launch/index.js";
+import type { LaunchRequestArguments } from "../packages/dap/src/debugger/index.js";
+import {
+  DEBUG_RESULT_EVENT,
+  DEBUG_RESULT_STATUS_EVENT,
+} from "../packages/dap/src/debugger/launch/index.js";
 import {
   DEBUG_DAP_EVENT_TIMEOUT_MS,
   DEBUG_INTEGRATION_TEST_TIMEOUT_MS,
@@ -17,7 +21,7 @@ import {
 
 const DAP_SERVER = process.env.POSTGRESQL_DAP_SERVER
   ? path.resolve(process.env.POSTGRESQL_DAP_SERVER)
-  : path.resolve(__dirname, "../dist/main.js");
+  : path.resolve(__dirname, "../dist/dap/src/main.js");
 const LAUNCH_ARGS = {
   host: "localhost",
   port: 5433,
@@ -580,10 +584,11 @@ describe("DAP client e2e", { timeout: DEBUG_INTEGRATION_TEST_TIMEOUT_MS }, () =>
 
     const changed = dc.waitForEvent("breakpoint", DEBUG_DAP_EVENT_TIMEOUT_MS);
     const stopped = dc.waitForEvent("stopped", DEBUG_DAP_EVENT_TIMEOUT_MS);
-    await dc.launchRequest({
+    const launchArgs: LaunchRequestArguments = {
       ...launchConfig("SELECT test_step_into(5)"),
       stopOnEntry: false,
-    });
+    };
+    await dc.launchRequest(launchArgs);
     await dc.configurationDoneRequest();
 
     expect((await changed).body.breakpoint.verified).toBe(true);
@@ -610,10 +615,11 @@ describe("DAP client e2e", { timeout: DEBUG_INTEGRATION_TEST_TIMEOUT_MS }, () =>
 
       const changed = dc.waitForEvent("breakpoint", DEBUG_DAP_EVENT_TIMEOUT_MS);
       const stopped = dc.waitForEvent("stopped", DEBUG_DAP_EVENT_TIMEOUT_MS);
-      await dc.launchRequest({
+      const launchArgs: LaunchRequestArguments = {
         ...launchConfig("SELECT test_simple(5, 'entry-function-breakpoint')"),
         stopOnEntry: false,
-      });
+      };
+      await dc.launchRequest(launchArgs);
       await dc.configurationDoneRequest();
 
       expect((await changed).body.breakpoint.verified).toBe(true);

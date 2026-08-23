@@ -2,6 +2,116 @@
 
 ## Unreleased
 
+## [1.4.0] - 2026-08-22
+
+PostgreSQL Workbench 1.4.0 adds the Data View: an editor tab that holds a query,
+the rows PostgreSQL answered with, and the changes made to them and not yet
+written. Tables, views, and query results open in one editable grid, composed
+from the Workbench Index and written back in one guarded transaction.
+
+### Data View
+
+- Added the **Data View**, opened from a table or view in the database tree,
+  from the statement under the cursor in a SQL file, or from a Scratchpad result
+- Composed the query from inside the view: project a table's remaining columns,
+  join a related table on the key the planner derives from the foreign keys, add
+  any other relation, and take a table back out with everything that referenced
+  it — by pointer or by keyboard alone
+- Filtered on a `WHERE` the reader types, completed by the SQL language server
+  against the indexed Connexion, and sorted on any column with multiple
+  criteria, reversible in place and an explicit NULLS ordering only where
+  PostgreSQL would do otherwise
+- Edited rows the way a spreadsheet does — cell and rectangle selection, row
+  selection in the gutter, copy and tab-separated paste, added rows placed where
+  the reader is — with every change held until it is applied
+- Applied every pending change in one transaction, each statement parameterized
+  and guarded against the row having moved; a stale or missing row rolls the
+  whole write back and says which row it was
+- Said what a deletion drags along under each foreign key before it happens, and
+  refused row addition and deletion where a join means no one table owns the row
+- Hid identity and relationship columns by default while keeping them projected,
+  so rows stay identified and editable; new setting
+  `postgresql-workbench.dataView.hideKeyColumns`
+- Paged relations too large to load at once, loading the rest on demand
+- Exported the selection, the loaded rows, or every row of the query as CSV,
+  TSV, JSON, SQL `INSERT`, or Markdown, with a preview of what will be written
+  and hidden columns left out
+- Told two JOIN paths apart when they traverse the same relations, by naming the
+  key each hop is taken on: a billing and a shipping address to the same table
+  used to offer two identical choices
+- Coloured the SQL panel by what the language server makes of the query: a
+  schema, a relation, the alias standing for it and a column of it are told
+  apart, over the syntax colouring the grammar already gave
+- Coloured the WHERE field the same way, by asking about the condition as part
+  of the query it belongs to
+- Brought back the scrollbar across a result wider than its pane: hiding the one
+  down the rows, which the grid draws by hand, had hidden that one too
+- Followed an address in a cell with Ctrl/Cmd+click, as an editor does, so a
+  plain click selects the cell it lands on
+- Moved the SQL panel under the toolbar that opens it, gave it a height that
+  follows the window instead of a fixed one, and gave every scrollable pane of
+  the view the same scrollbar
+- Marked the WHERE and ORDER BY lines alike, and dropped the run control at the
+  end of the filter: Enter runs it, and the field says when it holds something
+  not yet run
+- Kept the caret on the filter line while the rows it asked for are fetched
+- Stopped the filter box painting itself with the theme's accent colour, which
+  left an idle filter reading as a focused one on a light theme
+- Added a menu on right-click, on a cell and on a column heading: **Filter** and
+  **Exclude** write the condition the cell stands for into the WHERE field —
+  where it can be read, corrected and undone — **Inspect** opens the value,
+  **Open** follows an address the cell holds, and **Copy** takes the selection.
+  It walks with the arrows and gives the focus back where it came from
+- Followed an address a cell holds through the host rather than through the page:
+  in a VS Code webview a click the grid dispatches itself is ignored and a plain
+  click reached the browser whatever the grid did, so the menu's **Open** did
+  nothing and the Ctrl/Cmd requirement was not applied. Every result surface —
+  Data View, Scratchpad, debug results — now says what the reader asked for and
+  the extension opens it, refusing anything that is not `http` or `https`
+- Gave a link cell a small open mark, revealed on hover and taking a plain click
+  to the address, so following one is not a chord a reader has to be told about
+- Opened that menu from the keys, with Shift+F10 or the Menu key, under the cell
+  the cursor is on — which is also how the keyboard now follows a link, so the
+  grid stays a single stop in the tabbing order
+- Drew every menu of the view with the one menu component: the columns picker,
+  the additions picker, the actions menu and the pending-changes list dismiss
+  alike, walk alike, and turn what is on and off with a checkbox that says so
+- Named a Data View opened on a statement after the relations that statement
+  draws from, once the query has been read, instead of the statement itself: a
+  tab an inch wide showed a wall of column names
+- Marked **Open in Data View** in a Scratchpad result with the icon a Data View
+  carries everywhere else
+- Added new commands **Open Data View** and **Open Data View for Statement**
+
+- Added a Marketplace card for the Data View, first on the page: a related table
+  joined on the key the planner derives, a filter written from what a cell holds,
+  an order taken, and the composed query opened beside the rows it drew
+
+### SQL authoring
+
+- Proposed the language a statement is written in — `AND`, `OR`, `IS NOT NULL`,
+  `ORDER BY`, `LEFT JOIN` and the rest — beside the relations, columns and
+  routines the Workbench Index knows. Completion used to offer names only, so a
+  reader typing `an` into a condition was answered with nothing
+- Said what each proposal replaces instead of leaving every client to guess it:
+  a phrase now takes every word it continues, so `IS NOT NULL` accepted after
+  `id is n` no longer writes `id is IS NOT NULL`
+
+### Scratchpads and results
+
+- Gave every result grid a row gutter, so rows can be selected, copied, and
+  taken out of any of them, and kept the column headings fixed at the top of a
+  scrolled result
+- Closed the Transaction a Scratchpad held when the Scratchpad itself is closed
+- Fixed Scratchpad icons drawing as empty boxes
+- Fixed query composition dropping the quotes of a table when the relation
+  joined to it is removed, and resolved quoted relation names against the
+  catalog
+
+### Documentation
+
+- Added the [Data View guide](https://ng-galien.github.io/postgresql-workbench/docs/data-view.html)
+
 ## [1.3.0] - 2026-08-18
 
 PostgreSQL Workbench 1.3.0 makes every Workbench operation exact to its

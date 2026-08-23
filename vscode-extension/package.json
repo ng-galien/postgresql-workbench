@@ -1,7 +1,7 @@
 {
   "name": "postgresql-workbench",
   "displayName": "PostgreSQL Workbench",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "Debug PL/pgSQL, run pgTAP tests with coverage, explore schemas, and query data in SQL scratchpads — without leaving VS Code.",
   "publisher": "ng-galien",
   "author": {
@@ -103,6 +103,18 @@
         ]
       }
     ],
+    "customEditors": [
+      {
+        "viewType": "postgresql-workbench.dataView",
+        "displayName": "PostgreSQL Workbench Data View",
+        "selector": [
+          {
+            "filenamePattern": "postgresql-workbench-data:/**"
+          }
+        ],
+        "priority": "default"
+      }
+    ],
     "resourceLabelFormatters": [
       {
         "scheme": "code+moniker",
@@ -148,7 +160,9 @@
       },
       {
         "id": "postgresql-table",
-        "aliases": ["PostgreSQL Table"],
+        "aliases": [
+          "PostgreSQL Table"
+        ],
         "configuration": "./language-configuration.json",
         "icon": {
           "light": "./icons/postgresql-table-light.svg",
@@ -157,7 +171,9 @@
       },
       {
         "id": "postgresql-view",
-        "aliases": ["PostgreSQL View"],
+        "aliases": [
+          "PostgreSQL View"
+        ],
         "configuration": "./language-configuration.json",
         "icon": {
           "light": "./icons/postgresql-view-light.svg",
@@ -166,7 +182,9 @@
       },
       {
         "id": "postgresql-function",
-        "aliases": ["PostgreSQL Function"],
+        "aliases": [
+          "PostgreSQL Function"
+        ],
         "configuration": "./language-configuration.json",
         "icon": {
           "light": "./icons/postgresql-function-light.svg",
@@ -175,7 +193,9 @@
       },
       {
         "id": "postgresql-procedure",
-        "aliases": ["PostgreSQL Procedure"],
+        "aliases": [
+          "PostgreSQL Procedure"
+        ],
         "configuration": "./language-configuration.json",
         "icon": {
           "light": "./icons/postgresql-procedure-light.svg",
@@ -184,7 +204,9 @@
       },
       {
         "id": "postgresql-trigger",
-        "aliases": ["PostgreSQL Trigger"],
+        "aliases": [
+          "PostgreSQL Trigger"
+        ],
         "configuration": "./language-configuration.json",
         "icon": {
           "light": "./icons/postgresql-trigger-light.svg",
@@ -479,6 +501,14 @@
           "when": "false"
         },
         {
+          "command": "postgresql-workbench.openDataView",
+          "when": "false"
+        },
+        {
+          "command": "postgresql-workbench.openDataViewForStatement",
+          "when": "editorLangId == sql || editorLangId == plpgsql"
+        },
+        {
           "command": "postgresql-workbench.revealDatabaseObjectInTree",
           "when": "false"
         },
@@ -715,6 +745,16 @@
           "group": "inline@2"
         },
         {
+          "command": "postgresql-workbench.openDataView",
+          "when": "view == postgresql-workbench-connections && (viewItem == postgresql-workbench-table || viewItem == postgresql-workbench-view)",
+          "group": "inline@3"
+        },
+        {
+          "command": "postgresql-workbench.openDataView",
+          "when": "view == postgresql-workbench-connections && (viewItem == postgresql-workbench-table || viewItem == postgresql-workbench-view)",
+          "group": "navigation@3"
+        },
+        {
           "command": "postgresql-workbench.openSqlNotebook",
           "when": "view == postgresql-workbench-scratchpads && (viewItem == postgresql-workbench-scratchpad-auto || viewItem == postgresql-workbench-scratchpad-manual)",
           "group": "inline@1"
@@ -805,6 +845,11 @@
           "command": "postgresql-workbench.executeSqlSelection",
           "when": "editorHasSelection && resourceScheme != code+moniker && (editorLangId == sql || editorLangId == plpgsql)",
           "group": "navigation@1"
+        },
+        {
+          "command": "postgresql-workbench.openDataViewForStatement",
+          "when": "resourceScheme != code+moniker && resourceScheme != postgresql-workbench-data-sql && (editorLangId == sql || editorLangId == plpgsql)",
+          "group": "navigation@2"
         }
       ]
     },
@@ -898,6 +943,16 @@
         "command": "postgresql-workbench.openDatabaseObject",
         "title": "Open PostgreSQL Definition",
         "icon": "$(go-to-file)"
+      },
+      {
+        "command": "postgresql-workbench.openDataView",
+        "title": "Open Data View",
+        "icon": "$(table)"
+      },
+      {
+        "command": "postgresql-workbench.openDataViewForStatement",
+        "title": "PostgreSQL Workbench: Open Data View for Statement",
+        "icon": "$(table)"
       },
       {
         "command": "postgresql-workbench.revealDatabaseObjectInTree",
@@ -1213,6 +1268,11 @@
           "default": true,
           "description": "Automatically reveal the PL/pgSQL Results panel without taking keyboard focus when a debugged SQL call completes or fails."
         },
+        "postgresql-workbench.dataView.hideKeyColumns": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Open a Data View with its identity and relationship columns hidden. They stay projected, so rows remain identified and editable, and the Columns menu offers them back at any time."
+        },
         "postgresql-workbench.tests.patterns": {
           "type": "array",
           "items": {
@@ -1475,30 +1535,30 @@
     ]
   },
   "scripts": {
-    "stage:code-moniker": "node scripts/stage-code-moniker-runtime.mjs",
+    "stage:code-moniker": "node ../scripts/extension/stage-code-moniker.mjs",
     "build": "npm run stage:code-moniker && node esbuild.mjs",
     "build:production": "npm run stage:code-moniker && node esbuild.mjs --production",
     "watch": "npm run stage:code-moniker && node esbuild.mjs --watch",
     "compile": "tsc --noEmit",
-    "test:scripts": "node --test scripts/*.node-test.mjs",
-    "pretest": "npm run build && tsc -p . --outDir dist && node scripts/mark-test-output-esm.mjs && node scripts/build-vscode-smoke.mjs",
-    "test": "vscode-test --fail-zero",
-    "test:smoke": "npm run pretest && node scripts/run-vscode-test.mjs --timeout-ms 90000 -- --config .vscode-smoke.mjs --fail-zero",
-    "test:min-vscode": "npm run pretest && node scripts/run-vscode-test.mjs --timeout-ms 90000 -- --config .vscode-smoke.mjs --code-version 1.109.0 --fail-zero",
-    "test:acceptance:typecheck": "tsc -p acceptance/tsconfig.json",
+    "pretest": "npm run build && tsc -p . --outDir dist && node ../scripts/test/mark-esm.mjs && node ../scripts/test/build-vscode-smoke.mjs",
+    "test": "vscode-test --config tests/vscode/integration.mjs --fail-zero",
+    "test:smoke": "npm run pretest && node ../scripts/test/run-vscode.mjs --timeout-ms 90000 -- --config tests/vscode/smoke.mjs --fail-zero",
+    "test:min-vscode": "npm run pretest && node ../scripts/test/run-vscode.mjs --timeout-ms 90000 -- --config tests/vscode/smoke.mjs --code-version 1.109.0 --fail-zero",
+    "test:acceptance:typecheck": "tsc -p tests/acceptance/tsconfig.json",
     "test:acceptance:prepare": "npm run build:production && npm run test:acceptance:typecheck",
-    "test:acceptance": "npm run test:acceptance:prepare && playwright test --config playwright.acceptance.config.ts && playwright test --config playwright.schema-sync.config.ts",
-    "test:acceptance:core": "npm run test:acceptance:prepare && playwright test --config playwright.acceptance.config.ts",
-    "test:acceptance:schema-sync": "npm run test:acceptance:prepare && playwright test --config playwright.schema-sync.config.ts",
-    "test:acceptance:docker": "bash scripts/run-playwright-docker.sh",
-    "test:bootstrap": "npm run test:acceptance:prepare && playwright test --config playwright.bootstrap.config.ts",
-    "test:acceptance:graph-dnd": "npm run build:production && npm run test:acceptance:typecheck && playwright test --config playwright.acceptance.config.ts acceptance/specs/acceptance.spec.ts --grep 'Workbench graph'",
-    "test:acceptance:debugger": "npm run build:production && npm run test:acceptance:typecheck && playwright test --config playwright.acceptance.config.ts acceptance/specs/acceptance.spec.ts --grep 'PL/pgSQL debugger'",
-    "test:acceptance:source-tab-cleanup": "npm run build:production && npm run test:acceptance:typecheck && playwright test --config playwright.acceptance.config.ts acceptance/specs/acceptance.spec.ts --grep 'virtual source cleanup'",
-    "package": "npm run build:production && node scripts/package-local.mjs && npm run verify:package",
-    "verify:package": "node scripts/verify-code-moniker-vsix.mjs",
-    "checksum:package": "node scripts/checksum-file.mjs",
-    "publish": "node scripts/refuse-direct-publish.mjs",
+    "test:acceptance": "npm run test:acceptance:prepare && playwright test --config tests/acceptance/playwright/acceptance.config.ts && playwright test --config tests/acceptance/playwright/index-lifecycle.config.ts && playwright test --config tests/acceptance/playwright/schema-sync.config.ts",
+    "test:acceptance:core": "npm run test:acceptance:prepare && playwright test --config tests/acceptance/playwright/acceptance.config.ts",
+    "test:acceptance:index-lifecycle": "npm run test:acceptance:prepare && playwright test --config tests/acceptance/playwright/index-lifecycle.config.ts",
+    "test:acceptance:schema-sync": "npm run test:acceptance:prepare && playwright test --config tests/acceptance/playwright/schema-sync.config.ts",
+    "test:acceptance:docker": "bash ../scripts/test/run-playwright-docker.sh",
+    "test:bootstrap": "npm run test:acceptance:prepare && playwright test --config tests/acceptance/playwright/bootstrap.config.ts",
+    "test:acceptance:graph-dnd": "npm run build:production && npm run test:acceptance:typecheck && playwright test --config tests/acceptance/playwright/acceptance.config.ts tests/acceptance/specs/acceptance.spec.ts --grep 'Workbench graph'",
+    "test:acceptance:debugger": "npm run build:production && npm run test:acceptance:typecheck && playwright test --config tests/acceptance/playwright/acceptance.config.ts tests/acceptance/specs/acceptance.spec.ts --grep 'PL/pgSQL debugger'",
+    "test:acceptance:source-tab-cleanup": "npm run build:production && npm run test:acceptance:typecheck && playwright test --config tests/acceptance/playwright/acceptance.config.ts tests/acceptance/specs/acceptance.spec.ts --grep 'virtual source cleanup'",
+    "package": "npm run build:production && node ../scripts/extension/package-vsix.mjs && npm run verify:package",
+    "verify:package": "node ../scripts/extension/verify-vsix.mjs",
+    "checksum:package": "node ../scripts/extension/checksum.mjs",
+    "publish": "node ../scripts/extension/refuse-direct-publish.mjs",
     "vscode:prepublish": "npm run build:production"
   },
   "dependencies": {
@@ -1507,6 +1567,7 @@
     "@shikijs/engine-javascript": "^4.4.1",
     "@shikijs/langs": "^4.4.1",
     "@shikijs/themes": "^4.4.1",
+    "@vscode/codicons": "^0.0.46-24",
     "@xyflow/react": "^12.11.2",
     "pg": "^8.20.0",
     "pg-cursor": "^2.21.0",
@@ -1532,6 +1593,6 @@
     "esbuild": "^0.28.1",
     "jszip": "^3.10.1",
     "mocha": "^11.7.5",
-    "typescript": "^5.7.0"
+    "typescript": "^7.0.2"
   }
 }

@@ -15,7 +15,7 @@ import {
   CoverageTransactionControlError,
   createCoverageSyntaxService,
   PgTapUnavailableError,
-} from "../src/coverage/index.js";
+} from "../packages/coverage/src/index.js";
 import { type CodeMonikerTestRuntime, startCodeMonikerTestRuntime } from "./codeMonikerRuntime.js";
 
 const PG_CONFIG = {
@@ -341,9 +341,9 @@ describe("e2e: transactional coverage runner", () => {
       routineOid: integerOid,
       runId: "shared-run-id",
       signal: controller.signal,
-      executeTests: async () => {
+      executeTests: () => {
         notifyStarted?.();
-        await new Promise<never>(() => {});
+        return new Promise<never>(() => {});
       },
     });
     const firstOutcome = settle(firstRun);
@@ -679,7 +679,7 @@ async function routineDdl(oid: number): Promise<string> {
   }
 }
 
-async function backendPid(client: CoverageTestClient): Promise<number> {
+async function backendPid(client: Pick<CoverageTestClient, "query">): Promise<number> {
   const result = await client.query<{ pid: number }>("SELECT pg_backend_pid() AS pid");
   return result.rows[0]?.pid ?? 0;
 }

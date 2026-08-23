@@ -4,15 +4,19 @@
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "jsx": "react-jsx",
+    // The program reaches into packages/, so the emit is rooted at the repository: the VS Code
+    // runner and mark-esm.mjs already expect dist/vscode-extension/** and dist/packages/**.
+    "rootDir": "..",
     "outDir": "dist",
+    "declaration": true,
     "strict": true,
     "esModuleInterop": true,
     "resolveJsonModule": true,
+    "types": ["node", "mocha"],
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "declaration": true,
     "sourceMap": true
   },
-  "include": ["src/**/*"],
+  "include": ["src/**/*", "tests/vscode/**/*", "showcase/**/*"],
   "exclude": ["node_modules", "dist"]
 }

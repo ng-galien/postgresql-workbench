@@ -1,12 +1,12 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { plpgsqlRoutineBodyStartLine } from "../src/analysis/plpgsqlDocument.js";
-import { classifySqlStatementCount } from "../src/analysis/sqlStatements.js";
-import { parseCall, parseSqlCalls, parseSqlDefinitions } from "../src/callParser.js";
-import { createCoverageSyntaxService } from "../src/coverage/index.js";
-import { extractFuncDeps } from "../src/deps.js";
-import { validateManagedRoutineDeployment } from "../vscode-extension/src/managedRoutineDeployment.js";
+import { createCoverageSyntaxService } from "../packages/coverage/src/index.js";
+import { plpgsqlRoutineBodyStartLine } from "../packages/sql/src/analysis/plpgsqlDocument.js";
+import { classifySqlStatementCount } from "../packages/sql/src/analysis/sqlStatements.js";
+import { parseCall, parseSqlCalls, parseSqlDefinitions } from "../packages/sql/src/callParser.js";
+import { extractFuncDeps } from "../packages/sql/src/deps.js";
+import { validateManagedRoutineDeployment } from "../packages/sql/src/routines/validateDeployment.js";
 import { type CodeMonikerTestRuntime, startCodeMonikerTestRuntime } from "./codeMonikerRuntime.js";
 
 describe("Code Moniker SQL consumers", () => {
@@ -75,7 +75,7 @@ $workbench$;`;
 
   it("extracts definitions and launchable call sites from real SQL files", async () => {
     const source = readFileSync(
-      join(process.cwd(), "src", "__fixtures__", "functions.sql"),
+      join(process.cwd(), "packages", "sql", "src", "__fixtures__", "functions.sql"),
       "utf8",
     );
     const definitions = await parseSqlDefinitions(source, codeMoniker.parser);

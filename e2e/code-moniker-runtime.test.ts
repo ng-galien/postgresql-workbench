@@ -2,12 +2,12 @@ import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { createCodeMonikerSyntaxParser } from "../src/analysis/codeMonikerSyntax.js";
 import {
   connectLocalCodeMoniker,
   ensureLocalCodeMonikerWorkspace,
   type LocalCodeMonikerSession,
-} from "../src/workbench/localCodeMoniker.js";
+} from "../packages/catalog/src/localCodeMoniker.js";
+import { createCodeMonikerSyntaxParser } from "../packages/sql/src/analysis/codeMonikerSyntax.js";
 
 const runtimePath = resolve(
   process.env.CODE_MONIKER_RUNTIME ?? "vscode-extension/runtime/code-moniker",

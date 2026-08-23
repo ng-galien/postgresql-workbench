@@ -1,5 +1,0 @@
-fragment = "dap-server"
-enabled = true
-
-[aliases]
-artifact = "uri ~ '**/lang:ts/dir:src/**' OR uri ~ '**/lang:sql/dir:src/**'"

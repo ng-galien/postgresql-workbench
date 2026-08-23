@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { rmSync, unwatchFile, watchFile, writeFileSync } from "node:fs";
 import { readFile, rm } from "node:fs/promises";
 import * as vscode from "vscode";
-import type { WorkbenchIndexPhase } from "./workbenchIndexController.js";
+import type { WorkbenchIndexPhase } from "../../packages/catalog/src/indexController.js";
 
 const RELOAD_WINDOW_COMMAND = "workbench.action.reloadWindow";
 const SAVE_ALL_COMMAND = "workbench.action.files.saveAll";
@@ -33,6 +33,9 @@ const REMOVE_SERVER_COMMAND = "postgresql-workbench.acceptance.removeServer";
 const RESET_WORKBENCH_COMMAND = "postgresql-workbench.acceptance.resetWorkbench";
 const OPEN_WORKSPACE_FILE_COMMAND = "postgresql-workbench.acceptance.openWorkspaceFile";
 const OPEN_SQL_DOCUMENT_COMMAND = "postgresql-workbench.acceptance.openSqlDocument";
+const CLOSE_ACTIVE_EDITOR_COMMAND = "postgresql-workbench.acceptance.closeActiveEditor";
+/* Opening a Data View on whatever the tree has selected: the one thing only this lane can prove. */
+const OPEN_DATA_VIEW_COMMAND = "postgresql-workbench.openDataView";
 const ACCEPTANCE_COMMANDS = new Set([
   RELOAD_WINDOW_COMMAND,
   SAVE_ALL_COMMAND,
@@ -61,6 +64,8 @@ const ACCEPTANCE_COMMANDS = new Set([
   RESET_WORKBENCH_COMMAND,
   OPEN_WORKSPACE_FILE_COMMAND,
   OPEN_SQL_DOCUMENT_COMMAND,
+  CLOSE_ACTIVE_EDITOR_COMMAND,
+  OPEN_DATA_VIEW_COMMAND,
 ]);
 
 export interface AcceptanceControl extends vscode.Disposable {
@@ -75,6 +80,25 @@ export interface AcceptanceControlOptions {
   releaseIndexPhaseGate(runId: number, phase: WorkbenchIndexPhase): Promise<void> | void;
   removeServer(id: string): Promise<void> | void;
   resetWorkbench(): Promise<void> | void;
+}
+
+/**
+ * The probes an acceptance run reads. Activation builds the pieces in order, so each probe starts
+ * as a harmless default and is replaced once the piece it inspects exists.
+ */
+export function createAcceptanceProbes(): AcceptanceControlOptions {
+  return {
+    armIndexPhaseGate: () => {},
+    inspectDebugState: () => ({
+      extensionSession: undefined,
+      vscodeSessionId: vscode.debug.activeDebugSession?.id,
+    }),
+    inspectTestingState: () => ({}),
+    inspectWorkbenchState: () => ({}),
+    releaseIndexPhaseGate: () => {},
+    removeServer: () => {},
+    resetWorkbench: () => {},
+  };
 }
 
 export function registerAcceptanceControl(
@@ -214,6 +238,14 @@ export function registerAcceptanceControl(
           }
           await options.removeServer(serverId);
           markReady(instruction.nonce);
+          return;
+        }
+        if (instruction.command === CLOSE_ACTIVE_EDITOR_COMMAND) {
+          // Closing through the tab API rather than the tab's chrome: the close control is not
+          // what any scenario verifies, and its markup moves between VS Code versions.
+          const active = vscode.window.tabGroups.activeTabGroup.activeTab;
+          if (active) await vscode.window.tabGroups.close(active, false);
+          markReady(instruction.nonce, { closed: Boolean(active) });
           return;
         }
         if (instruction.command === RESET_WORKBENCH_COMMAND) {

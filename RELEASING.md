@@ -48,6 +48,7 @@ release and artifact-handling actions.
 | Job | Contract |
 | --- | --- |
 | `Biome` | Installs root dependencies and runs `npm run check`. |
+| `Architecture` | Checks the package boundaries with the code-moniker architecture profile. Any non-zero status fails it, including a configuration error that would otherwise disarm the check without failing it. |
 | `Type Check` | Type-checks the DAP server and the VS Code extension. |
 | `Unit Tests` | Runs the root Vitest suite. |
 | `DAP Integration` | Starts `galien0xffffff/postgres-debugger:17` and runs the real PostgreSQL DAP and Workbench integration suite. |
@@ -57,6 +58,17 @@ release and artifact-handling actions.
 | `EnterpriseDB pldebugger Compatibility` | Builds and tests against the pinned unpatched EnterpriseDB pldebugger implementation. |
 | `Smoke standalone DAP` | Packs, installs, and smoke-tests the standalone npm DAP on Linux, macOS ARM64/x64, and Windows x64. |
 | `Package extension` | Builds, validates, and smoke-tests one target-specific VSIX for Linux x64, macOS ARM64/x64, and Windows x64. |
+
+The extension runs on the Node its host ships, never on the Node this repository
+builds with. VS Code 1.109.0, the minimum the manifest declares, runs extensions
+on Node 22.21.1, and `engines.node` in `vscode-extension/package.json` states
+exactly that. `npm run check` fails when the two disagree. Raising the minimum
+VS Code therefore means measuring the Node of the new minimum and declaring it
+in `scripts/extension/check-manifest-text.mjs`:
+
+```bash
+ELECTRON_RUN_AS_NODE=1 "$HOME/Applications/Visual Studio Code.app/Contents/MacOS/Electron" -e "console.log(process.versions.node)"
+```
 
 The integration job uploads VS Code logs even when tests fail. Download the
 `vscode-test-logs` artifact from the failed workflow run before rerunning a
@@ -82,10 +94,10 @@ Start from a clean `main` synchronized with `origin/main`.
 1. Update the extension version and its lockfile:
 
    ```bash
-   npm --prefix vscode-extension version 1.3.0 --no-git-tag-version
+   npm --prefix vscode-extension version 1.4.0 --no-git-tag-version
    ```
 
-2. Add a dated, non-empty `## [1.3.0]` section to
+2. Add a dated, non-empty `## [1.4.0]` section to
    `vscode-extension/CHANGELOG.md`. The release workflow extracts GitHub Release
    notes from this exact heading.
 3. Update user documentation when behavior, requirements, commands, or
@@ -96,6 +108,7 @@ Start from a clean `main` synchronized with `origin/main`.
    npm ci
    npm --prefix vscode-extension ci
    npm run check
+   npm run check:architecture
    npm run typecheck
    npm test
    npm run test:e2e
@@ -103,7 +116,19 @@ Start from a clean `main` synchronized with `origin/main`.
    npm --prefix vscode-extension run test:min-vscode
    npm --prefix vscode-extension run test:acceptance
    npm run package:ext
+   node scripts/extension/check-marketplace-media.mjs --release
    ```
+
+   The last one refuses a showcase card that is written but was never filmed. If
+   it names a scene, capture it before going further:
+
+   ```bash
+   npm run marketplace:media -- capture <scene>
+   npm run marketplace:media -- validate
+   ```
+
+   then show it in `vscode-extension/README.md` and drop its `"card": "pending"`
+   from `docs/marketplace-showcase.json`.
 
 5. Inspect the generated host artifact
    `vscode-extension/postgresql-workbench-<version>-<target>.vsix`.
@@ -121,7 +146,7 @@ Install the local artifact into a clean VS Code profile:
 
 ```bash
 code --install-extension \
-  vscode-extension/postgresql-workbench-1.3.0-darwin-arm64.vsix \
+  vscode-extension/postgresql-workbench-1.4.0-darwin-arm64.vsix \
   --force
 ```
 
@@ -136,8 +161,8 @@ Create an annotated tag whose version exactly matches
 `vscode-extension/package.json`:
 
 ```bash
-git tag -a extension-v1.3.0 -m "PostgreSQL Workbench 1.3.0"
-git push origin main extension-v1.3.0
+git tag -a extension-v1.4.0 -m "PostgreSQL Workbench 1.4.0"
+git push origin main extension-v1.4.0
 ```
 
 Pushing the tag starts the `Extension Release` workflow. Its jobs:
@@ -308,7 +333,7 @@ release complete.
 The DAP has its own package version and release tag. It is not coupled to the
 VS Code extension version.
 
-1. Update `packages/postgresql-dap/package.json` and validate the package:
+1. Update `packages/dap/package.json` and validate the package:
 
    ```bash
    npm ci

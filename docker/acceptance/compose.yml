@@ -1,0 +1,52 @@
+x-runner: &runner
+  platform: ${PGWB_PLAYWRIGHT_DOCKER_PLATFORM:-linux/amd64}
+  build:
+    context: ../..
+    dockerfile: docker/acceptance/Dockerfile
+    args:
+      NODE_VERSION: 22.23.2
+      VSCODE_VERSION: ${PGWB_ACCEPTANCE_VSCODE_VERSION:-1.109.0}
+  init: true
+  shm_size: 2gb
+  environment:
+    CI: "true"
+    PGWB_ACCEPTANCE_EXTERNAL_DEMO: "1"
+    PGWB_ACCEPTANCE_VSCODE_VERSION: ${PGWB_ACCEPTANCE_VSCODE_VERSION:-1.109.0}
+    PGWB_PLAYWRIGHT_MINIMAL_DIAGNOSTICS: "1"
+  volumes:
+    - ${PGWB_PLAYWRIGHT_RESULTS_DIR:?PGWB_PLAYWRIGHT_RESULTS_DIR must be set}:/workspace/vscode-extension/test-results
+
+services:
+  postgres:
+    platform: ${PGWB_PLAYWRIGHT_DOCKER_PLATFORM:-linux/amd64}
+    build:
+      context: ../..
+      dockerfile: docker/postgres/Dockerfile
+    command: ["postgres", "-p", "5434"]
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: demo
+      PGWB_POSTGRES_READY_PORT: "5434"
+    volumes:
+      - ../../demo/init/01-extension.sql:/docker-entrypoint-initdb.d/90-extension.sql:ro
+      - ../../demo/init/02-fibonacci.sql:/docker-entrypoint-initdb.d/91-fibonacci.sql:ro
+      - ../../demo/init/02-classics.sql:/docker-entrypoint-initdb.d/92-classics.sql:ro
+      - ../../demo/init/03-shop.sql:/docker-entrypoint-initdb.d/93-shop.sql:ro
+      - ../../demo/init/04-pgtap.sql:/docker-entrypoint-initdb.d/94-pgtap.sql:ro
+      - ../../demo/init/05-commerce.sql:/docker-entrypoint-initdb.d/95-commerce.sql:ro
+
+  runner:
+    <<: *runner
+    network_mode: service:postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  bootstrap-runner:
+    <<: *runner
+    environment:
+      CI: "true"
+      PGWB_ACCEPTANCE_EXTERNAL_DEMO: "0"
+      PGWB_ACCEPTANCE_VSCODE_VERSION: ${PGWB_ACCEPTANCE_VSCODE_VERSION:-1.109.0}
+      PGWB_PLAYWRIGHT_MINIMAL_DIAGNOSTICS: "1"

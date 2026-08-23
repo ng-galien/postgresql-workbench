@@ -3,11 +3,11 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { Client, type Notification } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { CodeMonikerSymbol } from "../src/workbench/localCodeMoniker.js";
+import type { CodeMonikerSymbol } from "../packages/catalog/src/localCodeMoniker.js";
 import {
   ensureLocalCodeMonikerWorkspace,
   type LocalCodeMonikerSession,
-} from "../src/workbench/localCodeMoniker.js";
+} from "../packages/catalog/src/localCodeMoniker.js";
 import {
   buildPostgresSourceSet,
   type CatalogQueryClient,
@@ -15,7 +15,7 @@ import {
   readPostgresCatalog,
   readPostgresCatalogDocuments,
   type VirtualSqlDocument,
-} from "../src/workbench/postgresCatalog.js";
+} from "../packages/catalog/src/postgresCatalog.js";
 import {
   buildWorkbenchDdlProvisioningSql,
   buildWorkbenchDdlRemovalSql,
@@ -24,12 +24,12 @@ import {
   type PostgresDdlNotification,
   parsePostgresDdlNotification,
   WORKBENCH_DDL_CHANNEL,
-} from "../src/workbench/postgresDdlSync.js";
+} from "../packages/catalog/src/postgresDdlSync.js";
 import {
   buildPostgresResourceIndex,
   directPostgresDocumentUris,
   type IndexedPostgresResource,
-} from "../src/workbench/postgresSourceProvider.js";
+} from "../packages/catalog/src/postgresSourceProvider.js";
 
 const PG_CONFIG = {
   host: "127.0.0.1",

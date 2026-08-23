@@ -1,0 +1,30 @@
+.debug-results {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  color: var(--vscode-foreground);
+}
+
+.debug-results-bar {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--vscode-panel-border);
+}
+
+.debug-results-history {
+  flex: 1;
+  min-width: 0;
+  color: var(--vscode-dropdown-foreground);
+  background: var(--vscode-dropdown-background);
+  border: 1px solid var(--vscode-dropdown-border);
+}
+
+/*
+ * How the captured result ended. `status-success` carries no declaration on purpose: a completed
+ * result wears the plain badge. The three names are the contract the acceptance suite reads.
+ */
+.status-pending {
+  color: var(--vscode-charts-blue);
+}

@@ -6,7 +6,7 @@ import {
   parsePostgresDdlNotification,
   WORKBENCH_DDL_CHANNEL,
   workbenchDdlProvisioningStatusSql,
-} from "../src/workbench/postgresDdlSync.js";
+} from "../packages/catalog/src/postgresDdlSync.js";
 
 const PG_CONFIG = {
   host: "127.0.0.1",

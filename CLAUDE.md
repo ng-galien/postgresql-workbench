@@ -48,24 +48,38 @@ npm run test:e2e:legacy # DAP compatibility with unpatched EnterpriseDB v1.9
 ## Architecture
 
 ```
-src/
-  main.ts              # Entry point — runs DAP session over stdio
-  debugger/            # Debugger module; public DAP, launch, and PostgreSQL facades
-    index.ts            # Public DAP surface
-    launch/             # Launch contract and target orchestration
-    postgres/           # pldbgapi backend and variable resolution
-    session/            # Internal DAP session implementation
-  analysis/            # Code Moniker syntax boundary and shared SQL/PL/pgSQL helpers
-  callParser.ts        # SQL calls and definitions from Code Moniker syntax trees
-  functionSource.ts    # PL/pgSQL variables, lines, exceptions, and calls from syntax trees
-  deps.ts              # Shared semantic helpers for debugger analysis
-  __fixtures__/        # SQL test fixtures
-  *.test.ts            # Unit tests (vitest) — includes sqlCodeLensProvider tests
+packages/              # The engine, one package per subject; boundaries enforced by code-moniker
+  sql/                 # Code Moniker syntax boundary, SQL and PL/pgSQL analysis, language server
+    analysis/           # The only syntax provider; every feature receives its SyntaxParser
+    callParser.ts       # SQL calls and definitions from Code Moniker syntax trees
+    functionSource.ts   # PL/pgSQL variables, lines, exceptions, and calls from syntax trees
+    text/ query/        # Vocabulary, positions, literals; query composition and join planning
+    languageServer/     # Completion, semantic tokens, diagnostics — the front door
+  catalog/             # PostgreSQL catalog projection, DDL sync, Cockpit graph
+  rows/                # Reading and editing relation rows: editability, edits, Data View engine
+  views/               # The React views: result grid, Data View, Cockpit, debug results
+  coverage/            # pgTAP coverage analysis and instrumentation
+  dap/                 # @ng-galien/postgresql-dap — its own version and release tag
+    main.ts             # Entry point — runs DAP session over stdio
+    debugger/           # Public DAP surface, launch contract, pldbgapi backend, session
+  shell/               # Browser harness driving the views against PostgreSQL without VS Code
 
 e2e/
-  docker-compose.yml   # PostgreSQL with pldbgapi (galien0xffffff/postgres-debugger:17)
   init/                # SQL init scripts (extension + test functions)
   e2e.test.ts          # Integration tests against real PostgreSQL
+  dap-client.test.ts   # DAP protocol tests over stdio, without VS Code
+
+scripts/               # Every script, one directory per purpose
+  dap/ extension/      # Build and package the DAP npm package and the VSIX
+  test/                # Run the suites: e2e, VS Code, Playwright, and their build steps
+  site/ issues/        # The documentation site and the GitHub issue workflow
+  benchmark/ marketplace/
+
+docker/                # Every container definition, one directory per fixture
+  postgres/            # The canonical image: pldbgapi + pgTAP, shared by the others
+  demo/ e2e/ legacy/   # The databases: demo (5434), integration (5433), unpatched pldebugger (5435)
+  acceptance/          # The Playwright CI image and its database
+  benchmark/           # The Workbench Index benchmark database
 
 vscode-extension/      # VS Code extension (full-featured, see below)
 ```
@@ -113,7 +127,9 @@ The `vscode-extension/` is a full-featured VS Code extension:
 - Semantic tokens (variables, params, types, dollar quoting)
 - Inline values during debug, RAISE NOTICE → Debug Console
 - esbuild bundles extension.ts and the extension-specific dapServer.ts entry; the latter reuses the shared stdio DAP host without importing the standalone CLI entry
-- Imports from ../src/ work via esbuild (not tsc rootDir — removed)
+- Imports from ../packages/ work via esbuild (not tsc rootDir — removed)
+- The extension adapts the engine to VS Code and holds nothing else; the views name their
+  colours `--postgres-*` and `webviewPage.ts` says what those names are worth
 
 ## Testing
 
@@ -128,10 +144,21 @@ The `vscode-extension/` is a full-featured VS Code extension:
 - Upstream omits `PLPGSQL_DTYPE_REC`, `ROW`, and `RECFIELD`; this is supported degradation, not a failure
 - The contract requires scalar inspection and stepping to remain functional and unsupported composites to return cleanly without DAP errors
 
-### VS Code extension tests (`vscode-extension/src/test/`)
-- Uses `@vscode/test-cli` + `@vscode/test-electron` — runs tests inside a real VS Code instance
-- Config: `vscode-extension/.vscode-test.mjs`, Mocha TDD UI (`suite`/`test`/`suiteSetup`/`teardown`, NOT `describe`/`it`/`beforeEach`/`afterEach`)
-- `vscode.debug.startDebugging()` returns false if `resolveDebugConfiguration` returns undefined
+### Where the tests live
+
+Unit tests sit next to the code they cover, in `packages/**` and `vscode-extension/src/**`, and run
+under vitest. Everything that needs more than a module lives in one place per runner:
+
+- `e2e/` — vitest against a real PostgreSQL (Docker) or a real Code Moniker parser
+- `vscode-extension/tests/vscode/` — `@vscode/test-cli` inside a real VS Code: `integration/` (the
+  suite) and `smoke/` (activation only), each with its runner config beside it
+- `vscode-extension/tests/acceptance/` — Playwright driving VS Code; `playwright/` holds the lane
+  configs, `specs/` the journeys, and the CI image sits with them
+- `vscode-extension/tests/workspace/` — the workspace both VS Code runners open
+
+Mocha TDD UI in the `tests/vscode/` suites (`suite`/`test`/`suiteSetup`/`teardown`, NOT
+`describe`/`it`). `vscode.debug.startDebugging()` returns false if `resolveDebugConfiguration`
+returns undefined.
 
 ## Important Notes
 
@@ -139,4 +166,6 @@ The `vscode-extension/` is a full-featured VS Code extension:
 - PostgreSQL server must have `pldbgapi` extension and `shared_preload_libraries = 'plugin_debugger'`
 - Works with standard EDB pldebugger — the ng-galien fork is optional (better composite type fallback)
 - Biome for lint+format, Lefthook for pre-commit (biome fix → typecheck DAP + extension in parallel)
-- Node.js 22+ required
+- `npm run check:architecture` checks the package boundaries (code-moniker architecture profile) and
+  runs in CI as the `Architecture` job — a boundary is not a convention here, it is a gate
+- Node.js 24+ required

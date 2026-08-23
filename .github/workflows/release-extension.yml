@@ -26,7 +26,7 @@ jobs:
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
-          node-version: 22
+          node-version: "24.19.0"
           cache: npm
           cache-dependency-path: |
             package-lock.json
@@ -54,7 +54,7 @@ jobs:
       - name: Playwright
         run: >-
           xvfb-run -a -s "-screen 0 1600x1000x24"
-          bash vscode-extension/scripts/run-playwright-ci.sh test:acceptance
+          bash scripts/test/run-playwright-ci.sh test:acceptance
       - name: Upload Playwright evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -64,7 +64,7 @@ jobs:
           if-no-files-found: ignore
       - name: Stop acceptance database fixture
         if: always()
-        run: docker compose -f demo/docker-compose.yml down -v
+        run: docker compose -f docker/demo/compose.yml down -v
       - name: VS Code Compatibility
         timeout-minutes: 3
         run: xvfb-run -a npm --prefix vscode-extension run test:min-vscode
@@ -97,7 +97,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
-          node-version: 22
+          node-version: "24.19.0"
           cache: npm
           cache-dependency-path: |
             package-lock.json
@@ -192,7 +192,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
-          node-version: 22
+          node-version: "24.19.0"
           cache: npm
           cache-dependency-path: vscode-extension/package-lock.json
       - run: npm --prefix vscode-extension ci

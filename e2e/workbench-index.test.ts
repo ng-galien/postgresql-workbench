@@ -6,12 +6,12 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   ensureLocalCodeMonikerWorkspace,
   type LocalCodeMonikerSession,
-} from "../src/workbench/localCodeMoniker.js";
+} from "../packages/catalog/src/localCodeMoniker.js";
 import {
   type CatalogQueryClient,
   postgresDatabaseDocumentGlob,
   readPostgresCatalog,
-} from "../src/workbench/postgresCatalog.js";
+} from "../packages/catalog/src/postgresCatalog.js";
 
 const PG_CONFIG = {
   host: "127.0.0.1",
@@ -43,6 +43,11 @@ describe.skipIf(!LOCAL_CODE_MONIKER_AVAILABLE)(
     let admin: Client;
     let postgres: Client;
     let session: LocalCodeMonikerSession | undefined;
+    /** The session `beforeAll` started; naming it here keeps every test honest about the setup. */
+    const codeMoniker = (): LocalCodeMonikerSession => {
+      if (!session) throw new Error("the Code Moniker session was not started");
+      return session;
+    };
     const publishedSourceSets = new Set<string>();
     let workspaceRoot: string;
 
@@ -125,22 +130,22 @@ describe.skipIf(!LOCAL_CODE_MONIKER_AVAILABLE)(
       expect(snapshot.sourceSet.documents.length).toBeGreaterThanOrEqual(8);
       expect(snapshot.metrics.introspectionMs).toBeLessThan(10_000);
 
-      expect(session.metadata.packageVersion).toMatch(/^\d+\.\d+\.\d+$/);
-      expect(session.metadata.source).toBe(
-        `npm:@code-moniker/client@${session.metadata.packageVersion}+` +
-          `@code-moniker/cli-${process.platform}-${process.arch}@${session.metadata.packageVersion}`,
+      expect(codeMoniker().metadata.packageVersion).toMatch(/^\d+\.\d+\.\d+$/);
+      expect(codeMoniker().metadata.source).toBe(
+        `npm:@code-moniker/client@${codeMoniker().metadata.packageVersion}+` +
+          `@code-moniker/cli-${process.platform}-${process.arch}@${codeMoniker().metadata.packageVersion}`,
       );
-      expect(session.client.supportsCommand("workspace.source_set.replace")).toBe(true);
-      expect(session.client.supportsQuery("symbol.graph")).toBe(true);
+      expect(codeMoniker().client.supportsCommand("workspace.source_set.replace")).toBe(true);
+      expect(codeMoniker().client.supportsQuery("symbol.graph")).toBe(true);
 
       const publicationStarted = performance.now();
-      await session.client.sources.replace(snapshot.sourceSet);
+      await codeMoniker().client.sources.replace(snapshot.sourceSet);
       publishedSourceSets.add(snapshot.sourceSet.srcset);
       const publicationMs = performance.now() - publicationStarted;
       const indexingMs =
         snapshot.metrics.introspectionMs + snapshot.metrics.materializationMs + publicationMs;
 
-      const symbols = await session.client.symbols.search(
+      const symbols = await codeMoniker().client.symbols.search(
         { text: "active_account", language: ["sql"] },
         { consistency: "stale_ok" },
       );
@@ -150,7 +155,7 @@ describe.skipIf(!LOCAL_CODE_MONIKER_AVAILABLE)(
       expect(view).toBeDefined();
 
       const graphStarted = performance.now();
-      const graph = await session.client.graph.symbol(
+      const graph = await codeMoniker().client.graph.symbol(
         view?.uri ?? "",
         { relation: ["reads"] },
         { consistency: "stale_ok" },
@@ -164,7 +169,7 @@ describe.skipIf(!LOCAL_CODE_MONIKER_AVAILABLE)(
         ),
       ).toBe(true);
 
-      const triggerSymbols = await session.client.symbols.search(
+      const triggerSymbols = await codeMoniker().client.symbols.search(
         { text: "account_audit", language: ["sql"], kind: ["trigger"] },
         { consistency: "stale_ok" },
       );
@@ -172,7 +177,7 @@ describe.skipIf(!LOCAL_CODE_MONIKER_AVAILABLE)(
         (symbol) => symbol.name === "account_audit" && symbol.kind === "trigger",
       );
       expect(trigger).toBeDefined();
-      const triggerGraph = await session.client.graph.symbol(
+      const triggerGraph = await codeMoniker().client.graph.symbol(
         trigger?.uri ?? "",
         { relation: ["calls"] },
         { consistency: "stale_ok" },
@@ -190,7 +195,7 @@ describe.skipIf(!LOCAL_CODE_MONIKER_AVAILABLE)(
         ({ symbol }) => symbol.kind === "function" && symbol.name === "audit_account()",
       )?.symbol;
       expect(auditRoutine).toBeDefined();
-      const routineGraph = await session.client.graph.symbol(
+      const routineGraph = await codeMoniker().client.graph.symbol(
         auditRoutine?.uri ?? "",
         { relation: ["calls"] },
         { consistency: "stale_ok" },
@@ -215,14 +220,14 @@ describe.skipIf(!LOCAL_CODE_MONIKER_AVAILABLE)(
       });
       expect(replacement.sourceSet.srcset).toBe(snapshot.sourceSet.srcset);
       expect(replacement.sourceSet.revision).not.toBe(snapshot.sourceSet.revision);
-      await session.client.sources.replace(replacement.sourceSet);
+      await codeMoniker().client.sources.replace(replacement.sourceSet);
 
-      const replaced = await session.client.symbols.search(
+      const replaced = await codeMoniker().client.symbols.search(
         { text: "active_account", language: ["sql"] },
         { consistency: "stale_ok" },
       );
       expect(replaced.data.rows.some((symbol) => symbol.name === "active_account")).toBe(false);
-      const current = await session.client.symbols.search(
+      const current = await codeMoniker().client.symbols.search(
         { text: "current_account", language: ["sql"] },
         { consistency: "stale_ok" },
       );

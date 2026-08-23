@@ -1,0 +1,96 @@
+.postgres-source-view {
+  min-width: max-content;
+  padding: 8px 0 16px;
+  color: var(--vscode-editor-foreground);
+  background: transparent;
+  font-family: var(--vscode-editor-font-family);
+  font-size: var(--vscode-editor-font-size);
+  line-height: 1.5;
+  tab-size: 2;
+}
+
+.postgres-source-line {
+  display: grid;
+  grid-template-columns: 42px minmax(max-content, 1fr);
+  min-height: 1.5em;
+}
+
+.postgres-source-line-number {
+  padding-right: 8px;
+  color: var(--vscode-editorLineNumber-foreground);
+  text-align: right;
+  user-select: none;
+}
+
+.postgres-source-line-code {
+  padding-right: 16px;
+  color: inherit;
+  background: var(--vscode-editor-background);
+  font: inherit;
+  white-space: pre;
+}
+
+/*
+ * A piece the language server named carries `--postgres-name`; everything else is coloured by the
+ * grammar. The name is read here rather than in a rule of its own so that neither layer has to
+ * out-specify the other: a name that no host gave a value to leaves the variable invalid, and the
+ * grammar's colour stands.
+ */
+.postgres-source-token {
+  color: var(--postgres-name, var(--postgres-token-light, var(--vscode-editor-foreground)));
+  background: transparent;
+}
+
+body.vscode-dark .postgres-source-token,
+body.vscode-high-contrast .postgres-source-token {
+  color: var(--postgres-name, var(--postgres-token-dark, var(--vscode-editor-foreground)));
+}
+
+/*
+ * What the language server named, painted over what the grammar coloured.
+ *
+ * The colours are the view's own names — a schema, a relation, a column, a routine — with no
+ * value of their own here beyond "leave it as it was". A host that has a theme says what they are
+ * worth: under VS Code the extension maps them onto the editor's symbol colours, in the shell the
+ * harness does the same. Nothing in this file reaches into a host to ask.
+ */
+.postgres-token-sqlSchema {
+  --postgres-name: var(--postgres-name-schema);
+}
+
+.postgres-token-sqlTable,
+.postgres-token-sqlView,
+.postgres-token-sqlCte {
+  --postgres-name: var(--postgres-name-relation);
+}
+
+.postgres-token-sqlColumn {
+  --postgres-name: var(--postgres-name-column);
+}
+
+.postgres-token-sqlAlias,
+.postgres-token-sqlWindow,
+.postgres-token-variable {
+  --postgres-name: var(--postgres-name-alias);
+}
+
+.postgres-token-sqlFunction,
+.postgres-token-sqlProcedure,
+.postgres-token-function {
+  --postgres-name: var(--postgres-name-routine);
+}
+
+.postgres-token-sqlParameter,
+.postgres-token-parameter {
+  --postgres-name: var(--postgres-name-parameter);
+}
+
+.postgres-token-sqlType,
+.postgres-token-type {
+  --postgres-name: var(--postgres-name-type);
+}
+
+.postgres-source-view ::selection {
+  color: var(--vscode-editor-selectionForeground, inherit);
+  background: var(--vscode-editor-selectionBackground);
+}

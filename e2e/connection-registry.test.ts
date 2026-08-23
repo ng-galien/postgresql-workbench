@@ -1,7 +1,7 @@
 import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { ConnectionService } from "../vscode-extension/src/connectionService.js";
-import { PostgresConnectionRegistry } from "../vscode-extension/src/postgresConnectionRegistry.js";
+import { ConnectionService } from "../vscode-extension/src/connection/connectPostgres.js";
+import { PostgresConnectionRegistry } from "../vscode-extension/src/connection/registry.js";
 
 const ADMIN_CONFIG = {
   host: "127.0.0.1",

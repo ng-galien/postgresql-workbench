@@ -1,0 +1,105 @@
+/*
+ * The variables VS Code hands a webview, valued as its Dark Modern theme does. Outside VS Code
+ * nothing defines them, so every colour falls back and the view looks bare while behaving
+ * correctly. The harness paints the same surface the product paints.
+ */
+:root {
+  --vscode-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Ubuntu", sans-serif;
+  --vscode-font-size: 13px;
+  --vscode-foreground: #cccccc;
+  --vscode-descriptionForeground: #9d9d9d;
+  --vscode-disabledForeground: #cccccc80;
+  --vscode-errorForeground: #f85149;
+  --vscode-focusBorder: #0078d4;
+  --vscode-icon-foreground: #cccccc;
+  --vscode-textLink-foreground: #4daafc;
+  --vscode-widget-border: #313131;
+  --vscode-widget-shadow: #0000005c;
+  --vscode-panel-border: #2b2b2b;
+
+  --vscode-editor-background: #1f1f1f;
+  --vscode-editor-foreground: #cccccc;
+  --vscode-editor-font-family: "SF Mono", Menlo, Monaco, "Courier New", monospace;
+  --vscode-editor-font-size: 12px;
+  --vscode-editor-selectionBackground: #264f78;
+  --vscode-editor-selectionForeground: #ffffff;
+  --vscode-editorLineNumber-foreground: #6e7681;
+  --vscode-editorWidget-background: #202020;
+  --vscode-editorGroupHeader-tabsBackground: #181818;
+  --vscode-sideBar-background: #181818;
+  --vscode-textCodeBlock-background: #2b2b2b;
+
+  --vscode-editorWarning-foreground: #cca700;
+  --vscode-editorWarning-background: #cca7001a;
+  --vscode-inputValidation-errorBackground: #5a1d1d;
+  --vscode-inputValidation-errorBorder: #be1100;
+  --vscode-inputValidation-errorForeground: #ffffff;
+
+  --vscode-badge-background: #616161;
+  --vscode-badge-foreground: #f8f8f8;
+
+  --vscode-button-background: #0078d4;
+  --vscode-button-foreground: #ffffff;
+  --vscode-button-hoverBackground: #026ec1;
+  --vscode-button-border: #ffffff12;
+  --vscode-button-secondaryBackground: #313131;
+  --vscode-button-secondaryForeground: #cccccc;
+  --vscode-button-secondaryHoverBackground: #3c3c3c;
+
+  --vscode-input-background: #313131;
+  --vscode-input-foreground: #cccccc;
+  --vscode-input-border: #3c3c3c;
+  --vscode-input-placeholderForeground: #989898;
+
+  --vscode-dropdown-background: #313131;
+  --vscode-dropdown-foreground: #cccccc;
+  --vscode-dropdown-border: #3c3c3c;
+
+  --vscode-list-hoverBackground: #2a2d2e;
+  --vscode-list-activeSelectionBackground: #04395e;
+  --vscode-list-inactiveSelectionBackground: #37373d;
+  --vscode-list-activeSelectionForeground: #ffffff;
+  --vscode-toolbar-hoverBackground: #5a5d5e50;
+
+  --vscode-menu-background: #1f1f1f;
+  --vscode-menu-foreground: #cccccc;
+  --vscode-menu-border: #454545;
+  --vscode-menu-selectionBackground: #0078d4;
+  --vscode-menu-selectionForeground: #ffffff;
+
+  --vscode-quickInput-background: #222222;
+  --vscode-quickInputList-focusBackground: #04395e;
+  --vscode-quickInputList-focusForeground: #ffffff;
+  --vscode-editorSuggestWidget-background: #202020;
+  --vscode-editorSuggestWidget-border: #454545;
+  --vscode-editorSuggestWidget-foreground: #cccccc;
+
+  --vscode-scrollbarSlider-activeBackground: #bfbfbf66;
+  --vscode-diffEditor-insertedTextBackground: #2ea04326;
+  --vscode-gitDecoration-modifiedResourceForeground: #e2c08d;
+
+  --vscode-charts-blue: #3794ff;
+  --vscode-charts-green: #89d185;
+  --vscode-charts-orange: #d18616;
+  --vscode-charts-purple: #b180d7;
+  --vscode-charts-yellow: #cca700;
+}
+
+/*
+ * What the views' own colour names are worth here. The harness stands in for VS Code, so it does
+ * what the extension does: the views name the colours, the host says what they are worth.
+ */
+:root {
+  /* The values Dark Modern gives the colours the extension maps these names onto. */
+  --postgres-name-schema: #9d9d9d;
+  --postgres-name-relation: #ee9d28;
+  --postgres-name-alias: #89d185;
+  --postgres-name-column: #75beff;
+  --postgres-name-routine: #b180d7;
+  --postgres-name-parameter: #cca700;
+  --postgres-name-type: #75beff;
+  --postgres-field-unapplied: #cca700;
+  --postgres-scroll-thumb: #79797966;
+  --postgres-scroll-thumb-hover: #646464b3;
+  --postgres-scroll-thumb-active: #bfbfbf66;
+}

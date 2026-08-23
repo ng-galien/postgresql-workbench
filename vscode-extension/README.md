@@ -21,6 +21,15 @@ The complete Schemas-to-editor drag-and-drop contract is maintained in the
 
 ## See the Workbench in action
 
+### Read and correct table data without leaving the editor
+
+Open any table, view, or query result in an editable grid that owns its query:
+join a related table on the key the planner derives, filter on what a cell holds,
+sort, and correct a value. Every change is held until you apply them together, in
+one guarded transaction — and the query stays SQL you can open, read, and edit.
+
+![Join a related table, filter on a cell's value, and open the composed SQL](./media/marketplace/05-data-view.gif)
+
 ### Understand the architecture before changing it
 
 Focus a central table, expand upstream and downstream relationships, and move
@@ -48,6 +57,24 @@ Stop inside a routine, step through production-shaped logic, inspect composite
 variables, and keep PostgreSQL notices and query results close at hand.
 
 ![Step through a PL/pgSQL routine and inspect variables](./media/marketplace/04-debugger.gif)
+
+## Read and write table data
+
+Open any table, view, or query result in a **Data View**: an editable grid that
+owns its query. Add a column, join a related table on the key the planner chose,
+filter with `WHERE` completions from the indexed catalog, sort, hide what you do
+not need, and page through a relation too large to load at once.
+
+Where the rows come from exactly one table whose identity is projected, the grid
+writes back: edit cells, add rows, delete rows — with what the deletion drags
+along said before it happens — then apply everything in one guarded transaction.
+A row that changed since it was loaded stops the write instead of overwriting it.
+Export the selection, the loaded rows, or the whole query as CSV, TSV, JSON, SQL
+`INSERT`, or Markdown.
+
+Open one from the database tree, from a statement in a SQL file, or from a
+Scratchpad result. See the [Data View
+guide](https://ng-galien.github.io/postgresql-workbench/docs/data-view.html).
 
 ## One database context, one connected workflow
 
@@ -113,6 +140,7 @@ running `CREATE EXTENSION pldbgapi` for you when possible.
 - **Set variable** — change a variable's value mid-session from the Variables panel
 - **Inline values** — variable values displayed in the editor while stepping
 - **Debug Console** — `RAISE NOTICE/WARNING` output, plus SQL evaluation in the REPL
+- **Data View** — editable grid on tables, views, and query results: compose the query and its joins, filter and sort, edit and add rows, apply in one guarded transaction, and export to CSV/TSV/JSON/SQL/Markdown
 - **SQL results panel** — bounded result grid with JSON/composite inspection, history, copy, and CSV/JSON preview export
 - **CodeLens** — associate a free SQL document with one PostgreSQL connection,
   run every Statement directly, and debug only the `CALL` / `SELECT` routine

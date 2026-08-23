@@ -7,6 +7,7 @@ import {
   writeFileSync,
 } from "fs";
 import { dirname, resolve, sep } from "path";
+import viewBundles from "../packages/views/viewBundles.json" with { type: "json" };
 
 const production = process.argv.includes("--production");
 const watch = process.argv.includes("--watch");
@@ -69,7 +70,7 @@ const dapServerConfig = {
 
 /** @type {import('esbuild').BuildOptions} */
 const sqlAuthoringServerConfig = {
-  entryPoints: ["src/sqlAuthoring/server.ts"],
+  entryPoints: ["../packages/sql/src/languageServer/server.ts"],
   bundle: true,
   outfile: "dist/sql-authoring-server.js",
   format: "cjs",
@@ -80,36 +81,39 @@ const sqlAuthoringServerConfig = {
   metafile: true,
 };
 
-/** @type {import('esbuild').BuildOptions} */
-const graphWebviewConfig = {
-  entryPoints: ["src/workbenchGraph/webview/index.tsx"],
-  bundle: true,
-  outfile: "dist/workbench-graph.js",
-  format: "iife",
-  platform: "browser",
-  target: "es2022",
-  jsx: "automatic",
-  define: { "process.env.NODE_ENV": '"production"' },
-  sourcemap: !production,
-  minify: production,
-  metafile: true,
-};
+/**
+ * A view bundle, from the one record that also tells the Extension Host which file to load.
+ * `styles: "inlined"` turns CSS and fonts into strings the bundle injects into the shadow root it
+ * renders in; `styles: "linked"` leaves esbuild to emit the sibling .css the page shell links.
+ */
+function viewConfig(bundle) {
+  return {
+    entryPoints: [`../packages/views/${bundle.entry}`],
+    bundle: true,
+    outfile: `dist/${bundle.script}`,
+    format: bundle.format ?? "iife",
+    platform: "browser",
+    target: "es2022",
+    jsx: "automatic",
+    ...(bundle.styles === "inlined" ? { loader: { ".css": "text", ".ttf": "dataurl" } } : {}),
+    define: { "process.env.NODE_ENV": '"production"' },
+    sourcemap: !production,
+    minify: production,
+    metafile: true,
+  };
+}
 
 /** @type {import('esbuild').BuildOptions} */
-const sqlNotebookRendererConfig = {
-  entryPoints: ["src/sqlNotebookRenderer/index.tsx"],
-  bundle: true,
-  outfile: "dist/sql-notebook-renderer.js",
-  format: "esm",
-  platform: "browser",
-  target: "es2022",
-  jsx: "automatic",
-  loader: { ".css": "text" },
-  define: { "process.env.NODE_ENV": '"production"' },
-  sourcemap: !production,
-  minify: production,
-  metafile: true,
-};
+const graphWebviewConfig = viewConfig(viewBundles.cockpitGraph);
+
+/** @type {import('esbuild').BuildOptions} */
+const sqlNotebookRendererConfig = viewConfig(viewBundles.notebookResults);
+
+/** @type {import('esbuild').BuildOptions} */
+const dataViewWebviewConfig = viewConfig(viewBundles.dataView);
+
+/** @type {import('esbuild').BuildOptions} */
+const debugResultsWebviewConfig = viewConfig(viewBundles.debugResults);
 
 function packageRootForInput(input) {
   let current = dirname(resolve(input));
@@ -208,12 +212,16 @@ async function main() {
     const sqlAuthoringCtx = await esbuild.context(sqlAuthoringServerConfig);
     const graphCtx = await esbuild.context(graphWebviewConfig);
     const notebookRendererCtx = await esbuild.context(sqlNotebookRendererConfig);
+    const dataViewCtx = await esbuild.context(dataViewWebviewConfig);
+    const debugResultsCtx = await esbuild.context(debugResultsWebviewConfig);
     await Promise.all([
       extCtx.watch(),
       dapCtx.watch(),
       sqlAuthoringCtx.watch(),
       graphCtx.watch(),
       notebookRendererCtx.watch(),
+      dataViewCtx.watch(),
+      debugResultsCtx.watch(),
     ]);
     console.log("Watching for changes...");
   } else {
@@ -224,6 +232,8 @@ async function main() {
       esbuild.build(sqlAuthoringServerConfig),
       esbuild.build(graphWebviewConfig),
       esbuild.build(sqlNotebookRendererConfig),
+      esbuild.build(dataViewWebviewConfig),
+      esbuild.build(debugResultsWebviewConfig),
     ]);
     generateThirdPartyNotices(results.map((result) => result.metafile));
     console.log("Build complete.");
