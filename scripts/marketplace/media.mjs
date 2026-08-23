@@ -237,6 +237,8 @@ async function executeShowcase(scene, withCapture, theme, extension) {
   const stoppedPath = path.join(controlDir, "stopped");
   let recorder;
   let testProcess;
+  /** The region the recorder was told to film, checked against what it actually produced. */
+  let framed;
 
   try {
     if (withCapture) await rm(rawPath, { force: true });
@@ -265,6 +267,7 @@ async function executeShowcase(scene, withCapture, theme, extension) {
     if (withCapture) {
       const rect = insetCaptureRect(await resolveShowcaseWindowRect());
       recorder = await startRecorder(rawPath, rect, scene.maxDurationSeconds);
+      framed = rect;
     }
 
     await writeFile(recordingPath, "ready\n");
@@ -286,8 +289,44 @@ async function executeShowcase(scene, withCapture, theme, extension) {
     if (testProcess && testProcess.exitCode === null && testProcess.signalCode === null) {
       await terminateProcess(testProcess);
     }
-    await rm(controlDir, { recursive: true, force: true });
-    await rm(profileDir, { recursive: true, force: true });
+    /*
+     * Tidying up must not become the failure. VS Code writes its logs on its way out, so removing
+     * the throwaway profile races it — and an exception thrown here replaces the one that says
+     * why the capture failed, which is how a framing error arrived as `ENOTEMPTY`.
+     */
+    await discard(controlDir);
+    await discard(profileDir);
+  }
+
+  /*
+   * What was filmed must be shaped like what was framed. The recorder crops in the display's
+   * pixels while the window is measured in points, so a Retina screen legitimately films twice the
+   * size — but never a different shape. A crop measured against the wrong bounds does change the
+   * shape, and that is the failure that once produced a card showing the reader's own editor
+   * beside a slice of the showcase, without complaint.
+   */
+  if (withCapture && framed && (await isReadableFile(rawPath))) {
+    const filmed = probeDimensions(rawPath);
+    const asked = framed.width / framed.height;
+    const got = filmed.width / filmed.height;
+    if (Math.abs(asked - got) / asked > 0.01) {
+      fail(
+        `The recording does not frame what it was asked to.\n` +
+          `  asked for ${framed.width}×${framed.height} at ${framed.x},${framed.y}\n` +
+          `  filmed   ${filmed.width}×${filmed.height}\n` +
+          "The crop is measured against the whole desktop, so a second display makes it wrong.\n" +
+          "Capture on a single display, then recalibrate and capture again.\n",
+      );
+    }
+  }
+}
+
+/** Removes a throwaway directory, retrying what is still being written, and never throwing. */
+async function discard(directory) {
+  try {
+    await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  } catch (error) {
+    console.warn(`· left ${directory} behind (${error instanceof Error ? error.message : error})`);
   }
 }
 
@@ -432,7 +471,12 @@ async function optimize(sceneId, sourcePath) {
     "warning",
     "-y",
     "-ss",
-    "1",
+    /*
+     * The still a reader sees before the animation plays should show what the card is about, not
+     * the state it opens on. A scene says when that is; a second in is right for one that starts
+     * where it ends up.
+     */
+    String(scene.posterSeconds ?? 1),
     "-i",
     rawPath,
     "-vf",
@@ -516,6 +560,21 @@ async function buildShowcase() {
 async function startRecorder(rawPath, rect, maxDurationSeconds) {
   const device = resolveScreenCaptureDevice();
   const screen = resolveMainScreenBounds();
+  /*
+   * The crop is a proportion of one captured display, and the bounds it is measured against are
+   * the desktop's — which, with a second monitor attached, is the union of both. The proportion is
+   * then meaningless and the card frames the wrong part of the screen. Say so before filming.
+   */
+  if (countCaptureScreens() > 1) {
+    fail(
+      "More than one display is attached.\n" +
+        "The recorder films one display and measures the crop against the whole desktop, which\n" +
+        "with a second monitor is the union of both — so the card would frame the wrong part of\n" +
+        "the screen. Disconnect the second display or mirror it, then recalibrate and capture:\n" +
+        "  npm run marketplace:media -- calibrate\n" +
+        "  npm run marketplace:media -- capture <scene>\n",
+    );
+  }
   const crop = [
     `trunc(iw*${rect.width}/${screen.width}/2)*2`,
     `trunc(ih*${rect.height}/${screen.height}/2)*2`,
@@ -596,6 +655,16 @@ async function stopRecorder(recorder) {
   }
 }
 
+/** How many displays avfoundation can film. More than one makes the crop below unreliable. */
+function countCaptureScreens() {
+  const result = spawnSync(
+    "ffmpeg",
+    ["-hide_banner", "-f", "avfoundation", "-list_devices", "true", "-i", ""],
+    { encoding: "utf8" },
+  );
+  return [...`${result.stdout}\n${result.stderr}`.matchAll(/\bCapture screen \d+\b/gu)].length;
+}
+
 function resolveScreenCaptureDevice() {
   const result = spawnSync(
     "ffmpeg",
@@ -647,9 +716,17 @@ tell application "System Events"
       repeat with candidateWindow in windows of appProcess
         if name of candidateWindow contains "${escapedTitle}" then
           set frontmost of appProcess to true
+          -- A zoomed window ignores a size, and then the recording frames something else. Not
+          -- every window answers that property, and an error here reads as "window not found".
+          try
+            if zoomed of candidateWindow then set zoomed of candidateWindow to false
+          end try
           set position of candidateWindow to {${x}, ${y}}
           set size of candidateWindow to {${width}, ${height}}
-          delay 0.25
+          delay 0.4
+          set position of candidateWindow to {${x}, ${y}}
+          set size of candidateWindow to {${width}, ${height}}
+          delay 0.4
           set {windowX, windowY} to position of candidateWindow
           set {windowWidth, windowHeight} to size of candidateWindow
           return (windowX as text) & "," & (windowY as text) & "," & (windowWidth as text) & "," & (windowHeight as text)
@@ -659,14 +736,37 @@ tell application "System Events"
   end repeat
 end tell`;
 
+  /*
+   * Framing is not a request, it is a result: a window can refuse a size — zoomed, clamped by the
+   * display it opened on, still settling — and the recorder would then film a rectangle the window
+   * is not in. It once produced a card showing the reader's own editor beside a slice of the
+   * showcase, and said nothing. So the bounds are read back until they are the bounds asked for.
+   */
   const deadline = Date.now() + 20_000;
+  let last;
   while (Date.now() < deadline) {
     const result = spawnSync("osascript", ["-e", script], { encoding: "utf8" });
     const values = result.stdout.trim().split(",").map(Number);
     if (result.status === 0 && values.length === 4 && values.every(Number.isFinite)) {
-      return { x: values[0], y: values[1], width: values[2], height: values[3] };
+      last = { x: values[0], y: values[1], width: values[2], height: values[3] };
+      const off = Math.max(
+        Math.abs(last.x - x),
+        Math.abs(last.y - y),
+        Math.abs(last.width - width),
+        Math.abs(last.height - height),
+      );
+      if (off <= 2) return last;
     }
-    await delay(250);
+    await delay(400);
+  }
+  if (last) {
+    fail(
+      `The showcase window would not take the calibrated frame.\n` +
+        `  asked for ${width}×${height} at ${x},${y}\n` +
+        `  settled at ${last.width}×${last.height} at ${last.x},${last.y}\n` +
+        "Recalibrate on the display this window opens on: place a VS Code window as the card\n" +
+        "should appear and run: npm run marketplace:media -- calibrate\n",
+    );
   }
   fail(
     `Could not find the VS Code window containing "${manifest.window.title}". ` +
@@ -690,8 +790,20 @@ end tell`;
     values.length !== 4 ||
     values.some((value) => !Number.isFinite(value))
   ) {
+    /*
+     * Say what macOS said. The two causes look identical from here — no VS Code window in front,
+     * or a terminal that was never granted assistive access — and the second one answers with a
+     * specific error (-1719) that names itself. Guessing between them sent a reader looking at
+     * their windows when the answer was in System Settings.
+     */
+    const reason = (result.stderr ?? "").trim();
     fail(
-      "Could not read the front VS Code window. Keep the calibrated window open and check the terminal Accessibility permission.\n",
+      `Could not read the front VS Code window${reason ? `:\n  ${reason}` : "."}\n` +
+        (reason.includes("-1719") || reason.toLowerCase().includes("assistive")
+          ? "That is the Accessibility permission. Enable this terminal in System Settings →\n" +
+            "Privacy & Security → Accessibility, then quit it completely and open it again —\n" +
+            "macOS only reads the permission when the process starts.\n"
+          : "Keep a VS Code window open and in front, and check this terminal's Accessibility\npermission in System Settings → Privacy & Security → Accessibility.\n"),
     );
   }
   return { x: values[0], y: values[1], width: values[2], height: values[3] };

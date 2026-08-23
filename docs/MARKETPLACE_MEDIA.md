@@ -4,6 +4,12 @@ The Marketplace README is a product surface. Its animations must be captured
 from a real VS Code Extension Host running PostgreSQL Workbench against the
 deterministic demo database.
 
+Capture on a **single display**. The recorder films one display and measures its
+crop against the whole desktop, which with a second monitor attached is the union
+of both — the card would frame the wrong part of the screen. The capture refuses
+to start rather than produce one, and checks afterwards that what was filmed is
+shaped like what was framed.
+
 The workflow is automated. A showcase scene is not a manual recording and is not
 a complete integration test: it prepares a known UI state, synchronizes with the
 external recorder, performs one bounded 8–12 second choreography through the VS

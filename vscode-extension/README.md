@@ -21,6 +21,15 @@ The complete Schemas-to-editor drag-and-drop contract is maintained in the
 
 ## See the Workbench in action
 
+### Read and correct table data without leaving the editor
+
+Open any table, view, or query result in an editable grid that owns its query:
+join a related table on the key the planner derives, filter on what a cell holds,
+sort, and correct a value. Every change is held until you apply them together, in
+one guarded transaction — and the query stays SQL you can open, read, and edit.
+
+![Join a related table, filter on a cell's value, and open the composed SQL](./media/marketplace/05-data-view.gif)
+
 ### Understand the architecture before changing it
 
 Focus a central table, expand upstream and downstream relationships, and move

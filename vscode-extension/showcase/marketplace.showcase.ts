@@ -213,11 +213,15 @@ async function dataViewScene(api: PlpgsqlExtensionApi): Promise<void> {
       kept >= 2 && kept < before,
       `Filtering on the value kept ${kept} of ${before} rows; the card needs several, not all`,
     );
-    await delay(2100);
+    await delay(2400);
 
-    /* One value corrected, held in the grid until the whole change set is applied. */
-    await view.handle({ type: "data-view/edit", edit: editableCell(view, "price", "26.50") });
-    await delay(1800);
+    /*
+     * A correction is not filmed. A pending edit is only drawn once a reader turns edit mode on,
+     * and that is the view's own state, not something a host can ask for — so sending one would
+     * spend two seconds of the card on a grid that does not visibly change. What the rows being
+     * writable is worth is asserted instead, below.
+     */
+    editableCell(view, "price", "26.50");
 
     /* And it was SQL all along: the composed query opens beside the rows it drew. */
     await view.handle({ type: "data-view/edit-query" });
@@ -590,7 +594,11 @@ function ordinalOf(view: DataViewDocument, column: string, relation?: [string, s
 
 /**
  * Correcting one named value, on the first row the grid is showing — assembled from the policy the
- * grid itself reads, so the request the card films is the request the product sends.
+ * grid itself reads, so what this builds is what the product would send.
+ *
+ * The card does not film it. What it asserts is what the card claims by showing these rows at all:
+ * that a value drawn across a join is one the reader could write to, and that the query says which
+ * stored row it belongs to.
  */
 function editableCell(view: DataViewDocument, column: string, value: string): DataViewEdit {
   const state = view.state();

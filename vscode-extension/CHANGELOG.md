@@ -83,6 +83,10 @@ from the Workbench Index and written back in one guarded transaction.
   carries everywhere else
 - Added new commands **Open Data View** and **Open Data View for Statement**
 
+- Added a Marketplace card for the Data View, first on the page: a related table
+  joined on the key the planner derives, a filter written from what a cell holds,
+  an order taken, and the composed query opened beside the rows it drew
+
 ### SQL authoring
 
 - Proposed the language a statement is written in — `AND`, `OR`, `IS NOT NULL`,

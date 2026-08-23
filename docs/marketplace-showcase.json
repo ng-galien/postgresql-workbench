@@ -2,10 +2,10 @@
   "version": 1,
   "window": {
     "title": "PostgreSQL Workbench Showcase",
-    "x": 219,
-    "y": 194,
-    "width": 1411,
-    "height": 841
+    "x": 137,
+    "y": 136,
+    "width": 1584,
+    "height": 869
   },
   "captureInsets": {
     "top": 32,
@@ -24,9 +24,9 @@
     {
       "id": "data-view",
       "file": "05-data-view",
-      "title": "Read and correct table data in one view",
+      "title": "Compose a query over your tables, and read it back as SQL",
       "maxDurationSeconds": 16,
-      "card": "pending"
+      "posterSeconds": 9.2
     },
     {
       "id": "cockpit",
