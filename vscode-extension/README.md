@@ -24,11 +24,11 @@ The complete Schemas-to-editor drag-and-drop contract is maintained in the
 ### Read and correct table data without leaving the editor
 
 Open any table, view, or query result in an editable grid that owns its query:
-join a related table on the key the planner derives, narrow the rows with a real
-`WHERE`, and correct a value. Every change is held until you apply them together,
-in one guarded transaction.
+join a related table on the key the planner derives, filter on what a cell holds,
+and correct a value. Every change is held until you apply them together, in one
+guarded transaction — and the query stays SQL you can open, read, and edit.
 
-![Compose a query, filter it, and correct a value in the Data View](./media/marketplace/01-data-view.gif)
+![Join a table, filter on a cell's value, correct a row, and open the composed SQL](./media/marketplace/01-data-view.gif)
 
 ### Understand the architecture before changing it
 

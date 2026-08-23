@@ -9,7 +9,10 @@ import {
   buildWorkbenchObjects,
   type WorkbenchObjectModel,
 } from "../../packages/catalog/src/objectModel.js";
-import type { DataViewEdit } from "../../packages/rows/src/dataView/dataView.js";
+import {
+  dataViewColumnKeys,
+  type DataViewEdit,
+} from "../../packages/rows/src/dataView/dataView.js";
 import type { WorkbenchGraphWebviewMessage } from "../../packages/views/src/cockpit/protocol.js";
 import {
   delay,
@@ -128,11 +131,26 @@ suite("PostgreSQL Workbench Marketplace showcase", function () {
 
 /**
  * The Data View, from a table to a change waiting to be written: a related table joined on the key
- * the planner derives, a `WHERE` narrowing the rows, an order, and one value corrected.
+ * the planner derives, an order, a `WHERE` reaching into the joined relation, and one value
+ * corrected.
  *
  * The scene drives the document through the very requests its own webview sends, so what is filmed
  * is the path a reader takes, not a rehearsal of it beside them.
+ *
+ * `shop.product` carries a JSON payload, an array, a URL and a thumbnail. Left in, they push the
+ * joined table off the right edge and the card shows a join nobody can see, so they are hidden
+ * before the recording starts — with the control the view offers for exactly that.
  */
+const PRODUCT_NOISE = [
+  "description",
+  "active",
+  "attributes",
+  "supplier_payload",
+  "tags",
+  "datasheet_url",
+  "thumbnail",
+];
+
 async function dataViewScene(api: PlpgsqlExtensionApi): Promise<void> {
   const product = object(api, "shop", "product", "table");
   await api.dataViews.open({
@@ -144,6 +162,10 @@ async function dataViewScene(api: PlpgsqlExtensionApi): Promise<void> {
     relationKind: "table",
   });
   const view = await waitForDataViewRows(api);
+  for (const column of PRODUCT_NOISE) {
+    await view.handle({ type: "data-view/hide", column: columnKey(view, column) });
+  }
+  await waitForDataViewRows(api);
 
   await record(async () => {
     await delay(700);
@@ -154,23 +176,45 @@ async function dataViewScene(api: PlpgsqlExtensionApi): Promise<void> {
       .find((item) => item.kind === "table" && item.label === "shop.brand");
     assert.ok(brand, "shop.brand is not offered as a related table of shop.product");
     await view.handle({ type: "data-view/compose", addition: brand });
-    await waitForDataViewColumn(view, "name");
+    /* A column only the joined table has: `name` would be answered by the one already there. */
+    await waitForDataViewColumn(view, "website");
     await delay(1900);
-
-    /* The filter is SQL the reader can read, correct and undo — not a hidden predicate. */
-    await view.handle({ type: "data-view/filter", text: "product.price > 20" });
-    await delay(1800);
 
     await view.handle({
       type: "data-view/sort",
       sorts: [{ column: "price", direction: "descending" }],
     });
-    await delay(1700);
+    await delay(1600);
+
+    /*
+     * Filtering on what a cell holds, the way the cell's own menu does it: two of the four
+     * products carry this brand, so the rows visibly narrow to the ones that share the value —
+     * and the condition is written into the WHERE, where it can be read, corrected and undone.
+     */
+    const brandName = ordinalOf(view, "shop", "brand", "name");
+    const before = view.state().payload?.rows.length ?? 0;
+    await view.handle({
+      type: "data-view/filter-cell",
+      ordinal: brandName,
+      value: view.state().payload?.rows[0]?.[brandName]?.value ?? null,
+      negate: false,
+    });
+    /* Several rows share it and some do not: a filter that keeps everything, or one row, shows
+     * nothing happening. The card would film a gesture with no visible answer. */
+    const kept = view.state().payload?.rows.length ?? 0;
+    assert.ok(
+      kept >= 2 && kept < before,
+      `Filtering on the value kept ${kept} of ${before} rows; the card needs several, not all`,
+    );
+    await delay(2100);
 
     /* One value corrected, held in the grid until the whole change set is applied. */
-    const edit = firstEditableCell(view);
-    await view.handle({ type: "data-view/edit", edit });
-    await delay(2200);
+    await view.handle({ type: "data-view/edit", edit: editableCell(view, "price", "26.50") });
+    await delay(1800);
+
+    /* And it was SQL all along: the composed query opens beside the rows it drew. */
+    await view.handle({ type: "data-view/edit-query" });
+    await delay(2400);
   });
 }
 
@@ -510,26 +554,62 @@ async function waitForDataViewColumn(
   assert.fail(`The Data View never drew the column ${column}`);
 }
 
-/** The first cell the query lets a reader write, and what correcting it would say. */
-function firstEditableCell(view: DataViewDocument): DataViewEdit {
+/** How a column is named to the requests that hide it: by its table, so a join cannot confuse two. */
+function columnKey(view: DataViewDocument, column: string): string {
   const state = view.state();
-  const rows = state.payload?.rows ?? [];
-  const columns = state.payload?.columns ?? [];
-  const table = state.editability.tables[0];
-  assert.ok(table, "The Data View reports no writable table");
-  const ordinal = columns.findIndex(
-    (_column, index) => state.editability.columns[index]?.editable === true,
+  const names = state.payload?.columns.map((candidate) => candidate.name) ?? [];
+  const ordinal = names.indexOf(column);
+  assert.ok(ordinal >= 0, `The Data View has no column ${column}`);
+  return dataViewColumnKeys(state.projection, names)[ordinal] ?? column;
+}
+
+/** Which column of the grid belongs to which relation: a join puts two `name` columns side by side. */
+function ordinalOf(
+  view: DataViewDocument,
+  schema: string,
+  relation: string,
+  column: string,
+): number {
+  const state = view.state();
+  const tableIndex = state.projection.tables.findIndex(
+    (table) => table.schema === schema && table.name === relation,
   );
-  assert.ok(ordinal >= 0, "The Data View reports no writable column");
-  const row = rows[0];
-  assert.ok(row, "The Data View loaded no row to correct");
+  assert.ok(tableIndex >= 0, `${schema}.${relation} is not part of the query`);
+  const ordinal = (state.payload?.columns ?? []).findIndex(
+    (candidate, index) =>
+      candidate.name === column && state.projection.columnTable[index] === tableIndex,
+  );
+  assert.ok(ordinal >= 0, `${schema}.${relation} does not project ${column}`);
+  return ordinal;
+}
+
+/** Correcting one named value, on the first row the grid is showing. */
+function editableCell(view: DataViewDocument, column: string, value: string): DataViewEdit {
+  const state = view.state();
+  const columns = state.payload?.columns ?? [];
+  const ordinal = columns.findIndex((candidate) => candidate.name === column);
+  assert.ok(ordinal >= 0, `The Data View has no column ${column}`);
+  assert.strictEqual(
+    state.editability.columns[ordinal]?.editable,
+    true,
+    `The Data View refuses to write ${column}`,
+  );
+  const tableIndex = state.projection.columnTable[ordinal];
+  const table = state.editability.tables.find(
+    (candidate) =>
+      candidate.tableOid ===
+      (tableIndex === undefined ? undefined : state.projection.tables[tableIndex]?.tableOid),
+  );
+  assert.ok(table, `No writable table owns ${column}`);
+  const row = state.payload?.rows[0];
+  assert.ok(row, "The Data View is showing no row to correct");
   return {
     tableOid: table.tableOid,
     key: table.keyOrdinals.map((keyOrdinal) => row[keyOrdinal]?.value ?? null),
     ordinal,
-    column: columns[ordinal]?.name ?? "",
+    column,
     original: row[ordinal]?.value ?? null,
-    value: "Grand cru",
+    value,
   };
 }
 

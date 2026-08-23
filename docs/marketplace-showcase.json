@@ -26,7 +26,7 @@
       "id": "data-view",
       "file": "01-data-view",
       "title": "Read and correct table data in one view",
-      "maxDurationSeconds": 12
+      "maxDurationSeconds": 16
     },
     {
       "id": "cockpit",
