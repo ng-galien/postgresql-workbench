@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { followLinkRequest } from "../../../rows/src/followLink.js";
 import type { SqlNotebookResultPayload } from "../../../rows/src/resultPayload.js";
 import { useClipboardCopy } from "../clipboardCopy.js";
 import type {
@@ -148,7 +149,12 @@ export function SqlResultView({ payload, messaging }: SqlResultViewProps) {
         </p>
       ) : null}
       {current.columns.length > 0 ? (
-        <ResultGrid payload={current} />
+        <ResultGrid
+          payload={current}
+          {...(messaging
+            ? { onFollowLink: (href) => messaging.postMessage(followLinkRequest(href)) }
+            : {})}
+        />
       ) : (
         <p className="result-empty">{current.command} completed without a row set.</p>
       )}

@@ -28,6 +28,18 @@ const listeners = new Set<(response: DataViewResponse) => void>();
 
 const messaging: DataViewMessaging = {
   post(request: DataViewRequest) {
+    /*
+     * Following an address is the host's answer to give, and here the host is this page: the
+     * engine runs on the other side of a fetch, where there is no browser to open a tab with.
+     * Answered on the spot, inside the click that asked, so the browser sees a gesture and not a
+     * popup arriving out of nowhere.
+     */
+    if (request.type === "follow-link") {
+      /* Recorded where a journey can read it: what the harness owes is the address it was given. */
+      document.body.dataset.followedLink = request.href;
+      window.open(request.href, "_blank", "noopener");
+      return;
+    }
     void fetch("/request", {
       method: "POST",
       headers: { "content-type": "application/json" },

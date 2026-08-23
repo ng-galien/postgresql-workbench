@@ -61,6 +61,8 @@ export interface GridRowContext {
   isEditingCell(subject: GridRowSubject, ordinal: number): boolean;
   openEditor(subject: GridRowSubject, ordinal: number, cell: DebugResultCell): void;
   closeEditor(): void;
+  /** What the reader asked for when they asked for the address a cell holds. */
+  onFollowLink(href: string): void;
 }
 
 export function GridRow({
@@ -179,26 +181,45 @@ export function GridRow({
                 onCancel={() => context.closeEditor()}
               />
             ) : shown !== null && isWebAddress(shown) ? (
-              <a
-                className={`cell-value ${CELL_LINK}`}
-                href={shown}
-                target="_blank"
-                rel="noreferrer"
-                /*
-                 * An address is somewhere to go, and a cell is something to select: a plain click
-                 * belongs to the grid, and only what asks for the address gets it.
-                 *
-                 * The grid is one stop in the tabbing order, so the link is not another one: the
-                 * keys reach it through the cell menu, whose `Open` clicks this very anchor.
-                 */
-                tabIndex={-1}
-                title={`${chordName()}+click to open ${shown}`}
-                onClick={(event) => {
-                  if (!followsCellLink(event)) event.preventDefault();
-                }}
-              >
-                {shown}
-              </a>
+              <>
+                <a
+                  className={`cell-value ${CELL_LINK}`}
+                  href={shown}
+                  /*
+                   * An address is somewhere to go, and a cell is something to select: the click
+                   * belongs to the grid unless it carries the chord, and it never reaches the host
+                   * that would follow it on its own. What follows it is the request below.
+                   *
+                   * The grid is one stop in the tabbing order, so the link is not another one: the
+                   * keys reach it through the cell menu.
+                   */
+                  tabIndex={-1}
+                  title={`${chordName()}+click to open ${shown}`}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    if (followsCellLink(event)) context.onFollowLink(shown);
+                  }}
+                >
+                  {shown}
+                </a>
+                {/* The mark that says there is somewhere to go, and takes a plain click there. */}
+                <button
+                  type="button"
+                  className="cell-link-open"
+                  title={`Open ${shown}`}
+                  aria-label={`Open ${shown}`}
+                  tabIndex={-1}
+                  onMouseDown={(event) => event.stopPropagation()}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    context.onFollowLink(shown);
+                  }}
+                >
+                  <span className="codicon codicon-link-external" aria-hidden="true" />
+                </button>
+              </>
             ) : (
               <span className="cell-value">{shown === null ? emptyLabel(subject) : shown}</span>
             )}

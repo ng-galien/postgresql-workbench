@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { cellDetail, postgresArrayItems } from "./cellDetail.js";
+import { onMac } from "../platform.js";
+import { cellDetail, followsCellLink, postgresArrayItems } from "./cellDetail.js";
 
 describe("what a cell holds, once it is worth more than one line", () => {
   it("lays a document out", () => {
@@ -90,5 +91,22 @@ describe("taking a PostgreSQL array literal apart", () => {
     // A jsonb object starts with a brace too, and its type says it is not an array.
     expect(postgresArrayItems('{"a": 1}', "jsonb")).toBeUndefined();
     expect(postgresArrayItems("plain text")).toBeUndefined();
+  });
+});
+
+describe("followsCellLink", () => {
+  const chord = (modifier: "metaKey" | "ctrlKey") => ({
+    metaKey: modifier === "metaKey",
+    ctrlKey: modifier === "ctrlKey",
+  });
+
+  it("takes the chord this platform names, and only that one", () => {
+    const mac = onMac();
+    expect(followsCellLink(chord(mac ? "metaKey" : "ctrlKey"))).toBe(true);
+    expect(followsCellLink(chord(mac ? "ctrlKey" : "metaKey"))).toBe(false);
+  });
+
+  it("leaves a plain click to the grid", () => {
+    expect(followsCellLink({ metaKey: false, ctrlKey: false })).toBe(false);
   });
 });

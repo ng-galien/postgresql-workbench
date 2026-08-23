@@ -77,9 +77,11 @@ is found by its new value, and it never goes back to the database.
   a group. Set `postgresql-workbench.dataView.hideKeyColumns` to `false` to show
   them from the start. A column a new row cannot go without is revealed the
   moment you add one.
-- **An address in a cell is a link.** Ctrl/Cmd+click follows it, as in an editor,
-  so a plain click still selects the cell it lands on. From the keyboard, the
-  cell menu's **Open** does the same.
+- **An address in a cell is a link.** Hovering the cell reveals a small open
+  mark; a plain click on that mark follows the address, and Ctrl/Cmd+click on the
+  text does the same — so an ordinary click still selects the cell it lands on.
+  From the keyboard, the cell menu's **Open** follows it. Only `http` and `https`
+  addresses are ever offered, and only those are ever opened.
 - **Large relations page.** The view loads a first page and the rest on demand as
   you walk the rows. A cursor that has been closed says so; refresh loads again.
 

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { debugResultEntryStatus } from "../../../dap/src/debugger/launch/index.js";
 import { countLabel } from "../../../rows/src/countLabel.js";
+import { followLinkRequest } from "../../../rows/src/followLink.js";
 import {
   type DebugResultSummary,
   type DebugResultViewState,
@@ -58,13 +59,19 @@ export function DebugResultsApp({
       {selected === undefined ? (
         <p className="result-empty">Run a PL/pgSQL debug call to see its result.</p>
       ) : (
-        <ResultDetail selected={selected} />
+        <ResultDetail selected={selected} post={post} />
       )}
     </div>
   );
 }
 
-function ResultDetail({ selected }: { selected: NonNullable<DebugResultViewState["selected"]> }) {
+function ResultDetail({
+  selected,
+  post,
+}: {
+  selected: NonNullable<DebugResultViewState["selected"]>;
+  post: (message: DebugResultsRequest) => void;
+}) {
   const status = debugResultEntryStatus(selected);
   if (status === "pending") {
     return (
@@ -110,7 +117,7 @@ function ResultDetail({ selected }: { selected: NonNullable<DebugResultViewState
       {selected.columns.length === 0 ? (
         <p className="result-empty">{selected.command} completed with no result columns.</p>
       ) : (
-        <ResultGrid payload={selected} />
+        <ResultGrid payload={selected} onFollowLink={(href) => post(followLinkRequest(href))} />
       )}
     </>
   );

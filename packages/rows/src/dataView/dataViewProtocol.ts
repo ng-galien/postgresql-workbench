@@ -1,5 +1,6 @@
 import type { NamedSqlToken } from "../../../sql/src/languageServer/protocol.js";
 import type { DataViewExportChoice, DataViewExportScope } from "../export.js";
+import type { FollowLinkRequest } from "../followLink.js";
 import type { ResultNavigationCommand } from "../navigation.js";
 import type { SqlNotebookResultPayload } from "../resultPayload.js";
 import type {
@@ -82,6 +83,8 @@ export type DataViewRequest =
   | { type: "data-view/copy"; text: string }
   /** A Workbench tree item was dropped on the view: compose it into the query. */
   | { type: "data-view/drop-tree" }
+  /* Following an address a cell holds; the same request every result surface sends. */
+  | FollowLinkRequest
   | {
       type: "data-view/export";
       choice: DataViewExportChoice;

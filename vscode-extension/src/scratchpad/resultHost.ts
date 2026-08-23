@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import type { SqlResultSession } from "../../../packages/rows/src/cursor.js";
+import { isFollowLinkRequest } from "../../../packages/rows/src/followLink.js";
 import { navigateResult } from "../../../packages/rows/src/navigation.js";
 import type {
   ScratchpadAssociationSnapshot,
@@ -11,6 +12,7 @@ import type {
   SqlNotebookResultRequest,
   SqlResultDataViewRequest,
 } from "../../../packages/views/src/results/payload.js";
+import { followLinkFromView } from "../followLink.js";
 import { associationFingerprint, SQL_NOTEBOOK_RENDERER_ID } from "./notebookFile.js";
 
 export type OpenDataViewFromResult = (request: {
@@ -36,6 +38,10 @@ export class SqlNotebookResultHost implements vscode.Disposable {
 
   constructor(private readonly openDataView: OpenDataViewFromResult = async () => {}) {
     this.subscription = this.messaging.onDidReceiveMessage(({ editor, message }) => {
+      if (isFollowLinkRequest(message)) {
+        void followLinkFromView(message);
+        return;
+      }
       if (isOpenDataViewRequest(message)) {
         void this.openDataView({ sql: message.sql, association: message.binding });
         return;

@@ -28,6 +28,7 @@ import type {
 } from "../../../rows/src/dataView/dataViewProtocol.js";
 import { rowOrder } from "../../../rows/src/dataView/rowOrder.js";
 import { shownValues } from "../../../rows/src/dataView/shownValues.js";
+import { followLinkRequest } from "../../../rows/src/followLink.js";
 import { hasWorkbenchTreeDrag } from "../cockpit/dragAndDrop.js";
 import {
   type GridSelection,
@@ -1574,6 +1575,7 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
       <section className="data-view-grid" aria-label="Rows">
         {payload && payload.columns.length > 0 ? (
           <ResultGrid
+            onFollowLink={(href) => post(followLinkRequest(href))}
             payload={payload}
             selection={selection}
             onSelect={setSelection}

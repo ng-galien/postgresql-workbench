@@ -5,6 +5,7 @@ import type {
   DebugResultsResponse,
 } from "../../../packages/views/src/debugResults/protocol.js";
 import viewBundles from "../../../packages/views/viewBundles.json" with { type: "json" };
+import { followLinkFromView } from "../followLink.js";
 import { webviewPage } from "../webviewPage.js";
 
 export const DEBUG_RESULTS_VIEW_ID = "postgresql-workbench-results";
@@ -39,6 +40,7 @@ export class DebugResultsViewProvider implements vscode.WebviewViewProvider, vsc
       else if (message.type === "select") this.store.select(message.id);
       else if (message.type === "copy") await this.copySelection(view.webview);
       else if (message.type === "openSource") await this.openSelectedSource();
+      else await followLinkFromView(message);
     });
     this.update();
   }

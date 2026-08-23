@@ -62,6 +62,14 @@ from the Workbench Index and written back in one guarded transaction.
   where it can be read, corrected and undone — **Inspect** opens the value,
   **Open** follows an address the cell holds, and **Copy** takes the selection.
   It walks with the arrows and gives the focus back where it came from
+- Followed an address a cell holds through the host rather than through the page:
+  in a VS Code webview a click the grid dispatches itself is ignored and a plain
+  click reached the browser whatever the grid did, so the menu's **Open** did
+  nothing and the Ctrl/Cmd requirement was not applied. Every result surface —
+  Data View, Scratchpad, debug results — now says what the reader asked for and
+  the extension opens it, refusing anything that is not `http` or `https`
+- Gave a link cell a small open mark, revealed on hover and taking a plain click
+  to the address, so following one is not a chord a reader has to be told about
 - Opened that menu from the keys, with Shift+F10 or the Menu key, under the cell
   the cursor is on — which is also how the keyboard now follows a link, so the
   grid stays a single stop in the tabbing order

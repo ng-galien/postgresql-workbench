@@ -1,4 +1,5 @@
 import type { DebugResultCell } from "../../../dap/src/debugger/launch/index.js";
+import { onMac } from "../platform.js";
 
 /**
  * What a cell holds, once it is worth more than one line. The grid shows every value the same way
@@ -62,29 +63,24 @@ export function isWebAddress(value: string): boolean {
 }
 
 /**
- * The class the anchor a cell draws for an address carries, and the two ways of following it.
+ * The class the anchor a cell draws for an address carries, and what counts as asking for it.
  *
- * Both sides of that gesture are named here rather than agreed on in passing: the row draws the
- * anchor and decides which clicks belong to it, the grid's menu clicks it. A rename that broke
- * them apart would break them here, in one place, instead of quietly doing nothing.
+ * Both sides of the gesture are named here rather than agreed on in passing: the row draws the
+ * anchor and decides which clicks belong to it, the grid's menu asks for the same thing without
+ * one. Following it is nobody's business here — a view says what was asked for and the host that
+ * put it on screen opens it.
  */
 export const CELL_LINK = "cell-link";
 
 /**
- * Whether a click on that anchor is asking for the address rather than for the cell: the chord
- * every editor uses, or a click the grid made itself, which carries no pointer behind it.
+ * Whether a click on a cell's address is asking for the address rather than for the cell: the
+ * chord every editor uses for a link, named for the platform it is pressed on.
+ *
+ * The grid's own click belongs to selection, so nothing else follows — the pointer reaches the
+ * link through the mark the cell draws, and the keyboard through the cell menu.
  */
-export function followsCellLink(event: {
-  detail: number;
-  metaKey: boolean;
-  ctrlKey: boolean;
-}): boolean {
-  return event.metaKey || event.ctrlKey || event.detail === 0;
-}
-
-/** Follows the address a cell draws, by the anchor it draws it with. */
-export function followCellLink(cell: HTMLElement | null): void {
-  cell?.querySelector<HTMLAnchorElement>(`a.${CELL_LINK}`)?.click();
+export function followsCellLink(event: { metaKey: boolean; ctrlKey: boolean }): boolean {
+  return onMac() ? event.metaKey : event.ctrlKey;
 }
 
 /** A document laid out over several lines, or the text as it stands with why it would not parse. */

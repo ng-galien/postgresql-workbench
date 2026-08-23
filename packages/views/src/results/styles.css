@@ -577,6 +577,36 @@ td.null {
   text-decoration: underline;
 }
 
+/*
+ * The mark that says there is somewhere to go, and takes a plain click there. A tooltip a reader
+ * must hover a second to see is not how anyone finds out about a chord, so the cell carries a
+ * target of its own — the way every data grid that offers this at all does it.
+ */
+.cell-link-open {
+  display: inline-flex;
+  visibility: hidden;
+  align-items: center;
+  padding: 0 2px;
+  color: var(--vscode-textLink-foreground, var(--vscode-charts-blue));
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  vertical-align: text-bottom;
+}
+
+td:hover > .cell-link-open,
+td.anchor > .cell-link-open {
+  visibility: visible;
+}
+
+.cell-link-open:hover {
+  color: var(--vscode-textLink-activeForeground, var(--vscode-textLink-foreground));
+}
+
+.cell-link-open .codicon {
+  font-size: 12px;
+}
+
 td.truncated {
   box-shadow: inset -3px 0 var(--vscode-editorWarning-foreground);
 }

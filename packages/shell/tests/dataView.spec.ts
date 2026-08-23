@@ -351,6 +351,33 @@ test("opens an address with the chord, and selects the cell without it", async (
 
   // The grid is one stop in the tabbing order: the keys reach the link through the cell menu.
   await expect(link).toHaveAttribute("tabindex", "-1");
+
+  /*
+   * And the chord goes there. Asserting only what is refused is how a link that never opened at
+   * all went unnoticed — so this asserts the address the view handed its host.
+   */
+  await link.click({ modifiers: [process.platform === "darwin" ? "Meta" : "Control"] });
+  await expect(page.locator("body")).toHaveAttribute(
+    "data-followed-link",
+    "https://example.test/fumoir",
+  );
+});
+
+test("takes a plain click on the mark a link cell carries", async ({ page }) => {
+  await openEmpty(page);
+  const table = await add(page, "shop.brand");
+
+  /* The chord is not something a reader guesses, so the cell carries a target of its own. */
+  const cell = table.cellsWithText("https://example.test/fumoir").first();
+  await cell.hover();
+  const open = cell.getByRole("button", { name: /^Open https:/u });
+  await expect(open).toBeVisible();
+
+  await open.click();
+  await expect(page.locator("body")).toHaveAttribute(
+    "data-followed-link",
+    "https://example.test/fumoir",
+  );
 });
 
 test("opens the menu of the cell the box is on, from the keys alone", async ({ page }) => {
@@ -371,7 +398,12 @@ test("opens the menu of the cell the box is on, from the keys alone", async ({ p
   const box = await menu.boundingBox();
   expect(box?.y).toBeGreaterThan(cell?.y ?? 0);
 
-  await page.keyboard.press("Escape");
+  /* And it follows it, which is the whole point of offering it to the keyboard. */
+  await menu.getByRole("menuitem", { name: "Open" }).click();
+  await expect(page.locator("body")).toHaveAttribute(
+    "data-followed-link",
+    "https://example.test/fumoir",
+  );
   await expect(menu).toBeHidden();
 });
 

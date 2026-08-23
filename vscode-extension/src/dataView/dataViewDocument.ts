@@ -47,6 +47,7 @@ import type {
   SqlAuthoringSnapshot,
 } from "../../../packages/sql/src/snapshot.js";
 import { quoteSqlIdentifierIfNeeded } from "../../../packages/sql/src/text/identifiers.js";
+import { followLinkFromView } from "../followLink.js";
 import { DATA_VIEW_SCRATCHES, dataViewQueryUri, dataViewScratchUri } from "./dataViewUri.js";
 import { exportAllRows, exportHeldRows, pickExportTarget } from "./exportResult.js";
 import { completeDataViewFilter } from "./filterCompletion.js";
@@ -323,6 +324,9 @@ export class DataViewDocument implements vscode.CustomDocument {
         if (removal.consequences.length > 0) this.notify(removal.consequences.join(" "), "info");
         return;
       }
+      case "follow-link":
+        await followLinkFromView(request);
+        return;
       case "data-view/copy":
         await vscode.env.clipboard.writeText(request.text);
         return;

@@ -25,7 +25,7 @@ import {
 } from "../../../rows/src/export.js";
 import type { ResultTable } from "../../../rows/src/resultPayload.js";
 import { CellInspector } from "./CellInspector.js";
-import { followCellLink, isWebAddress } from "./cellDetail.js";
+import { isWebAddress } from "./cellDetail.js";
 import { matchFrom, matchingCells } from "./findInRows.js";
 import { GridFinder } from "./GridFinder.js";
 import { GridHeader } from "./GridHeader.js";
@@ -115,6 +115,12 @@ export interface ResultGridProps {
   editing?: GridEditing;
   /** Column layout controls: hidden ordinals, drag reorder, and a per-column menu. */
   layout?: GridLayout;
+  /*
+   * How an address a cell holds is followed. A view cannot open one itself, so it says what the
+   * reader asked for and whoever put the grid on screen answers: the extension opens it
+   * externally, the browser harness opens a tab. Without this, a cell draws its address as text.
+   */
+  onFollowLink?: (href: string) => void;
 }
 
 export interface GridLayout {
@@ -136,6 +142,7 @@ export function ResultGrid({
   serverSort,
   editing,
   layout,
+  onFollowLink,
   selection: heldSelection,
   onSelect,
   inspecting,
@@ -520,18 +527,9 @@ export function ResultGrid({
     return {
       label: `Actions for ${payload.columns[ordinal]?.name ?? "cell"}`,
       entries: [
-        /*
-         * The link the cell already draws is the one that opens: a click on it is the gesture the
-         * host knows how to answer, and going around it would be a second way of following a link.
-         */
-        ...(value !== null && isWebAddress(value)
-          ? [
-              {
-                kind: "action" as const,
-                label: "Open",
-                run: () => followCellLink(document.getElementById(cellId(shownRow, ordinal))),
-              },
-            ]
+        /* Following an address is the host's to do; the menu only says the reader asked. */
+        ...(value !== null && isWebAddress(value) && onFollowLink
+          ? [{ kind: "action" as const, label: "Open", run: () => onFollowLink(value) }]
           : []),
         ...offered,
         ...(offered.length > 0 ? [{ kind: "separator" as const }] : []),
@@ -561,6 +559,9 @@ export function ResultGrid({
     cellId,
     matched: matchedCells,
     ...(editing ? { editing } : {}),
+    onFollowLink(href) {
+      onFollowLink?.(href);
+    },
     onCellMenu(event, shownRow, ordinal, value) {
       aimAt(shownRow, ordinal);
       menu.open(event, cellMenuFor(shownRow, ordinal, value));

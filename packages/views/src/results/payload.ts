@@ -1,3 +1,4 @@
+import type { FollowLinkRequest } from "../../../rows/src/followLink.js";
 import type { ResultNavigationAction } from "../../../rows/src/navigation.js";
 import type {
   ScratchpadAssociationSnapshot,
@@ -28,7 +29,9 @@ export interface SqlResultDataViewRequest {
 export type SqlNotebookRendererRequest =
   | SqlNotebookResultRequest
   | SqlNotebookSettingsRequest
-  | SqlResultDataViewRequest;
+  | SqlResultDataViewRequest
+  /* Following an address a cell holds; the same request every result surface sends. */
+  | FollowLinkRequest;
 
 export type SqlNotebookRendererResponse =
   | {
