@@ -48,6 +48,7 @@ release and artifact-handling actions.
 | Job | Contract |
 | --- | --- |
 | `Biome` | Installs root dependencies and runs `npm run check`. |
+| `Architecture` | Checks the package boundaries with the code-moniker architecture profile. Any non-zero status fails it, including a configuration error that would otherwise disarm the check without failing it. |
 | `Type Check` | Type-checks the DAP server and the VS Code extension. |
 | `Unit Tests` | Runs the root Vitest suite. |
 | `DAP Integration` | Starts `galien0xffffff/postgres-debugger:17` and runs the real PostgreSQL DAP and Workbench integration suite. |
@@ -107,6 +108,7 @@ Start from a clean `main` synchronized with `origin/main`.
    npm ci
    npm --prefix vscode-extension ci
    npm run check
+   npm run check:architecture
    npm run typecheck
    npm test
    npm run test:e2e

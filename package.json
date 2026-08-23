@@ -26,6 +26,7 @@
     "check": "node scripts/issues/check-templates.mjs && node scripts/extension/check-command-registrars.mjs && node scripts/extension/check-extension-adapts.mjs && node scripts/extension/check-manifest-text.mjs && node scripts/extension/check-marketplace-media.mjs && biome check packages/ vscode-extension/src/ vscode-extension/showcase/ vscode-extension/tests/ e2e/ site/ scripts/",
     "check:fix": "node scripts/issues/check-templates.mjs && node scripts/extension/check-command-registrars.mjs && node scripts/extension/check-extension-adapts.mjs && node scripts/extension/check-manifest-text.mjs && biome check --write packages/ vscode-extension/src/ vscode-extension/showcase/ vscode-extension/tests/ e2e/ site/ scripts/",
     "test": "vitest run packages vscode-extension scripts",
+    "check:architecture": "node scripts/test/architecture.mjs",
     "test:dap": "vitest run packages",
     "test:dap:package": "node scripts/dap/test-package.mjs",
     "test:e2e:up": "docker compose -f docker/e2e/compose.yml up -d --build --wait",

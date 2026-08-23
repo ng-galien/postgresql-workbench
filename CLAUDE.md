@@ -166,4 +166,6 @@ returns undefined.
 - PostgreSQL server must have `pldbgapi` extension and `shared_preload_libraries = 'plugin_debugger'`
 - Works with standard EDB pldebugger — the ng-galien fork is optional (better composite type fallback)
 - Biome for lint+format, Lefthook for pre-commit (biome fix → typecheck DAP + extension in parallel)
+- `npm run check:architecture` checks the package boundaries (code-moniker architecture profile) and
+  runs in CI as the `Architecture` job — a boundary is not a convention here, it is a gate
 - Node.js 24+ required
