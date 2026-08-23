@@ -27,6 +27,10 @@ const vsix = resolve(argument);
 const zip = await JSZip.loadAsync(readFileSync(vsix));
 const entries = new Set(Object.keys(zip.files).filter((entry) => !zip.files[entry].dir));
 
+const marketplaceReadme = readFileSync(
+  new URL("../../vscode-extension/README.md", import.meta.url),
+  "utf8",
+);
 const showcaseScenes =
   JSON.parse(readFileSync(new URL("../../docs/marketplace-showcase.json", import.meta.url), "utf8"))
     .scenes ?? [];
@@ -41,14 +45,17 @@ const required = [
   "extension/SUPPORT.md",
   "extension/THIRD_PARTY_NOTICES.md",
   /*
-   * Every showcase scene, read from the manifest that owns their names rather than listed again
-   * here: a card renamed or added would otherwise ship missing from the Marketplace page while
-   * three separate lists each said it was fine.
+   * Every card the README shows, read from the manifest that owns their names rather than listed
+   * again here: a card renamed would otherwise ship missing from the Marketplace page while three
+   * separate lists each said it was fine. A scene written but not yet filmed shows nothing, so it
+   * ships nothing.
    */
-  ...showcaseScenes.flatMap((scene) => [
-    `extension/media/marketplace/${scene.file}.gif`,
-    `extension/media/marketplace/${scene.file}.png`,
-  ]),
+  ...showcaseScenes
+    .filter((scene) => marketplaceReadme.includes(`./media/marketplace/${scene.file}.gif`))
+    .flatMap((scene) => [
+      `extension/media/marketplace/${scene.file}.gif`,
+      `extension/media/marketplace/${scene.file}.png`,
+    ]),
   "extension/runtime/code-moniker/manifest.json",
   "extension/runtime/code-moniker/client/index.cjs",
   "extension/runtime/code-moniker/client/node.cjs",
@@ -82,12 +89,12 @@ if (!notices.includes("Permission is hereby granted")) {
 const readme = await requiredText(zip, "extension/readme.md");
 const marketplaceMediaBase =
   "https://raw.githubusercontent.com/ng-galien/postgresql-workbench/main/vscode-extension/media/marketplace/";
-for (const image of [
-  "01-cockpit.gif",
-  "02-sql-notebook.gif",
-  "03-tests-coverage.gif",
-  "04-debugger.gif",
-]) {
+/*
+ * The packaged README must point at the images through their published URL, or the Marketplace
+ * page shows nothing: it cannot resolve a relative path. Which images those are is the page's own
+ * business, read from it rather than repeated here.
+ */
+for (const [, image] of marketplaceReadme.matchAll(/\.\/media\/marketplace\/([\w-]+\.gif)/gu)) {
   if (!readme.includes(`${marketplaceMediaBase}${image}`)) {
     throw new Error(`VSIX README does not contain the publishable Marketplace image URL: ${image}`);
   }

@@ -24,31 +24,31 @@
   "scenes": [
     {
       "id": "data-view",
-      "file": "01-data-view",
+      "file": "05-data-view",
       "title": "Read and correct table data in one view",
       "maxDurationSeconds": 16
     },
     {
       "id": "cockpit",
-      "file": "02-cockpit",
+      "file": "01-cockpit",
       "title": "Understand a PostgreSQL schema at a glance",
       "maxDurationSeconds": 12
     },
     {
       "id": "sql-notebook",
-      "file": "03-sql-notebook",
+      "file": "02-sql-notebook",
       "title": "Query data in a persistent SQL scratchpad",
       "maxDurationSeconds": 10
     },
     {
       "id": "tests-coverage",
-      "file": "04-tests-coverage",
+      "file": "03-tests-coverage",
       "title": "Run pgTAP tests and inspect native coverage",
       "maxDurationSeconds": 10
     },
     {
       "id": "debugger",
-      "file": "05-debugger",
+      "file": "04-debugger",
       "title": "Debug PL/pgSQL with the native VS Code debugger",
       "maxDurationSeconds": 12
     }

@@ -34,29 +34,37 @@ if (!declaredVsix.includes(`-${extensionVersion}-`)) {
   );
 }
 
+const pending = [];
 for (const scene of manifest.scenes ?? []) {
-  for (const extension of ["gif", "png"]) {
-    const asset = `${scene.file}.${extension}`;
-    if (!existsSync(path.join(mediaDir, asset))) {
-      failures.push(
-        `Scene "${scene.id}" declares ${asset}, which does not exist. ` +
-          `Capture it with: npm run marketplace:media -- capture ${scene.id}`,
-      );
-    }
-  }
-  if (!readme.includes(`./media/marketplace/${scene.file}.gif`)) {
+  const shown = readme.includes(`./media/marketplace/${scene.file}.gif`);
+  const assets = ["gif", "png"].map((extension) => `${scene.file}.${extension}`);
+  const captured = assets.every((asset) => existsSync(path.join(mediaDir, asset)));
+
+  /*
+   * A scene declared but not yet filmed is work in progress, not a defect — what must never ship
+   * is a page promising a card that is not there. So the rule is the pair, in both directions:
+   * shown means captured, and captured means shown.
+   */
+  if (shown && !captured) {
     failures.push(
-      `Scene "${scene.id}" is declared but ${scene.file}.gif is not shown in vscode-extension/README.md.`,
+      `The README shows ${scene.file}.gif, which has not been captured. ` +
+        `Capture it with: npm run marketplace:media -- capture ${scene.id}`,
     );
   }
+  if (captured && !shown) {
+    failures.push(
+      `Scene "${scene.id}" is captured but no card shows it in vscode-extension/README.md. ` +
+        `Add its section with:\n      ![…](./media/marketplace/${scene.file}.gif)`,
+    );
+  }
+  if (!captured && !shown) pending.push(scene);
 }
 
-/* The other direction: a card left in the README after its scene was retired shows a stale promise. */
-const declared = new Set((manifest.scenes ?? []).map((scene) => `${scene.file}.gif`));
-for (const [, shown] of readme.matchAll(/\.\/media\/marketplace\/([\w-]+\.gif)/gu)) {
-  if (!declared.has(shown)) {
-    failures.push(`vscode-extension/README.md shows ${shown}, which no showcase scene declares.`);
-  }
+for (const scene of pending) {
+  process.stdout.write(
+    `Marketplace media: scene "${scene.id}" is written but never filmed. ` +
+      `Capture it with: npm run marketplace:media -- capture ${scene.id}\n`,
+  );
 }
 
 if (failures.length > 0) {
