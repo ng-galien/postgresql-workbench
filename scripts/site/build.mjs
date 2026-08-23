@@ -26,14 +26,30 @@ const guides = [
   ["performance.md", "Measured performance"],
 ];
 
+/*
+ * The animations the landing page shows, taken from the showcase scenes that declare a name for
+ * it. The manifest owns the filenames a capture produces; naming them again here is how a rename
+ * used to leave this page pointing at files that no longer exist. A scene with no `site` name is
+ * one this page does not show — a card still being written, or one that belongs only to the
+ * Marketplace.
+ */
+const showcase = JSON.parse(
+  await readFile(path.join(repositoryRoot, "docs", "marketplace-showcase.json"), "utf8"),
+);
 const assets = [
-  [path.join(marketplaceMedia, "01-cockpit.gif"), "cockpit.gif"],
-  [path.join(marketplaceMedia, "01-cockpit.png"), "cockpit.png"],
-  [path.join(marketplaceMedia, "02-sql-notebook.gif"), "notebook.gif"],
-  [path.join(marketplaceMedia, "03-tests-coverage.gif"), "coverage.gif"],
-  [path.join(marketplaceMedia, "04-debugger.gif"), "debugger.gif"],
+  ...showcase.scenes
+    .filter((scene) => scene.site)
+    .map((scene) => [path.join(marketplaceMedia, `${scene.file}.gif`), `${scene.site}.gif`]),
+  /* The hero still, which the page and its social preview both point at. */
+  [path.join(marketplaceMedia, `${sceneNamed("cockpit").file}.png`), "cockpit.png"],
   [icon, "icon.png"],
 ];
+
+function sceneNamed(id) {
+  const scene = showcase.scenes.find((candidate) => candidate.id === id);
+  if (!scene) throw new Error(`The showcase manifest declares no scene "${id}"`);
+  return scene;
+}
 
 function escapeHtml(value) {
   return String(value)

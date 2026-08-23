@@ -2,7 +2,7 @@
 // biome-ignore-all lint/suspicious/noConsole: This capture command narrates its progress to the operator who watches it run.
 
 import { spawn, spawnSync } from "node:child_process";
-import { constants } from "node:fs";
+import { constants, existsSync } from "node:fs";
 import {
   access,
   copyFile,
@@ -18,6 +18,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import { resolveCodeMonikerTarget } from "../extension/code-moniker-target.mjs";
+import { marketplaceMediaReport, sceneAssets, showcaseVsixName } from "./mediaContract.mjs";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, "..", "..");
@@ -35,7 +37,18 @@ if (process.platform === "darwin" && !process.env.PATH?.split(":").includes(dock
 }
 
 const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
-const configuredVsixPath = path.join(extensionRoot, manifest.extensionVsix);
+/*
+ * The artifact a capture loads is the one this checkout builds: derived from the version and the
+ * host's target, never written down. A filename pinned in the manifest is a release chore that is
+ * remembered once and then quietly films the previous version.
+ */
+const configuredVsixPath = path.join(
+  extensionRoot,
+  showcaseVsixName(
+    JSON.parse(await readFile(path.join(extensionRoot, "package.json"), "utf8")).version,
+    resolveCodeMonikerTarget(),
+  ),
+);
 const [command = "help", ...args] = process.argv.slice(2);
 
 const commands = {
@@ -436,18 +449,22 @@ async function optimize(sceneId, sourcePath) {
 async function validate() {
   ensureBinary("ffprobe");
   const readme = await readFile(readmePath, "utf8");
-  const issues = [];
+  /* Whether every card is where the page says it is: the same rule `npm run check` applies. */
+  const { failures, pending } = marketplaceMediaReport({
+    scenes: manifest.scenes,
+    readme,
+    captured: (asset) => existsSync(path.join(mediaRoot, asset)),
+  });
+  const issues = [...failures];
+  const held = new Set(pending.map((scene) => scene.id));
 
+  /* And what only a captured file can answer: that it is small enough and no wider than asked. */
   for (const scene of manifest.scenes) {
-    const gifPath = path.join(mediaRoot, `${scene.file}.gif`);
-    const posterPath = path.join(mediaRoot, `${scene.file}.png`);
-    const maxBytes = scene.maxGifBytes ?? manifest.defaults.maxGifBytes;
-    for (const target of [gifPath, posterPath]) {
-      if (!(await isReadableFile(target)))
-        issues.push(`missing ${path.relative(repoRoot, target)}`);
-    }
+    if (held.has(scene.id)) continue;
+    const gifPath = path.join(mediaRoot, sceneAssets(scene).gif);
     if (!(await isReadableFile(gifPath))) continue;
 
+    const maxBytes = scene.maxGifBytes ?? manifest.defaults.maxGifBytes;
     const gifSize = (await stat(gifPath)).size;
     if (gifSize > maxBytes) {
       issues.push(
@@ -461,9 +478,10 @@ async function validate() {
         `${path.basename(gifPath)} is ${dimensions.width}px wide; limit is ${expectedWidth}px`,
       );
     }
-    if (!readme.includes(`./media/marketplace/${scene.file}.gif`)) {
-      issues.push(`README does not reference ${scene.file}.gif`);
-    }
+  }
+
+  for (const scene of pending) {
+    console.log(`· scene "${scene.id}" is written but never filmed; no card shows it yet`);
   }
 
   if (issues.length > 0) {
@@ -472,7 +490,8 @@ async function validate() {
     process.exitCode = 1;
     return;
   }
-  console.log(`✓ ${manifest.scenes.length} Marketplace scenes are complete and referenced`);
+  const shipped = manifest.scenes.length - pending.length;
+  console.log(`✓ ${shipped} Marketplace scenes are complete and referenced`);
 }
 
 async function preview() {

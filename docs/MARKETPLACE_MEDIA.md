@@ -91,14 +91,24 @@ scene. It never reads or migrates the installed extension's connection storage.
 
 The versioned scene manifest is `docs/marketplace-showcase.json`. It owns stable
 asset names, window geometry, duration, dimensions, frame rate, and size budget.
-The implementation lives in `vscode-extension/src/showcase/marketplace.showcase.ts`.
+The implementation lives in `vscode-extension/showcase/marketplace.showcase.ts`.
 
 ```bash
+npm run marketplace:media -- capture data-view
 npm run marketplace:media -- capture cockpit
 npm run marketplace:media -- capture sql-notebook
 npm run marketplace:media -- capture tests-coverage
 npm run marketplace:media -- capture debugger
 ```
+
+A scene can be written before it is filmed. Declaring `"card": "pending"` on it says so: the
+build accepts a manifest entry with no media and no card in the extension README, and prints a
+note instead. Capturing it, showing it in the README, and dropping the field are one act — the
+release gate (`node scripts/extension/check-marketplace-media.mjs --release`) refuses a tag that
+still carries a pending card.
+
+The scene must also be given a `site` name to appear on the documentation landing page; the file
+names themselves are never repeated outside this manifest.
 
 Or regenerate all feature families:
 
@@ -128,7 +138,11 @@ npm run marketplace:media -- preview
 ```
 
 Validation checks that every declared GIF and poster exists, is readable,
-respects its width and size budget, and is referenced by the extension README.
+respects its width and size budget, and is referenced by the extension README —
+the same rule `npm run check` applies, from the same module
+(`scripts/marketplace/mediaContract.mjs`), so the two can never give opposite
+verdicts on the same tree. A scene marked `"card": "pending"` is reported and
+skipped.
 The preview command opens that README in VS Code; press **Shift+Command+V** to
 render it.
 

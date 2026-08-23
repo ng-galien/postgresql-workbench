@@ -88,7 +88,10 @@ export interface PlpgsqlExtensionApi {
   workbenchSourceUris: WorkbenchSourceUris;
   workbenchDdlSync: WorkbenchDdlSyncController;
   workbenchGraph: WorkbenchGraphView;
-  dataViews: DataViewEditorProvider;
+  /* What a Data View can be asked for from outside it: opened, and read back. Not the editor
+   * provider whole — `exports` reaches every installed extension, and the rest of that class is
+   * VS Code's to call. */
+  dataViews: Pick<DataViewEditorProvider, "open" | "opened">;
   sqlNotebooks: SqlNotebookWorkspace;
   workbenchObjectActions(object: WorkbenchObjectModel): Promise<WorkbenchObjectAction[]>;
   runWorkbenchObjectAction(

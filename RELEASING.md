@@ -114,7 +114,19 @@ Start from a clean `main` synchronized with `origin/main`.
    npm --prefix vscode-extension run test:min-vscode
    npm --prefix vscode-extension run test:acceptance
    npm run package:ext
+   node scripts/extension/check-marketplace-media.mjs --release
    ```
+
+   The last one refuses a showcase card that is written but was never filmed. If
+   it names a scene, capture it before going further:
+
+   ```bash
+   npm run marketplace:media -- capture <scene>
+   npm run marketplace:media -- validate
+   ```
+
+   then show it in `vscode-extension/README.md` and drop its `"card": "pending"`
+   from `docs/marketplace-showcase.json`.
 
 5. Inspect the generated host artifact
    `vscode-extension/postgresql-workbench-<version>-<target>.vsix`.

@@ -1,6 +1,5 @@
 {
   "version": 1,
-  "extensionVsix": "postgresql-workbench-1.4.0-darwin-arm64.vsix",
   "window": {
     "title": "PostgreSQL Workbench Showcase",
     "x": 219,
@@ -26,31 +25,36 @@
       "id": "data-view",
       "file": "05-data-view",
       "title": "Read and correct table data in one view",
-      "maxDurationSeconds": 16
+      "maxDurationSeconds": 16,
+      "card": "pending"
     },
     {
       "id": "cockpit",
       "file": "01-cockpit",
       "title": "Understand a PostgreSQL schema at a glance",
-      "maxDurationSeconds": 12
+      "maxDurationSeconds": 12,
+      "site": "cockpit"
     },
     {
       "id": "sql-notebook",
       "file": "02-sql-notebook",
       "title": "Query data in a persistent SQL scratchpad",
-      "maxDurationSeconds": 10
+      "maxDurationSeconds": 10,
+      "site": "notebook"
     },
     {
       "id": "tests-coverage",
       "file": "03-tests-coverage",
       "title": "Run pgTAP tests and inspect native coverage",
-      "maxDurationSeconds": 10
+      "maxDurationSeconds": 10,
+      "site": "coverage"
     },
     {
       "id": "debugger",
       "file": "04-debugger",
       "title": "Debug PL/pgSQL with the native VS Code debugger",
-      "maxDurationSeconds": 12
+      "maxDurationSeconds": 12,
+      "site": "debugger"
     }
   ]
 }

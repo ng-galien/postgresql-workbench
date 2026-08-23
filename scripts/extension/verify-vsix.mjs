@@ -13,6 +13,7 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import JSZip from "jszip";
+import { shownMarketplaceCards } from "../marketplace/mediaContract.mjs";
 import { CODE_MONIKER_TARGETS, resolveCodeMonikerTarget } from "./code-moniker-target.mjs";
 
 const target = resolveCodeMonikerTarget();
@@ -27,13 +28,17 @@ const vsix = resolve(argument);
 const zip = await JSZip.loadAsync(readFileSync(vsix));
 const entries = new Set(Object.keys(zip.files).filter((entry) => !zip.files[entry].dir));
 
-const marketplaceReadme = readFileSync(
-  new URL("../../vscode-extension/README.md", import.meta.url),
-  "utf8",
+/*
+ * Which cards the Marketplace page shows, asked once of the page itself. Asked twice — as it was,
+ * by two expressions that could disagree — a renamed card can satisfy one check and be skipped by
+ * the other, which is the failure this list was derived to prevent.
+ */
+const marketplaceCards = shownMarketplaceCards(
+  readFileSync(new URL("../../vscode-extension/README.md", import.meta.url), "utf8"),
 );
-const showcaseScenes =
-  JSON.parse(readFileSync(new URL("../../docs/marketplace-showcase.json", import.meta.url), "utf8"))
-    .scenes ?? [];
+if (marketplaceCards.length === 0) {
+  throw new Error("The extension README shows no Marketplace card; the page would be bare");
+}
 
 const required = [
   "extension/dist/extension.js",
@@ -44,18 +49,11 @@ const required = [
   "extension/SECURITY.md",
   "extension/SUPPORT.md",
   "extension/THIRD_PARTY_NOTICES.md",
-  /*
-   * Every card the README shows, read from the manifest that owns their names rather than listed
-   * again here: a card renamed would otherwise ship missing from the Marketplace page while three
-   * separate lists each said it was fine. A scene written but not yet filmed shows nothing, so it
-   * ships nothing.
-   */
-  ...showcaseScenes
-    .filter((scene) => marketplaceReadme.includes(`./media/marketplace/${scene.file}.gif`))
-    .flatMap((scene) => [
-      `extension/media/marketplace/${scene.file}.gif`,
-      `extension/media/marketplace/${scene.file}.png`,
-    ]),
+  /* A scene written but not yet filmed shows nothing, so it ships nothing. */
+  ...marketplaceCards.flatMap((gif) => [
+    `extension/media/marketplace/${gif}`,
+    `extension/media/marketplace/${gif.replace(/\.gif$/u, ".png")}`,
+  ]),
   "extension/runtime/code-moniker/manifest.json",
   "extension/runtime/code-moniker/client/index.cjs",
   "extension/runtime/code-moniker/client/node.cjs",
@@ -94,7 +92,7 @@ const marketplaceMediaBase =
  * page shows nothing: it cannot resolve a relative path. Which images those are is the page's own
  * business, read from it rather than repeated here.
  */
-for (const [, image] of marketplaceReadme.matchAll(/\.\/media\/marketplace\/([\w-]+\.gif)/gu)) {
+for (const image of marketplaceCards) {
   if (!readme.includes(`${marketplaceMediaBase}${image}`)) {
     throw new Error(`VSIX README does not contain the publishable Marketplace image URL: ${image}`);
   }

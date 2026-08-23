@@ -12,6 +12,7 @@ import {
 import {
   dataViewColumnKeys,
   type DataViewEdit,
+  dataViewRelationOwning,
 } from "../../packages/rows/src/dataView/dataView.js";
 import type { WorkbenchGraphWebviewMessage } from "../../packages/views/src/cockpit/protocol.js";
 import {
@@ -165,7 +166,13 @@ async function dataViewScene(api: PlpgsqlExtensionApi): Promise<void> {
   for (const column of PRODUCT_NOISE) {
     await view.handle({ type: "data-view/hide", column: columnKey(view, column) });
   }
-  await waitForDataViewRows(api);
+  /* Hiding is local to the view, so nothing is awaited — but the grid must be narrow before the
+   * recorder starts, or the joined table lands off the edge again. */
+  assert.strictEqual(
+    view.state().query.hidden.length >= PRODUCT_NOISE.length,
+    true,
+    "The Data View did not narrow before the recording",
+  );
 
   await record(async () => {
     await delay(700);
@@ -191,7 +198,7 @@ async function dataViewScene(api: PlpgsqlExtensionApi): Promise<void> {
      * products carry this brand, so the rows visibly narrow to the ones that share the value —
      * and the condition is written into the WHERE, where it can be read, corrected and undone.
      */
-    const brandName = ordinalOf(view, "shop", "brand", "name");
+    const brandName = ordinalOf(view, "name", ["shop", "brand"]);
     const before = view.state().payload?.rows.length ?? 0;
     await view.handle({
       type: "data-view/filter-cell",
@@ -558,56 +565,49 @@ async function waitForDataViewColumn(
 function columnKey(view: DataViewDocument, column: string): string {
   const state = view.state();
   const names = state.payload?.columns.map((candidate) => candidate.name) ?? [];
-  const ordinal = names.indexOf(column);
-  assert.ok(ordinal >= 0, `The Data View has no column ${column}`);
-  return dataViewColumnKeys(state.projection, names)[ordinal] ?? column;
+  return dataViewColumnKeys(state.projection, names)[ordinalOf(view, column)] ?? column;
 }
 
-/** Which column of the grid belongs to which relation: a join puts two `name` columns side by side. */
-function ordinalOf(
-  view: DataViewDocument,
-  schema: string,
-  relation: string,
-  column: string,
-): number {
+/**
+ * Which column of the grid a name means. A join puts two `name` columns side by side, so a name
+ * alone is only enough where one relation is in play; naming the relation settles it.
+ */
+function ordinalOf(view: DataViewDocument, column: string, relation?: [string, string]): number {
   const state = view.state();
-  const tableIndex = state.projection.tables.findIndex(
-    (table) => table.schema === schema && table.name === relation,
-  );
-  assert.ok(tableIndex >= 0, `${schema}.${relation} is not part of the query`);
-  const ordinal = (state.payload?.columns ?? []).findIndex(
-    (candidate, index) =>
-      candidate.name === column && state.projection.columnTable[index] === tableIndex,
-  );
-  assert.ok(ordinal >= 0, `${schema}.${relation} does not project ${column}`);
+  const columns = state.payload?.columns ?? [];
+  if (!relation) {
+    const ordinal = columns.findIndex((candidate) => candidate.name === column);
+    assert.ok(ordinal >= 0, `The Data View has no column ${column}`);
+    return ordinal;
+  }
+  const [schema, name] = relation;
+  const owned = dataViewRelationOwning(state.projection, schema, name);
+  assert.ok(owned, `${schema}.${name} is not part of the query`);
+  const ordinal = owned.ownedOrdinals.find((candidate) => columns[candidate]?.name === column);
+  assert.ok(ordinal !== undefined, `${schema}.${name} does not project ${column}`);
   return ordinal;
 }
 
-/** Correcting one named value, on the first row the grid is showing. */
+/**
+ * Correcting one named value, on the first row the grid is showing — assembled from the policy the
+ * grid itself reads, so the request the card films is the request the product sends.
+ */
 function editableCell(view: DataViewDocument, column: string, value: string): DataViewEdit {
   const state = view.state();
-  const columns = state.payload?.columns ?? [];
-  const ordinal = columns.findIndex((candidate) => candidate.name === column);
-  assert.ok(ordinal >= 0, `The Data View has no column ${column}`);
-  assert.strictEqual(
-    state.editability.columns[ordinal]?.editable,
-    true,
-    `The Data View refuses to write ${column}`,
-  );
-  const tableIndex = state.projection.columnTable[ordinal];
+  const ordinal = ordinalOf(view, column);
+  const policy = state.editability.columns[ordinal];
+  assert.ok(policy?.editable, `The Data View refuses to write ${column}`);
   const table = state.editability.tables.find(
-    (candidate) =>
-      candidate.tableOid ===
-      (tableIndex === undefined ? undefined : state.projection.tables[tableIndex]?.tableOid),
+    (candidate) => candidate.tableOid === policy.tableOid,
   );
   assert.ok(table, `No writable table owns ${column}`);
   const row = state.payload?.rows[0];
   assert.ok(row, "The Data View is showing no row to correct");
   return {
-    tableOid: table.tableOid,
+    tableOid: policy.tableOid,
     key: table.keyOrdinals.map((keyOrdinal) => row[keyOrdinal]?.value ?? null),
     ordinal,
-    column,
+    column: policy.column,
     original: row[ordinal]?.value ?? null,
     value,
   };
