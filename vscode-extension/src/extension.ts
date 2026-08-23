@@ -88,6 +88,7 @@ export interface PlpgsqlExtensionApi {
   workbenchSourceUris: WorkbenchSourceUris;
   workbenchDdlSync: WorkbenchDdlSyncController;
   workbenchGraph: WorkbenchGraphView;
+  dataViews: DataViewEditorProvider;
   sqlNotebooks: SqlNotebookWorkspace;
   workbenchObjectActions(object: WorkbenchObjectModel): Promise<WorkbenchObjectAction[]>;
   runWorkbenchObjectAction(
@@ -845,6 +846,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
     workbenchSourceUris,
     workbenchDdlSync,
     workbenchGraph,
+    dataViews,
     sqlNotebooks,
     workbenchObjectActions,
     runWorkbenchObjectAction,

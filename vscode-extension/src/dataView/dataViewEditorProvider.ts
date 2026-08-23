@@ -61,6 +61,14 @@ export class DataViewEditorProvider
     );
   }
 
+  /**
+   * The Data Views open right now, in the order they were opened. The showcase drives one of them
+   * the way a reader does — through the requests its own webview sends.
+   */
+  opened(): readonly DataViewDocument[] {
+    return [...this.documents.values()];
+  }
+
   async openCustomDocument(uri: vscode.Uri): Promise<DataViewDocument> {
     const source = parseDataViewUri(uri);
     if (!source) throw new Error("This Data View link is not valid.");

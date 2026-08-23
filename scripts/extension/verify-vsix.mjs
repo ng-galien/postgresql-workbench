@@ -27,6 +27,10 @@ const vsix = resolve(argument);
 const zip = await JSZip.loadAsync(readFileSync(vsix));
 const entries = new Set(Object.keys(zip.files).filter((entry) => !zip.files[entry].dir));
 
+const showcaseScenes =
+  JSON.parse(readFileSync(new URL("../../docs/marketplace-showcase.json", import.meta.url), "utf8"))
+    .scenes ?? [];
+
 const required = [
   "extension/dist/extension.js",
   "extension/dist/dap-server.js",
@@ -36,11 +40,15 @@ const required = [
   "extension/SECURITY.md",
   "extension/SUPPORT.md",
   "extension/THIRD_PARTY_NOTICES.md",
-  "extension/media/marketplace/01-cockpit.gif",
-  "extension/media/marketplace/01-cockpit.png",
-  "extension/media/marketplace/02-sql-notebook.gif",
-  "extension/media/marketplace/03-tests-coverage.gif",
-  "extension/media/marketplace/04-debugger.gif",
+  /*
+   * Every showcase scene, read from the manifest that owns their names rather than listed again
+   * here: a card renamed or added would otherwise ship missing from the Marketplace page while
+   * three separate lists each said it was fine.
+   */
+  ...showcaseScenes.flatMap((scene) => [
+    `extension/media/marketplace/${scene.file}.gif`,
+    `extension/media/marketplace/${scene.file}.png`,
+  ]),
   "extension/runtime/code-moniker/manifest.json",
   "extension/runtime/code-moniker/client/index.cjs",
   "extension/runtime/code-moniker/client/node.cjs",

@@ -517,7 +517,8 @@ export class DataViewDocument implements vscode.CustomDocument {
     return snapshot;
   }
 
-  private additions() {
+  /** What the query can grow by. The webview asks for exactly this list; so does the showcase. */
+  additions() {
     const snapshot = this.composable();
     if (!snapshot) return [];
     const items = dataViewAdditions(

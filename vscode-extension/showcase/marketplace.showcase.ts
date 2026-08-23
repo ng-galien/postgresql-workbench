@@ -9,6 +9,7 @@ import {
   buildWorkbenchObjects,
   type WorkbenchObjectModel,
 } from "../../packages/catalog/src/objectModel.js";
+import type { DataViewEdit } from "../../packages/rows/src/dataView/dataView.js";
 import type { WorkbenchGraphWebviewMessage } from "../../packages/views/src/cockpit/protocol.js";
 import {
   delay,
@@ -17,6 +18,7 @@ import {
   waitForSessionStart,
 } from "../tests/vscode/integration/testUtils.js";
 import type { PgTapCoverageSnapshot } from "../src/coverage/index.js";
+import type { DataViewDocument } from "../src/dataView/dataViewDocument.js";
 import type { PlpgsqlExtensionApi } from "../src/extension.js";
 import { NEW_SQL_NOTEBOOK_COMMAND, SQL_NOTEBOOK_RESULT_MIME } from "../src/scratchpad/index.js";
 
@@ -103,6 +105,9 @@ suite("PostgreSQL Workbench Marketplace showcase", function () {
 
   test("runs the selected feature choreography", async () => {
     switch (SCENE) {
+      case "data-view":
+        await dataViewScene(api);
+        break;
       case "cockpit":
         await cockpitScene(api);
         break;
@@ -120,6 +125,54 @@ suite("PostgreSQL Workbench Marketplace showcase", function () {
     }
   });
 });
+
+/**
+ * The Data View, from a table to a change waiting to be written: a related table joined on the key
+ * the planner derives, a `WHERE` narrowing the rows, an order, and one value corrected.
+ *
+ * The scene drives the document through the very requests its own webview sends, so what is filmed
+ * is the path a reader takes, not a rehearsal of it beside them.
+ */
+async function dataViewScene(api: PlpgsqlExtensionApi): Promise<void> {
+  const product = object(api, "shop", "product", "table");
+  await api.dataViews.open({
+    kind: "relation",
+    serverId: SERVER.id,
+    database: SERVER.database,
+    schema: product.schema,
+    name: product.name,
+    relationKind: "table",
+  });
+  const view = await waitForDataViewRows(api);
+
+  await record(async () => {
+    await delay(700);
+
+    /* A related table joins on the key the planner derives from the foreign keys. */
+    const brand = view
+      .additions()
+      .find((item) => item.kind === "table" && item.label === "shop.brand");
+    assert.ok(brand, "shop.brand is not offered as a related table of shop.product");
+    await view.handle({ type: "data-view/compose", addition: brand });
+    await waitForDataViewColumn(view, "name");
+    await delay(1900);
+
+    /* The filter is SQL the reader can read, correct and undo — not a hidden predicate. */
+    await view.handle({ type: "data-view/filter", text: "product.price > 20" });
+    await delay(1800);
+
+    await view.handle({
+      type: "data-view/sort",
+      sorts: [{ column: "price", direction: "descending" }],
+    });
+    await delay(1700);
+
+    /* One value corrected, held in the grid until the whole change set is applied. */
+    const edit = firstEditableCell(view);
+    await view.handle({ type: "data-view/edit", edit });
+    await delay(2200);
+  });
+}
 
 async function cockpitScene(api: PlpgsqlExtensionApi): Promise<void> {
   const product = object(api, "shop", "product", "table");
@@ -426,6 +479,58 @@ function receiveGraphMessage(
     receive(message: WorkbenchGraphWebviewMessage): void;
   };
   graph.receive(message);
+}
+
+/** The Data View the scene opened, once PostgreSQL has answered with its first rows. */
+async function waitForDataViewRows(
+  api: PlpgsqlExtensionApi,
+  timeoutMs = 30_000,
+): Promise<DataViewDocument> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const view = api.dataViews.opened().at(-1);
+    if (view && !view.state().busy && (view.state().payload?.rows.length ?? 0) > 0) return view;
+    await delay(200);
+  }
+  assert.fail("The Data View did not load its rows");
+}
+
+/** Waits for a composition to land: the column it brought in is drawn with the others. */
+async function waitForDataViewColumn(
+  view: DataViewDocument,
+  column: string,
+  timeoutMs = 20_000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const columns = view.state().payload?.columns ?? [];
+    if (!view.state().busy && columns.some((candidate) => candidate.name === column)) return;
+    await delay(150);
+  }
+  assert.fail(`The Data View never drew the column ${column}`);
+}
+
+/** The first cell the query lets a reader write, and what correcting it would say. */
+function firstEditableCell(view: DataViewDocument): DataViewEdit {
+  const state = view.state();
+  const rows = state.payload?.rows ?? [];
+  const columns = state.payload?.columns ?? [];
+  const table = state.editability.tables[0];
+  assert.ok(table, "The Data View reports no writable table");
+  const ordinal = columns.findIndex(
+    (_column, index) => state.editability.columns[index]?.editable === true,
+  );
+  assert.ok(ordinal >= 0, "The Data View reports no writable column");
+  const row = rows[0];
+  assert.ok(row, "The Data View loaded no row to correct");
+  return {
+    tableOid: table.tableOid,
+    key: table.keyOrdinals.map((keyOrdinal) => row[keyOrdinal]?.value ?? null),
+    ordinal,
+    column: columns[ordinal]?.name ?? "",
+    original: row[ordinal]?.value ?? null,
+    value: "Grand cru",
+  };
 }
 
 async function waitForGraph(

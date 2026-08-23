@@ -21,33 +21,42 @@ The complete Schemas-to-editor drag-and-drop contract is maintained in the
 
 ## See the Workbench in action
 
+### Read and correct table data without leaving the editor
+
+Open any table, view, or query result in an editable grid that owns its query:
+join a related table on the key the planner derives, narrow the rows with a real
+`WHERE`, and correct a value. Every change is held until you apply them together,
+in one guarded transaction.
+
+![Compose a query, filter it, and correct a value in the Data View](./media/marketplace/01-data-view.gif)
+
 ### Understand the architecture before changing it
 
 Focus a central table, expand upstream and downstream relationships, and move
 through the live PostgreSQL graph without losing context.
 
-![Expand and navigate the PostgreSQL architecture graph](./media/marketplace/01-cockpit.gif)
+![Expand and navigate the PostgreSQL architecture graph](./media/marketplace/02-cockpit.gif)
 
 ### Query data in persistent SQL scratchpads
 
 Keep notebooks bound to the right database, execute business queries, and work
 with a bounded, sortable result grid designed for real PostgreSQL values.
 
-![Run a business query and inspect its PostgreSQL result grid](./media/marketplace/02-sql-notebook.gif)
+![Run a business query and inspect its PostgreSQL result grid](./media/marketplace/03-sql-notebook.gif)
 
 ### Run pgTAP tests and inspect native coverage
 
 Discover database tests in VS Code's Test Explorer, run them with coverage, and
 jump directly to statement and branch coverage in the routine source.
 
-![Run pgTAP tests and inspect PL/pgSQL coverage in the editor](./media/marketplace/03-tests-coverage.gif)
+![Run pgTAP tests and inspect PL/pgSQL coverage in the editor](./media/marketplace/04-tests-coverage.gif)
 
 ### Debug PL/pgSQL with familiar VS Code controls
 
 Stop inside a routine, step through production-shaped logic, inspect composite
 variables, and keep PostgreSQL notices and query results close at hand.
 
-![Step through a PL/pgSQL routine and inspect variables](./media/marketplace/04-debugger.gif)
+![Step through a PL/pgSQL routine and inspect variables](./media/marketplace/05-debugger.gif)
 
 ## Read and write table data
 
