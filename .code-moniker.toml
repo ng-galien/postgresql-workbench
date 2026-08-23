@@ -104,7 +104,7 @@ forbids = [
   "presentation or result-session state",
 ]
 forbid_rules = [
-  "package-depends-only-on-what-it-reads",
+  "ts.refs.catalog.package-depends-only-on-what-it-reads",
   "postgres-ddl-sync-core-remains-pure",
 ]
 rationale = "The catalog answers what a database contains; rows, coverage, debugging and rendering consume that answer. postgresDdlSync builds SQL and coalesces notifications deterministically, while ddlSync owns LISTEN state and refresh coordination."
@@ -115,7 +115,7 @@ symbols = [
   "ts:packages/catalog/src/postgresCatalog.function:readPostgresCatalog",
   "ts:packages/catalog/src/postgresDdlSync.function:buildWorkbenchDdlProvisioningSql",
 ]
-rules = ["package-depends-only-on-what-it-reads", "postgres-ddl-sync-core-remains-pure"]
+rules = ["ts.refs.catalog.package-depends-only-on-what-it-reads", "postgres-ddl-sync-core-remains-pure"]
 
 [[views.boundaries]]
 id = "debugger"
@@ -128,13 +128,13 @@ forbids = [
   "depending on any package other than sql",
   "workspace daemons, indexed sources, catalog projection, or DDL synchronization",
 ]
-forbid_rules = ["package-depends-only-on-what-it-reads"]
+forbid_rules = ["ts.refs.dap.package-depends-only-on-what-it-reads"]
 rationale = "The VS Code adapter and the published standalone executable are two hosts over one library. Neither lets the debugger read or index the user's workspace; a Workbench host may supply canonical source URIs, which the DAP preserves exactly."
 symbols = [
   "ts:packages/dap/src/debugger/session/PlpgsqlDebugSession.class:PlpgsqlDebugSession",
   "ts:packages/dap/src/debugger/session/sourceRegistry.function:clientSourceUris",
 ]
-rules = ["package-depends-only-on-what-it-reads"]
+rules = ["ts.refs.dap.package-depends-only-on-what-it-reads"]
 
 [[views.boundaries]]
 id = "result-rows"
@@ -149,7 +149,7 @@ forbids = [
   "reading, above the Data View, anything the Data View owns",
 ]
 forbid_rules = [
-  "package-depends-only-on-what-it-reads",
+  "ts.refs.rows.package-depends-only-on-what-it-reads",
   "the-data-view-is-read-by-nothing-above-it",
 ]
 rationale = "A result comes from a query the SQL layer understands or a debugged call the DAP layer captured. The Scratchpad output, the Data View and the debugger output all read rows through the same cursor; depending on the catalog or the views would close a cycle around the thing every result view renders. Two thirds of the package is the Data View, which is why it sits in a directory of its own: it reaches up for the cursor, the payload, navigation and the export writer, and nothing above it reaches down. What a host may not do is answer for the Data View itself — both of them held their own hidden columns, and both wrote out the ones the reader had hidden."
@@ -158,7 +158,7 @@ symbols = [
   "ts:packages/rows/src/dataView/hiddenColumns.class:HiddenColumns",
 ]
 rules = [
-  "package-depends-only-on-what-it-reads",
+  "ts.refs.rows.package-depends-only-on-what-it-reads",
   "the-data-view-is-read-by-nothing-above-it",
   "data-view-protocol-has-one-home",
   "hidden-columns-are-answered-in-one-place",
@@ -177,13 +177,13 @@ forbids = [
   "PostgreSQL transport, Code Moniker sessions, or VS Code state",
   "declaring the protocol it speaks: the Data View's belongs to the engine",
 ]
-forbid_rules = ["package-depends-only-on-what-it-reads"]
+forbid_rules = ["ts.refs.views.package-depends-only-on-what-it-reads"]
 rationale = "A webview is a separate runtime. It renders values and posts messages; connections, sessions and command execution stay in the host and cross the boundary through the protocol each view declares."
 symbols = [
   "ts:packages/views/src/cockpit/graph/store.interface:CockpitStore",
   "ts:packages/views/src/presentation.function:postgresVisual",
 ]
-rules = ["package-depends-only-on-what-it-reads"]
+rules = ["ts.refs.views.package-depends-only-on-what-it-reads"]
 
 [[views.boundaries]]
 id = "activation"
