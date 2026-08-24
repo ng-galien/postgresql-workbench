@@ -1,7 +1,7 @@
 import { Buffer } from "node:buffer";
 import type { Client, FieldDef, Query } from "pg";
 import { describe, expect, it } from "vitest";
-import { formatQueryResultRow, runBoundedQuery } from "./boundedQueryResult.js";
+import { formatQueryResultRowRetained, runBoundedQuery } from "./boundedQueryResult.js";
 import {
   clampDebugResultRows,
   createDebugResultContext,
@@ -58,9 +58,9 @@ describe("bounded query results", () => {
       dataTypeID: 1184,
     };
 
-    expect(formatQueryResultRow([timestamp], [field])).toEqual([
-      { kind: "text", value: "2026-08-21T14:00:08.399Z" },
-    ]);
+    expect(
+      formatQueryResultRowRetained([timestamp], [field], DEBUG_RESULT_LIMITS.MAX_CELL_BYTES),
+    ).toEqual([{ kind: "text", value: "2026-08-21T14:00:08.399Z" }]);
   });
 
   it("streams every row but only retains the configured preview", async () => {

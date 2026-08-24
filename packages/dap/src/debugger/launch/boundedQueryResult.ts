@@ -164,26 +164,6 @@ export function unnamedTypeIds(fields: readonly FieldDef[]): number[] {
   ];
 }
 
-export function formatQueryResultRow(
-  row: readonly unknown[],
-  fields: readonly FieldDef[],
-  maxCellBytes = DEBUG_RESULT_LIMITS.MAX_CELL_BYTES,
-): DebugResultCell[] {
-  const boundedCellBytes = Math.min(DEBUG_RESULT_LIMITS.MAX_CELL_BYTES, Math.max(1, maxCellBytes));
-  return fields.map((field, index) => formatCell(row[index], field, boundedCellBytes));
-}
-
-/**
- * Converts a PostgreSQL row without applying the renderer's cell budget. Cursor-backed result
- * sessions retain this representation so inspection and export never inherit display truncation.
- */
-export function formatQueryResultRowFull(
-  row: readonly unknown[],
-  fields: readonly FieldDef[],
-): DebugResultCell[] {
-  return fields.map((field, index) => formatCell(row[index], field));
-}
-
 /** Converts a row for retained session memory, applying only the configured hard safety limit. */
 export function formatQueryResultRowRetained(
   row: readonly unknown[],
