@@ -1182,15 +1182,15 @@ class SqlNotebookController implements vscode.Disposable {
             const payload = sqlNotebookResultPayload(result, association.snapshot);
             outputs.push(
               resultOutput(
-                this.resultHost.registerStatic(
-                  result.id,
+                this.resultHost.registerStatic({
+                  resultId: result.id,
                   payload,
-                  retainedRows.slice(0, payload.rows.length),
+                  rows: retainedRows.slice(0, payload.rows.length),
                   cell,
-                  association.snapshot,
-                  statement.resultKind === "paged-query" ? statement.sql : undefined,
-                  { maxCellBytes: settings.maxCellBytes, statementTimeoutMs },
-                ),
+                  association: association.snapshot,
+                  ...(statement.resultKind === "paged-query" ? { statement: statement.sql } : {}),
+                  exportLimits: { maxCellBytes: settings.maxCellBytes, statementTimeoutMs },
+                }),
               ),
             );
           } else {

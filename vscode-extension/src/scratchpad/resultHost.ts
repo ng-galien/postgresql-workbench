@@ -41,6 +41,19 @@ interface HostedResultSession {
   busy: boolean;
 }
 
+/** A result whose rows are already in memory: nothing is paged and nothing is left open. */
+export interface StaticResultRegistration {
+  resultId: string;
+  payload: SqlNotebookResultPayload;
+  /** Retained values at full width; `payload.rows` carries the display projection of the same rows. */
+  rows: SqlNotebookResultPayload["rows"];
+  cell: vscode.NotebookCell;
+  association: ScratchpadAssociationSnapshot;
+  /** The SQL that produced it, where running it again is a scope the reader may ask for. */
+  statement?: string;
+  exportLimits?: { maxCellBytes?: number; statementTimeoutMs?: number };
+}
+
 export class SqlNotebookResultHost implements vscode.Disposable {
   private readonly messaging = vscode.notebooks.createRendererMessaging(SQL_NOTEBOOK_RENDERER_ID);
   private readonly sessions = new Map<string, HostedResultSession>();
@@ -115,15 +128,16 @@ export class SqlNotebookResultHost implements vscode.Disposable {
     return hasInteractiveNavigation(payload) ? payload : withoutNavigation(payload);
   }
 
-  registerStatic(
-    resultId: string,
-    payload: SqlNotebookResultPayload,
-    rows: SqlNotebookResultPayload["rows"],
-    cell: vscode.NotebookCell,
-    association: ScratchpadAssociationSnapshot,
-    statement: string | undefined,
-    exportLimits: { maxCellBytes?: number; statementTimeoutMs?: number } = {},
-  ): SqlNotebookResultPayload {
+  registerStatic(registration: StaticResultRegistration): SqlNotebookResultPayload {
+    const {
+      resultId,
+      payload,
+      rows,
+      cell,
+      association,
+      statement,
+      exportLimits = {},
+    } = registration;
     const result = {
       loadedResult: () => ({ columns: payload.columns, rows }),
       displayedRows: (start: number, length: number) => payload.rows.slice(start, start + length),
@@ -197,7 +211,10 @@ export class SqlNotebookResultHost implements vscode.Disposable {
     target: vscode.Uri,
     request: SqlResultExportRequest,
   ): Promise<number> {
-    const values = request.scope === "loaded" ? allHeldValues(hosted) : heldValues(hosted, request);
+    const values =
+      request.scope === "loaded"
+        ? allHeldValues(hosted, retainedSortFor(request))
+        : heldValues(hosted, request);
     const stream = createWriteStream(target.fsPath, { encoding: "utf8" });
     try {
       for (const chunk of dataViewExportChunks(values.columns, values.rows, request.choice)) {
@@ -226,7 +243,9 @@ export class SqlNotebookResultHost implements vscode.Disposable {
     }
     try {
       const values =
-        request.scope === "selection" ? heldValues(hosted, request) : allHeldValues(hosted);
+        request.scope === "selection"
+          ? heldValues(hosted, request)
+          : allHeldValues(hosted, retainedSortFor(request));
       await this.post(editor, {
         type: "sql-result/previewed",
         requestId: request.requestId,
@@ -409,11 +428,7 @@ export class SqlNotebookResultHost implements vscode.Disposable {
   }
 }
 
-/**
- * PostgreSQL is a recovery guard, not the product deadline. Keeping its timeout
- * behind the host deadline prevents both clocks from racing at the same instant.
- */
-
+/** Whether a result still has a page to move to, and so a navigation the reader can act on. */
 function hasInteractiveNavigation(payload: SqlNotebookResultPayload): boolean {
   const navigation = payload.navigation;
   return Boolean(
@@ -488,17 +503,41 @@ function isPreviewRequest(value: unknown): value is SqlResultPreviewRequest {
 
 type HeldRequest = Pick<SqlResultExportRequest, "scope" | "page" | "selection" | "sort">;
 
-function allHeldValues(hosted: HostedResultSession): {
+/**
+ * The sort a scope carries into the retained rows. Sorting a column is local to the result, so the
+ * rows loaded answer in the order the reader put them in. The entire query does not: it runs the
+ * statement again, and a re-run carries no local sort, so promising one would describe another file.
+ */
+function retainedSortFor(request: HeldRequest): HeldRequest["sort"] {
+  return request.scope === "loaded" ? request.sort : undefined;
+}
+
+/**
+ * Every retained row, in the order the reader put them in. A column sort is local to the result,
+ * so it orders the whole retained set here and not only the page it was applied on.
+ */
+function allHeldValues(
+  hosted: HostedResultSession,
+  sort: HeldRequest["sort"],
+): {
   columns: ExportColumn[];
   rows: (string | null)[][];
 } {
   const retained = hosted.result.loadedResult();
+  let rows = retained.rows;
+  if (sort) {
+    if (sort.columnIndex >= retained.columns.length) {
+      throw new Error("The result sort column is outside the retained columns.");
+    }
+    const order = sortedResultRowOrder(hosted.result.displayedRows(0, rows.length), sort);
+    rows = order.map((index) => rows[index] ?? []);
+  }
   return {
     columns: retained.columns.map((column) => ({
       name: column.name,
       ...(column.typeName ? { type: column.typeName } : {}),
     })),
-    rows: retained.rows.map((row) => row.map((cell) => cell.value)),
+    rows: rows.map((row) => row.map((cell) => cell.value)),
   };
 }
 

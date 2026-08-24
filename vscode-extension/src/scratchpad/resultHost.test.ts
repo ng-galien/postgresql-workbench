@@ -222,6 +222,59 @@ describe("SQL notebook result host", () => {
     host.dispose();
   });
 
+  it("orders every retained row by the column the reader sorted, not only the page shown", async () => {
+    const retained = [
+      [{ kind: "number", value: "1" }],
+      [{ kind: "number", value: "3" }],
+      [{ kind: "number", value: "2" }],
+    ] as SqlNotebookResultPayload["rows"];
+    const result = fakeResult({
+      loadedResult: () => ({ columns: payload.columns, rows: retained }),
+      displayedRows: (start: number, length: number) => retained.slice(start, start + length),
+    } as Partial<OffsetResultSession>);
+    const host = new SqlNotebookResultHost();
+    await host.register(result, fakeCell(), binding);
+    const editor = {} as vscode.NotebookEditor;
+    const previewLoaded = (requestId: number, scope: "loaded" | "all") => {
+      renderer.listener?.({
+        editor,
+        message: {
+          type: "sql-result/preview",
+          requestId,
+          resultId: "result-1",
+          choice: {
+            format: "csv",
+            header: false,
+            nullAs: "empty",
+            delimiter: ",",
+            createTable: false,
+            spreadsheetSafe: true,
+            finalNewline: false,
+          },
+          scope,
+          ...(scope === "all" ? {} : { page: { start: 1, length: 3 } }),
+          sort: { columnIndex: 0, direction: "descending" },
+        },
+      });
+    };
+
+    previewLoaded(1, "loaded");
+    await flush();
+    expect(renderer.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "sql-result/previewed", requestId: 1, text: "3\n2\n1" }),
+      editor,
+    );
+
+    // Running the query again carries no local sort, so its preview must not promise one.
+    previewLoaded(2, "all");
+    await flush();
+    expect(renderer.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "sql-result/previewed", requestId: 2, text: "1\n3\n2" }),
+      editor,
+    );
+    host.dispose();
+  });
+
   it("closes the page source when its cell is replaced", async () => {
     const first = fakeResult();
     const second = fakeResult({ id: "result-2" } as Partial<OffsetResultSession>);
