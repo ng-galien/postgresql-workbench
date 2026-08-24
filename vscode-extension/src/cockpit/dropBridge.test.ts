@@ -88,9 +88,9 @@ function acceptedPayload() {
   return {
     version: 1 as const,
     availability: "accepted" as const,
-    serverId: "server",
+    connectionId: "connection",
     database: "demo",
-    sourceUri: "postgresql://server/demo/shop/table/orders.sql",
+    sourceUri: "postgresql://connection/demo/shop/table/orders.sql",
     symbolUri: "code+moniker://orders",
     kind: "table" as const,
     label: "shop.orders",

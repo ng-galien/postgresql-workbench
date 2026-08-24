@@ -74,7 +74,7 @@ function completionId(index: number): string {
 
 /**
  * WHERE editor: multi-line (Shift+Enter), Enter applies, completions come from the SQL authoring
- * server through the host (Ctrl+Space or while typing).
+ * connection through the host (Ctrl+Space or while typing).
  *
  * Running the filter does not take the caret away from the line it was typed on: while the rows
  * are being fetched the field refuses keys but keeps them, because a disabled field loses the
@@ -1034,10 +1034,10 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
           <div className="toolbar-group toolbar-identity">
             <span
               className="data-view-association"
-              title={`Connexion Association: ${state.serverName} · ${state.source.database}`}
+              title={`Connection Association: ${state.connectionName} · ${state.source.database}`}
             >
               <span className="codicon codicon-database" aria-hidden="true" />
-              {associationLabel(state.serverName, state.source.database)}
+              {associationLabel(state.connectionName, state.source.database)}
             </span>
           </div>
 
@@ -1611,9 +1611,9 @@ function tableAccent(index: number): string {
   return TABLE_ACCENTS[index % TABLE_ACCENTS.length] ?? TABLE_ACCENTS[0] ?? "currentColor";
 }
 
-/** `server · database`, without repeating the database when the server name already ends with it. */
-function associationLabel(serverName: string, database: string): string {
-  return serverName.endsWith(`/${database}`) || serverName === database
-    ? serverName
-    : `${serverName} · ${database}`;
+/** `connection · database`, without repeating the database when the connection name already ends with it. */
+function associationLabel(connectionName: string, database: string): string {
+  return connectionName.endsWith(`/${database}`) || connectionName === database
+    ? connectionName
+    : `${connectionName} · ${database}`;
 }

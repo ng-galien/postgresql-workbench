@@ -45,7 +45,7 @@ export function registerGraphWorkbenchCommands(options: WorkbenchCommandOptions)
               ? candidate.target.object
               : undefined;
       const focused = selectedObject
-        ? { serverId: selectedObject.serverId, database: selectedObject.database }
+        ? { connectionId: selectedObject.connectionId, database: selectedObject.database }
         : graph.currentDatabase;
       if (!focused) {
         void vscode.window.showInformationMessage(
@@ -61,7 +61,7 @@ export function registerGraphWorkbenchCommands(options: WorkbenchCommandOptions)
         );
         return false;
       }
-      const selected = selectionMatchesDatabase(candidate, result.serverId, result.database)
+      const selected = selectionMatchesDatabase(candidate, result.connectionId, result.database)
         ? candidate
         : undefined;
       if (selected?.kind === "function" || selected?.kind === "object") {
@@ -73,7 +73,7 @@ export function registerGraphWorkbenchCommands(options: WorkbenchCommandOptions)
       if (selected?.kind === "relationTarget" && selected.target.object) {
         return graph.open(selected.target.object, result);
       }
-      const database = { serverId: result.serverId, database: result.database };
+      const database = { connectionId: result.connectionId, database: result.database };
       if (selected?.kind === "schema" || selected?.kind === "extensionGroup") {
         return graph.openSchema(database, selected.schema, result);
       }
@@ -109,7 +109,7 @@ export function registerGraphWorkbenchCommands(options: WorkbenchCommandOptions)
           return false;
         }
         return graph.open(object, {
-          serverId: result.serverId,
+          connectionId: result.connectionId,
           database: result.database,
           revision: snapshot.revision,
           generation: snapshot.generation,
@@ -152,7 +152,7 @@ export function registerGraphWorkbenchCommands(options: WorkbenchCommandOptions)
         const itemSnapshot = "snapshot" in input ? input.snapshot : undefined;
         const snapshot = requestedSnapshot ?? itemSnapshot ?? result;
         if (
-          result.serverId !== object.serverId ||
+          result.connectionId !== object.connectionId ||
           result.database !== object.database ||
           snapshot.revision !== result.revision ||
           snapshot.generation !== result.generation
@@ -209,7 +209,7 @@ export function registerGraphWorkbenchCommands(options: WorkbenchCommandOptions)
         const result = selectedState.result;
         if (!result || selectedState.status === "indexing") {
           void vscode.window.showInformationMessage(
-            "The selected Connexion index is not ready yet.",
+            "The selected Connection index is not ready yet.",
           );
           return undefined;
         }
@@ -233,7 +233,7 @@ export function registerGraphWorkbenchCommands(options: WorkbenchCommandOptions)
       async (context?: unknown) => {
         const item = routineTreeContext(context);
         const revealed = item
-          ? await coverage.revealRoutine(item.serverId, item.oid)
+          ? await coverage.revealRoutine(item.connectionId, item.oid)
           : await coverage.revealActiveRoutine();
         if (!revealed) {
           await vscode.window.showInformationMessage(

@@ -80,9 +80,9 @@ export interface DataViewDevHost {
 export async function startDataViewHost(options: DataViewHostOptions): Promise<DataViewDevHost> {
   const { connection, relation, emit } = options;
   const hideKeyColumns = options.hideKeyColumns ?? true;
-  const serverId = `${connection.host}:${connection.port}/${connection.database}:${connection.user}`;
-  // The chip names the server it is connected to; the database is shown beside it, not in its place.
-  const serverName = `${connection.host}:${connection.port}`;
+  const connectionId = `${connection.host}:${connection.port}/${connection.database}:${connection.user}`;
+  // The chip names the Connection; the database is shown beside it, not in its place.
+  const connectionName = `${connection.host}:${connection.port}`;
 
   const session: LocalCodeMonikerSession = await ensureLocalCodeMonikerWorkspace({
     workspaceRoots: [process.cwd()],
@@ -109,7 +109,7 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
   };
 
   let client = await connect(true);
-  const snapshot = await readSnapshot(client, serverId, connection.database);
+  const snapshot = await readSnapshot(client, connectionId, connection.database);
 
   // The real completions come from the language server; it has no parser, and answers back here.
   const languageServer = options.languageServerPath
@@ -123,13 +123,13 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
   const source: DataViewSource = relation
     ? {
         kind: "relation",
-        serverId,
+        connectionId,
         database: connection.database,
         schema: relation.schema,
         name: relation.name,
         relationKind: "table",
       }
-    : { kind: "sql", serverId, database: connection.database, sql: "", label: "" };
+    : { kind: "sql", connectionId, database: connection.database, sql: "", label: "" };
   const queryUri = relation
     ? `data-view:/${relation.schema}.${relation.name}.sql`
     : "data-view:/query.sql";
@@ -171,7 +171,7 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
     notify: (message, severity) => emit({ type: "data-view/notice", message, severity }),
     changed: () => broadcast(),
     reload: () => load(),
-    serverName: () => serverName,
+    connectionName: () => connectionName,
   };
 
   /*
@@ -262,7 +262,7 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
       type: "data-view/state",
       state: dataViewState({
         source,
-        serverName,
+        connectionName,
         queryUri,
         query,
         hidden,
@@ -303,7 +303,7 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
         client: reader,
         sql: query.effectiveSql(),
         settings: { pageSize: 200, maxCachedRows: 5_000, cursorIdleTimeoutSeconds: 300 },
-        binding: { serverId, serverName, database: connection.database },
+        binding: { connectionId, connectionName, database: connection.database },
         accents,
         checkpoint: () => {},
       });
@@ -616,10 +616,10 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
 /** The indexed objects and foreign keys the composition engine plans joins from. */
 async function readSnapshot(
   client: Client,
-  serverId: string,
+  connectionId: string,
   database: string,
 ): Promise<SqlAuthoringSnapshot> {
-  const catalog = await readPostgresCatalog(client, { serverId, database });
+  const catalog = await readPostgresCatalog(client, { connectionId, database });
   const relations = await client.query<{
     oid: number;
     schema: string;
@@ -635,12 +635,12 @@ async function readSnapshot(
     ORDER BY n.nspname, c.relname`);
   return {
     status: "available",
-    serverId,
+    connectionId,
     database,
     revision: "dev",
     generation: 1,
     objects: relations.rows.map((row) => ({
-      serverId,
+      connectionId,
       database,
       schema: row.schema,
       oid: Number(row.oid),

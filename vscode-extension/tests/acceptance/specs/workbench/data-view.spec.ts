@@ -1,7 +1,7 @@
 import {
+  demoConnectionTreeItem as connection,
   demoDatabaseTreeItem as database,
   demoAssociationText,
-  demoConnexionTreeItem as server,
 } from "../../fixtures/demoDatabase";
 import { expect, test } from "../../fixtures/test";
 import { createScratchpad } from "../../journeys/scratchpad";
@@ -18,7 +18,12 @@ import { SCHEMAS_TREE_ITEM } from "../../pages/WorkbenchTreeLabels";
 test.describe("Data View", () => {
   test("opens on a table and draws its rows", async ({ vscode, workbench }) => {
     await workbench.tree.scrollToTop();
-    const schema = await workbench.tree.expandPath([server, database, SCHEMAS_TREE_ITEM, /^shop$/]);
+    const schema = await workbench.tree.expandPath([
+      connection,
+      database,
+      SCHEMAS_TREE_ITEM,
+      /^shop$/,
+    ]);
     const table = await workbench.tree.findChild(schema, /^brand$/);
     await table.click();
     await vscode.executeCommand("postgresql-workbench.openDataView");

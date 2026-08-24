@@ -6,7 +6,7 @@ export interface CatalogQueryClient {
 }
 
 export interface PostgresCatalogIdentity {
-  serverId: string;
+  connectionId: string;
   database: string;
 }
 
@@ -868,7 +868,7 @@ export function postgresDocumentUri(
 }
 
 export function postgresDatabaseDocumentRoot(identity: PostgresCatalogIdentity): string {
-  return `postgresql://${encodeURIComponent(identity.serverId)}/${encodeURIComponent(identity.database)}/`;
+  return `postgresql://${encodeURIComponent(identity.connectionId)}/${encodeURIComponent(identity.database)}/`;
 }
 
 export function postgresDatabaseDocumentGlob(identity: PostgresCatalogIdentity): string {

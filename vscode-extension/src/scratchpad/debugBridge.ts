@@ -145,7 +145,7 @@ export function createScratchpadDebugging(deps: {
     return { picks };
   };
   const canDebugScratchpadSql: ScratchpadDebugEligibility = async ({ sql, association }) => {
-    if (cm.debugCapabilityFor(association.serverId).status !== "available") return false;
+    if (cm.debugCapabilityFor(association.connectionId).status !== "available") return false;
     const snapshot = workbenchIndex.sqlAuthoringSnapshot(association);
     if (snapshot?.status !== "available" || !sql.trim()) return false;
     try {
@@ -158,16 +158,16 @@ export function createScratchpadDebugging(deps: {
   const debugScratchpadSql: ScratchpadDebugger = async ({ sql, association, source }) => {
     const snapshot = workbenchIndex.sqlAuthoringSnapshot(association);
     if (snapshot?.status !== "available") {
-      const server = cm.store.get(association.serverId);
+      const connection = cm.store.get(association.connectionId);
       void vscode.window
         .showWarningMessage(
-          `Debug needs a fresh Workbench Index of ${server ? getConnectionName(server) : association.database}.`,
+          `Debug needs a fresh Workbench Index of ${connection ? getConnectionName(connection) : association.database}.`,
           "Index Association",
         )
         .then((choice) => {
           if (choice === "Index Association") {
             void vscode.commands.executeCommand("postgresql-workbench.indexAssociation", {
-              serverId: association.serverId,
+              connectionId: association.connectionId,
             });
           }
         });
@@ -190,7 +190,7 @@ export function createScratchpadDebugging(deps: {
               oid: triggerRoutine.oid,
               argTypes: [],
             },
-            serverId: association.serverId,
+            connectionId: association.connectionId,
             resultLabel: `${triggerRoutine.schema}.${triggerRoutine.name} · ${source.name}`,
             resultSource: source,
           },
@@ -221,7 +221,7 @@ export function createScratchpadDebugging(deps: {
     return startScratchpadDebug(
       {
         sql: selected.call.sql,
-        serverId: association.serverId,
+        connectionId: association.connectionId,
         resultLabel: `${selected.label.replace(/^(?:CALL|SELECT)\s+/u, "")} · ${source.name}:${selected.call.line}`,
         resultSource: { ...source, line: selected.call.line },
       },

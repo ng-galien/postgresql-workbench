@@ -55,7 +55,7 @@ const extensionConfig = {
 };
 
 /** @type {import('esbuild').BuildOptions} */
-const dapServerConfig = {
+const dapConnectionConfig = {
   entryPoints: ["src/dapServer.ts"],
   bundle: true,
   outfile: "dist/dap-server.js",
@@ -69,7 +69,7 @@ const dapServerConfig = {
 };
 
 /** @type {import('esbuild').BuildOptions} */
-const sqlAuthoringServerConfig = {
+const sqlAuthoringConnectionConfig = {
   entryPoints: ["../packages/sql/src/languageServer/server.ts"],
   bundle: true,
   outfile: "dist/sql-authoring-server.js",
@@ -208,8 +208,8 @@ async function main() {
   if (watch) {
     cleanDist();
     const extCtx = await esbuild.context(extensionConfig);
-    const dapCtx = await esbuild.context(dapServerConfig);
-    const sqlAuthoringCtx = await esbuild.context(sqlAuthoringServerConfig);
+    const dapCtx = await esbuild.context(dapConnectionConfig);
+    const sqlAuthoringCtx = await esbuild.context(sqlAuthoringConnectionConfig);
     const graphCtx = await esbuild.context(graphWebviewConfig);
     const notebookRendererCtx = await esbuild.context(sqlNotebookRendererConfig);
     const dataViewCtx = await esbuild.context(dataViewWebviewConfig);
@@ -228,8 +228,8 @@ async function main() {
     cleanDist();
     const results = await Promise.all([
       esbuild.build(extensionConfig),
-      esbuild.build(dapServerConfig),
-      esbuild.build(sqlAuthoringServerConfig),
+      esbuild.build(dapConnectionConfig),
+      esbuild.build(sqlAuthoringConnectionConfig),
       esbuild.build(graphWebviewConfig),
       esbuild.build(sqlNotebookRendererConfig),
       esbuild.build(dataViewWebviewConfig),

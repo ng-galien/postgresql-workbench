@@ -4,7 +4,7 @@ import type { SqlAuthoringSnapshot } from "../../snapshot.js";
 import { postgresCompletions } from "./completion.js";
 
 const SNAPSHOT: SqlAuthoringSnapshot = {
-  serverId: "test",
+  connectionId: "test",
   database: "demo",
   status: "available",
   revision: "1",
@@ -12,7 +12,7 @@ const SNAPSHOT: SqlAuthoringSnapshot = {
   foreignKeys: [],
   objects: [
     {
-      serverId: "test",
+      connectionId: "test",
       database: "demo",
       schema: "shop",
       oid: 1,

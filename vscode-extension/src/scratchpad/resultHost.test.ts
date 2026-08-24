@@ -31,8 +31,8 @@ import { postgresCursorSafetyTimeoutMs } from "../../../packages/rows/src/cursor
 import { SqlNotebookResultHost } from "./resultHost.js";
 
 const TEST_BINDING = {
-  serverId: "test-server",
-  serverName: "Test PostgreSQL",
+  connectionId: "test-connection",
+  connectionName: "Test PostgreSQL",
   database: "testdb",
 };
 

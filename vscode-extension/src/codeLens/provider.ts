@@ -12,7 +12,7 @@ import {
 } from "./policy.js";
 
 export interface CommandFunctionDefinition extends FunctionDefinition {
-  serverId?: string;
+  connectionId?: string;
   oid?: number;
   symbolUri?: string;
   documentUri?: string;
@@ -20,7 +20,7 @@ export interface CommandFunctionDefinition extends FunctionDefinition {
 }
 
 export interface CommandCallSite extends ParsedCallSite {
-  serverId?: string;
+  connectionId?: string;
   documentUri?: string;
 }
 
@@ -131,7 +131,7 @@ function connectionLens(
     arguments: [argument],
     tooltip: connection
       ? `Document Association: ${connection.name}. Run and Debug use it. Click to change.`
-      : "Choose the saved Connexion that Run and Debug use for this document.",
+      : "Choose the saved Connection that Run and Debug use for this document.",
   });
 }
 
@@ -144,7 +144,7 @@ function indexStateLens(
     title:
       state === "stale" ? "$(refresh) Index stale: reindex" : "$(refresh) Index missing: index",
     command: "postgresql-workbench.indexAssociation",
-    arguments: [{ serverId: connection.id }],
+    arguments: [{ connectionId: connection.id }],
     tooltip: `Debug needs a fresh Workbench Index of ${connection.name}. Run SQL does not.`,
   });
 }
@@ -227,7 +227,7 @@ export class SqlCodeLensProvider implements vscode.CodeLensProvider {
         ...(isVirtualPlpgsql ? { symbolUri: document.uri.toString(true) } : {}),
         documentUri: document.uri.toString(),
         documentVersion: document.version,
-        ...(isVirtualPlpgsql && documentConnection ? { serverId: documentConnection.id } : {}),
+        ...(isVirtualPlpgsql && documentConnection ? { connectionId: documentConnection.id } : {}),
       } satisfies CommandFunctionDefinition;
       const definitionDebug = documentConnection
         ? this.connections.debugDefinitionAvailability(documentConnection, def)

@@ -73,7 +73,7 @@ output, and termination events.
 ```
 
 > The standalone protocol needs connection credentials from its DAP client.
-> The VS Code extension instead resolves saved servers and keeps passwords in
+> The VS Code extension instead resolves saved Connections and keeps passwords in
 > SecretStorage.
 
 ## Capabilities

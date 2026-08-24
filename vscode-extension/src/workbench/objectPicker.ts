@@ -17,7 +17,7 @@ export interface WorkbenchObjectSelection {
 }
 export function selectionMatchesDatabase(
   item: PlpgsqlTreeItem | undefined,
-  serverId: string,
+  connectionId: string,
   database: string,
 ): boolean {
   if (!item) return false;
@@ -27,18 +27,24 @@ export function selectionMatchesDatabase(
     item.kind === "tableMember" ||
     item.kind === "relationGroup"
   ) {
-    return item.object.serverId === serverId && item.object.database === database;
+    return item.object.connectionId === connectionId && item.object.database === database;
   }
   if (item.kind === "relationTarget") {
-    return item.target.object?.serverId === serverId && item.target.object.database === database;
+    return (
+      item.target.object?.connectionId === connectionId && item.target.object.database === database
+    );
   }
   if (item.kind === "extensionGroup") {
     return item.objects.every(
-      (object) => object.serverId === serverId && object.database === database,
+      (object) => object.connectionId === connectionId && object.database === database,
     );
   }
-  if (item.kind === "server" || item.kind === "databaseSource" || item.kind === "sourcesSnapshot") {
-    return item.server.id === serverId && item.server.database === database;
+  if (
+    item.kind === "connection" ||
+    item.kind === "databaseSource" ||
+    item.kind === "sourcesSnapshot"
+  ) {
+    return item.connection.id === connectionId && item.connection.database === database;
   }
   return item.kind === "schema";
 }
@@ -115,10 +121,10 @@ export function pickWorkbenchObject(
 }
 export function routineTreeContext(
   context: unknown,
-): Pick<FunctionItem, "serverId" | "oid"> | undefined {
+): Pick<FunctionItem, "connectionId" | "oid"> | undefined {
   if (!context || typeof context !== "object") return undefined;
-  const candidate = context as { serverId?: unknown; oid?: unknown };
-  return typeof candidate.serverId === "string" && typeof candidate.oid === "number"
-    ? { serverId: candidate.serverId, oid: candidate.oid }
+  const candidate = context as { connectionId?: unknown; oid?: unknown };
+  return typeof candidate.connectionId === "string" && typeof candidate.oid === "number"
+    ? { connectionId: candidate.connectionId, oid: candidate.oid }
     : undefined;
 }

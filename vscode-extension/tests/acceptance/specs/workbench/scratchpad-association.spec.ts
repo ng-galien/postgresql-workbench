@@ -1,45 +1,48 @@
 import {
-  demoConnexionTreeItem as connexion,
+  demoConnectionTreeItem as connection,
   demoDatabaseTreeItem as database,
   demoConnectionUrl,
   loopbackConnectionId,
+  loopbackConnectionTreeItem,
   loopbackConnectionUrl,
-  loopbackConnexionTreeItem,
 } from "../../fixtures/demoDatabase";
 import { expect, test } from "../../fixtures/test";
 import { SCHEMAS_TREE_ITEM } from "../../pages/WorkbenchTreeLabels";
 
 test.describe("Scratchpad Association", () => {
-  test("creates an unassociated Scratchpad when a multiple-Connexion choice is cancelled", async ({
+  test("creates an unassociated Scratchpad when a multiple-Connection choice is cancelled", async ({
     workbench,
     notebook,
     vscode,
   }) => {
-    await workbench.ensureServer(demoConnectionUrl, connexion);
-    await workbench.addServer(loopbackConnectionUrl, loopbackConnexionTreeItem);
+    await workbench.ensureConnection(demoConnectionUrl, connection);
+    await workbench.addConnection(loopbackConnectionUrl, loopbackConnectionTreeItem);
     let filterApplied = false;
     try {
-      await test.step("keep equal database names inside their exact Connexion branch", async () => {
+      await test.step("keep equal database names inside their exact Connection branch", async () => {
         const loopbackDatabase = await workbench.tree.expandPath([
-          loopbackConnexionTreeItem,
+          loopbackConnectionTreeItem,
           database,
         ]);
         const loopbackSources = await workbench.tree.findChild(loopbackDatabase, SCHEMAS_TREE_ITEM);
         await expect(loopbackSources).toContainText("available", { timeout: 30_000 });
 
-        const localDatabase = await workbench.tree.expandPath([connexion, database]);
+        const localDatabase = await workbench.tree.expandPath([connection, database]);
         const localSources = await workbench.tree.findChild(localDatabase, SCHEMAS_TREE_ITEM);
         await expect(localSources).toContainText("available");
-        await workbench.expectFreshIndexRuntime({ serverId: loopbackConnectionId });
+        await workbench.expectFreshIndexRuntime({ connectionId: loopbackConnectionId });
       });
 
       await workbench.scratchpads.create();
-      await expect(workbench.quickInput.input).toHaveAttribute("placeholder", "Choose a Connexion");
+      await expect(workbench.quickInput.input).toHaveAttribute(
+        "placeholder",
+        "Choose a Connection",
+      );
       await workbench.quickInput.cancel();
 
       await notebook.activateLatestScratchpad();
       await expect(notebook.cells).toHaveCount(1, { timeout: 5_000 });
-      await expect(notebook.cell(0)).toContainText("Choose a Connexion");
+      await expect(notebook.cell(0)).toContainText("Choose a Connection");
       const createdScratchpad = await workbench.scratchpads.active();
       await expect(createdScratchpad).toContainText(/No connection.*AUTO/u);
 
@@ -56,8 +59,8 @@ test.describe("Scratchpad Association", () => {
       });
     } finally {
       if (filterApplied) await workbench.scratchpads.filter("").catch(() => {});
-      await vscode.removeServer(loopbackConnectionId);
+      await vscode.removeConnection(loopbackConnectionId);
     }
-    await workbench.tree.expectItemAbsent(loopbackConnexionTreeItem);
+    await workbench.tree.expectItemAbsent(loopbackConnectionTreeItem);
   });
 });

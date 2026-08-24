@@ -28,13 +28,13 @@ export class CallSiteConnectionStore {
     return this.state.get<Record<string, string>>(STATE_KEY, {})[documentUri];
   }
 
-  async assign(call: CallSiteConnectionReference, serverId: string): Promise<void> {
-    await this.assignDocument(call.documentUri, serverId);
+  async assign(call: CallSiteConnectionReference, connectionId: string): Promise<void> {
+    await this.assignDocument(call.documentUri, connectionId);
   }
 
-  async assignDocument(documentUri: string, serverId: string): Promise<void> {
+  async assignDocument(documentUri: string, connectionId: string): Promise<void> {
     const assignments = this.state.get<Record<string, string>>(STATE_KEY, {});
-    await this.state.update(STATE_KEY, { ...assignments, [documentUri]: serverId });
+    await this.state.update(STATE_KEY, { ...assignments, [documentUri]: connectionId });
   }
 
   async clear(call: CallSiteConnectionReference): Promise<void> {

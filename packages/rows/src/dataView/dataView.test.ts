@@ -197,7 +197,7 @@ describe("what a deletion drags along", () => {
 describe("what a Data View is called", () => {
   const sql: DataViewSource = {
     kind: "sql",
-    serverId: "s",
+    connectionId: "s",
     database: "demo",
     sql: "SELECT inventory_movement.id, inventory_movement.inventory_id FROM shop.inventory_movement",
     label: "SELECT inventory_movement.id, inventory_movement.inventory_id…",
@@ -214,7 +214,7 @@ describe("what a Data View is called", () => {
       dataViewTitle(
         {
           kind: "relation",
-          serverId: "s",
+          connectionId: "s",
           database: "demo",
           schema: "shop",
           name: "brand",

@@ -61,7 +61,10 @@ describe("Data View JOIN composition on PostgreSQL", () => {
     client = new Client(CONNECTION);
     await client.connect();
     await client.query(SCHEMA_SQL);
-    const catalog = await readPostgresCatalog(client, { serverId: "e2e", database: "postgres" });
+    const catalog = await readPostgresCatalog(client, {
+      connectionId: "e2e",
+      database: "postgres",
+    });
     const relations = await client.query<{
       oid: number;
       schema: string;
@@ -77,12 +80,12 @@ describe("Data View JOIN composition on PostgreSQL", () => {
       ORDER BY c.relname`);
     snapshot = {
       status: "available",
-      serverId: "e2e",
+      connectionId: "e2e",
       database: "postgres",
       revision: "r1",
       generation: 1,
       objects: relations.rows.map((row) => ({
-        serverId: "e2e",
+        connectionId: "e2e",
         database: "postgres",
         schema: row.schema,
         oid: Number(row.oid),
@@ -118,7 +121,7 @@ describe("Data View JOIN composition on PostgreSQL", () => {
       offset: analysis.statement.end,
       payload: {
         kind: target.kind === "view" ? ("view" as const) : ("table" as const),
-        serverId: "e2e",
+        connectionId: "e2e",
         database: "postgres",
         oid: target.oid,
         schema: target.schema,
@@ -270,7 +273,7 @@ describe("Data View JOIN composition on PostgreSQL", () => {
         offset: analysis.statement.end,
         payload: {
           kind: "table",
-          serverId: "e2e",
+          connectionId: "e2e",
           database: "postgres",
           oid: address.oid,
           schema: address.schema,

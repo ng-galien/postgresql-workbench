@@ -27,8 +27,8 @@ import {
 
 const object = {
   symbolUri: "code+moniker://orders",
-  sourceUri: "postgresql://server/demo/shop/table/orders.sql",
-  serverId: "server",
+  sourceUri: "postgresql://connection/demo/shop/table/orders.sql",
+  connectionId: "connection",
   database: "demo",
   schema: "shop",
   oid: 42,
@@ -44,7 +44,7 @@ describe("Workbench TreeView graph dragging", () => {
     expect(dragPayload([{ kind: "object", object } as unknown as PlpgsqlTreeItem])).toEqual({
       version: 1,
       availability: "accepted",
-      serverId: "server",
+      connectionId: "connection",
       database: "demo",
       sourceUri: object.sourceUri,
       symbolUri: object.symbolUri,
@@ -77,7 +77,7 @@ describe("Workbench TreeView graph dragging", () => {
       sqlAuthoringDragPayload([{ kind: "object", object } as unknown as PlpgsqlTreeItem]),
     ).toEqual({
       kind: "table",
-      serverId: "server",
+      connectionId: "connection",
       database: "demo",
       oid: 42,
       schema: "shop",
@@ -93,7 +93,7 @@ describe("Workbench TreeView graph dragging", () => {
       ]),
     ).toEqual({
       kind: "column",
-      serverId: "server",
+      connectionId: "connection",
       database: "demo",
       tableOid: 42,
       tableSchema: "shop",
@@ -115,7 +115,7 @@ describe("Workbench TreeView graph dragging", () => {
       ]),
     ).toEqual({
       kind: "procedure",
-      serverId: "server",
+      connectionId: "connection",
       database: "demo",
       oid: 43,
       schema: "shop",
@@ -135,7 +135,7 @@ describe("Workbench TreeView graph dragging", () => {
       ]),
     ).toEqual({
       kind: "trigger",
-      serverId: "server",
+      connectionId: "connection",
       database: "demo",
       oid: 44,
       schema: "shop",
@@ -144,7 +144,7 @@ describe("Workbench TreeView graph dragging", () => {
   });
 
   it("does not advertise graph dragging for connections or scratchpads", () => {
-    expect(dragPayload([{ kind: "server" } as PlpgsqlTreeItem])).toBeUndefined();
+    expect(dragPayload([{ kind: "connection" } as PlpgsqlTreeItem])).toBeUndefined();
     expect(dragPayload([{ kind: "sqlNotebook" } as PlpgsqlTreeItem])).toBeUndefined();
   });
 
@@ -156,7 +156,7 @@ describe("Workbench TreeView graph dragging", () => {
     expect(accepted.values.has(WORKBENCH_GRAPH_OBJECT_MIME)).toBe(true);
     expect(parseSqlAuthoringDrag(String(accepted.values.get(SQL_AUTHORING_OBJECT_MIME)))).toEqual({
       kind: "table",
-      serverId: "server",
+      connectionId: "connection",
       database: "demo",
       oid: 42,
       schema: "shop",

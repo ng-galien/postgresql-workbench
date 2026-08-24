@@ -8,9 +8,9 @@ import { SqlEditorPage } from "../pages/SqlEditorPage";
 import { WorkbenchPage } from "../pages/WorkbenchPage";
 import {
   type DemoDatabase,
+  demoConnectionTreeItem as demoConnection,
   demoConnectionId,
   demoConnectionUrl,
-  demoConnexionTreeItem as demoConnexion,
   demoDatabaseTreeItem as demoDatabase,
   startDemoDatabase,
 } from "./demoDatabase";
@@ -84,8 +84,8 @@ export const test = base.extend<AcceptanceFixtures, AcceptanceWorkerFixtures>({
       );
       await workbench.reset();
       await workbench.scratchpads.collapseAll();
-      await workbench.ensureServer(demoConnectionUrl, demoConnexion);
-      await workbench.ensureDatabaseIndexed(demoConnexion, demoDatabase);
+      await workbench.ensureConnection(demoConnectionUrl, demoConnection);
+      await workbench.ensureDatabaseIndexed(demoConnection, demoDatabase);
       await use(undefined);
     },
     { scope: "worker", auto: true, timeout: 60_000 },
@@ -103,7 +103,7 @@ export const test = base.extend<AcceptanceFixtures, AcceptanceWorkerFixtures>({
     await startWorkbench(workbench, vscode.inspectWorkbenchState, {
       connectionUrl: demoConnectionUrl,
       connectionId: demoConnectionId,
-      server: demoConnexion,
+      connection: demoConnection,
       database: demoDatabase,
     });
     let cleanupError: Error | undefined;

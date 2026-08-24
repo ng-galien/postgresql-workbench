@@ -7,8 +7,8 @@ import { ScratchpadsView } from "./ScratchpadsView";
 import { WorkbenchTree } from "./WorkbenchTree";
 import { SCHEMAS_TREE_ITEM } from "./WorkbenchTreeLabels";
 
-// A Connexion row reads "connected" or "disconnected"; match the former only.
-const CONNECTED_TEXT = /(?<!dis)connected/u;
+// A Connection row reads "connected" or "disconnected"; match the former only.
+export const CONNECTED_TEXT = /(?<!dis)connected/u;
 
 export class WorkbenchPage {
   readonly quickInput: QuickInput;
@@ -46,21 +46,21 @@ export class WorkbenchPage {
     await this.tree.collapseAll();
   }
 
-  async addServer(connectionUrl: string, expectedServer: RegExp): Promise<void> {
-    const addServer = await this.tree.findItem(/^(Add an existing server|Add Server)/);
-    await addServer.click();
-    await this.quickInput.chooseThenInput(/Add server/i, /postgresql:\/\/user:pass@localhost/i);
+  async addConnection(connectionUrl: string, expectedConnection: RegExp): Promise<void> {
+    const addConnection = await this.tree.findItem(/^Add Connection\.\.\.$/);
+    await addConnection.click();
+    await this.quickInput.chooseThenInput(/Add connection/i, /postgresql:\/\/user:pass@localhost/i);
     await this.quickInput.submit(connectionUrl, /postgresql:\/\/user:pass@localhost/i);
-    await expect(await this.tree.waitForItem(expectedServer)).toContainText(CONNECTED_TEXT, {
+    await expect(await this.tree.waitForItem(expectedConnection)).toContainText(CONNECTED_TEXT, {
       timeout: 5_000,
     });
   }
 
-  async ensureServer(connectionUrl: string, expectedServer: RegExp): Promise<void> {
-    const existing = await this.tree.findItem(expectedServer).catch(() => undefined);
+  async ensureConnection(connectionUrl: string, expectedConnection: RegExp): Promise<void> {
+    const existing = await this.tree.findItem(expectedConnection).catch(() => undefined);
     if (existing !== undefined) {
       if (!CONNECTED_TEXT.test(await existing.innerText())) {
-        await this.tree.hoverItem(existing, expectedServer);
+        await this.tree.hoverItem(existing, expectedConnection);
         const connect = this.page.getByRole("button", { name: "Connect", exact: true });
         await expect(connect).toBeVisible({ timeout: 5_000 });
         await connect.click();
@@ -77,11 +77,11 @@ export class WorkbenchPage {
       await expect(existing).toContainText(CONNECTED_TEXT, { timeout: 5_000 });
       return;
     }
-    await this.addServer(connectionUrl, expectedServer);
+    await this.addConnection(connectionUrl, expectedConnection);
   }
 
-  async ensureDatabaseIndexed(server: RegExp, database: RegExp): Promise<void> {
-    const databaseItem = await this.tree.expandPath([server, database]);
+  async ensureDatabaseIndexed(connection: RegExp, database: RegExp): Promise<void> {
+    const databaseItem = await this.tree.expandPath([connection, database]);
     const schemas = await this.tree.findChild(databaseItem, SCHEMAS_TREE_ITEM);
     const state = await this.expectSchemasState(
       schemas,
@@ -97,8 +97,8 @@ export class WorkbenchPage {
     await this.expectFreshIndexRuntime({ database });
   }
 
-  async expectDatabaseIndexed(server: RegExp, database: RegExp): Promise<void> {
-    const databaseItem = await this.tree.expandPath([server, database]);
+  async expectDatabaseIndexed(connection: RegExp, database: RegExp): Promise<void> {
+    const databaseItem = await this.tree.expandPath([connection, database]);
     const schemas = await this.tree.findChild(databaseItem, SCHEMAS_TREE_ITEM);
     await this.expectSchemasState(schemas, /^(?:indexing|refreshing|available)$/u, 5_000);
     await this.expectSchemasState(schemas, /^available$/u, 10_000);
@@ -107,11 +107,11 @@ export class WorkbenchPage {
   }
 
   async expectFreshIndexRuntime(
-    expected: { database?: RegExp; serverId?: string; settledRunId?: number } = {},
+    expected: { database?: RegExp; connectionId?: string; settledRunId?: number } = {},
   ): Promise<{
     generation: number;
     revision: string;
-    serverId: string;
+    connectionId: string;
   }> {
     if (!this.inspectWorkbenchState) {
       throw new Error("The Workbench runtime inspector is required for index readiness");
@@ -124,17 +124,19 @@ export class WorkbenchPage {
           const candidates = (observed?.index.states ?? []).filter((state) => {
             const result = state.result;
             if (!result || state.status !== "available") return false;
-            if (!observed?.connection.connectedServerIds.includes(result.serverId)) return false;
-            if (expected.serverId && result.serverId !== expected.serverId) return false;
+            if (!observed?.connection.connectedConnectionIds.includes(result.connectionId))
+              return false;
+            if (expected.connectionId && result.connectionId !== expected.connectionId)
+              return false;
             return !expected.database || regexMatches(expected.database, result.database);
           });
           const settledRun = observed?.index.lastSettledRun;
-          const serverId = candidates[0]?.result?.serverId;
-          // Quiescence is judged for this exact Connexion: other Connexions may
+          const connectionId = candidates[0]?.result?.connectionId;
+          // Quiescence is judged for this exact Connection: other Connections may
           // keep indexing concurrently without affecting this snapshot.
           const busy =
-            observed?.index.activeRuns.some((run) => run.serverId === serverId) ||
-            observed?.index.pendingRuns.some((run) => run.serverId === serverId);
+            observed?.index.activeRuns.some((run) => run.connectionId === connectionId) ||
+            observed?.index.pendingRuns.some((run) => run.connectionId === connectionId);
           return Boolean(
             observed?.connection.connected &&
               candidates.length === 1 &&
@@ -148,7 +150,7 @@ export class WorkbenchPage {
         },
         {
           timeout: 10_000,
-          message: "The exact Connexion index must be published and quiescent",
+          message: "The exact Connection index must be published and quiescent",
         },
       )
       .toBe(true)
@@ -161,8 +163,8 @@ export class WorkbenchPage {
     const candidates = (observed?.index.states ?? []).filter((state) => {
       const result = state.result;
       if (!result || state.status !== "available") return false;
-      if (!observed?.connection.connectedServerIds.includes(result.serverId)) return false;
-      if (expected.serverId && result.serverId !== expected.serverId) return false;
+      if (!observed?.connection.connectedConnectionIds.includes(result.connectionId)) return false;
+      if (expected.connectionId && result.connectionId !== expected.connectionId) return false;
       return !expected.database || regexMatches(expected.database, result.database);
     });
     const result = candidates[0]?.result;
@@ -174,7 +176,7 @@ export class WorkbenchPage {
     return {
       generation: result.generation,
       revision: result.revision,
-      serverId: result.serverId,
+      connectionId: result.connectionId,
     };
   }
 
@@ -201,43 +203,53 @@ export class WorkbenchPage {
   }
 
   async openRoutineSource(
-    server: RegExp,
+    connection: RegExp,
     database: RegExp,
     schema: RegExp,
     routine: RegExp,
   ): Promise<void> {
-    await this.openIndexedDefinition(server, database, schema, routine);
+    await this.openIndexedDefinition(connection, database, schema, routine);
   }
 
   async openIndexedDefinition(
-    server: RegExp,
+    connection: RegExp,
     database: RegExp,
     schema: RegExp,
     object: RegExp,
   ): Promise<void> {
     await this.tree.scrollToTop();
-    await this.expectDatabaseIndexed(server, database);
-    const schemaItem = await this.tree.expandPath([server, database, SCHEMAS_TREE_ITEM, schema]);
+    await this.expectDatabaseIndexed(connection, database);
+    const schemaItem = await this.tree.expandPath([
+      connection,
+      database,
+      SCHEMAS_TREE_ITEM,
+      schema,
+    ]);
     const item = await this.tree.findChild(schemaItem, object);
     await expect(item).toBeVisible({ timeout: 5_000 });
     await item.click();
     await this.tree.hoverItem(item, object);
     // Use the extension-owned command title exposed by VS Code's accessibility
     // tree. It stays stable across VS Code locales and DOM layout changes.
-    const openSource = this.page.getByRole("button", { name: "Open PostgreSQL Definition" });
+    const openSource = this.page.getByRole("button", { name: "Open Definition" });
     await expect(openSource).toBeVisible({ timeout: 5_000 });
     await openSource.click();
   }
 
   async debugRoutineFromTree(
-    server: RegExp,
+    connection: RegExp,
     database: RegExp,
     schema: RegExp,
     routine: RegExp,
   ): Promise<void> {
     await this.tree.scrollToTop();
-    await this.expectDatabaseIndexed(server, database);
-    const schemaItem = await this.tree.expandPath([server, database, SCHEMAS_TREE_ITEM, schema]);
+    await this.expectDatabaseIndexed(connection, database);
+    const schemaItem = await this.tree.expandPath([
+      connection,
+      database,
+      SCHEMAS_TREE_ITEM,
+      schema,
+    ]);
     const item = await this.tree.findChild(schemaItem, routine);
     await this.tree.hoverItem(item, routine);
     const debug = this.page.getByRole("button", { name: "Debug", exact: true });
@@ -246,56 +258,68 @@ export class WorkbenchPage {
   }
 
   async openCockpit(): Promise<void> {
-    await this.tree.clickHeaderAction(/Open PostgreSQL Cockpit/i);
+    await this.tree.clickHeaderAction(/Open Cockpit/i);
   }
 
-  async enableAndProvisionSchemaSync(server: RegExp, database: RegExp): Promise<void> {
-    let schemaSync = await this.schemaSyncItem(server, database);
+  /**
+   * The button of a modal confirmation. VS Code draws its own dialogs, and a tree row's inline
+   * action carries the same accessible name as the button that confirms it — "Provision" names
+   * both. Asking the page for that name reaches the row behind the dimmed block and waits there
+   * until the action times out, so a confirmation is always asked for inside the dialog.
+   */
+  confirmation(label: string): Locator {
+    return this.page
+      .locator(".monaco-dialog-box")
+      .getByRole("button", { name: label, exact: true });
+  }
+
+  async enableAndProvisionSchemaSync(connection: RegExp, database: RegExp): Promise<void> {
+    let schemaSync = await this.schemaSyncItem(connection, database);
     await expect(schemaSync).toContainText("disabled", { timeout: 5_000 });
     await schemaSync.click();
-    await this.quickInput.chooseAndClose(/Enable for this Connexion/i);
-    schemaSync = await this.schemaSyncItem(server, database);
+    await this.quickInput.chooseAndClose(/Enable for this Connection/i);
+    schemaSync = await this.schemaSyncItem(connection, database);
     await expect(schemaSync).toContainText("provisioning required", { timeout: 5_000 });
 
     await this.tree.hoverItem(schemaSync, /^Schema synchronization/);
-    await schemaSync.getByLabel(/Provision Schema Synchronization/i).click();
-    const provision = this.page.getByRole("button", { name: "Provision", exact: true });
+    await schemaSync.getByLabel(/^Provision$/i).click();
+    const provision = this.confirmation("Provision");
     await expect(provision).toBeVisible({ timeout: 5_000 });
     await provision.click();
-    schemaSync = await this.schemaSyncItem(server, database);
+    schemaSync = await this.schemaSyncItem(connection, database);
     await expect(schemaSync).toContainText("listening", { timeout: 10_000 });
   }
 
-  async restartSchemaSync(server: RegExp, database: RegExp): Promise<void> {
-    let schemaSync = await this.schemaSyncItem(server, database);
+  async restartSchemaSync(connection: RegExp, database: RegExp): Promise<void> {
+    let schemaSync = await this.schemaSyncItem(connection, database);
     await schemaSync.click();
-    await this.quickInput.chooseAndClose(/Disable for this Connexion/i);
-    schemaSync = await this.schemaSyncItem(server, database);
+    await this.quickInput.chooseAndClose(/Disable for this Connection/i);
+    schemaSync = await this.schemaSyncItem(connection, database);
     await expect(schemaSync).toContainText("disabled", { timeout: 5_000 });
 
     await schemaSync.click();
-    await this.quickInput.chooseAndClose(/Enable for this Connexion/i);
-    schemaSync = await this.schemaSyncItem(server, database);
+    await this.quickInput.chooseAndClose(/Enable for this Connection/i);
+    schemaSync = await this.schemaSyncItem(connection, database);
     await expect(schemaSync).toContainText("listening", { timeout: 10_000 });
   }
 
-  async removeAndDisableSchemaSync(server: RegExp, database: RegExp): Promise<void> {
-    let schemaSync = await this.schemaSyncItem(server, database);
+  async removeAndDisableSchemaSync(connection: RegExp, database: RegExp): Promise<void> {
+    let schemaSync = await this.schemaSyncItem(connection, database);
     await schemaSync.click();
     await this.quickInput.chooseAndClose(/Remove database provisioning/i);
-    const remove = this.page.getByRole("button", { name: "Remove Provisioning", exact: true });
+    const remove = this.confirmation("Remove Provisioning");
     await expect(remove).toBeVisible({ timeout: 5_000 });
     await remove.click();
-    schemaSync = await this.schemaSyncItem(server, database);
+    schemaSync = await this.schemaSyncItem(connection, database);
     await expect(schemaSync).toContainText("provisioning required", { timeout: 10_000 });
     await schemaSync.click();
-    await this.quickInput.chooseAndClose(/Disable for this Connexion/i);
-    schemaSync = await this.schemaSyncItem(server, database);
+    await this.quickInput.chooseAndClose(/Disable for this Connection/i);
+    schemaSync = await this.schemaSyncItem(connection, database);
     await expect(schemaSync).toContainText("disabled", { timeout: 5_000 });
   }
 
-  private async schemaSyncItem(server: RegExp, database: RegExp): Promise<Locator> {
-    const databaseItem = await this.tree.expandPath([server, database]);
+  private async schemaSyncItem(connection: RegExp, database: RegExp): Promise<Locator> {
+    const databaseItem = await this.tree.expandPath([connection, database]);
     const schemaSync = await this.tree.findChild(databaseItem, /^Schema synchronization/);
     return this.tree.waitForStableItem(schemaSync, "Schema synchronization");
   }

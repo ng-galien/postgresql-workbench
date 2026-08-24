@@ -30,7 +30,7 @@ export function initialDataViewQuery(
   }
   return fallbackColumns().then((columns) => {
     const relation: SqlAuthoringObject = {
-      serverId: source.serverId,
+      connectionId: source.connectionId,
       database: source.database,
       schema: source.schema,
       oid: 0,

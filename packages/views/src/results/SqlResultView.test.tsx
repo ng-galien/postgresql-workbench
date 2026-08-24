@@ -7,8 +7,8 @@ function payload(overrides: Partial<SqlNotebookResultPayload> = {}): SqlNotebook
   return {
     version: 2,
     binding: {
-      serverId: "test-server",
-      serverName: "Test PostgreSQL",
+      connectionId: "test-connection",
+      connectionName: "Test PostgreSQL",
       database: "testdb",
     },
     command: "SELECT",

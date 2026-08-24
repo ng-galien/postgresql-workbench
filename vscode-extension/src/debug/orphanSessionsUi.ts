@@ -73,23 +73,23 @@ export async function manageDebugSessions(
   out: vscode.OutputChannel,
   statuses: () => readonly DebugSessionStatus[] = () => [],
 ): Promise<void> {
-  let server =
-    cm.connectedServerIds.length === 1 ? cm.store.get(cm.connectedServerIds[0]) : undefined;
-  if (!server && cm.connectedServerIds.length > 1) {
+  let connection =
+    cm.connectedConnectionIds.length === 1 ? cm.store.get(cm.connectedConnectionIds[0]) : undefined;
+  if (!connection && cm.connectedConnectionIds.length > 1) {
     const picked = await vscode.window.showQuickPick(
-      cm.connectedServerIds.flatMap((id) => {
+      cm.connectedConnectionIds.flatMap((id) => {
         const candidate = cm.store.get(id);
-        return candidate ? [{ label: getConnectionName(candidate), server: candidate }] : [];
+        return candidate ? [{ label: getConnectionName(candidate), connection: candidate }] : [];
       }),
-      { placeHolder: "Select the Connexion whose debug sessions you want to manage" },
+      { placeHolder: "Select the Connection whose debug sessions you want to manage" },
     );
-    server = picked?.server;
+    connection = picked?.connection;
   }
-  if (!server) {
-    vscode.window.showInformationMessage("Connect to a PostgreSQL server first.");
+  if (!connection) {
+    vscode.window.showInformationMessage("Connect to a PostgreSQL connection first.");
     return;
   }
-  const client = cm.getClient(server.id);
+  const client = cm.getClient(connection.id);
   if (!client) return;
 
   let sessions: DebugSessionInfo[];
@@ -104,7 +104,7 @@ export async function manageDebugSessions(
 
   if (sessions.length === 0) {
     vscode.window.showInformationMessage(
-      `${getConnectionName(server)}: no PL/pgSQL debug sessions found.`,
+      `${getConnectionName(connection)}: no PL/pgSQL debug sessions found.`,
     );
     treeProvider.refresh();
     return;
@@ -121,7 +121,7 @@ export async function manageDebugSessions(
       canPickMany: true,
       ignoreFocusOut: true,
       placeHolder: "Select stale or blocked debug sessions to terminate",
-      title: `${getConnectionName(server)} — Debug session recovery`,
+      title: `${getConnectionName(connection)} — Debug session recovery`,
     },
   );
   if (!picked || picked.length === 0) return;

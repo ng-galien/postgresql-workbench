@@ -78,7 +78,7 @@ export function SqlResultView({ payload, messaging }: SqlResultViewProps) {
           <span className="result-badge">{current.command}</span>
           <span
             className="result-binding"
-            title={`Result binding: ${current.binding.serverName} · ${current.binding.database}`}
+            title={`Result binding: ${current.binding.connectionName} · ${current.binding.database}`}
           >
             {current.binding.database}
           </span>

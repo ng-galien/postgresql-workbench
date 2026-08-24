@@ -1,6 +1,6 @@
 import {
+  type ConnectionConfig,
   getConnectionName,
-  type ServerConfig,
 } from "../../../packages/catalog/src/savedConnection.js";
 import {
   type DebugLaunchRoutineArgument,
@@ -22,6 +22,8 @@ export interface DebugConfigurationLike {
   resultLabel?: string;
   resultSource?: DebugResultSource;
   stopOnEntry?: boolean;
+  connection?: string;
+  /** Historical persisted launch.json key; normalized to `connection` before resolution. */
   server?: string;
   host?: string;
   port?: number;
@@ -47,17 +49,17 @@ export interface DebugConfigLogger {
 }
 
 export interface DebugConfigConnectionStore {
-  get(id: string): ServerConfig | undefined;
+  get(id: string): ConnectionConfig | undefined;
 }
 
 export interface DebugConfigConnectionManager {
   store: DebugConfigConnectionStore;
-  connectedServerIds: readonly string[];
+  connectedConnectionIds: readonly string[];
   commands: { pickConnection(): Promise<string | undefined> };
-  isServerConnected(id: string): boolean;
-  connectServer(id: string): Promise<boolean>;
+  isConnectionConnected(id: string): boolean;
+  connectConnection(id: string): Promise<boolean>;
   refreshDebugCapability(
-    serverId: string,
+    connectionId: string,
   ): Promise<{ available: boolean; error: string } | undefined>;
   getPassword(id: string): Promise<string>;
 }
@@ -150,48 +152,50 @@ export async function resolveDebugConfiguration(
     return config;
   }
 
-  const serverId = config.server;
-  let server = serverId
-    ? cm.store.get(serverId)
-    : cm.connectedServerIds.length === 1
-      ? cm.store.get(cm.connectedServerIds[0])
+  const connectionId = config.connection ?? config.server;
+  if (connectionId) config.connection = connectionId;
+  delete config.server;
+  let connection = connectionId
+    ? cm.store.get(connectionId)
+    : cm.connectedConnectionIds.length === 1
+      ? cm.store.get(cm.connectedConnectionIds[0])
       : undefined;
 
-  if (serverId && !server) {
+  if (connectionId && !connection) {
     await ui.showErrorMessage(
-      "The saved Connexion for this debug target no longer exists. Choose the Association again.",
+      "The saved Connection for this debug target no longer exists. Choose the Association again.",
     );
     return undefined;
   }
-  if (!server) {
+  if (!connection) {
     const picked = await cm.commands.pickConnection();
     if (!picked) return undefined;
-    server = cm.store.get(picked);
-    if (!server) return undefined;
+    connection = cm.store.get(picked);
+    if (!connection) return undefined;
   }
 
-  if (!cm.isServerConnected(server.id)) {
-    const ok = await cm.connectServer(server.id);
+  if (!cm.isConnectionConnected(connection.id)) {
+    const ok = await cm.connectConnection(connection.id);
     if (!ok) return undefined;
   }
 
-  const capability = await cm.refreshDebugCapability(server.id);
+  const capability = await cm.refreshDebugCapability(connection.id);
   if (!capability?.available) {
     await ui.showErrorMessage(
-      `${getConnectionName(server)}: PL/pgSQL debugging is unavailable. ${capability?.error || "The debugger capability could not be verified."}`,
+      `${getConnectionName(connection)}: PL/pgSQL debugging is unavailable. ${capability?.error || "The debugger capability could not be verified."}`,
     );
     return undefined;
   }
 
-  config.server = server.id;
-  const password = await cm.getPassword(server.id);
-  config.host = server.host;
-  config.port = server.port;
-  config.database = server.database;
-  config.user = server.user;
+  config.connection = connection.id;
+  const password = await cm.getPassword(connection.id);
+  config.host = connection.host;
+  config.port = connection.port;
+  config.database = connection.database;
+  config.user = connection.user;
   config.password = password;
-  if (server.ssl) config.ssl = server.ssl;
+  if (connection.ssl) config.ssl = connection.ssl;
 
-  out?.appendLine(`resolveDebugConfiguration: ${getConnectionName(server)}`);
+  out?.appendLine(`resolveDebugConfiguration: ${getConnectionName(connection)}`);
   return config;
 }

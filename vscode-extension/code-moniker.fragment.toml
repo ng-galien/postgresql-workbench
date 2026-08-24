@@ -14,14 +14,14 @@ id = "connection-service-owned-by-connection-manager"
 severity = "error"
 expr = "$connection_service_target => $connection_service_owner"
 message = "Consume PostgreSQL transport through ConnectionManager; ConnectionService is its private construction adapter."
-rationale = "ConnectionManager owns the open Connexions, the connection events, the reconnect state and the dedicated-client factory. A feature controller building its own ConnectionService would create a second connection lifecycle nothing reconnects or disposes."
+rationale = "ConnectionManager owns the open Connections, the connection events, the reconnect state and the dedicated-client factory. A feature controller building its own ConnectionService would create a second connection lifecycle nothing reconnects or disposes."
 
 [[ts.refs.where]]
 id = "scratchpad-file-remains-passive"
 severity = "error"
 expr = "$scratchpad_file_source AND $architectural_dependency => NOT $scratchpad_runtime_target"
 message = "notebookFile owns the Scratchpad file format and its Association value objects, not connections, execution, or result-session lifecycle."
-rationale = "Reading and writing a Scratchpad must work without a live PostgreSQL Connexion — a file opens before anything connects. Execution, transactions and result cursors belong to register, association, resultHost and the row engine."
+rationale = "Reading and writing a Scratchpad must work without a live PostgreSQL Connection — a file opens before anything connects. Execution, transactions and result cursors belong to register, association, resultHost and the row engine."
 
 [[ts.refs.where]]
 id = "extension-entry-is-not-a-service"

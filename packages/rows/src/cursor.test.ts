@@ -13,8 +13,8 @@ const FIELD: FieldDef = {
 };
 
 const TEST_BINDING = {
-  serverId: "test-server",
-  serverName: "Test PostgreSQL",
+  connectionId: "test-connection",
+  connectionName: "Test PostgreSQL",
   database: "testdb",
 };
 

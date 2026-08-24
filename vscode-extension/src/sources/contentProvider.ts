@@ -37,7 +37,7 @@ export class CodeMonikerContentProvider implements vscode.FileSystemProvider, vs
   private readonly changeEmitter = new vscode.EventEmitter<vscode.FileChangeEvent[]>();
   readonly onDidChangeFile = this.changeEmitter.event;
   private readonly cache = new Map<string, Uint8Array>();
-  private readonly cacheServers = new Map<string, string>();
+  private readonly cacheConnections = new Map<string, string>();
   private readonly workingCopies = new Map<string, ManagedWorkingCopy>();
   private readonly openBases = new Map<string, string>();
   private readonly subscriptions: vscode.Disposable[];
@@ -67,12 +67,12 @@ export class CodeMonikerContentProvider implements vscode.FileSystemProvider, vs
       });
     }
     this.subscriptions = [
-      connections.onServerChanged((change) => {
-        this.invalidateServers(change.serverIds);
+      connections.onConnectionChanged((change) => {
+        this.invalidateConnections(change.connectionIds);
         this.reconcileUnavailableTabs();
       }),
       index.onDidChangeState((state) => {
-        if (state.serverId) this.invalidateServers([state.serverId]);
+        if (state.connectionId) this.invalidateConnections([state.connectionId]);
         this.reconcileUnavailableTabs();
       }),
       vscode.window.tabGroups.onDidChangeTabs(() => this.reconcileUnavailableTabs()),
@@ -84,22 +84,22 @@ export class CodeMonikerContentProvider implements vscode.FileSystemProvider, vs
     for (const subscription of this.subscriptions) subscription.dispose();
     this.changeEmitter.dispose();
     this.cache.clear();
-    this.cacheServers.clear();
+    this.cacheConnections.clear();
     this.workingCopies.clear();
     this.openBases.clear();
   }
 
   invalidateAll(): void {
     this.cache.clear();
-    this.cacheServers.clear();
+    this.cacheConnections.clear();
   }
 
-  private invalidateServers(serverIds: readonly string[]): void {
-    const changed = new Set(serverIds);
-    for (const [symbolUri, serverId] of this.cacheServers) {
-      if (!changed.has(serverId)) continue;
+  private invalidateConnections(connectionIds: readonly string[]): void {
+    const changed = new Set(connectionIds);
+    for (const [symbolUri, connectionId] of this.cacheConnections) {
+      if (!changed.has(connectionId)) continue;
       this.cache.delete(symbolUri);
-      this.cacheServers.delete(symbolUri);
+      this.cacheConnections.delete(symbolUri);
     }
   }
 
@@ -220,7 +220,7 @@ export class CodeMonikerContentProvider implements vscode.FileSystemProvider, vs
       sql,
       descriptor,
       this.index.sqlAuthoringSnapshot({
-        serverId: descriptor.serverId,
+        connectionId: descriptor.connectionId,
         database: descriptor.database,
       }),
       await this.index.syntaxParser(),
@@ -243,12 +243,12 @@ export class CodeMonikerContentProvider implements vscode.FileSystemProvider, vs
       }
       try {
         await this.index.indexPostgresDatabase(connection.client, {
-          serverId: descriptor.serverId,
+          connectionId: descriptor.connectionId,
           database: descriptor.database,
         });
       } catch (error) {
         this.index.markDatabaseStale(
-          descriptor.serverId,
+          descriptor.connectionId,
           descriptor.database,
           "Managed routine deployed; index refresh failed",
         );
@@ -256,7 +256,7 @@ export class CodeMonikerContentProvider implements vscode.FileSystemProvider, vs
           `Deploy refresh warning: ${error instanceof Error ? error.message : String(error)}`,
         );
         this.output?.appendLine(
-          `Deploy applied: ${descriptor.schema}.${descriptor.name} on ${descriptor.serverId}/${descriptor.database}`,
+          `Deploy applied: ${descriptor.schema}.${descriptor.name} on ${descriptor.connectionId}/${descriptor.database}`,
         );
         this.workingCopies.set(descriptor.symbolUri, {
           content: workingCopy.content,
@@ -286,7 +286,7 @@ export class CodeMonikerContentProvider implements vscode.FileSystemProvider, vs
         };
       }
       this.output?.appendLine(
-        `Deploy applied: ${descriptor.schema}.${descriptor.name} on ${descriptor.serverId}/${descriptor.database}`,
+        `Deploy applied: ${descriptor.schema}.${descriptor.name} on ${descriptor.connectionId}/${descriptor.database}`,
       );
       return { status: "deployed" };
     } finally {
@@ -320,7 +320,7 @@ export class CodeMonikerContentProvider implements vscode.FileSystemProvider, vs
     if (cached) return cached;
     const bytes = new TextEncoder().encode(descriptor.content);
     this.cache.set(descriptor.symbolUri, bytes);
-    this.cacheServers.set(descriptor.symbolUri, descriptor.serverId);
+    this.cacheConnections.set(descriptor.symbolUri, descriptor.connectionId);
     this.openBases.set(descriptor.symbolUri, descriptor.content);
     return bytes;
   }
@@ -394,6 +394,6 @@ async function connectionForDescriptor(
   descriptor: WorkbenchSourceDescriptor,
 ): Promise<UriConnection> {
   return {
-    client: await openCoverageClient(connections, descriptor.serverId),
+    client: await openCoverageClient(connections, descriptor.connectionId),
   };
 }

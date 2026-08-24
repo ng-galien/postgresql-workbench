@@ -10,19 +10,19 @@ export const demoConnectionUrl = "postgresql://postgres:postgres@localhost:5434/
 export const demoConnectionId = "localhost:5434/demo:postgres";
 export const demoAssociationText = /postgres@localhost:5434\/demo/u;
 export const demoAutomaticAssociationText = /postgres@localhost:5434\/demo.*AUTO/u;
-export const demoConnexionQuickPickItem = /^postgres@localhost:5434\/demo(?:\s*Connected)?$/u;
+export const demoConnectionQuickPickItem = /^postgres@localhost:5434\/demo(?:\s*Connected)?$/u;
 export const demoProductSearchQuickPickItem =
   /^shop\.producttable\ndemo · postgresql:\/\/localhost%3A5434%2Fdemo%3Apostgres\/demo\/shop\/table\/product\.sql$/u;
-export const demoConnexionTreeItem = connexionTreeItem("postgres@localhost:5434/demo");
+export const demoConnectionTreeItem = connectionTreeItem("postgres@localhost:5434/demo");
 export const demoDatabaseTreeItem = databaseTreeItem("demo");
 export const alternateConnectionUrl = "postgresql://postgres:postgres@localhost:5434/postgres";
-export const alternateConnexionTreeItem = connexionTreeItem("postgres@localhost:5434/postgres");
+export const alternateConnectionTreeItem = connectionTreeItem("postgres@localhost:5434/postgres");
 export const alternateConnectionId = "localhost:5434/postgres:postgres";
 export const loopbackConnectionUrl = "postgresql://postgres:postgres@127.0.0.1:5434/demo";
-export const loopbackConnexionTreeItem = connexionTreeItem("postgres@127.0.0.1:5434/demo");
+export const loopbackConnectionTreeItem = connectionTreeItem("postgres@127.0.0.1:5434/demo");
 export const loopbackConnectionId = "127.0.0.1:5434/demo:postgres";
 
-function connexionTreeItem(name: string): RegExp {
+export function connectionTreeItem(name: string): RegExp {
   return new RegExp(`^${escapeRegExp(name)}(?:\\s*·?\\s*(?:connected|disconnected))?$`, "u");
 }
 

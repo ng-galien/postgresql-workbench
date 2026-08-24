@@ -62,7 +62,7 @@ export class ScratchpadTransactionManager implements vscode.Disposable {
 
   transactionsForConnection(connectionId: string): readonly ScratchpadTransaction[] {
     return [...this.transactions.values()].filter(
-      ({ association }) => association.serverId === connectionId,
+      ({ association }) => association.connectionId === connectionId,
     );
   }
 
@@ -77,18 +77,21 @@ export class ScratchpadTransactionManager implements vscode.Disposable {
         new Error("The Scratchpad is changing. Run the Statement again afterward."),
       );
     }
-    if (this.blockedConnections.has(association.serverId)) {
+    if (this.blockedConnections.has(association.connectionId)) {
       return Promise.reject(
-        new Error("The Scratchpad Connexion is changing. Run the Statement again afterward."),
+        new Error("The Scratchpad Connection is changing. Run the Statement again afterward."),
       );
     }
-    return this.runExclusive(scratchpadUri, association.serverId, async () => {
+    return this.runExclusive(scratchpadUri, association.connectionId, async () => {
       let transaction = this.transactions.get(scratchpadUri);
       if (transaction?.status === "failed") {
         throw new Error("This Scratchpad Transaction failed. Roll it back before executing again.");
       }
       if (!transaction) {
-        const client = await createDedicatedNotebookClient(this.connections, association.serverId);
+        const client = await createDedicatedNotebookClient(
+          this.connections,
+          association.connectionId,
+        );
         this.openingClients.set(scratchpadUri, client);
         try {
           if (!this.acceptingOperations) {
@@ -195,7 +198,7 @@ export class ScratchpadTransactionManager implements vscode.Disposable {
           .map(([, tail]) => tail),
       );
       for (const transaction of [...this.transactions.values()].filter(
-        ({ association }) => association.serverId === connectionId,
+        ({ association }) => association.connectionId === connectionId,
       )) {
         await this.runExclusive(transaction.scratchpadUri, undefined, async () => {
           try {

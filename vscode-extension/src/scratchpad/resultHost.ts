@@ -306,7 +306,7 @@ function isOpenDataViewRequest(value: unknown): value is SqlResultDataViewReques
     typeof message.sql === "string" &&
     typeof message.binding === "object" &&
     message.binding !== null &&
-    typeof message.binding.serverId === "string" &&
+    typeof message.binding.connectionId === "string" &&
     typeof message.binding.database === "string"
   );
 }

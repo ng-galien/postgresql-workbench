@@ -8,9 +8,9 @@ import {
 const payload: WorkbenchGraphObjectDragPayload = {
   version: 1,
   availability: "accepted",
-  serverId: "server",
+  connectionId: "connection",
   database: "demo",
-  sourceUri: "postgresql://server/demo/shop/table/orders.sql",
+  sourceUri: "postgresql://connection/demo/shop/table/orders.sql",
   symbolUri: "code+moniker://orders",
   kind: "table",
   label: "shop.orders",

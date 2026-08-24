@@ -128,7 +128,7 @@ describe("the Data View", () => {
      */
     const fromStatement = {
       kind: "sql" as const,
-      serverId: "demo",
+      connectionId: "demo",
       database: "demo",
       sql: "SELECT product.id, product.name FROM shop.product AS product",
       label: "SELECT product.id, product.name FROM shop.product AS product",

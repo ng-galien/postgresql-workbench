@@ -167,7 +167,7 @@ test.describe("Scratchpads", () => {
     workbench,
     notebook,
   }) => {
-    await test.step("create a scratchpad from its Connexion", async () => {
+    await test.step("create a scratchpad from its Connection", async () => {
       await createScratchpad(workbench, notebook, demoAssociationText);
     });
 

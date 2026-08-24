@@ -124,7 +124,7 @@ describe.skipIf(!LOCAL_CODE_MONIKER_AVAILABLE)(
 
     it("indexes relational definitions and exposes a traversable view-to-table relation", async () => {
       const snapshot = await readPostgresCatalog(catalogClient(postgres), {
-        serverId: "e2e-local",
+        connectionId: "e2e-local",
         database: WORKBENCH_DATABASE,
       });
       expect(snapshot.sourceSet.documents.length).toBeGreaterThanOrEqual(8);
@@ -215,7 +215,7 @@ describe.skipIf(!LOCAL_CODE_MONIKER_AVAILABLE)(
         WHERE account.active;
       `);
       const replacement = await readPostgresCatalog(catalogClient(postgres), {
-        serverId: "e2e-local",
+        connectionId: "e2e-local",
         database: WORKBENCH_DATABASE,
       });
       expect(replacement.sourceSet.srcset).toBe(snapshot.sourceSet.srcset);
@@ -242,10 +242,10 @@ describe.skipIf(!LOCAL_CODE_MONIKER_AVAILABLE)(
       );
     }, 90_000);
 
-    it("keeps identical PostgreSQL objects isolated by Connexion URI", async () => {
+    it("keeps identical PostgreSQL objects isolated by Connection URI", async () => {
       if (!session) throw new Error("The local Code Moniker session is not available");
-      const alice = { serverId: "127.0.0.1:5433/scope:alice", database: WORKBENCH_DATABASE };
-      const bob = { serverId: "127.0.0.1:5433/scope:bob", database: WORKBENCH_DATABASE };
+      const alice = { connectionId: "127.0.0.1:5433/scope:alice", database: WORKBENCH_DATABASE };
+      const bob = { connectionId: "127.0.0.1:5433/scope:bob", database: WORKBENCH_DATABASE };
       const aliceSnapshot = await readPostgresCatalog(catalogClient(postgres), alice);
       const bobSnapshot = await readPostgresCatalog(catalogClient(postgres), bob);
       publishedSourceSets.add(aliceSnapshot.sourceSet.srcset);

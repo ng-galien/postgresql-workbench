@@ -103,7 +103,7 @@ describe("stale Code Moniker source tabs", () => {
     vscodeState.groups = [{ tabs: [first] }];
     const provider = new CodeMonikerContentProvider(
       {
-        onServerChanged: () => ({ dispose() {} }),
+        onConnectionChanged: () => ({ dispose() {} }),
       } as never,
       {
         onDidChangeState: () => ({ dispose() {} }),
@@ -126,14 +126,14 @@ describe("stale Code Moniker source tabs", () => {
     provider.dispose();
   });
 
-  it("invalidates cached sources only for the changed Connexion", async () => {
+  it("invalidates cached sources only for the changed Connection", async () => {
     const sourceUri = uri("code+moniker", "code+moniker://routine");
     let descriptor = routineDescriptor("SELECT 1");
-    let onServerChanged: ((change: { serverIds: string[] }) => void) | undefined;
+    let onConnectionChanged: ((change: { connectionIds: string[] }) => void) | undefined;
     const provider = new CodeMonikerContentProvider(
       {
-        onServerChanged: (listener: (change: { serverIds: string[] }) => void) => {
-          onServerChanged = listener;
+        onConnectionChanged: (listener: (change: { connectionIds: string[] }) => void) => {
+          onConnectionChanged = listener;
           return { dispose() {} };
         },
       } as never,
@@ -150,10 +150,10 @@ describe("stale Code Moniker source tabs", () => {
     expect(new TextDecoder().decode(await provider.readFile(sourceUri as never))).toBe("SELECT 1");
     descriptor = routineDescriptor("SELECT 2");
 
-    onServerChanged?.({ serverIds: ["another-server"] });
+    onConnectionChanged?.({ connectionIds: ["another-connection"] });
     expect(new TextDecoder().decode(await provider.readFile(sourceUri as never))).toBe("SELECT 1");
 
-    onServerChanged?.({ serverIds: ["demo"] });
+    onConnectionChanged?.({ connectionIds: ["demo"] });
     expect(new TextDecoder().decode(await provider.readFile(sourceUri as never))).toBe("SELECT 2");
     provider.dispose();
   });
@@ -320,7 +320,7 @@ function providerFor(
 ) {
   return new CodeMonikerContentProvider(
     {
-      onServerChanged: () => ({ dispose() {} }),
+      onConnectionChanged: () => ({ dispose() {} }),
     } as never,
     {
       onDidChangeState: () => ({ dispose() {} }),
@@ -344,7 +344,7 @@ function routineDescriptor(content: string) {
   return {
     symbolUri: "code+moniker://routine",
     sourceUri: "postgresql://demo/routine.sql",
-    serverId: "demo",
+    connectionId: "demo",
     database: "demo",
     schema: "public",
     documentKind: "routine" as const,

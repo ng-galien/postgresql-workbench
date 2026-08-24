@@ -7,7 +7,7 @@ import {
 } from "./relations.js";
 
 const DATABASE = {
-  serverId: "localhost:5433/testdb:postgres",
+  connectionId: "localhost:5433/testdb:postgres",
   database: "testdb",
 };
 
@@ -40,7 +40,7 @@ function symbol(
     name,
     kind,
     file:
-      `postgresql://${encodeURIComponent(DATABASE.serverId)}/${database}/` +
+      `postgresql://${encodeURIComponent(DATABASE.connectionId)}/${database}/` +
       `${schema}/${documentKind}/${encodeURIComponent(sourceName)}.sql`,
     signature: "",
     postgres: {

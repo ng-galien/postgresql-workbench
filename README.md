@@ -45,7 +45,7 @@ extension:
 1. pulls the selected `galien0xffffff/postgres-debugger` image;
 2. starts a container exposed only on `127.0.0.1`;
 3. waits for PostgreSQL and creates `pldbgapi`;
-4. saves and connects the server in the PL/pgSQL sidebar.
+4. saves and opens the Connection in the PL/pgSQL sidebar.
 
 PostgreSQL 17 and local port 5432 are selected by default. The generated local
 connection uses `postgres` for the database, user, and password.

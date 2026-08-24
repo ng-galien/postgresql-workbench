@@ -6,8 +6,8 @@ import type {
 } from "../../../packages/catalog/src/objectActions.js";
 import type { WorkbenchObjectModel } from "../../../packages/catalog/src/objectModel.js";
 import {
+  type ConnectionConfig,
   getConnectionName,
-  type ServerConfig,
 } from "../../../packages/catalog/src/savedConnection.js";
 import {
   clampDebugResultRows,
@@ -75,7 +75,7 @@ export interface SqlWorkbenchCommandOptions extends WorkbenchCommandOptions {
   output: vscode.OutputChannel;
   dataViews: DataViewEditorProvider;
   documentConnections: CallSiteConnectionStore;
-  revealSources(serverId: string): Thenable<void>;
+  revealSources(connectionId: string): Thenable<void>;
   selectedTreeItems(): readonly PlpgsqlTreeItem[];
 }
 export function registerSqlWorkbenchCommands(options: SqlWorkbenchCommandOptions): void {
@@ -93,29 +93,29 @@ export function registerSqlWorkbenchCommands(options: SqlWorkbenchCommandOptions
   } = options;
   context.subscriptions.push(
     /*
-     * Pointing a document, or one call inside it, at the Connexion it runs on. Registered here
+     * Pointing a document, or one call inside it, at the Connection it runs on. Registered here
      * because assignDocumentConnection is this module's, not the entry point's.
      */
     vscode.commands.registerCommand(
       "postgresql-workbench.assignDocumentConnection",
-      (target: DocumentConnectionTarget, requestedServerId?: string) =>
+      (target: DocumentConnectionTarget, requestedConnectionId?: string) =>
         assignDocumentConnection(
           connections,
           documentConnections,
           codeLens,
           target,
-          requestedServerId,
+          requestedConnectionId,
         ),
     ),
     vscode.commands.registerCommand(
       "postgresql-workbench.assignCallConnection",
-      (target: DocumentConnectionTarget, requestedServerId?: string) =>
+      (target: DocumentConnectionTarget, requestedConnectionId?: string) =>
         assignDocumentConnection(
           connections,
           documentConnections,
           codeLens,
           target,
-          requestedServerId,
+          requestedConnectionId,
         ),
     ),
     vscode.commands.registerCommand("postgresql-workbench.refreshTree", () => tree.refresh()),
@@ -157,8 +157,8 @@ export function registerSqlWorkbenchCommands(options: SqlWorkbenchCommandOptions
         );
         return false;
       }
-      let serverId = documentConnections.getDocument(document.uri.toString());
-      if (!serverId) {
+      let connectionId = documentConnections.getDocument(document.uri.toString());
+      if (!connectionId) {
         const assigned = await assignDocumentConnection(
           connections,
           documentConnections,
@@ -166,16 +166,16 @@ export function registerSqlWorkbenchCommands(options: SqlWorkbenchCommandOptions
           { documentUri: document.uri.toString() },
         );
         if (!assigned) return false;
-        serverId = documentConnections.getDocument(document.uri.toString());
+        connectionId = documentConnections.getDocument(document.uri.toString());
       }
-      const server = serverId ? connections.store.get(serverId) : undefined;
-      if (!server) {
+      const connection = connectionId ? connections.store.get(connectionId) : undefined;
+      if (!connection) {
         void vscode.window.showInformationMessage("Choose an available Document Association.");
         return false;
       }
       const client = await openDocumentSqlClient(
         connections,
-        server,
+        connection,
         options.output,
         document.uri.toString(),
         () =>
@@ -215,8 +215,8 @@ export function registerSqlWorkbenchCommands(options: SqlWorkbenchCommandOptions
     vscode.commands.registerCommand(
       "postgresql-workbench.runSqlCall",
       async (statement: CommandSqlStatement) => {
-        let serverId = documentConnections.getDocument(statement.documentUri);
-        if (!serverId) {
+        let connectionId = documentConnections.getDocument(statement.documentUri);
+        if (!connectionId) {
           const assigned = await assignDocumentConnection(
             connections,
             documentConnections,
@@ -224,16 +224,16 @@ export function registerSqlWorkbenchCommands(options: SqlWorkbenchCommandOptions
             { documentUri: statement.documentUri },
           );
           if (!assigned) return false;
-          serverId = documentConnections.getDocument(statement.documentUri);
+          connectionId = documentConnections.getDocument(statement.documentUri);
         }
-        const server = serverId ? connections.store.get(serverId) : undefined;
-        if (!server) {
+        const connection = connectionId ? connections.store.get(connectionId) : undefined;
+        if (!connection) {
           void vscode.window.showInformationMessage("Choose an available Document Association.");
           return false;
         }
         const client = await openDocumentSqlClient(
           connections,
-          server,
+          connection,
           options.output,
           statement.documentUri,
           () =>
@@ -285,7 +285,7 @@ export function registerSqlWorkbenchCommands(options: SqlWorkbenchCommandOptions
         }
         await options.dataViews.open({
           kind: "relation",
-          serverId: object.serverId,
+          connectionId: object.connectionId,
           database: object.database,
           schema: object.schema,
           name: object.name,
@@ -309,8 +309,8 @@ export function registerSqlWorkbenchCommands(options: SqlWorkbenchCommandOptions
         void vscode.window.showInformationMessage("Place the cursor in a SQL Statement first.");
         return false;
       }
-      let serverId = documentConnections.getDocument(documentUri);
-      if (!serverId) {
+      let connectionId = documentConnections.getDocument(documentUri);
+      if (!connectionId) {
         const assigned = await assignDocumentConnection(
           connections,
           documentConnections,
@@ -318,17 +318,17 @@ export function registerSqlWorkbenchCommands(options: SqlWorkbenchCommandOptions
           { documentUri },
         );
         if (!assigned) return false;
-        serverId = documentConnections.getDocument(documentUri);
+        connectionId = documentConnections.getDocument(documentUri);
       }
-      const server = serverId ? connections.store.get(serverId) : undefined;
-      if (!server) {
+      const connection = connectionId ? connections.store.get(connectionId) : undefined;
+      if (!connection) {
         void vscode.window.showInformationMessage("Choose an available Document Association.");
         return false;
       }
       await options.dataViews.open({
         kind: "sql",
-        serverId: server.id,
-        database: server.database,
+        connectionId: connection.id,
+        database: connection.database,
         sql: statement,
         label: dataViewSqlLabel(statement),
       });
@@ -336,28 +336,28 @@ export function registerSqlWorkbenchCommands(options: SqlWorkbenchCommandOptions
     }),
     vscode.commands.registerCommand(
       "postgresql-workbench.indexDatabase",
-      async (target?: string | { server?: { id?: string } }) => {
-        const requestedServerId =
+      async (target?: string | { connection?: { id?: string } }) => {
+        const requestedConnectionId =
           typeof target === "string"
             ? target
-            : typeof target?.server?.id === "string"
-              ? target.server.id
+            : typeof target?.connection?.id === "string"
+              ? target.connection.id
               : undefined;
-        const serverId =
-          requestedServerId ??
-          (connections.connectedServerIds.length === 1
-            ? connections.connectedServerIds[0]
-            : await pickConnectedServerId(connections));
-        if (!serverId) {
+        const connectionId =
+          requestedConnectionId ??
+          (connections.connectedConnectionIds.length === 1
+            ? connections.connectedConnectionIds[0]
+            : await pickConnectedConnectionId(connections));
+        if (!connectionId) {
           return undefined;
         }
-        const server = connections.store.get(serverId);
-        if (!server) return undefined;
-        await options.revealSources(serverId);
+        const connection = connections.store.get(connectionId);
+        if (!connection) return undefined;
+        await options.revealSources(connectionId);
         try {
-          return await index.indexDatabase(serverId);
+          return await index.indexDatabase(connectionId);
         } catch (error) {
-          const state = index.databaseState({ serverId, database: server.database });
+          const state = index.databaseState({ connectionId, database: connection.database });
           if (state.status === "cancelled") return undefined;
           const message = error instanceof Error ? error.message : String(error);
           if (state.status !== "error" && state.status !== "stale") {
@@ -369,17 +369,19 @@ export function registerSqlWorkbenchCommands(options: SqlWorkbenchCommandOptions
     ),
     vscode.commands.registerCommand(
       "postgresql-workbench.indexAssociation",
-      async (target?: { serverId?: string }) => {
-        const server = target?.serverId ? connections.store.get(target.serverId) : undefined;
-        if (!server) {
+      async (target?: { connectionId?: string }) => {
+        const connection = target?.connectionId
+          ? connections.store.get(target.connectionId)
+          : undefined;
+        if (!connection) {
           void vscode.window.showInformationMessage("Choose an available Association first.");
           return false;
         }
         const client = await openDocumentSqlClient(
           connections,
-          server,
+          connection,
           options.output,
-          server.id,
+          connection.id,
           async () => false,
         );
         if (!client) return false;
@@ -387,12 +389,12 @@ export function registerSqlWorkbenchCommands(options: SqlWorkbenchCommandOptions
           await vscode.window.withProgress(
             {
               location: vscode.ProgressLocation.Notification,
-              title: `Indexing ${getConnectionName(server)}`,
+              title: `Indexing ${getConnectionName(connection)}`,
             },
             () =>
               index.indexPostgresDatabase(client, {
-                serverId: server.id,
-                database: server.database,
+                connectionId: connection.id,
+                database: connection.database,
               }),
           );
           options.codeLens.refresh();
@@ -400,10 +402,10 @@ export function registerSqlWorkbenchCommands(options: SqlWorkbenchCommandOptions
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           options.output.appendLine(
-            `Association indexing failed (${getConnectionName(server)}): ${message}`,
+            `Association indexing failed (${getConnectionName(connection)}): ${message}`,
           );
           void vscode.window.showErrorMessage(
-            `Indexing ${getConnectionName(server)} failed. See the PostgreSQL Workbench output.`,
+            `Indexing ${getConnectionName(connection)} failed. See the PostgreSQL Workbench output.`,
           );
           return false;
         } finally {
@@ -413,14 +415,14 @@ export function registerSqlWorkbenchCommands(options: SqlWorkbenchCommandOptions
     ),
     vscode.commands.registerCommand(
       "postgresql-workbench.cancelDatabaseIndex",
-      (target?: string | { server?: { id?: string } }) => {
-        const serverId =
+      (target?: string | { connection?: { id?: string } }) => {
+        const connectionId =
           typeof target === "string"
             ? target
-            : typeof target?.server?.id === "string"
-              ? target.server.id
+            : typeof target?.connection?.id === "string"
+              ? target.connection.id
               : undefined;
-        return index.cancelDatabaseIndex(serverId);
+        return index.cancelDatabaseIndex(connectionId);
       },
     ),
     vscode.commands.registerCommand(
@@ -447,7 +449,7 @@ export function registerSqlWorkbenchCommands(options: SqlWorkbenchCommandOptions
         const itemSnapshot = "snapshot" in selected ? selected.snapshot : undefined;
         const snapshot = requestedSnapshot ?? itemSnapshot;
         const state = index.databaseState({
-          serverId: object.serverId,
+          connectionId: object.connectionId,
           database: object.database,
         });
         const result = state.result;
@@ -478,7 +480,7 @@ export function registerSqlWorkbenchCommands(options: SqlWorkbenchCommandOptions
 /** Opens the PostgreSQL client for a free SQL document's Document Association. */
 async function openDocumentSqlClient(
   connections: ConnectionManager,
-  server: ServerConfig,
+  connection: ConnectionConfig,
   output: vscode.OutputChannel,
   documentUri: string,
   reassign: () => Promise<boolean>,
@@ -487,29 +489,29 @@ async function openDocumentSqlClient(
     .getConfiguration("postgresql-workbench.sql")
     .get<number>("statementTimeoutMs", 60_000);
   try {
-    return await openCoverageClient(connections, server.id, {
+    return await openCoverageClient(connections, connection.id, {
       applicationName: "postgresql-workbench:sql",
       statementTimeoutMs: Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 60_000,
     });
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     output.appendLine(
-      `SQL execution connection failed (${getConnectionName(server)}, ${documentUri}): ${detail}`,
+      `SQL execution connection failed (${getConnectionName(connection)}, ${documentUri}): ${detail}`,
     );
-    const password = await connections.store.getPassword(server.id);
+    const password = await connections.store.getPassword(connection.id);
     const choice =
       password === undefined
         ? await vscode.window.showErrorMessage(
-            `Connexion ${getConnectionName(server)} has no saved password.`,
+            `Connection ${getConnectionName(connection)} has no saved password.`,
             "Change Password",
             "Change Association",
           )
         : await vscode.window.showErrorMessage(
-            `Cannot connect to ${getConnectionName(server)}. See the PostgreSQL Workbench output for details.`,
+            `Cannot connect to ${getConnectionName(connection)}. See the PostgreSQL Workbench output for details.`,
             "Show Output",
             "Change Association",
           );
-    if (choice === "Change Password") await connections.commands.changePassword(server.id);
+    if (choice === "Change Password") await connections.commands.changePassword(connection.id);
     else if (choice === "Change Association") await reassign();
     else if (choice === "Show Output") output.show(true);
     return undefined;
@@ -520,70 +522,70 @@ export async function assignDocumentConnection(
   assignments: CallSiteConnectionStore,
   codeLens: SqlCodeLensProvider,
   target: DocumentConnectionTarget,
-  requestedServerId?: string,
+  requestedConnectionId?: string,
 ): Promise<boolean> {
-  let server: ServerConfig | undefined;
+  let connection: ConnectionConfig | undefined;
   const current = assignments.getDocument(target.documentUri);
-  if (requestedServerId) {
-    server = cm.store.get(requestedServerId);
-  } else if (cm.servers.length === 0) {
+  if (requestedConnectionId) {
+    connection = cm.store.get(requestedConnectionId);
+  } else if (cm.connections.length === 0) {
     const action = await vscode.window.showInformationMessage(
-      "No saved Connexion is available for the Document Association.",
-      "Add Server",
+      "No saved Connection is available for the Document Association.",
+      "Add Connection",
     );
-    if (action !== "Add Server") return false;
-    server = await cm.commands.addServer();
-  } else if (cm.servers.length === 1) {
-    server = cm.servers[0];
-    if (server && current === server.id) {
+    if (action !== "Add Connection") return false;
+    connection = await cm.commands.addConnection();
+  } else if (cm.connections.length === 1) {
+    connection = cm.connections[0];
+    if (connection && current === connection.id) {
       void vscode.window.showInformationMessage(
-        `${getConnectionName(server)} is the only saved Connexion; add another server to change the Document Association.`,
+        `${getConnectionName(connection)} is the only saved Connection; add another connection to change the Document Association.`,
       );
     }
   } else {
     const picked = await vscode.window.showQuickPick(
-      cm.servers.map((candidate) => ({
+      cm.connections.map((candidate) => ({
         label: getConnectionName(candidate),
         description: [
           current === candidate.id ? "Current Association" : undefined,
-          cm.isServerConnected(candidate.id) ? "Connected" : undefined,
+          cm.isConnectionConnected(candidate.id) ? "Connected" : undefined,
         ]
           .filter(Boolean)
           .join(" · "),
-        server: candidate,
+        connection: candidate,
       })),
       {
         title: "Document Association",
-        placeHolder: "Saved Connexion used by Run and Debug in this document",
+        placeHolder: "Saved Connection used by Run and Debug in this document",
         ignoreFocusOut: true,
       },
     );
-    server = picked?.server;
+    connection = picked?.connection;
   }
-  if (!server) return false;
+  if (!connection) return false;
 
-  await assignments.assignDocument(target.documentUri, server.id);
+  await assignments.assignDocument(target.documentUri, connection.id);
   codeLens.refresh();
   await vscode.commands.executeCommand(REFRESH_SQL_AUTHORING_CONTEXT_COMMAND);
   return true;
 }
 
-/** Asks which connected Connexion to work against when the command carries no context. */
-export async function pickConnectedServerId(
+/** Asks which connected Connection to work against when the command carries no context. */
+export async function pickConnectedConnectionId(
   connections: ConnectionManager,
 ): Promise<string | undefined> {
-  const items = connections.connectedServerIds.flatMap((serverId) => {
-    const server = connections.store.get(serverId);
-    return server ? [{ label: getConnectionName(server), serverId }] : [];
+  const items = connections.connectedConnectionIds.flatMap((connectionId) => {
+    const connection = connections.store.get(connectionId);
+    return connection ? [{ label: getConnectionName(connection), connectionId }] : [];
   });
   if (items.length === 0) {
-    void vscode.window.showInformationMessage("Connect a PostgreSQL Connexion before indexing.");
+    void vscode.window.showInformationMessage("Connect a PostgreSQL Connection before indexing.");
     return undefined;
   }
   return (
     await vscode.window.showQuickPick(items, {
-      title: "Choose the Connexion to index",
-      placeHolder: "Each Connexion owns an independent database index",
+      title: "Choose the Connection to index",
+      placeHolder: "Each Connection owns an independent database index",
     })
-  )?.serverId;
+  )?.connectionId;
 }

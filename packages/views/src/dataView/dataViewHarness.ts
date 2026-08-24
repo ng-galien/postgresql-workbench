@@ -57,7 +57,7 @@ export function dataViewPayload(
 ): SqlNotebookResultPayload {
   return {
     version: 2,
-    binding: { serverId: "demo", serverName: "demo", database: "demo" },
+    binding: { connectionId: "demo", connectionName: "demo", database: "demo" },
     command: "SELECT",
     durationMs: 3,
     columns: [
@@ -92,13 +92,13 @@ export function readyDataView(overrides: Partial<DataViewState> = {}): DataViewS
   return {
     source: {
       kind: "relation",
-      serverId: "demo",
+      connectionId: "demo",
       database: "demo",
       schema: "shop",
       name: "product",
       relationKind: "table",
     },
-    serverName: "demo",
+    connectionName: "demo",
     query: {
       uri: "data-view:/shop.product.sql",
       text: "SELECT id, name FROM shop.product",

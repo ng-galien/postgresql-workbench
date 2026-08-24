@@ -24,8 +24,8 @@ vi.mock("vscode", () => {
 import { ScratchpadTransactionManager } from "./transactions.js";
 
 const association = {
-  serverId: "postgres:5432/demo:postgres",
-  serverName: "postgres@postgres:5432/demo",
+  connectionId: "postgres:5432/demo:postgres",
+  connectionName: "postgres@postgres:5432/demo",
   database: "demo",
 };
 
@@ -137,13 +137,13 @@ describe("ScratchpadTransactionManager", () => {
     expect(client.end).toHaveBeenCalledTimes(1);
   });
 
-  it("rolls back safely and blocks new Scratchpad work until a Connexion change lease is released", async () => {
+  it("rolls back safely and blocks new Scratchpad work until a Connection change lease is released", async () => {
     const { queries, transactions } = fixture();
     await transactions.execute("scratchpad:1", "Scratch 1", association, async () => "done");
 
     const lease = await transactions.acquireConnectionChange(
-      association.serverId,
-      "disconnecting the Connexion",
+      association.connectionId,
+      "disconnecting the Connection",
     );
     expect(vscode.window.showWarningMessage).not.toHaveBeenCalled();
     expect(queries).toEqual(["BEGIN", "ROLLBACK"]);
@@ -151,7 +151,7 @@ describe("ScratchpadTransactionManager", () => {
 
     await expect(
       transactions.execute("scratchpad:2", "Scratch 2", association, async () => "late"),
-    ).rejects.toThrow("Connexion is changing");
+    ).rejects.toThrow("Connection is changing");
 
     expect(lease).toBeDefined();
     lease?.dispose();

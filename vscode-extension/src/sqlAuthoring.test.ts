@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { ensureLocalCodeMonikerWorkspace } from "../../packages/catalog/src/localCodeMoniker.js";
-import type { ServerConfig } from "../../packages/catalog/src/savedConnection.js";
+import type { ConnectionConfig } from "../../packages/catalog/src/savedConnection.js";
 import { createCodeMonikerSyntaxParser } from "../../packages/sql/src/analysis/codeMonikerSyntax.js";
 import type { SyntaxParser } from "../../packages/sql/src/analysis/syntaxTree.js";
 import type { SqlAuthoringSnapshot } from "../../packages/sql/src/snapshot.js";
@@ -42,8 +42,8 @@ vi.mock("vscode-languageclient/node", () => ({
 
 import { resolveDocumentContext, sqlReferences } from "./sqlAuthoring.js";
 
-const server: ServerConfig = {
-  id: "demo-server",
+const connection: ConnectionConfig = {
+  id: "demo-connection",
   name: "demo",
   host: "127.0.0.1",
   port: 5432,
@@ -53,15 +53,15 @@ const server: ServerConfig = {
 
 const snapshot: SqlAuthoringSnapshot = {
   status: "available",
-  serverId: server.id,
-  database: server.database,
+  connectionId: connection.id,
+  database: connection.database,
   revision: "r1",
   generation: 1,
   objects: [],
   foreignKeys: [],
 };
 
-const connections = { servers: [server] };
+const connections = { connections: [connection] };
 const index = { sqlAuthoringSnapshot: () => snapshot };
 
 describe("SQL authoring document context", () => {
@@ -74,7 +74,7 @@ describe("SQL authoring document context", () => {
     vscodeMock.notebookDocuments = [
       {
         notebookType: "foreign-notebook",
-        metadata: { serverId: server.id, database: server.database },
+        metadata: { connectionId: connection.id, database: connection.database },
         getCells: () => [{ document: { uri: { toString: () => uri } } }],
       },
     ];
@@ -84,7 +84,7 @@ describe("SQL authoring document context", () => {
     });
   });
 
-  it("does not infer a Connexion for an unattached notebook cell", () => {
+  it("does not infer a Connection for an unattached notebook cell", () => {
     expect(
       resolveDocumentContext(
         "vscode-notebook-cell:/scratchpad/reloading#cell-1",
@@ -95,25 +95,25 @@ describe("SQL authoring document context", () => {
   });
 
   it("uses the SQL Document Association", () => {
-    const associated = { ...server, id: "reporting-server", database: "reporting" };
+    const associated = { ...connection, id: "reporting-connection", database: "reporting" };
     const lookup = vi.fn(() => ({
       ...snapshot,
-      serverId: associated.id,
+      connectionId: associated.id,
       database: associated.database,
     }));
     expect(
       resolveDocumentContext(
         "file:///workspace/report.sql",
-        { ...connections, servers: [server, associated] },
+        { ...connections, connections: [connection, associated] },
         { sqlAuthoringSnapshot: lookup },
         () => associated.id,
       ),
     ).toMatchObject({
       status: "available",
-      snapshot: { serverId: associated.id, database: associated.database },
+      snapshot: { connectionId: associated.id, database: associated.database },
     });
     expect(lookup).toHaveBeenCalledWith({
-      serverId: associated.id,
+      connectionId: associated.id,
       database: associated.database,
     });
   });
@@ -160,8 +160,8 @@ describe("SQL authoring navigation references", async () => {
       ...snapshot,
       objects: [
         {
-          serverId: server.id,
-          database: server.database,
+          connectionId: connection.id,
+          database: connection.database,
           schema: "shop",
           oid: 99,
           name: "order_line",
@@ -171,8 +171,8 @@ describe("SQL authoring navigation references", async () => {
           columns: [],
         },
         {
-          serverId: server.id,
-          database: server.database,
+          connectionId: connection.id,
+          database: connection.database,
           schema: "shop",
           oid: 1,
           name: "product",
@@ -182,8 +182,8 @@ describe("SQL authoring navigation references", async () => {
           columns: [{ name: "id", type: "bigint" }],
         },
         {
-          serverId: server.id,
-          database: server.database,
+          connectionId: connection.id,
+          database: connection.database,
           schema: "shop",
           oid: 2,
           name: "order_line",
@@ -225,8 +225,8 @@ describe("SQL authoring navigation references", async () => {
       ...snapshot,
       objects: [
         {
-          serverId: server.id,
-          database: server.database,
+          connectionId: connection.id,
+          database: connection.database,
           schema: "shop",
           oid: 1,
           name: "product",
@@ -236,8 +236,8 @@ describe("SQL authoring navigation references", async () => {
           columns: [{ name: "id", type: "bigint" }],
         },
         {
-          serverId: server.id,
-          database: server.database,
+          connectionId: connection.id,
+          database: connection.database,
           schema: "shop",
           oid: 2,
           name: "move_inventory",

@@ -18,7 +18,7 @@ from the Workbench Index and written back in one guarded transaction.
   any other relation, and take a table back out with everything that referenced
   it — by pointer or by keyboard alone
 - Filtered on a `WHERE` the reader types, completed by the SQL language server
-  against the indexed Connexion, and sorted on any column with multiple
+  against the indexed Connection, and sorted on any column with multiple
   criteria, reversible in place and an explicit NULLS ordering only where
   PostgreSQL would do otherwise
 - Edited rows the way a spreadsheet does — cell and rectangle selection, row
@@ -108,6 +108,41 @@ from the Workbench Index and written back in one guarded transaction.
   joined to it is removed, and resolved quoted relation names against the
   catalog
 
+### Commands and menus
+
+- Filed every command under one category root, `PostgreSQL Workbench`. The
+  palette printed six families of prefix — `PL/pgSQL:`, `PL/pgSQL Results:`,
+  `PostgreSQL Workbench:` and three sub-scopes — for one extension, and one
+  command carried no prefix at all, reading like a command of VS Code's own
+- Took every prefix out of the titles it was written into. The palette prints
+  `category: title`, a menu prints the title alone, so a right-click in a SQL
+  file offered `PostgreSQL Workbench: Execute SQL Selection` in full
+- Made four Scratchpad commands ask which Scratchpad they are about. Asked for
+  from the palette with none open, **Association...**, **Reconnect**,
+  **Connect** and **Statement Timeout...** returned in silence, which reads
+  exactly like a command that is broken. They now offer the workspace's
+  Scratchpads to choose from, which is what Open, Rename, Delete, Duplicate and
+  Export have always done
+- Offered in the context menu every action a tree row already offered on hover:
+  **Debug** on a debuggable routine, **Open Definition** on any indexed object,
+  and **Connect** / **Disconnect** on a Connection. Getting Started promised
+  "Right-click a function → Debug", and only the hover icon delivered it
+- Gave a Connection's menu a defined order — Edit, Rename, Change Password —
+  and moved Remove behind a separator of its own, instead of leaving four
+  entries to sort themselves
+- Fixed Getting Started naming `plpgsql` as the `launch.json` configuration
+  type, which resolves nothing; it is `postgresql-workbench`. Fixed the same
+  walkthrough asking the reader to drag from **Sources**, a tree node renamed
+  **Schemas**
+- Renamed the results panel **PostgreSQL Results**: it holds the results of a
+  SQL selection and of a Scratchpad as well as those of a debug session
+- Declared the license as `MIT`, which is what the LICENSE file has always been
+- Removed a compatibility surface nothing was compatible with: five deprecated
+  `ConnectionManager` aliases, `bindingSnapshot`, `bindingFingerprint` and
+  `resolveNotebookBinding` — whose one returned field had just been renamed —
+  and a `postgresql-workbench.debugAvailable` context key set on every
+  Connection change and read by nothing
+
 ### Documentation
 
 - Added the [Data View guide](https://ng-galien.github.io/postgresql-workbench/docs/data-view.html)
@@ -115,24 +150,24 @@ from the Workbench Index and written back in one guarded transaction.
 ## [1.3.0] - 2026-08-18
 
 PostgreSQL Workbench 1.3.0 makes every Workbench operation exact to its
-Connexion. Several PostgreSQL servers can be open at once, each with its own
+Connection. Several PostgreSQL Connections can be open at once, each with its own
 index, Schema Sync listener, Scratchpad Associations, coverage and debugging
 state, replacing the previous single active connection.
 
-- Kept every open Connexion connected and indexed independently: the TreeView,
+- Kept every open Connection connected and indexed independently: the TreeView,
   search, Cockpit, Scratchpads, SQL authoring, pgTAP coverage and the debugger
-  resolve their Connexion explicitly instead of a global active server
-- Queued index runs per Connexion and database so one server never waits
+  resolve their Connection explicitly instead of a global active Connection
+- Queued index runs per Connection and database so one Connection never waits
   behind another; automatic refreshes now report their phases and can be
-  cancelled for their exact Connexion
-- Fixed the PL/pgSQL debug launch that aborted when several Connexions were
+  cancelled for their exact Connection
+- Fixed the PL/pgSQL debug launch that aborted when several Connections were
   open and no Association was recorded
 - Stopped Schema Sync from falling back to a full rebuild after debugger
   capability probes, and skipped the duplicate full re-index after Scratchpad
-  DDL when Schema Sync already listens on that Connexion
-- Judged Cockpit, relation and source-preview snapshot currency per Connexion,
-  so indexing another server no longer invalidates an unrelated graph
-- Attributed each debug result to the Connexion that produced it
+  DDL when Schema Sync already listens on that Connection
+- Judged Cockpit, relation and source-preview snapshot currency per Connection,
+  so indexing another Connection no longer invalidates an unrelated graph
+- Attributed each debug result to the Connection that produced it
 - Renamed the command `postgresql-workbench.useSqlNotebookBindingAsActive` to
   `postgresql-workbench.connectSqlNotebookAssociation` ("Connect Scratchpad
   Association"); update custom keybindings that referenced the old identifier
@@ -166,7 +201,7 @@ PostgreSQL sources.
   indexed completion, semantic highlighting, hover, navigation, and safe query
   composition
 - Added persistent Document Associations for free `.sql` and `.pgsql` files;
-  completion, composition, Run, and Debug now use one explicit saved Connexion
+  completion, composition, Run, and Debug now use one explicit saved Connection
   without silently following the active DatabaseContext
 - Added language-status feedback for missing Associations, missing or stale
   indexes, syntax errors, and configurable syntax-analysis budgets
@@ -203,8 +238,8 @@ PostgreSQL sources.
 ### Scratchpads and Workbench reliability
 
 - Split Scratchpads into a dedicated, resizable and filterable TreeView below
-  Sources, with deterministic automatic Association for a single Connexion and
-  an explicit selector when several Connexions exist
+  Sources, with deterministic automatic Association for a single Connection and
+  an explicit selector when several Connections exist
 - Added persisted Scratchpad Statement-timeout overrides, actionable timeout
   recovery, native cancellation through `pg_cancel_backend`, and safe shutdown
   rollback for active manual Transactions
@@ -323,7 +358,7 @@ databases.
 
 ### PostgreSQL Workbench
 
-- Added a unified connection tree organized by server and database context,
+- Added a unified Connection tree organized by Connection and database context,
   with indexed Sources and persistent SQL Scratchpads
 - Added the PostgreSQL Cockpit: searchable dependency graphs with upstream and
   downstream expansion, relation filters, source inspection, pins, and saved
@@ -433,7 +468,7 @@ databases.
 
 - Standalone SQL callsites now require an explicit per-statement PostgreSQL
   connection assignment; the Debug CodeLens appears only after assignment and
-  the selected server remains visible beside the call
+  the selected Connection remains visible beside the call
 - Continuing a call to completion now reveals the dedicated PL/pgSQL Results
   panel instead of opening VS Code's generic view command palette
 - Starting a subsequent callsite no longer reopens Results while VS Code is
@@ -464,17 +499,17 @@ databases.
   require confirmation, and CSV/TSV use `\N` for PostgreSQL `NULL`
 - Debugging a callsite pins its SQL editor so revealing the stopped routine
   source no longer closes the originating file
-- New command **PL/pgSQL: Check Server Requirements** with a guided setup:
+- New command **PL/pgSQL: Check Connection Requirements** with a guided setup:
   Docker one-liner, self-hosted instructions, managed-cloud guidance
-- Registered servers appear as dynamic configurations in "Run and Debug" —
+- Registered Connections appear as dynamic configurations in "Run and Debug" —
   no launch.json needed; the SQL statement is prompted at launch
 - Launched sessions are persisted to `.vscode/launch.json` for F5 replay
 - Cancelled or failed launches show a clear warning instead of failing silently
 - Connection progress is cancellable
 - Status bar distinguishes "connection lost" (warning color) from
   "no connection"; welcome view with prerequisites shown on first open
-- Re-adding an existing server offers to connect; server removal asks for
-  confirmation; consistent Escape/empty-value handling in the Add Server wizard
+- Re-adding an existing Connection offers to connect; Connection removal asks for
+  confirmation; consistent Escape/empty-value handling in the Add Connection wizard
 - Context commands no longer appear (and crash) in the Command Palette
 
 ## [0.1.0] - 2026-04-08

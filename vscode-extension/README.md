@@ -89,21 +89,21 @@ guide](https://ng-galien.github.io/postgresql-workbench/docs/data-view.html).
   statement and branch coverage in the editor.
 - **PL/pgSQL debugger** — use breakpoints, step controls, inline values, the
   Variables panel, Debug Console, and structured PostgreSQL values.
-- **Connection-aware navigation** — open several PostgreSQL Connexions at once
-  and keep Schemas, Graph, notebooks, results, tests, and debugging attached to
-  the exact Connexion they belong to.
+- **Connection-aware navigation** — open several PostgreSQL Connections at once
+  and keep Schemas, Cockpit, notebooks, results, tests, and debugging attached to
+  the exact Connection they belong to.
 
 ## Start a debug-ready PostgreSQL from VS Code
 
 The debugger requires the [pldebugger](https://github.com/ng-galien/pldebugger)
 server extension. Run:
 
-> **PL/pgSQL: Start Local Debug Database (Docker)**
+> **PostgreSQL Workbench: Start Local Debug Database (Docker)**
 
 Choose PostgreSQL 13–18 and a local port. The extension pulls the selected
 [Docker image](https://hub.docker.com/r/galien0xffffff/postgres-debugger),
 starts it on `127.0.0.1`, waits until PostgreSQL is ready, creates `pldbgapi`,
-then saves and connects the server automatically. PostgreSQL 17 and port 5432
+then saves and opens the Connection automatically. PostgreSQL 17 and port 5432
 are the defaults. The local database, user, and password are all `postgres`.
 
 > [!WARNING]
@@ -122,7 +122,7 @@ docker exec pg-debug psql -U postgres -d postgres \
   -c 'CREATE EXTENSION IF NOT EXISTS pldbgapi'
 ```
 
-Already have a server? Run **`PL/pgSQL: Check Server Requirements`** — the
+Already have a PostgreSQL database? Run **`PostgreSQL Workbench: Check Connection Requirements`** — the
 extension diagnoses what's missing and guides you through the setup, including
 running `CREATE EXTENSION pldbgapi` for you when possible.
 
@@ -147,10 +147,10 @@ running `CREATE EXTENSION pldbgapi` for you when possible.
   entries that Workbench can resolve safely; routine definitions offer
   **Debug deployed routine**
 - **Routine comparison** — compare a local PL/pgSQL definition with the exact overloaded routine in the active indexed PostgreSQL snapshot
-- **Function explorer** — browse servers → schemas → functions in the sidebar, debug from a right-click
-- **Zero launch.json needed** — registered servers appear in "Run and Debug"; launched sessions are saved to `launch.json` for one-key replay with F5
+- **Function explorer** — browse Connections → schemas → functions in the sidebar, debug from a right-click
+- **Zero launch.json needed** — registered Connections appear in "Run and Debug"; launched sessions are saved to `launch.json` for one-key replay with F5
 - **Connection manager** — paste a connection string, import from SQLTools/pgsql extensions, passwords stored in VS Code secrets
-- **Session recovery** — inspect and terminate stale or blocked DAP sessions from the connected server in the Functions view
+- **Session recovery** — inspect and terminate stale or blocked DAP sessions from the open Connection in the Functions view
 - **Semantic highlighting** — rich PL/pgSQL coloring including dollar quoting
 - **pgTAP Test Explorer and coverage** — discover database tests, run selected suites, and inspect native statement/branch coverage in the editor
 
@@ -161,11 +161,11 @@ running `CREATE EXTENSION pldbgapi` for you when possible.
 3. Click **Run SQL**. PostgreSQL executes that Statement and reports its result or error without requiring it to be debuggable.
 4. For a resolved PL/pgSQL `CALL` or function `SELECT`, click the additional **Debug PL/pgSQL** CodeLens; a `CREATE OR REPLACE` definition offers **Debug deployed routine**, which debugs the routine deployed in PostgreSQL, not the edited text.
 5. The debugger stops on entry — step with F10/F11, inspect variables, or set breakpoints in the source.
-6. Run and Debug results appear in the **PL/pgSQL Results** panel.
+6. Run and Debug results appear in the **PostgreSQL Results** panel.
 
 Notes:
 - `Debug call` is intentionally shown only for standalone SQL calls that can be replayed safely.
-- One Document Association is shared by every Run and Debug action in the same free SQL file. Changing it never affects any other open Connexion.
+- One Document Association is shared by every Run and Debug action in the same free SQL file. Changing it never affects any other open Connection.
 - Virtual source documents use the exact canonical Code Moniker symbol URI
   (`code+moniker://...`) and expose routine-definition debugging, not call-site replay.
 
@@ -175,7 +175,7 @@ The Workbench index describes PostgreSQL structure, not table data. Automatic
 synchronization is disabled by default and never reacts to `INSERT`, `UPDATE`,
 or `DELETE`. Enable it globally or for the current workspace with
 `postgresql-workbench.workbench.schemaSync.enabled`, or use **Configure Schema
-Synchronization** on one Connexion to store an explicit connection
+Synchronization** on one Connection to store an explicit connection
 override.
 
 Enabling the option does not alter the database. Select **Provision Schema
@@ -206,14 +206,14 @@ configurations by hand:
   "type": "postgresql-workbench",
   "request": "launch",
   "name": "Debug my_function",
-  "server": "localhost:5432/mydb:postgres",
+  "connection": "localhost:5432/mydb:postgres",
   "sql": "SELECT my_function()",
   "stopOnEntry": true
 }
 ```
 
-`server` is the server ID shown in the sidebar; if omitted, the active
-connection is used. Configurations never contain credentials — passwords stay
+`connection` is the Connection ID shown in the sidebar; if omitted, the active
+Connection is used. Configurations never contain credentials — passwords stay
 in VS Code secret storage. `stopOnEntry` defaults to `true`; set it to `false`
 only for an intentional run-to-breakpoint launch. An optional `attachTimeoutMs`
 (default 30000) bounds how long a still-running target may wait to reach the
@@ -318,7 +318,7 @@ Available settings:
 - `postgresql-workbench.coverage.timeoutMs` — per-database suite timeout
   (default 300000 ms).
 
-Run **PL/pgSQL: Export Last Coverage** to write the most recent native coverage
+Run **PostgreSQL Workbench: Export Last Coverage** to write the most recent native coverage
 result as LCOV or versioned JSON. The export contains the exact canonical
 `code+moniker://` symbol URIs used by the editor, debugger, Test Explorer, and
 coverage view, so overloaded routines remain unambiguous.
@@ -360,7 +360,7 @@ uses a unique `application_name` and cleans up its own backends — concurrent
 debug sessions (multiple windows or teammates on a shared dev server) don't
 interfere with each other.
 
-If a client crash still leaves a session behind, expand the connected server
+If a client crash still leaves a session behind, expand the open Connection
 in **Functions & Procedures**, open **Debug sessions**, select the stale
 session, and confirm **Terminate**. Recovery groups the listener and target as
 one logical session and revalidates their reserved DAP application names before
@@ -373,7 +373,7 @@ This extension does not collect any telemetry data.
 ## Support and security
 
 - Problems and feature requests: [GitHub Issues](https://github.com/ng-galien/postgresql-workbench/issues)
-- Setup diagnostics: run **`PL/pgSQL: Check Server Requirements`**
+- Setup diagnostics: run **`PostgreSQL Workbench: Check Connection Requirements`**
 - Security reports: see [SECURITY.md](SECURITY.md)
 - Support policy and useful diagnostic information: see [SUPPORT.md](SUPPORT.md)
 

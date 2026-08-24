@@ -28,8 +28,8 @@ export interface DataViewWriteHost {
   changed(): void;
   /** Re-reads the rows once the database has taken the changes. */
   reload(): Promise<void>;
-  /** How the server is named to a reader. */
-  serverName(): string;
+  /** How the connection is named to a reader. */
+  connectionName(): string;
 }
 
 /** Local, unapplied cell edits of a Data View, and their atomic application. */
@@ -93,7 +93,7 @@ export class PendingEdits {
       client = await host.openClient();
       const applied = await this.applyWith(client, editability);
       this.writing = false;
-      host.notify(`${countLabel(applied, "change")} applied to ${host.serverName()}.`, "info");
+      host.notify(`${countLabel(applied, "change")} applied to ${host.connectionName()}.`, "info");
       await host.reload();
     } catch (error) {
       this.writing = false;

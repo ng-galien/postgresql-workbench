@@ -155,7 +155,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
   if (acceptanceControl) context.subscriptions.push(acceptanceControl);
 
   const cm = new ConnectionManager(context, out);
-  acceptanceProbes.removeServer = async (id) => {
+  acceptanceProbes.removeConnection = async (id) => {
     await cm.removeConnectionConfiguration(id);
   };
   context.subscriptions.push(cm);
@@ -202,8 +202,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
     workbenchIndex.releaseAcceptancePhaseGate(runId, phase);
   acceptanceProbes.inspectWorkbenchState = () => ({
     connection: {
-      connectedServerIds: [...cm.connectedServerIds],
-      connected: cm.connectedServerIds.length > 0,
+      connectedConnectionIds: [...cm.connectedConnectionIds],
+      connected: cm.connectedConnectionIds.length > 0,
     },
     schemaSync: workbenchDdlSync.diagnosticStates(),
     index: workbenchIndex.acceptanceSnapshot(),
@@ -225,34 +225,35 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
   const dataViews = new DataViewEditorProvider({
     parser: () => workbenchIndex.syntaxParser(),
     compose: (request) => composeSqlAuthoring(request),
-    authoringSnapshot: (serverId, database) =>
-      workbenchIndex.sqlAuthoringSnapshot({ serverId, database }),
+    authoringSnapshot: (connectionId, database) =>
+      workbenchIndex.sqlAuthoringSnapshot({ connectionId, database }),
     authoringSettings: (uri) => resolveSqlAuthoringSettings(uri),
     queryFiles: dataViewQueryFiles,
     treeDragPayload: (consume) => workbenchTreeDragAndDrop.activeAuthoringPayload(consume),
-    associate: (documentUri, serverId) => callSiteConnections.assignDocument(documentUri, serverId),
+    associate: (documentUri, connectionId) =>
+      callSiteConnections.assignDocument(documentUri, connectionId),
     dissociate: (documentUri) => callSiteConnections.clearDocument(documentUri),
-    openClient: (serverId) => {
+    openClient: (connectionId) => {
       const timeoutMs = vscode.workspace
         .getConfiguration("postgresql-workbench.sql")
         .get<number>("statementTimeoutMs", 60_000);
-      return openCoverageClient(cm, serverId, {
+      return openCoverageClient(cm, connectionId, {
         applicationName: "postgresql-workbench:data-view",
         statementTimeoutMs: Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 60_000,
       });
     },
-    serverName: (serverId) => {
-      const server = cm.store.get(serverId);
-      return server ? getConnectionName(server) : undefined;
+    connectionName: (connectionId) => {
+      const connection = cm.store.get(connectionId);
+      return connection ? getConnectionName(connection) : undefined;
     },
     onConnectionsChanged: (listener) =>
       cm.onChanged((change) => {
         if (change.debugCapabilityOnly) return;
-        listener(change.serverIds);
+        listener(change.connectionIds);
       }),
     resultSettings: () => sqlResultSettings(),
     openSql: async (source, sql) => {
-      await openScratchpadWithSql(`${sql};\n`, cm.store.get(source.serverId));
+      await openScratchpadWithSql(`${sql};\n`, cm.store.get(source.connectionId));
     },
     output: out,
     extensionUri: context.extensionUri,
@@ -268,26 +269,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
     (request) =>
       dataViews.open({
         kind: "sql",
-        serverId: request.association.serverId,
+        connectionId: request.association.connectionId,
         database: request.association.database,
         sql: request.sql,
         label: dataViewSqlLabel(request.sql),
       }),
     (association) => {
-      void cm.refreshDebugCapability(association.serverId);
-      // A listening Schema Sync already refreshes this Connexion incrementally
+      void cm.refreshDebugCapability(association.connectionId);
+      // A listening Schema Sync already refreshes this Connection incrementally
       // from the committed DDL; a second full rebuild would only race it.
-      if (workbenchDdlSync.state(association.serverId).status === "listening") return;
+      if (workbenchDdlSync.state(association.connectionId).status === "listening") return;
       workbenchIndex.markDatabaseStale(
-        association.serverId,
+        association.connectionId,
         association.database,
         "Schema changed from a Scratchpad",
       );
-      const client = cm.getClient(association.serverId);
+      const client = cm.getClient(association.connectionId);
       if (!client) return;
       void workbenchIndex
         .indexPostgresDatabase(client, {
-          serverId: association.serverId,
+          connectionId: association.connectionId,
           database: association.database,
         })
         .catch((error) =>
@@ -328,25 +329,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
     connections: cm,
     output: out,
     syntaxParser: () => workbenchIndex.syntaxParser(),
-    indexedDependencies: (serverId, routine) =>
-      workbenchIndex.routineDependencies(routine.oid, serverId),
-    indexDatabase: async (serverId, client) => {
-      const server = cm.store.get(serverId);
-      if (!server) throw new Error(`Unknown PostgreSQL connection: ${serverId}`);
-      const state = workbenchIndex.databaseState({ serverId, database: server.database });
+    indexedDependencies: (connectionId, routine) =>
+      workbenchIndex.routineDependencies(routine.oid, connectionId),
+    indexDatabase: async (connectionId, client) => {
+      const connection = cm.store.get(connectionId);
+      if (!connection) throw new Error(`Unknown PostgreSQL connection: ${connectionId}`);
+      const state = workbenchIndex.databaseState({ connectionId, database: connection.database });
       if (state.status !== "indexing" && state.result) {
         return;
       }
       await workbenchIndex.indexPostgresDatabase(client, {
-        serverId,
-        database: server.database,
+        connectionId,
+        database: connection.database,
       });
     },
-    resolveRoutineSymbolUri: (serverId, oid) => workbenchIndex.routineSymbol(serverId, oid)?.uri,
+    resolveRoutineSymbolUri: (connectionId, oid) =>
+      workbenchIndex.routineSymbol(connectionId, oid)?.uri,
     resolveDocumentUri: (symbolUri) => workbenchSourceUris.documentUri(symbolUri),
     resolveSource: (uri) => {
       const source = workbenchSourceUris.sourceDescriptorForDocumentUri(uri);
-      return source ? { serverId: source.serverId, oid: source.oid } : undefined;
+      return source ? { connectionId: source.connectionId, oid: source.oid } : undefined;
     },
   });
   let acceptanceTestRunSequence = 0;
@@ -383,10 +385,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
     }),
   );
   acceptanceProbes.inspectTestingState = () => {
-    const serverId = cm.connectedServerIds.length === 1 ? cm.connectedServerIds[0] : undefined;
-    const server = serverId ? cm.store.get(serverId) : undefined;
-    const state = server
-      ? workbenchIndex.databaseState({ serverId: server.id, database: server.database })
+    const connectionId =
+      cm.connectedConnectionIds.length === 1 ? cm.connectedConnectionIds[0] : undefined;
+    const connection = connectionId ? cm.store.get(connectionId) : undefined;
+    const state = connection
+      ? workbenchIndex.databaseState({
+          connectionId: connection.id,
+          database: connection.database,
+        })
       : { status: "not-indexed" as const };
     return {
       coverage: acceptanceCoverage,
@@ -394,7 +400,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
         database: state.result?.database,
         generation: state.result?.generation,
         revision: state.result?.revision,
-        serverId: state.result?.serverId,
+        connectionId: state.result?.connectionId,
         status: state.status,
       },
       run: acceptanceTestRun,
@@ -407,7 +413,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
     const isPlpgsqlRoutine =
       object.plpgsql && (object.kind === "function" || object.kind === "procedure");
     const hasMappedTests =
-      isPlpgsqlRoutine && (await coverageTests.hasMappedTests(object.serverId, object.oid));
+      isPlpgsqlRoutine && (await coverageTests.hasMappedTests(object.connectionId, object.oid));
     return buildWorkbenchObjectActions(object, { hasMappedTests });
   };
   const runWorkbenchObjectAction = async (
@@ -422,7 +428,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
         action !== "open-definition" &&
         action !== "open-deployed-source") ||
       !result ||
-      result.serverId !== object.serverId ||
+      result.connectionId !== object.connectionId ||
       result.database !== object.database ||
       result.revision !== snapshot.revision ||
       result.generation !== snapshot.generation
@@ -462,17 +468,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
           new FunctionItem(object, snapshot),
         );
       case "show-tests":
-        return coverageTests.revealRoutine(object.serverId, object.oid);
+        return coverageTests.revealRoutine(object.connectionId, object.oid);
       case "run-tests":
-        return coverageTests.runRoutineTests(object.serverId, object.oid, false);
+        return coverageTests.runRoutineTests(object.connectionId, object.oid, false);
       case "run-with-coverage":
-        return coverageTests.runRoutineTests(object.serverId, object.oid, true);
+        return coverageTests.runRoutineTests(object.connectionId, object.oid, true);
     }
   };
   const callSiteConnections = new CallSiteConnectionStore(context.workspaceState);
   const workbenchSearch = { query: "" };
   const debugSessions = new DebugSessionController(() =>
-    connectionTreeProvider?.refreshServer(debugSessions.active?.serverId),
+    connectionTreeProvider?.refreshConnection(debugSessions.active?.connectionId),
   );
   /** Resolves with the SQL result of the next PL/pgSQL debug session, or undefined when it ends without one. */
   const scratchpadDebugging = createScratchpadDebugging({
@@ -508,7 +514,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
     sourceUris: workbenchSourceUris,
     sessions: debugSessions,
     output: out,
-    refreshTree: () => connectionTreeProvider?.refreshServer(debugSessions.active?.serverId),
+    refreshTree: () =>
+      connectionTreeProvider?.refreshConnection(debugSessions.active?.connectionId),
     revealStoppedSource: queueStoppedSource,
   });
   treeProvider = new WorkbenchTreeProvider(
@@ -545,7 +552,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
       const requested = await vscode.window.showInputBox({
         title: "Filter SQL Scratchpads",
         prompt: "Filter by name or Association",
-        placeHolder: "Scratchpad name or Connexion",
+        placeHolder: "Scratchpad name or Connection",
         value: scratchpadFilter,
       });
       if (requested === undefined) return;
@@ -622,9 +629,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
     graphTreeSync.invalidateCockpitContext();
   };
   const syncGraphFromTree = graphTreeSync.bind();
-  const scheduleDebugSessionRefresh = (serverId: string | undefined) => {
+  const scheduleDebugSessionRefresh = (connectionId: string | undefined) => {
     for (const delay of [100, 500, 2_000, 5_000]) {
-      setTimeout(() => connectionTreeProvider.refreshServer(serverId), delay);
+      setTimeout(() => connectionTreeProvider.refreshConnection(connectionId), delay);
     }
   };
   context.subscriptions.push(
@@ -642,9 +649,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
     scratchpadsTree.onDidCollapseElement(({ element }) =>
       scratchpadTreeProvider.setExpanded(element, false),
     ),
-    cm.onServerChanged((change) => {
+    cm.onConnectionChanged((change) => {
       const database = workbenchGraph.currentDatabase;
-      if (!database || !change.serverIds.includes(database.serverId)) return;
+      if (!database || !change.connectionIds.includes(database.connectionId)) return;
       graphTreeSync.invalidateCockpitContext();
       workbenchGraph.invalidateCockpitContext();
     }),
@@ -653,7 +660,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
       if (
         database &&
         state.status === "available" &&
-        state.result?.serverId === database.serverId &&
+        state.result?.connectionId === database.connectionId &&
         state.result.database === database.database
       ) {
         void workbenchGraph.refreshSnapshot(state.result);
@@ -670,16 +677,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
           void vscode.debug.stopDebugging(session);
           return;
         }
-        scheduleDebugSessionRefresh(debugSessions.active?.serverId);
+        scheduleDebugSessionRefresh(debugSessions.active?.connectionId);
       }
     }),
     vscode.debug.onDidTerminateDebugSession((session) => {
       if (session.type === "postgresql-workbench") {
-        const serverId =
-          typeof session.configuration.server === "string"
-            ? session.configuration.server
-            : debugSessions.active?.serverId;
-        scheduleDebugSessionRefresh(serverId);
+        const connectionId =
+          typeof session.configuration.connection === "string"
+            ? session.configuration.connection
+            : debugSessions.active?.connectionId;
+        scheduleDebugSessionRefresh(connectionId);
       }
     }),
   );
@@ -687,24 +694,29 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
 
   context.subscriptions.push(
     contentProvider.onDidChangeFile((events) => {
-      const serverIds = new Set<string>();
+      const connectionIds = new Set<string>();
       for (const event of events) {
         if (event.uri.scheme !== CodeMonikerContentProvider.SCHEME) continue;
         const descriptor = workbenchSourceUris.sourceDescriptorForDocumentUri(event.uri);
-        if (descriptor) serverIds.add(descriptor.serverId);
+        if (descriptor) connectionIds.add(descriptor.connectionId);
       }
-      for (const serverId of serverIds) treeProvider.refreshServer(serverId);
+      for (const connectionId of connectionIds) treeProvider.refreshConnection(connectionId);
     }),
   );
 
-  const connectionSnapshot = (serverId: string) => {
-    const server = cm.store.get(serverId);
-    return server
-      ? workbenchIndex.sqlAuthoringSnapshot({ serverId: server.id, database: server.database })
+  const connectionSnapshot = (connectionId: string) => {
+    const connection = cm.store.get(connectionId);
+    return connection
+      ? workbenchIndex.sqlAuthoringSnapshot({
+          connectionId: connection.id,
+          database: connection.database,
+        })
       : undefined;
   };
-  const debuggerCapabilityAvailability = (serverId: string): SqlDebugAvailability | undefined => {
-    const capability = cm.debugCapabilityFor(serverId);
+  const debuggerCapabilityAvailability = (
+    connectionId: string,
+  ): SqlDebugAvailability | undefined => {
+    const capability = cm.debugCapabilityFor(connectionId);
     if (capability.status === "available") return undefined;
     return {
       status: "unavailable",
@@ -721,9 +733,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
         uri.scheme === CodeMonikerContentProvider.SCHEME
           ? workbenchSourceUris.sourceDescriptorForDocumentUri(uri)
           : undefined;
-      const serverId = binding?.serverId ?? callSiteConnections.getDocument(documentUri);
-      const server = serverId ? cm.store.get(serverId) : undefined;
-      return server ? { id: server.id, name: getConnectionName(server) } : undefined;
+      const connectionId = binding?.connectionId ?? callSiteConnections.getDocument(documentUri);
+      const connection = connectionId ? cm.store.get(connectionId) : undefined;
+      return connection ? { id: connection.id, name: getConnectionName(connection) } : undefined;
     },
     indexState: (connection) => {
       const snapshot = connectionSnapshot(connection.id);
@@ -793,7 +805,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
     objectActions: workbenchObjectActions,
     runObjectAction: runWorkbenchObjectAction,
     search: workbenchSearch,
-    revealSources: (serverId) => revealSources(workbenchTree, treeProvider, serverId),
+    revealSources: (connectionId) => revealSources(workbenchTree, treeProvider, connectionId),
     selectedTreeItems: () => workbenchTree.selection,
   });
   registerGraphWorkbenchCommands({
@@ -866,9 +878,9 @@ export async function deactivate(): Promise<void> {
 async function revealSources(
   tree: vscode.TreeView<PlpgsqlTreeItem>,
   provider: WorkbenchTreeProvider,
-  serverId: string,
+  connectionId: string,
 ): Promise<void> {
-  const sources = provider.sourcesItem(serverId);
+  const sources = provider.sourcesItem(connectionId);
   if (sources) await tree.reveal(sources, { expand: true, focus: false });
 }
 
@@ -879,13 +891,13 @@ async function revealSqlAuthoringReference(
   tree: vscode.TreeView<PlpgsqlTreeItem>,
   graphSync: WorkbenchGraphTreeSync,
 ): Promise<boolean> {
-  const identity = { serverId: target.serverId, database: target.database };
+  const identity = { connectionId: target.connectionId, database: target.database };
   const state = index.databaseState(identity);
   const result = state.result;
   if (
     state.status !== "available" ||
     !result ||
-    result.serverId !== target.serverId ||
+    result.connectionId !== target.connectionId ||
     result.database !== target.database
   ) {
     return false;

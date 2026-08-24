@@ -1,8 +1,8 @@
 import {
+  demoConnectionTreeItem as connection,
   demoDatabaseTreeItem as database,
   demoConnectionId,
   demoConnectionUrl,
-  demoConnexionTreeItem as server,
 } from "../../fixtures/demoDatabase";
 import { expect, test } from "../../fixtures/test";
 import type {
@@ -45,7 +45,7 @@ async function waitForHeldPhase(
 }
 
 async function currentSources(workbench: WorkbenchPage) {
-  const activeDatabase = await workbench.tree.expandPath([server, database]);
+  const activeDatabase = await workbench.tree.expandPath([connection, database]);
   return {
     activeDatabase,
     sources: await workbench.tree.findChild(activeDatabase, SCHEMAS_TREE_ITEM),
@@ -57,8 +57,8 @@ test.describe("Workbench indexing feedback", () => {
     workbench,
     vscode,
   }) => {
-    await workbench.ensureServer(demoConnectionUrl, server);
-    await workbench.expectDatabaseIndexed(server, database);
+    await workbench.ensureConnection(demoConnectionUrl, connection);
+    await workbench.expectDatabaseIndexed(connection, database);
     const baseline = await workbench.expectFreshIndexRuntime();
     const { sources } = await currentSources(workbench);
     await workbench.tree.expandItem(sources, SCHEMAS_TREE_ITEM);
@@ -69,7 +69,7 @@ test.describe("Workbench indexing feedback", () => {
 
     await test.step("show the refresh phase while retaining the previous snapshot", async () => {
       await vscode.armIndexPhaseGate(["reading-catalog"]);
-      await workbench.tree.clickHeaderAction(/Reindex Database/i);
+      await workbench.tree.clickHeaderAction(/^Reindex Database$/i);
       const held = await waitForHeldPhase(vscode, "reading-catalog");
       expect(held.snapshot.index.activeRun?.retainedGeneration).toBe(baseline.generation);
       const { activeDatabase: refreshingDatabase, sources: refreshingSources } =
@@ -82,7 +82,7 @@ test.describe("Workbench indexing feedback", () => {
         /Schemas, demo, refreshing, reading catalog, previous snapshot available/i,
       );
       const refreshingSchema = await workbench.tree.expandPath([
-        server,
+        connection,
         database,
         SCHEMAS_TREE_ITEM,
         /^shop/,
@@ -93,7 +93,7 @@ test.describe("Workbench indexing feedback", () => {
       );
       await workbench.tree.hoverItem(refreshingProduct, /^product(?:\s|$)/);
       const openDefinition = workbench.page.getByRole("button", {
-        name: "Open PostgreSQL Definition",
+        name: "Open Definition",
       });
       await expect(openDefinition).toBeVisible({ timeout: 5_000 });
       await openDefinition.click();
@@ -113,7 +113,7 @@ test.describe("Workbench indexing feedback", () => {
       const { sources: cancellingSources } = await currentSources(workbench);
       await workbench.tree.hoverItem(cancellingSources, SCHEMAS_TREE_ITEM);
       const cancel = cancellingSources.getByRole("button", {
-        name: /Cancel Database Indexing/i,
+        name: /^Cancel Indexing$/i,
       });
       await expect(cancel).toBeVisible({ timeout: 5_000 });
       await cancel.click();
@@ -130,7 +130,7 @@ test.describe("Workbench indexing feedback", () => {
           return {
             active: state.index.activeRun?.id,
             generation: state.index.states.find(
-              (entry) => entry.result?.serverId === demoConnectionId,
+              (entry) => entry.result?.connectionId === demoConnectionId,
             )?.result?.generation,
             pending: state.index.currentRunPending,
             settled: state.index.lastSettledRun,
@@ -143,7 +143,7 @@ test.describe("Workbench indexing feedback", () => {
           settled: { id: runId, status: "cancelled" },
         });
       const cancelledSchema = await workbench.tree.expandPath([
-        server,
+        connection,
         database,
         SCHEMAS_TREE_ITEM,
         /^shop/,
@@ -156,7 +156,7 @@ test.describe("Workbench indexing feedback", () => {
 
     await test.step("retry with real phase and count feedback", async () => {
       await vscode.armIndexPhaseGate(["reading-catalog", "publishing-sources", "reading-symbols"]);
-      await workbench.tree.clickHeaderAction(/Reindex Database/i);
+      await workbench.tree.clickHeaderAction(/^Reindex Database$/i);
       const readingCatalog = await waitForHeldPhase(vscode, "reading-catalog");
       let current = await currentSources(workbench);
       await expect(current.sources).toContainText(/refreshing.*reading catalog/i);
@@ -189,7 +189,7 @@ test.describe("Workbench indexing feedback", () => {
         timeout: 30_000,
       });
       const availableSchema = await workbench.tree.expandPath([
-        server,
+        connection,
         database,
         SCHEMAS_TREE_ITEM,
         /^shop/,

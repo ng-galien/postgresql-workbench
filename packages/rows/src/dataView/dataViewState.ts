@@ -13,11 +13,11 @@ import type { PendingEdits } from "./pendingEdits.js";
 /**
  * Everything a host must have in hand to say what its Data View currently is. All of it is state
  * the host already holds; only two fields differ between one host and another — the name shown for
- * the server it is connected to, and whether the query has an editor with unsaved text in it.
+ * the connection it is connected to, and whether the query has an editor with unsaved text in it.
  */
 export interface DataViewStateOf {
   source: DataViewSource;
-  serverName: string;
+  connectionName: string;
   /** Where the query text lives, so the view can open it. */
   queryUri: string;
   query: SqlQueryModel;
@@ -37,7 +37,7 @@ export interface DataViewStateOf {
  * What the view is told a Data View currently is.
  *
  * This is a plain reading of what the host already holds — it asks nothing, opens nothing and
- * decides nothing. Both hosts wrote it out themselves, identically but for the server's name and
+ * decides nothing. Both hosts wrote it out themselves, identically but for the connection's name and
  * the editor's dirty flag, and had already drifted: one kept an empty message and the other
  * dropped it. There is nothing here for a host to supply beyond the two fields above, which is
  * why it never needed to be written twice.
@@ -45,7 +45,7 @@ export interface DataViewStateOf {
 export function dataViewState(of: DataViewStateOf): DataViewState {
   return {
     source: of.source,
-    serverName: of.serverName,
+    connectionName: of.connectionName,
     query: dataViewQueryInfo(of),
     projection: of.projection,
     status: of.status,

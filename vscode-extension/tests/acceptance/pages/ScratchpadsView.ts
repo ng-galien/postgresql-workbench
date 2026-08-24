@@ -138,7 +138,7 @@ export class ScratchpadsView {
   }
 
   async refresh(): Promise<void> {
-    await this.tree.clickHeaderAction(/Refresh SQL Scratchpads/i);
+    await this.tree.clickHeaderAction(/^Refresh$/i);
   }
 
   async collapseAll(): Promise<void> {
@@ -150,7 +150,7 @@ export class ScratchpadsView {
   }
 
   async filter(query: string): Promise<void> {
-    await this.tree.clickHeaderAction(/Filter SQL Scratchpads/i);
-    await this.quickInput.submit(query, /Scratchpad name or Connexion.*Filter SQL Scratchpads/i);
+    await this.tree.clickHeaderAction(/^Filter\.\.\.$/i);
+    await this.quickInput.submit(query, /Scratchpad name or Connection.*Filter SQL Scratchpads/i);
   }
 }

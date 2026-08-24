@@ -3,13 +3,13 @@ import type { WorkbenchDdlSyncController } from "../../../packages/catalog/src/d
 import { getConnectionName } from "../../../packages/catalog/src/savedConnection.js";
 import type { SqlCodeLensProvider } from "../codeLens/index.js";
 import { startDockerDebugDatabase } from "../docker/index.js";
-import type { ServerItem, WorkbenchDdlSyncItem } from "../workbench/index.js";
+import type { ConnectionItem, WorkbenchDdlSyncItem } from "../workbench/index.js";
 import type { ConnectionManager } from "./index.js";
 
 /**
- * The VS Code commands that manage Connexions: adding one, connecting and disconnecting, renaming
+ * The VS Code commands that manage Connections: adding one, connecting and disconnecting, renaming
  * its display name, removing it, and the Schema Sync switches it carries. Registration only —
- * what each command does lives in the Connexion store and in the packages.
+ * what each command does lives in the Connection store and in the packages.
  */
 
 export interface ConnectionCommandOptions {
@@ -22,33 +22,37 @@ export interface ConnectionCommandOptions {
 export function registerConnectionCommands(options: ConnectionCommandOptions): void {
   const { context, connections, ddlSync, codeLens, output } = options;
   context.subscriptions.push(
-    vscode.commands.registerCommand("postgresql-workbench.addServer", () =>
-      connections.commands.addServer(),
+    vscode.commands.registerCommand("postgresql-workbench.addConnection", () =>
+      connections.commands.addConnection(),
     ),
     vscode.commands.registerCommand("postgresql-workbench.startDockerDebugDatabase", () =>
       startDockerDebugDatabase(connections, output),
     ),
     vscode.commands.registerCommand(
-      "postgresql-workbench.connectServer",
-      (target: string | ServerItem) =>
-        connections.connectServer(typeof target === "string" ? target : target.server.id),
-    ),
-    vscode.commands.registerCommand("postgresql-workbench.removeServer", (item: ServerItem) => {
-      connections.commands.removeServer(item.server.id);
-    }),
-    vscode.commands.registerCommand("postgresql-workbench.editServer", (item: ServerItem) =>
-      connections.commands.editServer(item.server.id),
-    ),
-    vscode.commands.registerCommand("postgresql-workbench.renameServer", (item: ServerItem) =>
-      connections.commands.renameServer(item.server.id),
-    ),
-    vscode.commands.registerCommand("postgresql-workbench.changePassword", (item: ServerItem) =>
-      connections.commands.changePassword(item.server.id),
+      "postgresql-workbench.connectConnection",
+      (target: string | ConnectionItem) =>
+        connections.connectConnection(typeof target === "string" ? target : target.connection.id),
     ),
     vscode.commands.registerCommand(
-      "postgresql-workbench.disconnectServer",
-      (target?: string | ServerItem) => {
-        const id = typeof target === "string" ? target : target?.server.id;
+      "postgresql-workbench.removeConnection",
+      (item: ConnectionItem) => {
+        connections.commands.removeConnection(item.connection.id);
+      },
+    ),
+    vscode.commands.registerCommand("postgresql-workbench.editConnection", (item: ConnectionItem) =>
+      connections.commands.editConnection(item.connection.id),
+    ),
+    vscode.commands.registerCommand(
+      "postgresql-workbench.renameConnection",
+      (item: ConnectionItem) => connections.commands.renameConnection(item.connection.id),
+    ),
+    vscode.commands.registerCommand("postgresql-workbench.changePassword", (item: ConnectionItem) =>
+      connections.commands.changePassword(item.connection.id),
+    ),
+    vscode.commands.registerCommand(
+      "postgresql-workbench.disconnectConnection",
+      (target?: string | ConnectionItem) => {
+        const id = typeof target === "string" ? target : target?.connection.id;
         return id ? connections.disconnect(id) : false;
       },
     ),
@@ -59,27 +63,27 @@ export function registerConnectionCommands(options: ConnectionCommandOptions): v
     vscode.commands.registerCommand(
       "postgresql-workbench.configureWorkbenchSchemaSync",
       async (item?: WorkbenchDdlSyncItem) => {
-        let server = item?.server;
-        if (!server) {
-          const pickedServer = await vscode.window.showQuickPick(
-            connections.servers.map((candidate) => ({
+        let connection = item?.connection;
+        if (!connection) {
+          const pickedConnection = await vscode.window.showQuickPick(
+            connections.connections.map((candidate) => ({
               label: getConnectionName(candidate),
               description: candidate.id,
-              server: candidate,
+              connection: candidate,
             })),
-            { placeHolder: "Select a PostgreSQL Connexion" },
+            { placeHolder: "Select a PostgreSQL Connection" },
           );
-          server = pickedServer?.server;
+          connection = pickedConnection?.connection;
         }
-        if (!server) return false;
-        const configuration = ddlSync.configuration(server);
-        const state = ddlSync.state(server.id);
+        if (!connection) return false;
+        const configuration = ddlSync.configuration(connection);
+        const state = ddlSync.state(connection.id);
         const picked = await vscode.window.showQuickPick(
           [
             {
               label: configuration.enabled
-                ? "$(circle-slash) Disable for this Connexion"
-                : "$(radio-tower) Enable for this Connexion",
+                ? "$(circle-slash) Disable for this Connection"
+                : "$(radio-tower) Enable for this Connection",
               detail: configuration.enabled ? "disable" : "enable",
             },
             {
@@ -115,17 +119,17 @@ export function registerConnectionCommands(options: ConnectionCommandOptions): v
                 ]
               : []),
           ],
-          { placeHolder: `Schema synchronization · ${getConnectionName(server)}` },
+          { placeHolder: `Schema synchronization · ${getConnectionName(connection)}` },
         );
         switch (picked?.detail) {
           case "enable":
-            await ddlSync.setConnectionEnabled(server.id, true);
+            await ddlSync.setConnectionEnabled(connection.id, true);
             return true;
           case "disable":
-            await ddlSync.setConnectionEnabled(server.id, false);
+            await ddlSync.setConnectionEnabled(connection.id, false);
             return true;
           case "settings":
-            await connections.setSchemaSyncOverride(server.id, undefined);
+            await connections.setSchemaSyncOverride(connection.id, undefined);
             return true;
           case "schema": {
             const schema = await vscode.window.showInputBox({
@@ -134,8 +138,8 @@ export function registerConnectionCommands(options: ConnectionCommandOptions): v
               validateInput: (value) => {
                 try {
                   ddlSync.configuration({
-                    ...server,
-                    schemaSync: { ...server.schemaSync, supportSchema: value },
+                    ...connection,
+                    schemaSync: { ...connection.schemaSync, supportSchema: value },
                   });
                   return undefined;
                 } catch (error) {
@@ -144,7 +148,7 @@ export function registerConnectionCommands(options: ConnectionCommandOptions): v
               },
             });
             if (schema !== undefined) {
-              await ddlSync.setConnectionSupportSchema(server.id, schema);
+              await ddlSync.setConnectionSupportSchema(connection.id, schema);
             }
             return schema !== undefined;
           }
@@ -158,13 +162,13 @@ export function registerConnectionCommands(options: ConnectionCommandOptions): v
             return vscode.commands.executeCommand(
               "postgresql-workbench.provisionWorkbenchSchemaSync",
               {
-                server,
+                connection,
               },
             );
           case "remove":
             return vscode.commands.executeCommand(
               "postgresql-workbench.removeWorkbenchSchemaSyncProvisioning",
-              { server },
+              { connection },
             );
           default:
             return false;
@@ -173,18 +177,18 @@ export function registerConnectionCommands(options: ConnectionCommandOptions): v
     ),
     vscode.commands.registerCommand(
       "postgresql-workbench.provisionWorkbenchSchemaSync",
-      async (item: Pick<WorkbenchDdlSyncItem, "server">) => {
-        const configuration = ddlSync.configuration(item.server);
+      async (item: Pick<WorkbenchDdlSyncItem, "connection">) => {
+        const configuration = ddlSync.configuration(item.connection);
         const confirm = await vscode.window.showWarningMessage(
-          `Provision schema synchronization on ${getConnectionName(item.server)}? This creates two database-level EVENT TRIGGER objects and notification functions in schema ${configuration.supportSchema}. PostgreSQL superuser privileges are required.`,
+          `Provision schema synchronization on ${getConnectionName(item.connection)}? This creates two database-level EVENT TRIGGER objects and notification functions in schema ${configuration.supportSchema}. PostgreSQL superuser privileges are required.`,
           { modal: true },
           "Provision",
         );
         if (confirm !== "Provision") return false;
         try {
-          await ddlSync.provision(item.server.id);
+          await ddlSync.provision(item.connection.id);
           void vscode.window.showInformationMessage(
-            `Schema synchronization is listening on ${getConnectionName(item.server)}.`,
+            `Schema synchronization is listening on ${getConnectionName(item.connection)}.`,
           );
           return true;
         } catch (error) {
@@ -197,14 +201,14 @@ export function registerConnectionCommands(options: ConnectionCommandOptions): v
     ),
     vscode.commands.registerCommand(
       "postgresql-workbench.removeWorkbenchSchemaSyncProvisioning",
-      async (item: Pick<WorkbenchDdlSyncItem, "server">) => {
+      async (item: Pick<WorkbenchDdlSyncItem, "connection">) => {
         const confirm = await vscode.window.showWarningMessage(
-          `Remove Workbench schema synchronization from ${getConnectionName(item.server)}? The database-level event triggers and Workbench notification functions will be removed without CASCADE.`,
+          `Remove Workbench schema synchronization from ${getConnectionName(item.connection)}? The database-level event triggers and Workbench notification functions will be removed without CASCADE.`,
           { modal: true },
           "Remove Provisioning",
         );
         if (confirm !== "Remove Provisioning") return false;
-        await ddlSync.removeProvisioning(item.server.id);
+        await ddlSync.removeProvisioning(item.connection.id);
         return true;
       },
     ),

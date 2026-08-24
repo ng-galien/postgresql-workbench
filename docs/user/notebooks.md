@@ -9,8 +9,8 @@ mediaAlt: SQL scratchpad executing a query and showing a PostgreSQL result grid
 # SQL Scratchpads
 
 A Scratchpad is a persistent PostgreSQL SQL workspace in VS Code. Its
-Association points to a saved Connexion, never to a live PostgreSQL session,
-and never silently switches to another open Connexion.
+Association points to a saved Connection, never to a live PostgreSQL session,
+and never silently switches to another open Connection.
 
 Run and Debug are separate execution intents but use that same Association.
 A code cell whose SQL resolves to one replayable PL/pgSQL entry point shows its
@@ -31,11 +31,11 @@ the SQL shapes that can start the PL/pgSQL debugger.
 The PostgreSQL Workbench sidebar keeps the database tree above a separate,
 resizable **Scratchpads** view. Create a Scratchpad with the **New SQL
 Scratchpad** action in that view header. The initial Association depends on the
-saved Connexions:
+saved Connections:
 
-- with no saved Connexion, the Scratchpad is created without an Association;
-- with one saved Connexion, the Association is automatic;
-- with several saved Connexions, a selector includes **No connection**;
+- with no saved Connection, the Scratchpad is created without an Association;
+- with one saved Connection, the Association is automatic;
+- with several saved Connections, a selector includes **No connection**;
 - cancelling that selector still creates the Scratchpad without an Association.
 
 Use the **Filter SQL Scratchpads** action in the view header to narrow the tree
@@ -50,8 +50,8 @@ Drag-and-drop composition also follows that Association exclusively. The cell
 does not show the standalone-editor connection CodeLens because the Association
 in the cell footer is the single connection control. See the exhaustive
 [drag-and-drop behavior](sql-authoring.md#compose-sql-by-drag-and-drop).
-**Connect Scratchpad Association** explicitly opens the associated Connexion;
-ordinary execution never connects or switches another Connexion. If the Connexion
+**Connect Scratchpad Association** explicitly opens the associated Connection;
+ordinary execution never connects or switches another Connection. If the Connection
 disappears, editing remains available while execution offers Reconnect or Change
 Association.
 
@@ -66,7 +66,7 @@ Every Scratchpad persists one Mode:
 Closing the editor does not resolve a Transaction. The Scratchpads tree keeps its
 status and ordered Statements visible, with explicit **Commit** and **Rollback**
 actions. A failed Transaction can only be rolled back. Changing the Association or
-Mode, deleting or renaming the Scratchpad, and disconnecting its Connexion require
+Mode, deleting or renaming the Scratchpad, and disconnecting its Connection require
 the active Transaction to be resolved or the operation to be cancelled.
 
 On extension deactivation or VS Code shutdown, PostgreSQL Workbench makes a
@@ -86,7 +86,7 @@ to return to the global setting; all cells in that Scratchpad use the same value
 
 When PostgreSQL cancels a Statement with error `57014` because that duration was
 reached, the error output offers **Increase Scratchpad timeout…**. This opens the
-same selector without creating a hidden per-cell or per-Connexion setting. Mode
+same selector without creating a hidden per-cell or per-Connection setting. Mode
 AUTO closes its short-lived session after the cancellation. In Mode MANUAL, the
 PostgreSQL Transaction has failed and must be rolled back.
 

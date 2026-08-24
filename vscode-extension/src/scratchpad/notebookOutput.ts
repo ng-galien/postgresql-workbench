@@ -98,7 +98,7 @@ export function executionErrorPayload(
 ): SqlNotebookErrorPayload {
   if (error instanceof DedicatedNotebookConnectionError) {
     return {
-      ...notebookErrorPayload("connection", "PostgreSQL Connexion error", error.message),
+      ...notebookErrorPayload("connection", "PostgreSQL Connection error", error.message),
       ...(statement ? { statement } : {}),
     };
   }

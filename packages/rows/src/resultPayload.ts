@@ -5,7 +5,7 @@ import type {
 } from "../../dap/src/debugger/launch/index.js";
 
 /**
- * What a SQL result is: the rows PostgreSQL returned or the error it raised, the Connexion they
+ * What a SQL result is: the rows PostgreSQL returned or the error it raised, the Connection they
  * came from, and where the reader stands in a cursor. Produced by the Extension Host, rendered by
  * the result views.
  */
@@ -15,8 +15,8 @@ import type {
  * Connection they came from. This is the contract the Extension Host must satisfy.
  */
 export interface ScratchpadAssociationSnapshot {
-  serverId: string;
-  serverName: string;
+  connectionId: string;
+  connectionName: string;
   database: string;
 }
 

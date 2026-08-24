@@ -24,15 +24,20 @@ export function createRoutineComparisonHandler(
       );
       return false;
     }
-    const server = definition.serverId ? connections.store.get(definition.serverId) : undefined;
-    const client = server ? connections.getClient(server.id) : undefined;
-    if (!client || !server) {
+    const connection = definition.connectionId
+      ? connections.store.get(definition.connectionId)
+      : undefined;
+    const client = connection ? connections.getClient(connection.id) : undefined;
+    if (!client || !connection) {
       void vscode.window.showInformationMessage(
         "Connect to a PostgreSQL database before comparing this routine.",
       );
       return false;
     }
-    const state = index.databaseState({ serverId: server.id, database: server.database });
+    const state = index.databaseState({
+      connectionId: connection.id,
+      database: connection.database,
+    });
     const snapshot = state.result;
     if (state.status !== "available" || !snapshot) {
       void vscode.window.showInformationMessage(
@@ -44,14 +49,14 @@ export function createRoutineComparisonHandler(
     const oid = await resolveRoutineOid(client, identity);
     if (oid === undefined) {
       void vscode.window.showInformationMessage(
-        `Routine ${identity} is not deployed in this Connexion.`,
+        `Routine ${identity} is not deployed in this Connection.`,
       );
       return false;
     }
     const object = buildWorkbenchObjects(
-      index.databaseSymbols({ serverId: server.id, database: server.database }),
+      index.databaseSymbols({ connectionId: connection.id, database: connection.database }),
       {
-        serverId: snapshot.serverId,
+        connectionId: snapshot.connectionId,
         database: snapshot.database,
       },
     ).find((candidate) => candidate.oid === oid && candidate.kind === definition.kind);

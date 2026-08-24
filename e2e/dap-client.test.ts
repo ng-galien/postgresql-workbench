@@ -1101,7 +1101,7 @@ describe("DAP client e2e", { timeout: DEBUG_INTEGRATION_TEST_TIMEOUT_MS }, () =>
   it("emits the exact source URI supplied by the indexed client", async () => {
     await launchAndWaitForStop(dc, {
       ...launchConfig("SELECT test_simple(1, 'scoped')"),
-      server: "localhost:5433/testdb:postgres",
+      connection: "localhost:5433/testdb:postgres",
     });
 
     const tid = (await dc.threadsRequest()).body.threads[0].id;

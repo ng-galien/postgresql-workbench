@@ -1,5 +1,5 @@
 /**
- * Telling the user what their server is missing, and driving the Docker provisioning that
+ * Telling the user what their Connection target is missing, and driving the Docker provisioning that
  * `packages/dap` performs. This file is the module's public surface — everything else under
  * `docker/` is internal.
  */

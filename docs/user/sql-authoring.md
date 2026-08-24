@@ -21,9 +21,9 @@ contract for each editor context and analyzed SQL shape.
 Ordinary `.sql` and `.pgsql` documents use their persistent Document
 Association. Choosing it once governs completion, navigation, composition,
 Run, and Debug for that document only. A Scratchpad cell uses its persistent
-Association, even when other Connexions are open and indexed. If that
-Connexion is unavailable, not indexed, or stale, completion and query
-composition stop instead of switching to another Connexion silently. Formatting remains available because it depends on syntax,
+Association, even when other Connections are open and indexed. If that
+Connection is unavailable, not indexed, or stale, completion and query
+composition stop instead of switching to another Connection silently. Formatting remains available because it depends on syntax,
 not on a database context.
 
 Reindexing and synchronized DDL updates replace the snapshot used by subsequent
@@ -65,7 +65,7 @@ more often than the language holding it. Phrases are proposed as they are typed:
 Completion is bounded to keep large schemas responsive, and the language is
 bounded apart from the names so a large schema cannot push it out of the list. An
 unavailable or stale snapshot produces no speculative suggestions from another
-Connexion.
+Connection.
 
 ## Compose SQL by drag and drop
 
@@ -75,14 +75,14 @@ Scratchpad code cells.
 
 1. Drag exactly one object and hold <kbd>Shift</kbd> while dropping it in the editor.
 2. In a Scratchpad, composition uses the Scratchpad Association shown below the
-   cell. It never uses another open Connexion as a fallback and does not add
+   cell. It never uses another open Connection as a fallback and does not add
    a second connection selector inside the cell.
 3. In a saved SQL file, composition uses its Document Association.
 4. Inspect and edit the generated SQL, then run it explicitly. A drop never
    executes SQL.
 
 A drop without <kbd>Shift</kbd> follows the navigation gesture and opens the object in
-the Cockpit. Schemas, extension groups, relation groups, constraints, server
+the Cockpit. Schemas, extension groups, relation groups, constraints, Connection
 rows, and Scratchpad rows do not produce SQL. A relation target that resolves to
 an indexed table, view, routine, or trigger behaves like that underlying object.
 
@@ -280,7 +280,7 @@ comments do not create phantom relations or clause boundaries.
 
 The snapshot and document are checked again immediately before applying the
 edit, and again after an ambiguity picker. An unavailable Association or
-Connexion, a missing index, a stale snapshot, an object from another Connexion, a
+Connection, a missing index, a stale snapshot, an object from another Connection, a
 concurrent document edit, or a concurrent index generation leaves the document
 unchanged and shows a warning. Workbench never retries against another context
 silently.

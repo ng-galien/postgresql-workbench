@@ -518,11 +518,7 @@ export function ResultGrid({
    * What the menu for one cell offers: what the caller says, plus the two things the grid itself
    * can do with a cell — follow what it holds, when that is an address, and copy what is selected.
    */
-  const cellMenuFor = (
-    shownRow: number,
-    ordinal: number,
-    value: string | null,
-  ): Omit<OpenMenu, "at"> => {
+  const cellMenuFor = (ordinal: number, value: string | null): Omit<OpenMenu, "at"> => {
     const offered = layout?.cellMenu?.(ordinal, value) ?? [];
     return {
       label: `Actions for ${payload.columns[ordinal]?.name ?? "cell"}`,
@@ -564,7 +560,7 @@ export function ResultGrid({
     },
     onCellMenu(event, shownRow, ordinal, value) {
       aimAt(shownRow, ordinal);
-      menu.open(event, cellMenuFor(shownRow, ordinal, value));
+      menu.open(event, cellMenuFor(ordinal, value));
     },
     isEditingCell(subject, ordinal) {
       return subject.of === "added"
@@ -727,7 +723,7 @@ export function ResultGrid({
               aimAt(on.row, on.ordinal);
               menu.openAt(
                 cell ? anchorUnder(cell) : { x: 0, y: 0 },
-                cellMenuFor(on.row, on.ordinal, cursorCell?.value ?? null),
+                cellMenuFor(on.ordinal, cursorCell?.value ?? null),
               );
               return;
             }

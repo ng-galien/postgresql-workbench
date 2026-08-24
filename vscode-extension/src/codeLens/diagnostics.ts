@@ -20,7 +20,7 @@ export class PlpgsqlDiagnosticsProvider implements vscode.Disposable {
   private readonly diagnostics: vscode.DiagnosticCollection;
   private readonly disposables: vscode.Disposable[] = [];
   private readonly plpgsqlCheckAvailable = new Map<string, boolean>();
-  private readonly trackedDocuments = new Map<string, { uri: vscode.Uri; serverId: string }>();
+  private readonly trackedDocuments = new Map<string, { uri: vscode.Uri; connectionId: string }>();
 
   constructor(
     private readonly cm: ConnectionManager,
@@ -41,11 +41,11 @@ export class PlpgsqlDiagnosticsProvider implements vscode.Disposable {
       }),
     );
 
-    cm.onServerChanged((change) => {
-      const changed = new Set(change.serverIds);
-      for (const serverId of changed) this.plpgsqlCheckAvailable.delete(serverId);
+    cm.onConnectionChanged((change) => {
+      const changed = new Set(change.connectionIds);
+      for (const connectionId of changed) this.plpgsqlCheckAvailable.delete(connectionId);
       for (const [key, tracked] of this.trackedDocuments) {
-        if (!changed.has(tracked.serverId)) continue;
+        if (!changed.has(tracked.connectionId)) continue;
         this.diagnostics.delete(tracked.uri);
         this.trackedDocuments.delete(key);
       }
@@ -54,29 +54,32 @@ export class PlpgsqlDiagnosticsProvider implements vscode.Disposable {
 
   private async check(document: vscode.TextDocument): Promise<void> {
     const source = this.sourceUris.sourceDescriptorForDocumentUri(document.uri);
-    if (!source?.plpgsql || !this.cm.isServerConnected(source.serverId)) return;
+    if (!source?.plpgsql || !this.cm.isConnectionConnected(source.connectionId)) return;
     this.trackedDocuments.set(document.uri.toString(), {
       uri: document.uri,
-      serverId: source.serverId,
+      connectionId: source.connectionId,
     });
     if (this.divergence?.workingCopyDiffersFromDeployed(document.uri)) {
       this.diagnostics.delete(document.uri);
       return;
     }
-    const client = this.cm.getClient(source.serverId);
+    const client = this.cm.getClient(source.connectionId);
     if (!client) return;
 
-    if (!this.plpgsqlCheckAvailable.has(source.serverId)) {
+    if (!this.plpgsqlCheckAvailable.has(source.connectionId)) {
       try {
         const res = await client.query(
           "SELECT 1 FROM pg_extension WHERE extname = 'plpgsql_check'",
         );
-        this.plpgsqlCheckAvailable.set(source.serverId, res.rowCount !== null && res.rowCount > 0);
+        this.plpgsqlCheckAvailable.set(
+          source.connectionId,
+          res.rowCount !== null && res.rowCount > 0,
+        );
       } catch {
-        this.plpgsqlCheckAvailable.set(source.serverId, false);
+        this.plpgsqlCheckAvailable.set(source.connectionId, false);
       }
     }
-    if (!this.plpgsqlCheckAvailable.get(source.serverId)) return;
+    if (!this.plpgsqlCheckAvailable.get(source.connectionId)) return;
 
     const oid = source.oid;
 

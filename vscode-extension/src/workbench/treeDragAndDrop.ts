@@ -106,7 +106,7 @@ export function sqlAuthoringDragPayload(
   if (item.kind === "tableMember" && item.member.kind === "column") {
     return {
       kind: "column",
-      serverId: item.object.serverId,
+      connectionId: item.object.connectionId,
       database: item.object.database,
       tableOid: item.object.oid,
       tableSchema: item.object.schema,
@@ -127,7 +127,7 @@ export function sqlAuthoringDragPayload(
   }
   return {
     kind: object.kind,
-    serverId: object.serverId,
+    connectionId: object.connectionId,
     database: object.database,
     oid: object.oid,
     schema: object.schema,
@@ -149,7 +149,7 @@ export function dragPayload(
     return {
       version: 1,
       availability: "accepted",
-      serverId: object.serverId,
+      connectionId: object.connectionId,
       database: object.database,
       sourceUri: object.sourceUri,
       symbolUri: object.symbolUri,

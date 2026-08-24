@@ -22,7 +22,7 @@ export type DataViewStatus = "loading" | "ready" | "error";
 
 export interface DataViewState {
   source: DataViewSource;
-  serverName: string;
+  connectionName: string;
   query: DataViewQueryInfo;
   projection: DataViewProjection;
   status: DataViewStatus;

@@ -20,7 +20,7 @@ const foreignKey = (
 });
 
 const table = (oid: number, name: string, columns: string[]) => ({
-  serverId: "demo-server",
+  connectionId: "demo-connection",
   database: "demo",
   schema: "shop",
   oid,
@@ -33,7 +33,7 @@ const table = (oid: number, name: string, columns: string[]) => ({
 
 const snapshot: SqlAuthoringSnapshot = {
   status: "available",
-  serverId: "demo-server",
+  connectionId: "demo-connection",
   database: "demo",
   revision: "r1",
   generation: 1,

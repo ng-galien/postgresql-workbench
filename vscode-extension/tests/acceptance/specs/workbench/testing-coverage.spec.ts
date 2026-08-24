@@ -1,8 +1,8 @@
 import {
-  demoConnexionQuickPickItem as connectionChoice,
+  demoConnectionTreeItem as connection,
+  demoConnectionQuickPickItem as connectionChoice,
   demoDatabaseTreeItem as database,
   demoConnectionId,
-  demoConnexionTreeItem as server,
 } from "../../fixtures/demoDatabase";
 import { expect, test } from "../../fixtures/test";
 import type { DebugConfigurationSnapshot } from "../../fixtures/vscode";
@@ -100,7 +100,7 @@ test.describe("pgTAP tests and coverage", () => {
     await test.step("highlight every covered line of a multiline CASE expression", async () => {
       await vscode.executeCommand("postgresql-workbench-connections.focus");
       await workbench.openRoutineSource(
-        server,
+        connection,
         database,
         /^playground/,
         /^fizzbuzz\(up_to: int4\)/,
@@ -162,7 +162,7 @@ test.describe("pgTAP tests and coverage", () => {
       expect(coveredRoutine?.statement.covered ?? 0).toBeGreaterThan(0);
       await vscode.executeCommand("postgresql-workbench-connections.focus");
       await workbench.openRoutineSource(
-        server,
+        connection,
         database,
         /^shop/u,
         /^restock_report\(threshold: int4\)/u,
@@ -192,7 +192,7 @@ test.describe("pgTAP tests and coverage", () => {
       expect(persistedDebugConfiguration).toMatchObject({
         name: "Debug shop.restock_report",
         request: "launch",
-        server: demoConnectionId,
+        connection: demoConnectionId,
         stopOnEntry: true,
         type: "postgresql-workbench",
       });

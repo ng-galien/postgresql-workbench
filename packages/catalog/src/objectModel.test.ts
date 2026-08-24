@@ -10,7 +10,7 @@ import {
 } from "./objectModel.js";
 
 const DATABASE = {
-  serverId: "localhost:5433/postgres:postgres",
+  connectionId: "localhost:5433/postgres:postgres",
   database: "postgres",
 };
 
@@ -23,7 +23,7 @@ function databaseFile(
   semanticName = `${kind}_${oid}`,
 ): string {
   const uri =
-    `postgresql://${encodeURIComponent(DATABASE.serverId)}/${DATABASE.database}/` +
+    `postgresql://${encodeURIComponent(DATABASE.connectionId)}/${DATABASE.database}/` +
     `${schema}/${kind}/${encodeURIComponent(semanticName)}.sql`;
   descriptors.set(uri, {
     ...DATABASE,
@@ -78,7 +78,7 @@ describe("Workbench tree model", () => {
     expect(explorerViews).toEqual([
       expect.objectContaining({
         id: "postgresql-workbench-connections",
-        name: "Workbench",
+        name: "Connections",
       }),
       expect.objectContaining({
         id: "postgresql-workbench-scratchpads",
@@ -243,7 +243,11 @@ describe("Workbench tree model", () => {
       symbol("shadow_table", "table", routineFile),
       symbol("audit_orders", "trigger", databaseFile("sales", "trigger", 50)),
       symbol("workspace_table", "table", "migrations/001.sql"),
-      symbol("other_database", "table", "postgresql://another-server/postgres/public/table/60.sql"),
+      symbol(
+        "other_database",
+        "table",
+        "postgresql://another-connection/postgres/public/table/60.sql",
+      ),
     ];
 
     const schemas = buildWorkbenchSchemas(symbols, DATABASE);
@@ -258,7 +262,7 @@ describe("Workbench tree model", () => {
     ]);
     expect(schemas[0]?.objects[2]).toMatchObject({
       oid: 42,
-      serverId: DATABASE.serverId,
+      connectionId: DATABASE.connectionId,
       schema: "sales",
       signature: "account_id:int8,options:numeric(10,2)",
       params: [
@@ -319,7 +323,7 @@ describe("Workbench tree model", () => {
       symbol(
         "foreign_table",
         "table",
-        `postgresql://${encodeURIComponent(DATABASE.serverId)}/another/sales/table/22.sql`,
+        `postgresql://${encodeURIComponent(DATABASE.connectionId)}/another/sales/table/22.sql`,
       ),
     ];
 

@@ -1,8 +1,8 @@
 import { TextEncoder } from "node:util";
 import * as vscode from "vscode";
 import {
+  type ConnectionConfig,
   getConnectionName,
-  type ServerConfig,
 } from "../../../packages/catalog/src/savedConnection.js";
 import type {
   DebugResult,
@@ -298,10 +298,13 @@ export function registerSqlNotebook(
     vscode.commands.registerCommand(
       CHANGE_SQL_NOTEBOOK_CONNECTION_COMMAND,
       async (target?: SqlNotebookEntry | vscode.NotebookDocument | vscode.NotebookCell) => {
-        const notebook =
-          (await notebookFromTarget(target)) ?? vscode.window.activeNotebookEditor?.notebook;
-        if (!notebook || notebook.notebookType !== SQL_NOTEBOOK_TYPE) return false;
-        const selected = await pickScratchpadAssociation(connections, "Choose a Connexion");
+        const notebook = await scratchpadForCommand(
+          target,
+          "Change the Association of a SQL scratchpad",
+          workspace,
+        );
+        if (!notebook) return false;
+        const selected = await pickScratchpadAssociation(connections, "Choose a Connection");
         if (!selected.accepted) return false;
         const changed = await transactions.runScratchpadChange(
           notebook.uri.toString(),
@@ -319,13 +322,13 @@ export function registerSqlNotebook(
       },
     ),
     vscode.commands.registerCommand(SET_SCRATCHPAD_AUTO_MODE_COMMAND, (target?: unknown) =>
-      setScratchpadExecutionMode(target, "auto", transactions, statusProvider),
+      setScratchpadExecutionMode(target, "auto", transactions, statusProvider, workspace),
     ),
     vscode.commands.registerCommand(SET_SCRATCHPAD_MANUAL_MODE_COMMAND, (target?: unknown) =>
-      setScratchpadExecutionMode(target, "manual", transactions, statusProvider),
+      setScratchpadExecutionMode(target, "manual", transactions, statusProvider, workspace),
     ),
     vscode.commands.registerCommand(SET_SCRATCHPAD_STATEMENT_TIMEOUT_COMMAND, (target?: unknown) =>
-      setScratchpadStatementTimeout(target, transactions, statusProvider),
+      setScratchpadStatementTimeout(target, transactions, statusProvider, workspace),
     ),
     vscode.commands.registerCommand(
       COMMIT_SCRATCHPAD_TRANSACTION_COMMAND,
@@ -352,19 +355,14 @@ export function registerSqlNotebook(
     vscode.commands.registerCommand(
       RECONNECT_SQL_NOTEBOOK_COMMAND,
       async (target?: SqlNotebookEntry | vscode.NotebookDocument | vscode.NotebookCell) => {
-        const notebook =
-          (await notebookFromTarget(target)) ?? vscode.window.activeNotebookEditor?.notebook;
-        if (!notebook || notebook.notebookType !== SQL_NOTEBOOK_TYPE) return false;
-        const association = resolveScratchpadAssociation(
-          normalizeMetadata(notebook.metadata),
-          connections.servers,
+        const scratchpad = await associatedScratchpadForCommand(
+          target,
+          "Reconnect a SQL scratchpad",
+          connections,
+          workspace,
         );
-        if (association.status !== "associated") {
-          void vscode.window.showWarningMessage(
-            "This Scratchpad Association is unavailable. Choose a saved Connexion.",
-          );
-          return false;
-        }
+        if (!scratchpad) return false;
+        const { notebook, association } = scratchpad;
         try {
           await withDedicatedNotebookClient(
             connections,
@@ -372,7 +370,7 @@ export function registerSqlNotebook(
             async () => undefined,
           );
           void vscode.window.showInformationMessage(
-            `Scratchpad Connexion ${association.snapshot.serverName} is available.`,
+            `Scratchpad Connection ${association.snapshot.connectionName} is available.`,
           );
           return true;
         } catch (error) {
@@ -390,15 +388,14 @@ export function registerSqlNotebook(
     vscode.commands.registerCommand(
       CONNECT_SQL_NOTEBOOK_ASSOCIATION_COMMAND,
       async (target?: SqlNotebookEntry | vscode.NotebookDocument | vscode.NotebookCell) => {
-        const notebook =
-          (await notebookFromTarget(target)) ?? vscode.window.activeNotebookEditor?.notebook;
-        if (!notebook || notebook.notebookType !== SQL_NOTEBOOK_TYPE) return false;
-        const association = resolveScratchpadAssociation(
-          normalizeMetadata(notebook.metadata),
-          connections.servers,
+        const scratchpad = await associatedScratchpadForCommand(
+          target,
+          "Connect the Association of a SQL scratchpad",
+          connections,
+          workspace,
         );
-        if (association.status !== "associated") return false;
-        return connections.connectServer(association.connection.id);
+        if (!scratchpad) return false;
+        return connections.connectConnection(scratchpad.association.connection.id);
       },
     ),
   );
@@ -425,8 +422,8 @@ export interface ScratchpadFeature {
   shutdown(): Promise<void>;
   /** Re-evaluates cell status items (Debug eligibility) after the Workbench Index changed. */
   refreshCellStatus(): void;
-  /** Creates and shows a Scratchpad holding one SQL cell, associated with the given Connexion. */
-  openWithSql(sql: string, association: ServerConfig | undefined): Promise<vscode.Uri>;
+  /** Creates and shows a Scratchpad holding one SQL cell, associated with the given Connection. */
+  openWithSql(sql: string, association: ConnectionConfig | undefined): Promise<vscode.Uri>;
 }
 
 /** A result renderer asked to open its Statement in a Data View. */
@@ -445,36 +442,38 @@ type SqlNotebookCommandTarget =
   | string
   | { entry: SqlNotebookEntry };
 
-interface SqlNotebookServerPick extends vscode.QuickPickItem {
-  connection?: ServerConfig;
+interface SqlNotebookConnectionPick extends vscode.QuickPickItem {
+  connection?: ConnectionConfig;
 }
 
 async function pickScratchpadAssociationForCreation(
   connections: ConnectionManager,
   target: unknown,
-): Promise<ServerConfig | undefined> {
-  const targetId = notebookServerId(target);
+): Promise<ConnectionConfig | undefined> {
+  const targetId = notebookConnectionId(target);
   if (targetId) return connections.store.get(targetId);
-  const savedConnections = [...connections.servers];
+  const savedConnections = [...connections.connections];
   const decision = scratchpadCreationAssociation(savedConnections);
   if (decision.kind === "unassociated") return undefined;
   if (decision.kind === "automatic") return decision.connection;
-  return (await pickScratchpadAssociation(connections, "Choose a Connexion")).connection;
+  return (await pickScratchpadAssociation(connections, "Choose a Connection")).connection;
 }
 
 async function pickScratchpadAssociation(
   connections: ConnectionManager,
   placeHolder: string,
-): Promise<{ accepted: boolean; connection?: ServerConfig }> {
-  const selected = await vscode.window.showQuickPick<SqlNotebookServerPick>(
+): Promise<{ accepted: boolean; connection?: ConnectionConfig }> {
+  const selected = await vscode.window.showQuickPick<SqlNotebookConnectionPick>(
     [
       {
         label: "$(circle-slash) No connection",
         description: "Create or keep the Scratchpad without an Association",
       },
-      ...connections.servers.map((connection) => ({
-        label: `${connections.isServerConnected(connection.id) ? "$(pass-filled)" : "$(circle-outline)"} ${getConnectionName(connection)}`,
-        description: connections.isServerConnected(connection.id) ? "Connected" : "Disconnected",
+      ...connections.connections.map((connection) => ({
+        label: `${connections.isConnectionConnected(connection.id) ? "$(pass-filled)" : "$(circle-outline)"} ${getConnectionName(connection)}`,
+        description: connections.isConnectionConnected(connection.id)
+          ? "Connected"
+          : "Disconnected",
         connection,
       })),
     ],
@@ -483,12 +482,12 @@ async function pickScratchpadAssociation(
   return selected ? { accepted: true, connection: selected.connection } : { accepted: false };
 }
 
-function notebookServerId(target: unknown): string | undefined {
+function notebookConnectionId(target: unknown): string | undefined {
   if (typeof target === "string") return target;
   if (!target || typeof target !== "object") return undefined;
-  const candidate = target as { kind?: unknown; server?: { id?: unknown } };
+  const candidate = target as { kind?: unknown; connection?: { id?: unknown } };
   if (candidate.kind !== "databaseSource") return undefined;
-  return typeof candidate.server?.id === "string" ? candidate.server.id : undefined;
+  return typeof candidate.connection?.id === "string" ? candidate.connection.id : undefined;
 }
 
 async function setScratchpadExecutionMode(
@@ -496,10 +495,14 @@ async function setScratchpadExecutionMode(
   mode: ScratchpadExecutionMode,
   transactions: ScratchpadTransactionManager,
   statusProvider: SqlNotebookStatusProvider,
+  workspace: SqlNotebookWorkspace,
 ): Promise<boolean> {
-  const notebook =
-    (await notebookFromTarget(target)) ?? vscode.window.activeNotebookEditor?.notebook;
-  if (!notebook || notebook.notebookType !== SQL_NOTEBOOK_TYPE) return false;
+  const notebook = await scratchpadForCommand(
+    target,
+    "Change the Mode of a SQL scratchpad",
+    workspace,
+  );
+  if (!notebook) return false;
   const changed = await transactions.runScratchpadChange(
     notebook.uri.toString(),
     "changing its Mode",
@@ -522,10 +525,14 @@ async function setScratchpadStatementTimeout(
   target: unknown,
   transactions: ScratchpadTransactionManager,
   statusProvider: SqlNotebookStatusProvider,
+  workspace: SqlNotebookWorkspace,
 ): Promise<boolean> {
-  const notebook =
-    (await notebookFromTarget(target)) ?? vscode.window.activeNotebookEditor?.notebook;
-  if (!notebook || notebook.notebookType !== SQL_NOTEBOOK_TYPE) return false;
+  const notebook = await scratchpadForCommand(
+    target,
+    "Set the Statement timeout of a SQL scratchpad",
+    workspace,
+  );
+  if (!notebook) return false;
   const metadata = normalizeMetadata(notebook.metadata);
   const globalTimeoutMs = configuredScratchpadStatementTimeoutMs();
   const effectiveTimeoutMs = scratchpadStatementTimeoutMs(metadata, globalTimeoutMs);
@@ -745,7 +752,7 @@ function validateSqlNotebookName(value: string): string | undefined {
 }
 
 function scratchpadAssociationLabel(metadata: SqlNotebookMetadata): string | undefined {
-  return metadata.serverName ?? metadata.database;
+  return metadata.connectionName ?? metadata.database;
 }
 
 /** The Scratchpads whose last tab just closed, in the order VS Code reported them. */
@@ -839,16 +846,16 @@ class SqlNotebookController implements vscode.Disposable {
     this.prefer(notebook);
     const association = resolveScratchpadAssociation(
       normalizeMetadata(notebook.metadata),
-      this.connections.servers,
+      this.connections.connections,
     );
     if (association.status !== "associated") {
       const message =
         association.status === "unavailable"
-          ? `The associated Connexion ${association.snapshot.serverName} is no longer saved. Change this Scratchpad Association.`
-          : "This Scratchpad has no Connexion Association. Choose one before running SQL.";
+          ? `The associated Connection ${association.snapshot.connectionName} is no longer saved. Change this Scratchpad Association.`
+          : "This Scratchpad has no Connection Association. Choose one before running SQL.";
       for (const cell of cells) await this.showError(cell, message);
-      const action = await vscode.window.showWarningMessage(message, "Choose Connexion");
-      if (action === "Choose Connexion") {
+      const action = await vscode.window.showWarningMessage(message, "Choose Connection");
+      if (action === "Choose Connection") {
         void vscode.commands.executeCommand(CHANGE_SQL_NOTEBOOK_CONNECTION_COMMAND, notebook);
       }
       return;
@@ -1212,8 +1219,8 @@ class SqlNotebookController implements vscode.Disposable {
     statementTimeoutMs: number,
     cancellation: NotebookClientCancellation,
   ): Promise<SqlNotebookResultPayload> {
-    const client = await createDedicatedNotebookClient(this.connections, association.serverId);
-    cancellation.bind(this.connections, association.serverId, client);
+    const client = await createDedicatedNotebookClient(this.connections, association.connectionId);
+    cancellation.bind(this.connections, association.connectionId, client);
     let reader: PostgresCursorReader | undefined;
     try {
       cancellation.throwIfCancellationRequested();
@@ -1271,7 +1278,7 @@ class SqlNotebookController implements vscode.Disposable {
   ): boolean {
     const association = resolveScratchpadAssociation(
       normalizeMetadata(notebook.metadata),
-      this.connections.servers,
+      this.connections.connections,
     );
     return (
       association.status === "associated" &&
@@ -1292,7 +1299,7 @@ class SqlNotebookController implements vscode.Disposable {
 
     const association = resolveScratchpadAssociation(
       normalizeMetadata(notebook.metadata),
-      this.connections.servers,
+      this.connections.connections,
     );
     await this.resultHost.closeNotebookAssociationMismatch(
       uri,
@@ -1303,7 +1310,7 @@ class SqlNotebookController implements vscode.Disposable {
   private associationStateKey(notebook: vscode.NotebookDocument): string {
     const association = resolveScratchpadAssociation(
       normalizeMetadata(notebook.metadata),
-      this.connections.servers,
+      this.connections.connections,
     );
     return association.status === "unassociated"
       ? "unassociated"
@@ -1348,6 +1355,58 @@ async function updateNotebookMetadata(
     throw new Error("Could not update the Scratchpad Association metadata.");
   }
   await notebook.save();
+}
+
+/**
+ * The Scratchpad a command was asked about: the one it was handed, or the one the reader is
+ * looking at. A command the palette offers is asked for with neither, and every other Scratchpad
+ * command answers that by offering the workspace's Scratchpads to choose from — Open, Rename,
+ * Delete, Duplicate and Export have always done so. These ask the same way rather than telling the
+ * reader to go and open one first.
+ */
+async function scratchpadForCommand(
+  target: unknown,
+  placeHolder: string,
+  workspace: SqlNotebookWorkspace,
+): Promise<vscode.NotebookDocument | undefined> {
+  const notebook =
+    (await notebookFromTarget(target)) ?? vscode.window.activeNotebookEditor?.notebook;
+  if (notebook?.notebookType === SQL_NOTEBOOK_TYPE) return notebook;
+  const entry = await selectSqlNotebook(workspace, undefined, placeHolder);
+  if (!entry) return undefined;
+  return vscode.workspace.openNotebookDocument(entry.uri);
+}
+
+/**
+ * The same, for a command that needs the Connection behind the Scratchpad rather than the
+ * Scratchpad itself. An Association naming a Connection that is no longer saved is the second way
+ * these commands come to nothing, and it is answered here for the same reason as the first.
+ */
+async function associatedScratchpadForCommand(
+  target: unknown,
+  placeHolder: string,
+  connections: ConnectionManager,
+  workspace: SqlNotebookWorkspace,
+): Promise<
+  | {
+      notebook: vscode.NotebookDocument;
+      association: Extract<ScratchpadAssociation, { status: "associated" }>;
+    }
+  | undefined
+> {
+  const notebook = await scratchpadForCommand(target, placeHolder, workspace);
+  if (!notebook) return undefined;
+  const association = resolveScratchpadAssociation(
+    normalizeMetadata(notebook.metadata),
+    connections.connections,
+  );
+  if (association.status !== "associated") {
+    void vscode.window.showWarningMessage(
+      "This Scratchpad Association is unavailable. Choose a saved Connection.",
+    );
+    return undefined;
+  }
+  return { notebook, association };
 }
 
 async function notebookFromTarget(target: unknown): Promise<vscode.NotebookDocument | undefined> {

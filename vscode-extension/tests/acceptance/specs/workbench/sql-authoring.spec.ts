@@ -1,11 +1,11 @@
 import {
+  alternateConnectionTreeItem as alternateConnection,
   alternateConnectionId,
   alternateConnectionUrl,
-  alternateConnexionTreeItem as alternateServer,
+  demoConnectionTreeItem as connection,
   demoDatabaseTreeItem as database,
   demoAssociationText,
   demoConnectionId,
-  demoConnexionTreeItem as server,
 } from "../../fixtures/demoDatabase";
 import { expect, test } from "../../fixtures/test";
 import { createScratchpad } from "../../journeys/scratchpad";
@@ -55,7 +55,7 @@ test.describe("SQL authoring", () => {
       await sqlEditor.associateDocumentAutomatically(demoAssociationText);
       await workbench.tree.scrollToTop();
       const schema = await workbench.tree.expandPath([
-        server,
+        connection,
         database,
         SCHEMAS_TREE_ITEM,
         /^shop$/,
@@ -73,7 +73,7 @@ test.describe("SQL authoring", () => {
       await vscode.openSqlDocument("SELECT product.id FROM shop.product;");
       await sqlEditor.associateDocumentAutomatically(demoAssociationText);
       const schema = await workbench.tree.expandPath([
-        server,
+        connection,
         database,
         SCHEMAS_TREE_ITEM,
         /^shop$/,
@@ -95,7 +95,7 @@ test.describe("SQL authoring", () => {
       await vscode.openSqlDocument("SELECT order_line.id FROM shop.order_line;");
       await sqlEditor.associateDocumentAutomatically(demoAssociationText);
       const schema = await workbench.tree.expandPath([
-        server,
+        connection,
         database,
         SCHEMAS_TREE_ITEM,
         /^shop$/,
@@ -113,7 +113,7 @@ test.describe("SQL authoring", () => {
       await vscode.openSqlDocument("SELECT product.id FROM shop.product;");
       await sqlEditor.associateDocumentAutomatically(demoAssociationText);
       const brandSchema = await workbench.tree.expandPath([
-        server,
+        connection,
         database,
         SCHEMAS_TREE_ITEM,
         /^shop$/,
@@ -133,7 +133,7 @@ test.describe("SQL authoring", () => {
       await vscode.openSqlDocument("SELECT product.id FROM shop.product;");
       await sqlEditor.associateDocumentAutomatically(demoAssociationText);
       const schema = await workbench.tree.expandPath([
-        server,
+        connection,
         database,
         SCHEMAS_TREE_ITEM,
         /^shop$/,
@@ -154,7 +154,7 @@ test.describe("SQL authoring", () => {
       await vscode.openSqlDocument("SELECT sales_order.id FROM shop.sales_order;");
       await sqlEditor.associateDocumentAutomatically(demoAssociationText);
       const schema = await workbench.tree.expandPath([
-        server,
+        connection,
         database,
         SCHEMAS_TREE_ITEM,
         /^shop$/,
@@ -183,7 +183,7 @@ test.describe("SQL authoring", () => {
       await vscode.openSqlDocument("SELECT product.id FROM shop.product;\nSELECT broken FROM;");
       await sqlEditor.associateDocumentAutomatically(demoAssociationText);
       const schema = await workbench.tree.expandPath([
-        server,
+        connection,
         database,
         SCHEMAS_TREE_ITEM,
         /^shop$/,
@@ -208,7 +208,12 @@ test.describe("SQL authoring", () => {
     await createScratchpad(workbench, notebook, demoAssociationText);
 
     await workbench.tree.scrollToTop();
-    const schema = await workbench.tree.expandPath([server, database, SCHEMAS_TREE_ITEM, /^shop$/]);
+    const schema = await workbench.tree.expandPath([
+      connection,
+      database,
+      SCHEMAS_TREE_ITEM,
+      /^shop$/,
+    ]);
     const product = await workbench.tree.findChild(schema, /^product$/);
     await workbench.dragTreeItemToTextEditor(product, notebook.cell(0));
 
@@ -223,15 +228,15 @@ test.describe("SQL authoring", () => {
         ],
       });
 
-    await test.step("keep completion on the Association when another Connexion is connected", async () => {
+    await test.step("keep completion on the Association when another Connection is connected", async () => {
       try {
         await workbench.tree.scrollToTop();
-        await workbench.addServer(alternateConnectionUrl, alternateServer);
+        await workbench.addConnection(alternateConnectionUrl, alternateConnection);
         await expect
           .poll(() =>
             vscode
               .inspectWorkbenchState()
-              .then(({ connection }) => connection.connectedServerIds.sort()),
+              .then(({ connection }) => connection.connectedConnectionIds.sort()),
           )
           .toEqual([alternateConnectionId, demoConnectionId].sort());
         const completion = await notebook.addCodeCell();
@@ -240,8 +245,8 @@ test.describe("SQL authoring", () => {
         await expect(notebook.suggestion(/^product$/)).toBeVisible({ timeout: 5_000 });
         await notebook.dismissCompletion();
       } finally {
-        await vscode.removeServer(alternateConnectionId);
-        await workbench.tree.expectItemAbsent(alternateServer);
+        await vscode.removeConnection(alternateConnectionId);
+        await workbench.tree.expectItemAbsent(alternateConnection);
       }
     });
   });

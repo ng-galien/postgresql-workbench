@@ -1,6 +1,6 @@
 import type { Client } from "pg";
 
-/** Owns independent PostgreSQL sessions addressed only by their exact Connexion id. */
+/** Owns independent PostgreSQL sessions addressed only by their exact Connection id. */
 export class PostgresConnectionRegistry {
   private readonly clients = new Map<string, Client>();
 

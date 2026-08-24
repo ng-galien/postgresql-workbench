@@ -8,7 +8,6 @@
  */
 
 export {
-  type NotebookBindingSnapshot,
   nextSqlNotebookName,
   normalizeSqlNotebookName,
   parseSqlNotebookFile,

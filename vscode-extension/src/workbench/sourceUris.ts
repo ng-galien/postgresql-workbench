@@ -39,9 +39,9 @@ export class WorkbenchSourceUris {
   }
 
   /** Routine sources of a Connection, keyed by OID, as the debugger expects them. */
-  routineSourceUris(serverId: string): Record<string, string> {
+  routineSourceUris(connectionId: string): Record<string, string> {
     return Object.fromEntries(
-      Object.entries(this.index.routineSourceUris(serverId)).map(([oid, symbolUri]) => [
+      Object.entries(this.index.routineSourceUris(connectionId)).map(([oid, symbolUri]) => [
         oid,
         this.documentUri(symbolUri)?.toString() ?? symbolUri,
       ]),

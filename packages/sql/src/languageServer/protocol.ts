@@ -142,7 +142,7 @@ export function sqlAuthoringContextMatchesToken(
     token !== undefined &&
     context.status === "available" &&
     context.snapshot.status === "available" &&
-    context.snapshot.serverId === token.serverId &&
+    context.snapshot.connectionId === token.connectionId &&
     context.snapshot.database === token.database &&
     context.snapshot.revision === token.revision &&
     context.snapshot.generation === token.generation

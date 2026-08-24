@@ -137,7 +137,7 @@ export class DataViewDocument implements vscode.CustomDocument {
   state(): DataViewState {
     return dataViewState({
       source: this.source,
-      serverName: this.serverName(),
+      connectionName: this.connectionName(),
       queryUri: this.queryUri.toString(),
       query: this.query,
       hidden: this.hidden,
@@ -355,7 +355,7 @@ export class DataViewDocument implements vscode.CustomDocument {
     const source = this.source;
     const text = await initialDataViewQuery(
       source,
-      this.services.authoringSnapshot(source.serverId, source.database),
+      this.services.authoringSnapshot(source.connectionId, source.database),
       this.services.authoringSettings(this.queryUri.toString()),
       () => this.relationColumns(),
     );
@@ -366,14 +366,14 @@ export class DataViewDocument implements vscode.CustomDocument {
         void this.applyQueryText(saved);
       }
     });
-    await this.services.associate(this.queryUri.toString(), source.serverId);
+    await this.services.associate(this.queryUri.toString(), source.connectionId);
     /*
      * Every scratch document is opened, associated and let go of as a set: a question added to the
      * three is one more entry in the list, and cannot be the one somebody forgets to release.
      */
     for (const scratch of this.scratchUris()) {
       this.services.queryFiles.set(scratch, text);
-      await this.services.associate(scratch.toString(), source.serverId);
+      await this.services.associate(scratch.toString(), source.connectionId);
     }
   }
 
@@ -382,7 +382,7 @@ export class DataViewDocument implements vscode.CustomDocument {
    *
    * The tokens are asked of a document holding exactly that text, so what a view shows is coloured
    * by the same answer an editor tab would be. The legend comes back from the provider as well: a
-   * token number means nothing without it, and the kinds are the server's to name.
+   * token number means nothing without it, and the kinds are the connection's to name.
    */
   private async semanticTokensOf(uri: vscode.Uri, sql: string): Promise<DataViewSqlToken[]> {
     this.services.queryFiles.set(uri, sql);
@@ -420,7 +420,7 @@ export class DataViewDocument implements vscode.CustomDocument {
 
   private async relationColumns(): Promise<string[]> {
     if (this.source.kind !== "relation") return [];
-    const client = await this.services.openClient(this.source.serverId);
+    const client = await this.services.openClient(this.source.connectionId);
     try {
       const probe = await client.query({
         text: `SELECT * FROM ${quoteSqlIdentifierIfNeeded(this.source.schema)}.${quoteSqlIdentifierIfNeeded(this.source.name)} LIMIT 0`,
@@ -509,7 +509,10 @@ export class DataViewDocument implements vscode.CustomDocument {
 
   /** The indexed snapshot to compose against, or nothing when the query or the index refuses it. */
   private composable(): SqlAuthoringSnapshot | undefined {
-    const snapshot = this.services.authoringSnapshot(this.source.serverId, this.source.database);
+    const snapshot = this.services.authoringSnapshot(
+      this.source.connectionId,
+      this.source.database,
+    );
     if (snapshot?.status !== "available") {
       this.notify("Index the database first: composition needs a fresh Workbench Index.", "info");
       return undefined;
@@ -541,7 +544,10 @@ export class DataViewDocument implements vscode.CustomDocument {
     addition?: DataViewAddition,
     relationChoice?: number,
   ): Promise<void> {
-    if (payload.serverId !== this.source.serverId || payload.database !== this.source.database) {
+    if (
+      payload.connectionId !== this.source.connectionId ||
+      payload.database !== this.source.database
+    ) {
       this.notify("This object belongs to another database than the Data View.", "info");
       return;
     }
@@ -604,15 +610,15 @@ export class DataViewDocument implements vscode.CustomDocument {
           "The query is empty: add a table with + or drop one from the Workbench tree.";
         return;
       }
-      const client = await this.services.openClient(this.source.serverId);
+      const client = await this.services.openClient(this.source.connectionId);
       this.assertGeneration(generation);
       const opened = await openDataViewResult({
         client,
         sql: this.query.effectiveSql(),
         settings: this.services.resultSettings(),
         binding: {
-          serverId: this.source.serverId,
-          serverName: this.serverName(),
+          connectionId: this.source.connectionId,
+          connectionName: this.connectionName(),
           database: this.source.database,
         },
         accents: this.accents,
@@ -734,14 +740,14 @@ export class DataViewDocument implements vscode.CustomDocument {
   /** What this surface can do so held changes reach PostgreSQL; the sequence itself is shared. */
   private get writeHost(): DataViewWriteHost {
     return {
-      openClient: () => this.services.openClient(this.source.serverId),
+      openClient: () => this.services.openClient(this.source.connectionId),
       notify: (message, severity) => {
         if (severity === "error") this.log(`apply failed: ${message}`);
         this.notify(message, severity);
       },
       changed: () => this.broadcastState(),
       reload: () => this.load(),
-      serverName: () => this.serverName(),
+      connectionName: () => this.connectionName(),
     };
   }
 
@@ -763,7 +769,7 @@ export class DataViewDocument implements vscode.CustomDocument {
               choice,
               sql: this.query.effectiveSql(),
               title: this.title,
-              openClient: () => this.services.openClient(this.source.serverId),
+              openClient: () => this.services.openClient(this.source.connectionId),
               typeFor: (name) =>
                 declaredColumnType(
                   this.editability,
@@ -803,8 +809,8 @@ export class DataViewDocument implements vscode.CustomDocument {
 
   // --- Webview messaging ---------------------------------------------------------------------
 
-  private serverName(): string {
-    return this.services.serverName(this.source.serverId) ?? this.source.serverId;
+  private connectionName(): string {
+    return this.services.connectionName(this.source.connectionId) ?? this.source.connectionId;
   }
 
   private log(line: string): void {

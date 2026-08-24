@@ -108,7 +108,7 @@ export class DebuggerPage {
       .poll(associationOutcome, {
         timeout: 5_000,
         message:
-          "Document association must either complete automatically or offer a Connexion picker",
+          "Document association must either complete automatically or offer a Connection picker",
       })
       .not.toBe("pending");
     if ((await associationOutcome()) === "picker") {

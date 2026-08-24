@@ -6,13 +6,13 @@ eyebrow: Data View
 
 # Data View
 
-A Data View is a VS Code editor tab on the rows of one Connexion. It holds a
+A Data View is a VS Code editor tab on the rows of one Connection. It holds a
 query, the rows PostgreSQL answered with, and — where the rows belong to exactly
 one table — the changes you have made to them and not yet written.
 
 The query is yours to compose from inside the view: add a column, join a related
-table, filter, sort, or take a table back out. The Connexion never changes
-implicitly; a Data View runs against the Connexion it was opened from, like every
+table, filter, sort, or take a table back out. The Connection never changes
+implicitly; a Data View runs against the Connection it was opened from, like every
 other Workbench surface.
 
 ## Open one
@@ -21,7 +21,7 @@ other Workbench surface.
   View**, the table icon on the item.
 - **From a SQL editor** — **PostgreSQL Workbench: Open Data View for Statement**
   opens the statement under the cursor in a `.sql` or `.pgsql` file that has a
-  Connexion Association.
+  Connection Association.
 - **From a Scratchpad result** — **Open in Data View** carries the rows a cell
   produced into a view of their own, with the statement that produced them.
 
@@ -56,7 +56,7 @@ for it, a column of it, a routine — each told apart from the others.
 
 The filter box takes a `WHERE` expression. Enter runs it, Shift+Enter starts a
 new line, and Ctrl+Space asks the language server for completions — the columns
-and functions the Connexion actually has, not the labels already on screen.
+and functions the Connection actually has, not the labels already on screen.
 
 A column heading menu sorts ascending or descending, adds a second criterion to
 an existing sort, or clears it. Pressing a criterion turns it over. A NULLS

@@ -1,5 +1,5 @@
 import { validateSupportSchema } from "./postgresDdlSync.js";
-import type { ServerConfig } from "./savedConnection.js";
+import type { ConnectionConfig } from "./savedConnection.js";
 
 export interface WorkbenchDdlSyncDefaults {
   enabled: boolean;
@@ -12,17 +12,18 @@ export interface WorkbenchDdlSyncConfiguration extends WorkbenchDdlSyncDefaults 
 }
 
 export function resolveWorkbenchDdlSyncConfiguration(
-  server: ServerConfig,
+  connection: ConnectionConfig,
   defaults: WorkbenchDdlSyncDefaults,
 ): WorkbenchDdlSyncConfiguration {
   const supportSchema = validateSupportSchema(
-    server.schemaSync?.supportSchema ?? defaults.supportSchema,
+    connection.schemaSync?.supportSchema ?? defaults.supportSchema,
   );
   return {
-    enabled: server.schemaSync?.enabled ?? defaults.enabled,
+    enabled: connection.schemaSync?.enabled ?? defaults.enabled,
     supportSchema,
-    enabledSource: server.schemaSync?.enabled === undefined ? "settings" : "connection",
-    supportSchemaSource: server.schemaSync?.supportSchema === undefined ? "settings" : "connection",
+    enabledSource: connection.schemaSync?.enabled === undefined ? "settings" : "connection",
+    supportSchemaSource:
+      connection.schemaSync?.supportSchema === undefined ? "settings" : "connection",
   };
 }
 

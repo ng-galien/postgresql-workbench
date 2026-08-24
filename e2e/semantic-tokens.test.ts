@@ -183,13 +183,13 @@ describe("SQL authoring semantic tokens", () => {
 
 const snapshot: SqlAuthoringSnapshot = {
   status: "available",
-  serverId: "demo-server",
+  connectionId: "demo-connection",
   database: "demo",
   revision: "r1",
   generation: 1,
   objects: [
     {
-      serverId: "demo-server",
+      connectionId: "demo-connection",
       database: "demo",
       schema: "shop",
       oid: 1,
@@ -203,7 +203,7 @@ const snapshot: SqlAuthoringSnapshot = {
       ],
     },
     {
-      serverId: "demo-server",
+      connectionId: "demo-connection",
       database: "demo",
       schema: "shop",
       oid: 2,
@@ -217,7 +217,7 @@ const snapshot: SqlAuthoringSnapshot = {
       ],
     },
     {
-      serverId: "demo-server",
+      connectionId: "demo-connection",
       database: "demo",
       schema: "shop",
       oid: 3,
@@ -228,7 +228,7 @@ const snapshot: SqlAuthoringSnapshot = {
       columns: [{ name: "display_name", type: "text" }],
     },
     {
-      serverId: "demo-server",
+      connectionId: "demo-connection",
       database: "demo",
       schema: "shop",
       oid: 4,
@@ -243,7 +243,7 @@ const snapshot: SqlAuthoringSnapshot = {
       ],
     },
     {
-      serverId: "demo-server",
+      connectionId: "demo-connection",
       database: "demo",
       schema: "shop",
       oid: 5,
@@ -254,7 +254,7 @@ const snapshot: SqlAuthoringSnapshot = {
       columns: [],
     },
     {
-      serverId: "demo-server",
+      connectionId: "demo-connection",
       database: "demo",
       schema: "shop",
       oid: 6,

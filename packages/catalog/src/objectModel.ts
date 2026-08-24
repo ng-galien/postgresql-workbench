@@ -14,7 +14,7 @@ export interface WorkbenchTreeSymbol {
 }
 
 export interface WorkbenchDatabaseIdentity {
-  serverId: string;
+  connectionId: string;
   database: string;
 }
 
@@ -28,7 +28,7 @@ export type WorkbenchObjectKind = "table" | "view" | "function" | "procedure" | 
 export interface WorkbenchObjectModel {
   symbolUri: string;
   sourceUri: string;
-  serverId: string;
+  connectionId: string;
   database: string;
   schema: string;
   oid: number;
@@ -185,7 +185,7 @@ export function workbenchObjectFromSymbol(
   return {
     symbolUri: symbol.uri,
     sourceUri: symbol.file,
-    serverId: document.serverId,
+    connectionId: document.connectionId,
     database: document.database,
     schema: document.schema,
     oid: document.oid,
@@ -212,7 +212,7 @@ function matchesDatabase(
   document: DatabaseDocumentIdentity,
   database: WorkbenchDatabaseIdentity,
 ): boolean {
-  return document.serverId === database.serverId && document.database === database.database;
+  return document.connectionId === database.connectionId && document.database === database.database;
 }
 
 function compareWorkbenchObjects(left: WorkbenchObjectModel, right: WorkbenchObjectModel): number {

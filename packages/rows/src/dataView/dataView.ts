@@ -5,11 +5,11 @@ import type { DataViewDeleteRule } from "./editability.js";
  * and the Extension Host produces it; neither owns it.
  */
 
-/** Where the rows of a Data View come from. The Connexion Association never changes implicitly. */
+/** Where the rows of a Data View come from. The Connection Association never changes implicitly. */
 export type DataViewSource =
   | {
       kind: "relation";
-      serverId: string;
+      connectionId: string;
       database: string;
       schema: string;
       name: string;
@@ -17,7 +17,7 @@ export type DataViewSource =
     }
   | {
       kind: "sql";
-      serverId: string;
+      connectionId: string;
       database: string;
       sql: string;
       /** Short label for the tab title. */

@@ -5,7 +5,7 @@ reports and feature requests.
 
 Before opening an issue:
 
-1. Run **PL/pgSQL: Check Server Requirements**.
+1. Run **PostgreSQL Workbench: Check Connection Requirements**.
 2. Confirm `shared_preload_libraries` contains `plugin_debugger`.
 3. Confirm `CREATE EXTENSION pldbgapi;` succeeds in the target database.
 4. Reproduce with the latest extension version.

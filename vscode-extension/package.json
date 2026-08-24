@@ -8,7 +8,7 @@
     "name": "Alexandre Boyer",
     "url": "https://github.com/ng-galien"
   },
-  "license": "SEE LICENSE IN LICENSE",
+  "license": "MIT",
   "pricing": "Free",
   "preview": false,
   "markdown": "github",
@@ -416,7 +416,7 @@
       "panel": [
         {
           "id": "postgresql-workbench-results-container",
-          "title": "PL/pgSQL Results",
+          "title": "PostgreSQL Results",
           "icon": "./icons/activity-bar.svg"
         }
       ]
@@ -425,7 +425,7 @@
       "postgresql-workbench": [
         {
           "id": "postgresql-workbench-connections",
-          "name": "Workbench",
+          "name": "Connections",
           "icon": "$(database)",
           "contextualTitle": "PostgreSQL Workbench"
         },
@@ -442,16 +442,10 @@
           "name": "Results",
           "type": "webview",
           "icon": "$(table)",
-          "contextualTitle": "PL/pgSQL Results"
+          "contextualTitle": "PostgreSQL Results"
         }
       ]
     },
-    "viewsWelcome": [
-      {
-        "view": "postgresql-workbench-connections",
-        "contents": "[Start a local debug database with Docker](command:postgresql-workbench.startDockerDebugDatabase)\n[Add an existing server](command:postgresql-workbench.addServer)"
-      }
-    ],
     "submenus": [
       {
         "id": "postgresql-workbench.scratchpadExecutionMode",
@@ -461,15 +455,15 @@
     "menus": {
       "commandPalette": [
         {
-          "command": "postgresql-workbench.removeServer",
+          "command": "postgresql-workbench.removeConnection",
           "when": "false"
         },
         {
-          "command": "postgresql-workbench.editServer",
+          "command": "postgresql-workbench.editConnection",
           "when": "false"
         },
         {
-          "command": "postgresql-workbench.renameServer",
+          "command": "postgresql-workbench.renameConnection",
           "when": "false"
         },
         {
@@ -477,11 +471,11 @@
           "when": "false"
         },
         {
-          "command": "postgresql-workbench.connectServer",
+          "command": "postgresql-workbench.connectConnection",
           "when": "false"
         },
         {
-          "command": "postgresql-workbench.disconnectServer",
+          "command": "postgresql-workbench.disconnectConnection",
           "when": "false"
         },
         {
@@ -655,38 +649,48 @@
       ],
       "view/item/context": [
         {
-          "command": "postgresql-workbench.removeServer",
-          "when": "viewItem == postgresql-workbench-server || viewItem == postgresql-workbench-server-connected",
-          "group": "9_server"
+          "command": "postgresql-workbench.removeConnection",
+          "when": "viewItem == postgresql-workbench-connection || viewItem == postgresql-workbench-connection-connected",
+          "group": "z_connection@1"
         },
         {
-          "command": "postgresql-workbench.editServer",
-          "when": "viewItem == postgresql-workbench-server || viewItem == postgresql-workbench-server-connected",
-          "group": "9_server"
+          "command": "postgresql-workbench.editConnection",
+          "when": "viewItem == postgresql-workbench-connection || viewItem == postgresql-workbench-connection-connected",
+          "group": "9_connection@1"
         },
         {
-          "command": "postgresql-workbench.renameServer",
-          "when": "viewItem == postgresql-workbench-server || viewItem == postgresql-workbench-server-connected",
-          "group": "9_server@1"
+          "command": "postgresql-workbench.renameConnection",
+          "when": "viewItem == postgresql-workbench-connection || viewItem == postgresql-workbench-connection-connected",
+          "group": "9_connection@2"
         },
         {
           "command": "postgresql-workbench.changePassword",
-          "when": "viewItem == postgresql-workbench-server || viewItem == postgresql-workbench-server-connected",
-          "group": "9_server"
+          "when": "viewItem == postgresql-workbench-connection || viewItem == postgresql-workbench-connection-connected",
+          "group": "9_connection@3"
         },
         {
-          "command": "postgresql-workbench.disconnectServer",
-          "when": "viewItem == postgresql-workbench-server-connected",
+          "command": "postgresql-workbench.disconnectConnection",
+          "when": "viewItem == postgresql-workbench-connection-connected",
+          "group": "navigation@1"
+        },
+        {
+          "command": "postgresql-workbench.disconnectConnection",
+          "when": "viewItem == postgresql-workbench-connection-connected",
           "group": "inline"
         },
         {
           "command": "postgresql-workbench.manageDebugSessions",
-          "when": "viewItem == postgresql-workbench-server-connected",
-          "group": "navigation"
+          "when": "viewItem == postgresql-workbench-connection-connected",
+          "group": "navigation@2"
         },
         {
-          "command": "postgresql-workbench.connectServer",
-          "when": "viewItem == postgresql-workbench-server",
+          "command": "postgresql-workbench.connectConnection",
+          "when": "viewItem == postgresql-workbench-connection",
+          "group": "navigation@1"
+        },
+        {
+          "command": "postgresql-workbench.connectConnection",
+          "when": "viewItem == postgresql-workbench-connection",
           "group": "inline"
         },
         {
@@ -717,12 +721,17 @@
         {
           "command": "postgresql-workbench.openFunction",
           "when": "viewItem == postgresql-workbench-function || viewItem == postgresql-workbench-function-debuggable",
-          "group": "navigation"
+          "group": "navigation@3"
         },
         {
           "command": "postgresql-workbench.revealRoutineTests",
           "when": "viewItem == postgresql-workbench-function || viewItem == postgresql-workbench-function-debuggable",
-          "group": "navigation@2"
+          "group": "navigation@4"
+        },
+        {
+          "command": "postgresql-workbench.debugFromTree",
+          "when": "viewItem == postgresql-workbench-function-debuggable",
+          "group": "navigation@1"
         },
         {
           "command": "postgresql-workbench.debugFromTree",
@@ -732,12 +741,17 @@
         {
           "command": "postgresql-workbench.showObjectActions",
           "when": "viewItem == postgresql-workbench-function || viewItem == postgresql-workbench-function-debuggable || viewItem == postgresql-workbench-table || viewItem == postgresql-workbench-view || viewItem == postgresql-workbench-procedure || viewItem == postgresql-workbench-trigger",
-          "group": "navigation@4"
+          "group": "navigation@5"
         },
         {
           "command": "postgresql-workbench.revealDatabaseObjectInTree",
           "when": "view == postgresql-workbench-connections && viewItem == postgresql-workbench-relation-target",
           "group": "inline@1"
+        },
+        {
+          "command": "postgresql-workbench.openDatabaseObject",
+          "when": "view == postgresql-workbench-connections && (viewItem == postgresql-workbench-function || viewItem == postgresql-workbench-function-debuggable || viewItem == postgresql-workbench-table || viewItem == postgresql-workbench-view || viewItem == postgresql-workbench-procedure || viewItem == postgresql-workbench-trigger || viewItem == postgresql-workbench-relation-target)",
+          "group": "navigation@2"
         },
         {
           "command": "postgresql-workbench.openDatabaseObject",
@@ -752,7 +766,7 @@
         {
           "command": "postgresql-workbench.openDataView",
           "when": "view == postgresql-workbench-connections && (viewItem == postgresql-workbench-table || viewItem == postgresql-workbench-view)",
-          "group": "navigation@3"
+          "group": "navigation@4"
         },
         {
           "command": "postgresql-workbench.openSqlNotebook",
@@ -855,282 +869,339 @@
     },
     "commands": [
       {
-        "command": "postgresql-workbench.addServer",
-        "title": "PostgreSQL Workbench: Add Server",
+        "command": "postgresql-workbench.addConnection",
+        "title": "Add Connection",
+        "category": "PostgreSQL Workbench",
         "icon": "$(add)"
       },
       {
         "command": "postgresql-workbench.startDockerDebugDatabase",
-        "title": "PL/pgSQL: Start Local Debug Database (Docker)",
+        "title": "Start Local Debug Database (Docker)",
+        "category": "PostgreSQL Workbench",
         "icon": "$(vm-running)"
       },
       {
-        "command": "postgresql-workbench.removeServer",
-        "title": "Remove Server",
+        "command": "postgresql-workbench.removeConnection",
+        "title": "Remove",
+        "category": "PostgreSQL Workbench: Connections",
         "icon": "$(trash)"
       },
       {
-        "command": "postgresql-workbench.connectServer",
+        "command": "postgresql-workbench.connectConnection",
         "title": "Connect",
+        "category": "PostgreSQL Workbench: Connections",
         "icon": "$(plug)"
       },
       {
-        "command": "postgresql-workbench.disconnectServer",
+        "command": "postgresql-workbench.disconnectConnection",
         "title": "Disconnect",
+        "category": "PostgreSQL Workbench: Connections",
         "icon": "$(debug-disconnect)"
       },
       {
-        "command": "postgresql-workbench.editServer",
-        "title": "Edit Server",
+        "command": "postgresql-workbench.editConnection",
+        "title": "Edit",
+        "category": "PostgreSQL Workbench: Connections",
         "icon": "$(edit)"
       },
       {
-        "command": "postgresql-workbench.renameServer",
-        "title": "Rename Connexion",
+        "command": "postgresql-workbench.renameConnection",
+        "title": "Rename",
+        "category": "PostgreSQL Workbench: Connections",
         "icon": "$(edit)"
       },
       {
         "command": "postgresql-workbench.changePassword",
         "title": "Change Password",
+        "category": "PostgreSQL Workbench: Connections",
         "icon": "$(key)"
       },
       {
         "command": "postgresql-workbench.pickConnection",
-        "title": "PL/pgSQL: Pick Connection",
+        "title": "Pick Connection",
+        "category": "PostgreSQL Workbench",
         "icon": "$(plug)"
       },
       {
         "command": "postgresql-workbench.refreshTree",
-        "title": "PL/pgSQL: Refresh",
+        "title": "Refresh Connections",
+        "category": "PostgreSQL Workbench",
         "icon": "$(refresh)"
       },
       {
         "command": "postgresql-workbench.indexDatabase",
-        "title": "PL/pgSQL Workbench: Reindex Database",
+        "title": "Reindex Database",
+        "category": "PostgreSQL Workbench",
         "icon": "$(refresh)"
       },
       {
         "command": "postgresql-workbench.cancelDatabaseIndex",
-        "title": "PostgreSQL Workbench: Cancel Database Indexing",
+        "title": "Cancel Indexing",
+        "category": "PostgreSQL Workbench",
         "icon": "$(debug-stop)"
       },
       {
         "command": "postgresql-workbench.indexAssociation",
-        "title": "PostgreSQL Workbench: Index Association",
+        "title": "Index Association",
+        "category": "PostgreSQL Workbench",
         "icon": "$(refresh)"
       },
       {
         "command": "postgresql-workbench.configureWorkbenchSchemaSync",
-        "title": "PostgreSQL Workbench: Configure Schema Synchronization",
+        "title": "Configure",
+        "category": "PostgreSQL Workbench: Schema Synchronization",
         "icon": "$(radio-tower)"
       },
       {
         "command": "postgresql-workbench.provisionWorkbenchSchemaSync",
-        "title": "PostgreSQL Workbench: Provision Schema Synchronization",
+        "title": "Provision",
+        "category": "PostgreSQL Workbench: Schema Synchronization",
         "icon": "$(tools)"
       },
       {
         "command": "postgresql-workbench.removeWorkbenchSchemaSyncProvisioning",
-        "title": "PostgreSQL Workbench: Remove Schema Synchronization Provisioning",
+        "title": "Remove Provisioning",
+        "category": "PostgreSQL Workbench: Schema Synchronization",
         "icon": "$(trash)"
       },
       {
         "command": "postgresql-workbench.searchDatabaseObjects",
-        "title": "PostgreSQL Workbench: Search Database Objects",
+        "title": "Search",
+        "category": "PostgreSQL Workbench",
         "icon": "$(search)"
       },
       {
         "command": "postgresql-workbench.openDatabaseObject",
-        "title": "Open PostgreSQL Definition",
+        "title": "Open Definition",
+        "category": "PostgreSQL Workbench",
         "icon": "$(go-to-file)"
       },
       {
         "command": "postgresql-workbench.openDataView",
         "title": "Open Data View",
+        "category": "PostgreSQL Workbench",
         "icon": "$(table)"
       },
       {
         "command": "postgresql-workbench.openDataViewForStatement",
-        "title": "PostgreSQL Workbench: Open Data View for Statement",
+        "title": "Open Data View for Statement",
+        "category": "PostgreSQL Workbench",
         "icon": "$(table)"
       },
       {
         "command": "postgresql-workbench.revealDatabaseObjectInTree",
-        "title": "Reveal PostgreSQL Object in Workbench Tree",
+        "title": "Reveal",
+        "category": "PostgreSQL Workbench",
         "icon": "$(list-tree)"
       },
       {
         "command": "postgresql-workbench.openDatabaseGraph",
-        "title": "Open PostgreSQL Cockpit",
+        "title": "Open Cockpit",
+        "category": "PostgreSQL Workbench",
         "icon": "$(type-hierarchy)"
       },
       {
         "command": "postgresql-workbench.showObjectActions",
-        "title": "PostgreSQL Object Actions...",
+        "title": "Actions...",
+        "category": "PostgreSQL Workbench",
         "icon": "$(gear)"
       },
       {
         "command": "postgresql-workbench.executeSqlSelection",
-        "title": "PostgreSQL Workbench: Execute SQL Selection",
+        "title": "Execute SQL Selection",
+        "category": "PostgreSQL Workbench",
         "icon": "$(play)"
       },
       {
         "command": "postgresql-workbench.newSqlNotebook",
-        "title": "PostgreSQL Workbench: New SQL Scratchpad",
+        "title": "New SQL Scratchpad",
+        "category": "PostgreSQL Workbench",
         "icon": "$(notebook-template)"
       },
       {
         "command": "postgresql-workbench.openSqlNotebook",
-        "title": "Open SQL Scratchpad",
+        "title": "Open",
+        "category": "PostgreSQL Workbench: Scratchpads",
         "icon": "$(notebook)"
       },
       {
         "command": "postgresql-workbench.renameSqlNotebook",
-        "title": "Rename SQL Scratchpad",
+        "title": "Rename",
+        "category": "PostgreSQL Workbench: Scratchpads",
         "icon": "$(edit)"
       },
       {
         "command": "postgresql-workbench.deleteSqlNotebook",
-        "title": "Delete SQL Scratchpad",
+        "title": "Delete",
+        "category": "PostgreSQL Workbench: Scratchpads",
         "icon": "$(trash)"
       },
       {
         "command": "postgresql-workbench.duplicateSqlNotebook",
-        "title": "Duplicate SQL Scratchpad",
+        "title": "Duplicate",
+        "category": "PostgreSQL Workbench: Scratchpads",
         "icon": "$(copy)"
       },
       {
         "command": "postgresql-workbench.exportSqlNotebook",
-        "title": "Export SQL Scratchpad...",
+        "title": "Export...",
+        "category": "PostgreSQL Workbench: Scratchpads",
         "icon": "$(export)"
       },
       {
         "command": "postgresql-workbench.refreshSqlNotebooks",
-        "title": "Refresh SQL Scratchpads",
+        "title": "Refresh",
+        "category": "PostgreSQL Workbench: Scratchpads",
         "icon": "$(refresh)"
       },
       {
         "command": "postgresql-workbench.filterSqlNotebooks",
-        "title": "Filter SQL Scratchpads...",
+        "title": "Filter...",
+        "category": "PostgreSQL Workbench: Scratchpads",
         "icon": "$(search)"
       },
       {
         "command": "postgresql-workbench.changeSqlNotebookConnection",
-        "title": "Scratchpad Association...",
+        "title": "Association...",
+        "category": "PostgreSQL Workbench: Scratchpads",
         "icon": "$(database)"
       },
       {
         "command": "postgresql-workbench.reconnectSqlNotebook",
-        "title": "PostgreSQL Workbench: Reconnect Scratchpad Association",
+        "title": "Reconnect",
+        "category": "PostgreSQL Workbench: Scratchpads",
         "icon": "$(debug-restart)"
       },
       {
         "command": "postgresql-workbench.connectSqlNotebookAssociation",
-        "title": "PostgreSQL Workbench: Connect Scratchpad Association",
+        "title": "Connect",
+        "category": "PostgreSQL Workbench: Scratchpads",
         "icon": "$(target)"
       },
       {
         "command": "postgresql-workbench.setScratchpadAutoMode",
         "title": "Mode AUTO",
+        "category": "PostgreSQL Workbench: Scratchpads",
         "icon": "$(sync-ignored)"
       },
       {
         "command": "postgresql-workbench.setScratchpadManualMode",
         "title": "Mode MANUAL",
+        "category": "PostgreSQL Workbench: Scratchpads",
         "icon": "$(debug-pause)"
       },
       {
         "command": "postgresql-workbench.setScratchpadStatementTimeout",
-        "title": "Scratchpad Statement Timeout...",
+        "title": "Statement Timeout...",
+        "category": "PostgreSQL Workbench: Scratchpads",
         "icon": "$(clock)"
       },
       {
         "command": "postgresql-workbench.commitScratchpadTransaction",
         "title": "Commit",
+        "category": "PostgreSQL Workbench: Scratchpads",
         "icon": "$(check)"
       },
       {
         "command": "postgresql-workbench.rollbackScratchpadTransaction",
         "title": "Rollback",
+        "category": "PostgreSQL Workbench: Scratchpads",
         "icon": "$(discard)"
       },
       {
         "command": "postgresql-workbench.setScratchpadCellExecutionIntent",
-        "title": "PostgreSQL Workbench: Change Scratchpad Cell Execution Intent"
+        "title": "Change Cell Execution Intent",
+        "category": "PostgreSQL Workbench: Scratchpads"
       },
       {
         "command": "postgresql-workbench.compareRoutineWithDatabase",
-        "title": "PostgreSQL Workbench: Compare Routine with Database",
+        "title": "Compare Routine with Database",
+        "category": "PostgreSQL Workbench",
         "icon": "$(compare-changes)"
       },
       {
         "command": "postgresql-workbench.refreshTests",
-        "title": "PL/pgSQL: Refresh pgTAP Tests",
+        "title": "Refresh pgTAP Tests",
+        "category": "PostgreSQL Workbench",
         "icon": "$(refresh)"
       },
       {
         "command": "postgresql-workbench.revealRoutineTests",
         "title": "Show pgTAP Tests",
+        "category": "PostgreSQL Workbench",
         "icon": "$(beaker)"
       },
       {
         "command": "postgresql-workbench.exportCoverage",
-        "title": "PL/pgSQL: Export Last Coverage",
+        "title": "Export Last Coverage",
+        "category": "PostgreSQL Workbench",
         "icon": "$(export)"
       },
       {
         "command": "postgresql-workbench.checkRequirements",
-        "title": "PL/pgSQL: Check Server Requirements",
+        "title": "Check Connection Requirements",
+        "category": "PostgreSQL Workbench",
         "icon": "$(checklist)"
       },
       {
         "command": "postgresql-workbench.manageDebugSessions",
         "title": "Terminate Debug Sessions...",
+        "category": "PostgreSQL Workbench",
         "icon": "$(debug-stop)"
       },
       {
         "command": "postgresql-workbench.debugFromTree",
         "title": "Debug",
+        "category": "PostgreSQL Workbench",
         "icon": "$(debug-start)"
       },
       {
         "command": "postgresql-workbench.openFunction",
         "title": "Open Source",
+        "category": "PostgreSQL Workbench",
         "icon": "$(go-to-file)"
       },
       {
         "command": "postgresql-workbench.debugDefinition",
-        "title": "PL/pgSQL: Debug Function/Procedure"
+        "title": "Debug Function/Procedure",
+        "category": "PostgreSQL Workbench"
       },
       {
         "command": "postgresql-workbench.debugCall",
-        "title": "PL/pgSQL: Debug Call"
+        "title": "Debug Call",
+        "category": "PostgreSQL Workbench"
       },
       {
         "command": "postgresql-workbench.assignDocumentConnection",
-        "title": "PostgreSQL Workbench: Choose Document Association"
+        "title": "Choose Document Association",
+        "category": "PostgreSQL Workbench"
       },
       {
         "command": "postgresql-workbench.runSqlCall",
-        "title": "PostgreSQL Workbench: Run SQL Statement"
+        "title": "Run SQL Statement",
+        "category": "PostgreSQL Workbench"
       },
       {
         "command": "postgresql-workbench.deployManagedRoutine",
-        "title": "PostgreSQL Workbench: Deploy Managed PL/pgSQL Routine"
+        "title": "Deploy Managed PL/pgSQL Routine",
+        "category": "PostgreSQL Workbench"
       },
       {
         "command": "postgresql-workbench.results.copy",
-        "title": "PL/pgSQL Results: Copy Captured Result",
+        "title": "Copy Captured Result",
+        "category": "PostgreSQL Workbench: Results",
         "icon": "$(copy)"
       },
       {
         "command": "postgresql-workbench.results.export",
-        "title": "PL/pgSQL Results: Export Captured Result",
+        "title": "Export Captured Result",
+        "category": "PostgreSQL Workbench: Results",
         "icon": "$(export)"
       },
       {
         "command": "postgresql-workbench.results.clear",
-        "title": "PL/pgSQL Results: Clear History",
+        "title": "Clear History",
+        "category": "PostgreSQL Workbench: Results",
         "icon": "$(clear-all)"
       }
     ],
@@ -1181,7 +1252,7 @@
           "type": "boolean",
           "default": false,
           "scope": "window",
-          "description": "Opt in to automatic PostgreSQL schema synchronization for Connexions without an explicit override. Provisioning remains a separate confirmed action. Data changes (DML) never trigger synchronization."
+          "description": "Opt in to automatic PostgreSQL schema synchronization for Connections without an explicit override. Provisioning remains a separate confirmed action. Data changes (DML) never trigger synchronization."
         },
         "postgresql-workbench.workbench.schemaSync.supportSchema": {
           "type": "string",
@@ -1266,7 +1337,7 @@
         "postgresql-workbench.results.autoReveal": {
           "type": "boolean",
           "default": true,
-          "description": "Automatically reveal the PL/pgSQL Results panel without taking keyboard focus when a debugged SQL call completes or fails."
+          "description": "Automatically reveal the PostgreSQL Results panel without taking keyboard focus when a debugged SQL call completes or fails."
         },
         "postgresql-workbench.dataView.hideKeyColumns": {
           "type": "boolean",
@@ -1362,9 +1433,9 @@
         "configurationAttributes": {
           "launch": {
             "properties": {
-              "server": {
+              "connection": {
                 "type": "string",
-                "description": "Server ID from PL/pgSQL connection manager (e.g. 'localhost:5432/mydb:postgres'). If omitted, uses the active server."
+                "description": "Connection ID from the PL/pgSQL connection manager (e.g. 'localhost:5432/mydb:postgres'). If omitted, uses the active Connection."
               },
               "sql": {
                 "type": "string",
@@ -1475,18 +1546,18 @@
         "description": "Set up PostgreSQL debugging, SQL authoring, and pgTAP coverage in 7 steps.",
         "steps": [
           {
-            "id": "addServer",
-            "title": "Start or Add a PostgreSQL Server",
-            "description": "For the fastest setup, let the extension pull a ready-to-debug PostgreSQL image, start it locally, and connect it automatically.\n\n[Start with Docker](command:postgresql-workbench.startDockerDebugDatabase)\n\nAlready have a server? [Add Server](command:postgresql-workbench.addServer)",
+            "id": "addConnection",
+            "title": "Start a Local Database or Add a PostgreSQL Connection",
+            "description": "For the fastest setup, let the extension pull a ready-to-debug PostgreSQL image, start it locally, and connect it automatically.\n\n[Start with Docker](command:postgresql-workbench.startDockerDebugDatabase)\n\nAlready have PostgreSQL running? [Add Connection](command:postgresql-workbench.addConnection)",
             "completionEvents": [
               "onCommand:postgresql-workbench.startDockerDebugDatabase",
-              "onCommand:postgresql-workbench.addServer"
+              "onCommand:postgresql-workbench.addConnection"
             ]
           },
           {
             "id": "verifyConnection",
             "title": "Verify Connection & pldbgapi",
-            "description": "Once connected, the status bar shows the server name and the sidebar shows your functions. If pldbgapi is missing, the extension offers to install it.\n\nPrerequisites:\n```\n# postgresql.conf\nshared_preload_libraries = 'plugin_debugger'\n```\n```sql\nCREATE EXTENSION pldbgapi;\n```",
+            "description": "Once connected, the status bar shows the Connection name and the sidebar shows your functions. If pldbgapi is missing, the extension offers to install it.\n\nPrerequisites:\n```\n# postgresql.conf\nshared_preload_libraries = 'plugin_debugger'\n```\n```sql\nCREATE EXTENSION pldbgapi;\n```",
             "completionEvents": [
               "onContext:postgresql-workbench.connected"
             ]
@@ -1502,7 +1573,7 @@
           {
             "id": "authorSql",
             "title": "Author SQL from Sources",
-            "description": "Open a `.sql` file or a Scratchpad cell and pick its connection once. Every non-empty PostgreSQL Statement gets a **Run SQL** CodeLens, **Format Document** uppercases keywords and indents with two spaces, and completion suggests indexed schemas, tables, views, columns, functions, and procedures.\n\nDrag one object from **Sources** into the editor and hold **Shift** while dropping it to compose SQL: a `SELECT` for a table or view, a `JOIN` when a foreign key connects it to the query under the cursor, a call for a function or procedure, or a DML harness for a trigger. A drop without Shift opens the object in the Cockpit. Composed SQL is never executed automatically.\n\n[Open a SQL File](command:workbench.action.files.openFile)",
+            "description": "Open a `.sql` file or a Scratchpad cell and pick its connection once. Every non-empty PostgreSQL Statement gets a **Run SQL** CodeLens, **Format Document** uppercases keywords and indents with two spaces, and completion suggests indexed schemas, tables, views, columns, functions, and procedures.\n\nDrag one object from **Schemas** into the editor and hold **Shift** while dropping it to compose SQL: a `SELECT` for a table or view, a `JOIN` when a foreign key connects it to the query under the cursor, a call for a function or procedure, or a DML harness for a trigger. A drop without Shift opens the object in the Cockpit. Composed SQL is never executed automatically.\n\n[Open a SQL File](command:workbench.action.files.openFile)",
             "completionEvents": [
               "onCommand:workbench.action.files.openFile"
             ]
@@ -1515,7 +1586,7 @@
           {
             "id": "launchDebug",
             "title": "Launch a Debug Session",
-            "description": "Three ways to start debugging:\n- **CodeLens**: Click \"Debug\" above a `CREATE FUNCTION`, `CALL`, or `SELECT` statement\n- **Sidebar**: Right-click a function → Debug\n- **launch.json**: Add a `plpgsql` configuration\n\n[Open a SQL File](command:workbench.action.files.openFile)",
+            "description": "Three ways to start debugging:\n- **CodeLens**: Click \"Debug\" above a `CREATE FUNCTION`, `CALL`, or `SELECT` statement\n- **Sidebar**: Right-click a function → Debug\n- **launch.json**: Add a `postgresql-workbench` configuration\n\n[Open a SQL File](command:workbench.action.files.openFile)",
             "completionEvents": [
               "onCommand:postgresql-workbench.debugCall",
               "onCommand:postgresql-workbench.debugDefinition",

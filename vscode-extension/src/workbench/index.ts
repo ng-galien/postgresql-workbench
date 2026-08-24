@@ -11,9 +11,9 @@
 
 export { WorkbenchSourceUris } from "./sourceUris.js";
 export {
+  ConnectionItem,
   FunctionItem,
   PlpgsqlTreeItem,
-  ServerItem,
   WorkbenchDdlSyncItem,
   WorkbenchObjectItem,
   WorkbenchRelationTargetItem,

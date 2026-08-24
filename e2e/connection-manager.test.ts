@@ -57,9 +57,9 @@ vi.mock("vscode", () => {
   };
 });
 
-import type { ServerConfig } from "../packages/catalog/src/savedConnection.js";
+import type { ConnectionConfig } from "../packages/catalog/src/savedConnection.js";
 import { ConnectionManager } from "../vscode-extension/src/connection/openConnections.js";
-import { ServerStore } from "../vscode-extension/src/connection/savedConnections.js";
+import { ConnectionStore } from "../vscode-extension/src/connection/savedConnections.js";
 
 const ADMIN_CONFIG = {
   host: "127.0.0.1",
@@ -71,8 +71,8 @@ const ADMIN_CONFIG = {
 const DATABASE_A = "pgwb_manager_it_a";
 const DATABASE_B = "pgwb_manager_it_b";
 
-const SERVER_A = server(DATABASE_A);
-const SERVER_B = server(DATABASE_B);
+const CONNECTION_A = connection(DATABASE_A);
+const CONNECTION_B = connection(DATABASE_B);
 const managers = new Set<ConnectionManager>();
 let admin: Client;
 
@@ -88,8 +88,8 @@ beforeAll(async () => {
 
 afterEach(async () => {
   for (const manager of managers) {
-    for (const server of [SERVER_A, SERVER_B]) {
-      if (manager.isServerConnected(server.id)) await manager.disconnect(server.id);
+    for (const connection of [CONNECTION_A, CONNECTION_B]) {
+      if (manager.isConnectionConnected(connection.id)) await manager.disconnect(connection.id);
     }
     manager.dispose();
   }
@@ -113,82 +113,85 @@ afterAll(async () => {
   await admin.end();
 });
 
-describe("e2e: ConnectionManager owns independent PostgreSQL Connexions", () => {
-  it("opens two Connexions concurrently without replacing either session", async () => {
+describe("e2e: ConnectionManager owns independent PostgreSQL Connections", () => {
+  it("opens two Connections concurrently without replacing either session", async () => {
     const manager = connectionManager();
-    await manager.store.add(SERVER_A, "postgres");
-    await manager.store.add(SERVER_B, "postgres");
+    await manager.store.add(CONNECTION_A, "postgres");
+    await manager.store.add(CONNECTION_B, "postgres");
 
     await expect(
-      Promise.all([manager.connectServer(SERVER_A.id), manager.connectServer(SERVER_B.id)]),
+      Promise.all([
+        manager.connectConnection(CONNECTION_A.id),
+        manager.connectConnection(CONNECTION_B.id),
+      ]),
     ).resolves.toEqual([true, true]);
 
-    expect(manager.isServerConnected(SERVER_A.id)).toBe(true);
-    expect(manager.isServerConnected(SERVER_B.id)).toBe(true);
-    expect(await backendPid(requiredClient(manager, SERVER_A.id))).toBeGreaterThan(0);
-    expect(await backendPid(requiredClient(manager, SERVER_B.id))).toBeGreaterThan(0);
+    expect(manager.isConnectionConnected(CONNECTION_A.id)).toBe(true);
+    expect(manager.isConnectionConnected(CONNECTION_B.id)).toBe(true);
+    expect(await backendPid(requiredClient(manager, CONNECTION_A.id))).toBeGreaterThan(0);
+    expect(await backendPid(requiredClient(manager, CONNECTION_B.id))).toBeGreaterThan(0);
   });
 
-  it("keeps stable backend sessions when each Connexion is addressed repeatedly", async () => {
+  it("keeps stable backend sessions when each Connection is addressed repeatedly", async () => {
     const manager = await connectedManager();
-    const clientA = requiredClient(manager, SERVER_A.id);
-    const clientB = requiredClient(manager, SERVER_B.id);
+    const clientA = requiredClient(manager, CONNECTION_A.id);
+    const clientB = requiredClient(manager, CONNECTION_B.id);
     const pidA = await backendPid(clientA);
     const pidB = await backendPid(clientB);
 
     for (let index = 0; index < 20; index += 1) {
-      const target = index % 2 === 0 ? SERVER_A : SERVER_B;
-      await expect(manager.connectServer(target.id)).resolves.toBe(true);
+      const target = index % 2 === 0 ? CONNECTION_A : CONNECTION_B;
+      await expect(manager.connectConnection(target.id)).resolves.toBe(true);
     }
 
-    expect(manager.isServerConnected(SERVER_A.id)).toBe(true);
-    expect(manager.isServerConnected(SERVER_B.id)).toBe(true);
+    expect(manager.isConnectionConnected(CONNECTION_A.id)).toBe(true);
+    expect(manager.isConnectionConnected(CONNECTION_B.id)).toBe(true);
     expect(await backendPid(clientA)).toBe(pidA);
     expect(await backendPid(clientB)).toBe(pidB);
   });
 
-  it("disconnects one Connexion without changing the other", async () => {
+  it("disconnects one Connection without changing the other", async () => {
     const manager = await connectedManager();
-    const clientA = requiredClient(manager, SERVER_A.id);
-    const clientB = requiredClient(manager, SERVER_B.id);
+    const clientA = requiredClient(manager, CONNECTION_A.id);
+    const clientB = requiredClient(manager, CONNECTION_B.id);
     const pidB = await backendPid(clientB);
 
-    await expect(manager.disconnect(SERVER_A.id)).resolves.toBe(true);
+    await expect(manager.disconnect(CONNECTION_A.id)).resolves.toBe(true);
 
-    expect(manager.isServerConnected(SERVER_A.id)).toBe(false);
-    expect(manager.isServerConnected(SERVER_B.id)).toBe(true);
+    expect(manager.isConnectionConnected(CONNECTION_A.id)).toBe(false);
+    expect(manager.isConnectionConnected(CONNECTION_B.id)).toBe(true);
     expect(await backendPid(clientB)).toBe(pidB);
     await expect(clientA.query("SELECT 1")).rejects.toThrow();
   });
 
-  it("does not reconnect or replace another Connexion after one disconnects", async () => {
+  it("does not reconnect or replace another Connection after one disconnects", async () => {
     const manager = await connectedManager();
-    const clientA = requiredClient(manager, SERVER_A.id);
+    const clientA = requiredClient(manager, CONNECTION_A.id);
     const pidA = await backendPid(clientA);
 
-    await expect(manager.disconnect(SERVER_B.id)).resolves.toBe(true);
+    await expect(manager.disconnect(CONNECTION_B.id)).resolves.toBe(true);
 
-    expect(manager.isServerConnected(SERVER_A.id)).toBe(true);
+    expect(manager.isConnectionConnected(CONNECTION_A.id)).toBe(true);
     expect(await backendPid(clientA)).toBe(pidA);
 
-    await expect(manager.connectServer(SERVER_A.id)).resolves.toBe(true);
-    expect(await backendPid(requiredClient(manager, SERVER_A.id))).toBe(pidA);
+    await expect(manager.connectConnection(CONNECTION_A.id)).resolves.toBe(true);
+    expect(await backendPid(requiredClient(manager, CONNECTION_A.id))).toBe(pidA);
   });
 
   it("survives repeated disconnect and reconnect cycles on A while B keeps working", async () => {
     const manager = await connectedManager();
-    const clientB = requiredClient(manager, SERVER_B.id);
+    const clientB = requiredClient(manager, CONNECTION_B.id);
     const pidB = await backendPid(clientB);
 
     for (let cycle = 0; cycle < 10; cycle += 1) {
       await Promise.all([
-        manager.disconnect(SERVER_A.id),
+        manager.disconnect(CONNECTION_A.id),
         clientB.query("SELECT pg_backend_pid() AS pid"),
       ]);
-      expect(manager.isServerConnected(SERVER_A.id)).toBe(false);
-      expect(manager.isServerConnected(SERVER_B.id)).toBe(true);
+      expect(manager.isConnectionConnected(CONNECTION_A.id)).toBe(false);
+      expect(manager.isConnectionConnected(CONNECTION_B.id)).toBe(true);
       await Promise.all([
-        manager.connectServer(SERVER_A.id),
+        manager.connectConnection(CONNECTION_A.id),
         clientB.query("SELECT pg_backend_pid() AS pid"),
       ]);
     }
@@ -196,73 +199,73 @@ describe("e2e: ConnectionManager owns independent PostgreSQL Connexions", () => 
     expect(await backendPid(clientB)).toBe(pidB);
   });
 
-  it("force-reconnects only the requested Connexion", async () => {
+  it("force-reconnects only the requested Connection", async () => {
     const manager = await connectedManager();
-    const oldPidA = await backendPid(requiredClient(manager, SERVER_A.id));
-    const clientB = requiredClient(manager, SERVER_B.id);
+    const oldPidA = await backendPid(requiredClient(manager, CONNECTION_A.id));
+    const clientB = requiredClient(manager, CONNECTION_B.id);
     const pidB = await backendPid(clientB);
 
-    await expect(manager.connectServer(SERVER_A.id, { force: true })).resolves.toBe(true);
+    await expect(manager.connectConnection(CONNECTION_A.id, { force: true })).resolves.toBe(true);
 
-    expect(await backendPid(requiredClient(manager, SERVER_A.id))).not.toBe(oldPidA);
-    expect(manager.getClient(SERVER_B.id)).toBe(clientB);
+    expect(await backendPid(requiredClient(manager, CONNECTION_A.id))).not.toBe(oldPidA);
+    expect(manager.getClient(CONNECTION_B.id)).toBe(clientB);
     expect(await backendPid(clientB)).toBe(pidB);
   });
 
-  it("preserves every live Connexion when a third connection attempt fails", async () => {
+  it("preserves every live Connection when a third connection attempt fails", async () => {
     const manager = await connectedManager();
-    const clientA = requiredClient(manager, SERVER_A.id);
-    const clientB = requiredClient(manager, SERVER_B.id);
+    const clientA = requiredClient(manager, CONNECTION_A.id);
+    const clientB = requiredClient(manager, CONNECTION_B.id);
     const pidA = await backendPid(clientA);
     const pidB = await backendPid(clientB);
-    const unavailable = server("unavailable", 59999);
+    const unavailable = connection("unavailable", 59999);
     await manager.store.add(unavailable, "postgres");
 
-    await expect(manager.connectServer(unavailable.id)).resolves.toBe(false);
+    await expect(manager.connectConnection(unavailable.id)).resolves.toBe(false);
 
-    expect(manager.isServerConnected(SERVER_A.id)).toBe(true);
-    expect(manager.isServerConnected(SERVER_B.id)).toBe(true);
+    expect(manager.isConnectionConnected(CONNECTION_A.id)).toBe(true);
+    expect(manager.isConnectionConnected(CONNECTION_B.id)).toBe(true);
     expect(await backendPid(clientA)).toBe(pidA);
     expect(await backendPid(clientB)).toBe(pidB);
   });
 
-  it("contains an unexpected backend loss and reconnects only that Connexion", async () => {
+  it("contains an unexpected backend loss and reconnects only that Connection", async () => {
     const manager = await connectedManager();
-    const clientA = requiredClient(manager, SERVER_A.id);
-    const clientB = requiredClient(manager, SERVER_B.id);
+    const clientA = requiredClient(manager, CONNECTION_A.id);
+    const clientB = requiredClient(manager, CONNECTION_B.id);
     const pidA = await backendPid(clientA);
     const pidB = await backendPid(clientB);
 
     await admin.query("SELECT pg_terminate_backend($1)", [pidA]);
-    await vi.waitFor(() => expect(manager.isServerConnected(SERVER_A.id)).toBe(false), {
+    await vi.waitFor(() => expect(manager.isConnectionConnected(CONNECTION_A.id)).toBe(false), {
       timeout: 5_000,
     });
 
-    expect(manager.isServerConnected(SERVER_B.id)).toBe(true);
+    expect(manager.isConnectionConnected(CONNECTION_B.id)).toBe(true);
     expect(await backendPid(clientB)).toBe(pidB);
 
-    await expect(manager.connectServer(SERVER_A.id)).resolves.toBe(true);
-    const reconnectedA = requiredClient(manager, SERVER_A.id);
+    await expect(manager.connectConnection(CONNECTION_A.id)).resolves.toBe(true);
+    const reconnectedA = requiredClient(manager, CONNECTION_A.id);
     expect(await backendPid(reconnectedA)).not.toBe(pidA);
     expect(await backendPid(clientB)).toBe(pidB);
   });
 
-  it("keeps transaction and session state attached to the exact Connexion", async () => {
+  it("keeps transaction and session state attached to the exact Connection", async () => {
     const manager = await connectedManager();
-    const clientA = requiredClient(manager, SERVER_A.id);
-    const clientB = requiredClient(manager, SERVER_B.id);
+    const clientA = requiredClient(manager, CONNECTION_A.id);
+    const clientB = requiredClient(manager, CONNECTION_B.id);
     const pidA = await backendPid(clientA);
 
     await clientA.query("BEGIN");
     await clientA.query("CREATE TEMP TABLE pgwb_session_probe(value integer)");
     await clientA.query("INSERT INTO pgwb_session_probe VALUES (42)");
-    await manager.connectServer(SERVER_B.id);
+    await manager.connectConnection(CONNECTION_B.id);
 
     await expect(clientB.query("SELECT * FROM pgwb_session_probe")).rejects.toThrow(
       /pgwb_session_probe/u,
     );
-    await expect(manager.disconnect(SERVER_B.id)).resolves.toBe(true);
-    expect(manager.isServerConnected(SERVER_A.id)).toBe(true);
+    await expect(manager.disconnect(CONNECTION_B.id)).resolves.toBe(true);
+    expect(manager.isConnectionConnected(CONNECTION_A.id)).toBe(true);
     expect(await backendPid(clientA)).toBe(pidA);
     await expect(clientA.query("SELECT value FROM pgwb_session_probe")).resolves.toMatchObject({
       rows: [{ value: 42 }],
@@ -270,35 +273,35 @@ describe("e2e: ConnectionManager owns independent PostgreSQL Connexions", () => 
     await clientA.query("ROLLBACK");
   });
 
-  it("refreshes debugger capability only for the requested Connexion", async () => {
+  it("refreshes debugger capability only for the requested Connection", async () => {
     const manager = await connectedManager();
     await vi.waitFor(
       () => {
-        expect(manager.debugCapabilityFor(SERVER_A.id).status).toBe("available");
-        expect(manager.debugCapabilityFor(SERVER_B.id).status).toBe("unavailable");
+        expect(manager.debugCapabilityFor(CONNECTION_A.id).status).toBe("available");
+        expect(manager.debugCapabilityFor(CONNECTION_B.id).status).toBe("unavailable");
       },
       { timeout: 5_000 },
     );
-    const unchangedB = manager.debugCapabilityFor(SERVER_B.id);
+    const unchangedB = manager.debugCapabilityFor(CONNECTION_B.id);
 
-    await requiredClient(manager, SERVER_A.id).query("DROP EXTENSION pldbgapi");
-    await expect(manager.refreshDebugCapability(SERVER_A.id)).resolves.toMatchObject({
+    await requiredClient(manager, CONNECTION_A.id).query("DROP EXTENSION pldbgapi");
+    await expect(manager.refreshDebugCapability(CONNECTION_A.id)).resolves.toMatchObject({
       available: false,
     });
 
-    expect(manager.debugCapabilityFor(SERVER_A.id).status).toBe("unavailable");
-    expect(manager.debugCapabilityFor(SERVER_B.id)).toEqual(unchangedB);
-    expect(manager.isServerConnected(SERVER_A.id)).toBe(true);
-    expect(manager.isServerConnected(SERVER_B.id)).toBe(true);
+    expect(manager.debugCapabilityFor(CONNECTION_A.id).status).toBe("unavailable");
+    expect(manager.debugCapabilityFor(CONNECTION_B.id)).toEqual(unchangedB);
+    expect(manager.isConnectionConnected(CONNECTION_A.id)).toBe(true);
+    expect(manager.isConnectionConnected(CONNECTION_B.id)).toBe(true);
   });
 });
 
 async function connectedManager(): Promise<ConnectionManager> {
   const manager = connectionManager();
-  await manager.store.add(SERVER_A, "postgres");
-  await manager.store.add(SERVER_B, "postgres");
-  await expect(manager.connectServer(SERVER_A.id)).resolves.toBe(true);
-  await expect(manager.connectServer(SERVER_B.id)).resolves.toBe(true);
+  await manager.store.add(CONNECTION_A, "postgres");
+  await manager.store.add(CONNECTION_B, "postgres");
+  await expect(manager.connectConnection(CONNECTION_A.id)).resolves.toBe(true);
+  await expect(manager.connectConnection(CONNECTION_B.id)).resolves.toBe(true);
   return manager;
 }
 
@@ -332,9 +335,9 @@ function connectionManager(): ConnectionManager {
   return manager;
 }
 
-function server(database: string, port = ADMIN_CONFIG.port): ServerConfig {
+function connection(database: string, port = ADMIN_CONFIG.port): ConnectionConfig {
   return {
-    id: ServerStore.makeId(ADMIN_CONFIG.host, port, database, ADMIN_CONFIG.user),
+    id: ConnectionStore.makeId(ADMIN_CONFIG.host, port, database, ADMIN_CONFIG.user),
     name: `${database}@${ADMIN_CONFIG.host}:${port}`,
     host: ADMIN_CONFIG.host,
     port,
@@ -343,9 +346,9 @@ function server(database: string, port = ADMIN_CONFIG.port): ServerConfig {
   };
 }
 
-function requiredClient(manager: ConnectionManager, serverId: string): Client {
-  const client = manager.getClient(serverId);
-  if (!client) throw new Error(`Expected ${serverId} to own a PostgreSQL client`);
+function requiredClient(manager: ConnectionManager, connectionId: string): Client {
+  const client = manager.getClient(connectionId);
+  if (!client) throw new Error(`Expected ${connectionId} to own a PostgreSQL client`);
   return client;
 }
 

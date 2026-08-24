@@ -121,8 +121,8 @@ vscode-extension/      # VS Code extension (full-featured, see below)
 ## VS Code Extension
 
 The `vscode-extension/` is a full-featured VS Code extension:
-- ConnectionManager (servers, secrets, auto-reconnect, SQLTools/pgsql import)
-- TreeView (servers → schemas → functions), CodeLens ("Debug" on CREATE/SELECT/CALL)
+- ConnectionManager (Connections, secrets, auto-reconnect, SQLTools/pgsql import)
+- TreeView (Connections → schemas → functions), CodeLens ("Debug" on CREATE/SELECT/CALL)
 - FileSystemProvider for exact canonical `code+moniker://` symbol URIs (breakpoints on virtual source)
 - Semantic tokens (variables, params, types, dollar quoting)
 - Inline values during debug, RAISE NOTICE → Debug Console
