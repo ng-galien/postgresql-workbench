@@ -423,10 +423,13 @@ test("inspects a timestamp as PostgreSQL text, not as JSON", async ({ page }) =>
 
   const resizeBounds = await resize.boundingBox();
   if (!resizeBounds) throw new Error("The value inspector must expose its resize handle");
+  const beforePointerResize = await inspector.boundingBox();
+  if (!beforePointerResize) throw new Error("The value inspector must have visible bounds");
   await page.mouse.move(resizeBounds.x + 3, resizeBounds.y + 3);
   await page.mouse.down();
   await page.mouse.move(-200, resizeBounds.y - 100, { steps: 6 });
   await page.mouse.up();
+  expect((await inspector.boundingBox())?.height).toBeGreaterThan(beforePointerResize.height + 70);
   const frame = inspector.locator("xpath=..");
   await expect
     .poll(async () => {

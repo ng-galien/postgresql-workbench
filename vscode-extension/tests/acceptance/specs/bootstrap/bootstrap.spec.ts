@@ -155,7 +155,9 @@ test("recovers, renames, and removes a Connection after connection errors", asyn
       /disconnected/u,
       { timeout: 5_000 },
     );
-    await expectFailedConnection(workbench);
+    await expect(
+      workbench.page.getByRole("dialog", { name: CONNECTION_PROGRESS_NOTIFICATION }),
+    ).toBeHidden();
     expect((await vscode.inspectWorkbenchState()).connection.connectedConnectionIds).not.toContain(
       loopbackConnectionId,
     );

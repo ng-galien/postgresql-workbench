@@ -459,17 +459,9 @@ test.describe("Scratchpads", () => {
     const grip = inspector.getByRole("button", {
       name: "Resize the value panel (arrow keys)",
     });
-    const gripBounds = await grip.boundingBox();
-    if (!gripBounds) throw new Error("The value inspector resize handle has no visible bounds");
-    const availableGrowth = Math.min(120, gripBounds.y - 8);
-    expect(availableGrowth).toBeGreaterThan(30);
-    await frame.page().mouse.move(gripBounds.x + 4, gripBounds.y + 4);
-    await frame.page().mouse.down();
-    await frame.page().mouse.move(gripBounds.x - 20, gripBounds.y - availableGrowth, { steps: 6 });
-    await frame.page().mouse.up();
-    expect((await inspector.boundingBox())?.height).toBeGreaterThan(
-      initialInspector.height + availableGrowth * 0.75,
-    );
+    await grip.focus();
+    for (let step = 0; step < 6; step += 1) await grip.press("ArrowDown");
+    expect((await inspector.boundingBox())?.height).toBeGreaterThan(initialInspector.height + 80);
 
     const panel = await result.openExport();
     await expect
