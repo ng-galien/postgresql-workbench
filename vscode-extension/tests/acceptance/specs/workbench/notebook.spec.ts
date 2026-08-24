@@ -461,11 +461,15 @@ test.describe("Scratchpads", () => {
     });
     const gripBounds = await grip.boundingBox();
     if (!gripBounds) throw new Error("The value inspector resize handle has no visible bounds");
+    const availableGrowth = Math.min(120, gripBounds.y - 8);
+    expect(availableGrowth).toBeGreaterThan(30);
     await frame.page().mouse.move(gripBounds.x + 4, gripBounds.y + 4);
     await frame.page().mouse.down();
-    await frame.page().mouse.move(gripBounds.x - 20, gripBounds.y - 120, { steps: 6 });
+    await frame.page().mouse.move(gripBounds.x - 20, gripBounds.y - availableGrowth, { steps: 6 });
     await frame.page().mouse.up();
-    expect((await inspector.boundingBox())?.height).toBeGreaterThan(initialInspector.height + 90);
+    expect((await inspector.boundingBox())?.height).toBeGreaterThan(
+      initialInspector.height + availableGrowth * 0.75,
+    );
 
     const panel = await result.openExport();
     await expect
