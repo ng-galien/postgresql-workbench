@@ -482,6 +482,9 @@ function generationValue(value) {
   return null;
 }
 
+// This benchmark compares one publication scenario whose seven snapshots form a single record;
+// destructuring that record does not create seven positional parameters.
+// code-moniker: ignore[code-single-responsibility-flags-long-parameter-lists]
 export function validateMemorySourceSetContract({
   documentCount,
   initialStatus,

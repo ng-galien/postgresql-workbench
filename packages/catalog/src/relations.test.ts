@@ -22,7 +22,7 @@ const EMPTY_GRAPH_METADATA = {
 };
 
 // This fixture builder mirrors CodeMonikerSymbol fields directly to keep scenario call sites clear.
-// code-moniker: ignore[smell-long-parameter-list]
+// code-moniker: ignore[code-single-responsibility-flags-long-parameter-lists]
 function symbol(
   name: string,
   kind: string,

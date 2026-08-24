@@ -2,37 +2,39 @@ fragment = "vscode-extension"
 enabled = true
 
 [aliases]
-extension_entry_target = "target.segment('module') = 'extension'"
-extension_entry_owner = "source.segment('module') = 'extension' OR source.segment('module') = 'marketplace.showcase' OR source.segment('module') = 'extension.smoke'"
+extension_host_entry_target = "target.segment('module') = 'extension'"
+extension_host_entry_owner = "source.segment('module') = 'extension' OR source.segment('module') = 'marketplace.showcase' OR source.segment('module') = 'extension.smoke'"
+extension_host_source = "source ~ '**/dir:vscode-extension/**'"
+workbench_engine_target = "target ~ '**/dir:packages/**'"
 connection_service_target = "target.segment('module') = 'connectPostgres' AND target.segment('path') = 'ConnectionService'"
 connection_service_owner = "source.segment('module') = 'openConnections' OR source.segment('module') = 'openConnections.test'"
 scratchpad_file_source = "source.segment('module') = 'notebookFile'"
 scratchpad_runtime_target = "target.segment('module') = 'register' OR target.segment('module') = 'association' OR target.segment('module') = 'resultHost' OR target.segment('module') = 'runSelection' OR target.segment('module') = 'transactions' OR target.segment('module') = 'openConnections' OR target.segment('module') = 'offsetQuery' OR target.segment('module') = 'openRows'"
 
 [[ts.refs.where]]
-id = "connection-service-owned-by-connection-manager"
+id = "connection-service-ownership-stays-with-connection-manager"
 severity = "error"
 expr = "$connection_service_target => $connection_service_owner"
 message = "Consume PostgreSQL transport through ConnectionManager; ConnectionService is its private construction adapter."
 rationale = "ConnectionManager owns the open Connections, the connection events, the reconnect state and the dedicated-client factory. A feature controller building its own ConnectionService would create a second connection lifecycle nothing reconnects or disposes."
 
 [[ts.refs.where]]
-id = "scratchpad-file-remains-passive"
+id = "scratchpad-single-responsibility-keeps-files-passive"
 severity = "error"
-expr = "$scratchpad_file_source AND $architectural_dependency => NOT $scratchpad_runtime_target"
+expr = "$scratchpad_file_source AND $structural_edge => NOT $scratchpad_runtime_target"
 message = "notebookFile owns the Scratchpad file format and its Association value objects, not connections, execution, or result-session lifecycle."
 rationale = "Reading and writing a Scratchpad must work without a live PostgreSQL Connection — a file opens before anything connects. Execution, explicit transactions and LIMIT/OFFSET result pages belong to register, association, resultHost and the row engine."
 
 [[ts.refs.where]]
-id = "extension-entry-is-not-a-service"
+id = "extension-host-composition-root-is-not-a-service-locator"
 severity = "error"
-expr = "$architectural_dependency AND $extension_entry_target => $extension_entry_owner"
+expr = "$structural_edge AND $extension_host_entry_target => $extension_host_entry_owner"
 message = "Product modules must not import the extension entry point; receive explicit collaborators from activation wiring."
 rationale = "extension.ts is the composition root and command-registration boundary. Importing it from a feature would turn the exported extension API into a service locator and invert the activation dependency direction."
 
 [[ts.refs.where]]
-id = "the-extension-does-not-re-export-the-engine"
+id = "extension-host-workbench-encapsulation-does-not-re-export-engine"
 severity = "error"
-expr = "kind = 'reexports' AND source ~ '**/dir:vscode-extension/**' => NOT target ~ '**/dir:packages/**'"
+expr = "kind = 'reexports' AND $extension_host_source => NOT $workbench_engine_target"
 message = "A module of this extension exports what it owns; a package's symbols are imported from the package that owns them."
 rationale = "The extension adapts the engine to VS Code, and the same engine is meant to run under a host that is not VS Code. Fifty-six times, across thirty-nine of its modules, it re-exported a package's symbols beside its own — and a reader importing from such a barrel could not tell which side of the seam they were on. That is how 104 lines of pure catalogue logic came to live in workbench/objectActions.ts: the barrel next to it already exported buildWorkbenchObjects from the catalogue, so buildWorkbenchObjectActions sitting in the extension looked exactly the same. It also gave a second host two paths to one symbol, which is where a second copy begins. Every import now names the package the thing lives in."

@@ -31,7 +31,7 @@ export interface ConnectionChange {
  */
 // This lifecycle facade deliberately combines tiny observable-state accessors with the atomic
 // connection transition; interactive CRUD/import responsibilities live in ConnectionCommands.
-// code-moniker: ignore[smell-method-size-disharmony]
+// code-moniker: ignore[code-single-responsibility-flags-method-size-disharmony]
 export class ConnectionManager implements vscode.Disposable {
   private readonly _onChanged = new vscode.EventEmitter<ConnectionChange>();
   readonly onChanged = this._onChanged.event;

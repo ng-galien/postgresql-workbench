@@ -115,7 +115,7 @@ interface ListenerRuntime {
 
 // DDL sync is one per-context listener state machine; its private transitions intentionally share
 // lifecycle state so splitting the type would fragment ownership of reconnect and stale state.
-// code-moniker: ignore[smell-large-class]
+// code-moniker: ignore[code-single-responsibility-flags-large-classes]
 export class WorkbenchDdlSyncController {
   private readonly stateListeners = new Set<(state: WorkbenchDdlSyncState) => void>();
   private readonly states = new Map<string, WorkbenchDdlSyncState>();

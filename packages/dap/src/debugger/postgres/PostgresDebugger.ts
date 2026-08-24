@@ -110,7 +110,7 @@ const SQL = {
 
 // This compact adapter deliberately keeps one method per pldbgapi command around one session.
 // Splitting the surface would create competing owners for the same server-side lifecycle.
-// code-moniker: ignore[smell-large-class]
+// code-moniker: ignore[code-single-responsibility-flags-large-classes]
 export class PostgresDebugger {
   private client: Client;
   private session: number = INVALID_SESSION;

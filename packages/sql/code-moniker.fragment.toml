@@ -2,30 +2,30 @@ fragment = "sql"
 enabled = true
 
 [aliases]
-sql_package_source = "source ~ '**/dir:packages/dir:sql/**'"
-sql_package_target = "target ~ '**/dir:packages/dir:sql/**'"
+sql_analysis_source = "source ~ '**/dir:packages/dir:sql/**'"
+sql_analysis_target = "target ~ '**/dir:packages/dir:sql/**'"
 language_server_feature_target = "target ~ '**/dir:packages/dir:sql/dir:src/dir:languageServer/dir:features/**'"
 language_server_owner = "source ~ '**/dir:packages/dir:sql/dir:src/dir:languageServer/**' OR source ~ '**/dir:e2e/**'"
-sql_query_source = "source ~ '**/dir:packages/dir:sql/dir:src/dir:query/**'"
+query_engine_source = "source ~ '**/dir:packages/dir:sql/dir:src/dir:query/**'"
 language_server_target = "target ~ '**/dir:packages/dir:sql/dir:src/dir:languageServer/**'"
 
 [[ts.refs.where]]
-id = "language-server-features-stay-behind-the-server"
+id = "language-server-encapsulation-keeps-features-inside-server"
 severity = "error"
-expr = "$architectural_dependency AND $language_server_feature_target => $language_server_owner"
+expr = "$structural_edge AND $language_server_feature_target => $language_server_owner"
 message = "Completion and semantic tokens are what the SQL language server answers with; ask the server instead of importing them."
 rationale = "The language server is the front door for editor features: a consumer reaches completion, semantic tokens and document context through its protocol, never by importing what it answers with. Anything needed outside that protocol is a worker of its own — `query` for rewriting SQL, `text` for SQL as text — and is called directly and visibly. Tests may look behind the door."
 
 [[ts.refs.where]]
-id = "query-engine-does-not-depend-on-the-language-server"
+id = "query-engine-dependency-does-not-point-to-language-server"
 severity = "error"
-expr = "$sql_query_source AND $architectural_dependency => NOT $language_server_target"
+expr = "$query_engine_source AND $structural_edge => NOT $language_server_target"
 message = "The SQL query engine is a worker the Data View drives directly; it must not depend on the language server."
 rationale = "Composition, join planning and query analysis are called by the server and, outside it, by the Data View and the row engine. Depending on the server would make the worker unusable without a language client and hide which side owns a rewrite."
 
 [[ts.refs.where]]
-id = "package-is-the-leaf-of-the-graph"
+id = "sql-analysis-dependency-stays-inside-sql-analysis"
 severity = "error"
-expr = "$sql_package_source AND $architectural_dependency AND ($workbench_package_target OR $extension_local_target) => $sql_package_target"
+expr = "$sql_analysis_source AND $structural_edge AND ($engine_package_target OR $host_local_target) => $sql_analysis_target"
 message = "packages/sql is the leaf of the Workbench package graph: it depends on no other package, and never on the Extension Host."
 rationale = "Every other package reads SQL and PL/pgSQL through this one, and the standalone DAP executable ships it without VS Code. A dependency outward would make the leaf unusable on its own and turn the graph into a cycle."

@@ -146,6 +146,9 @@ export interface GridLayout {
   columnAccent?(ordinal: number): string | undefined;
 }
 
+// ResultGrid receives one named grid contract; Code Moniker reports the destructured properties as
+// parameters even though callers provide one cohesive object.
+// code-moniker: ignore[code-single-responsibility-flags-long-parameter-lists]
 export function ResultGrid({
   payload,
   serverSort,

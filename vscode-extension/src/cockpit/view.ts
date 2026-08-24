@@ -74,7 +74,7 @@ export interface WorkbenchGraphViewOptions {
 // Explicit debt exception: this host controller still coordinates navigation/session state,
 // webview messages, search counts, and perspective persistence. Keeping one owner avoids split
 // snapshot lifecycles; future extraction should start with search and perspective capabilities.
-// code-moniker: ignore[smell-large-class]
+// code-moniker: ignore[code-single-responsibility-flags-large-classes]
 export class WorkbenchGraphView implements vscode.Disposable {
   private readonly panel: WorkbenchGraphPanel;
   private readonly navigation = new GraphNavigation<NavigationState>();

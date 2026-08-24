@@ -233,11 +233,6 @@ class WorkbenchIndexCancelledError extends Error {
   }
 }
 
-// Explicit debt exception: this snapshot owner still exposes registry lookup, Code Moniker
-// runtime/session access, graph queries, catalog publication, and DDL synchronization. These
-// capabilities must be split behind snapshot-bound ports before removing this exception.
-// code-moniker: ignore[smell-large-class,smell-method-size-disharmony]
-
 /**
  * What indexing needs from its host: where to log, where the Code Moniker runtime lives, which
  * folders to index, how long a command may take, and whether acceptance control is armed. The
@@ -256,6 +251,10 @@ interface Subscription {
   dispose(): void;
 }
 
+// Explicit debt exception: this snapshot owner still exposes registry lookup, Code Moniker
+// runtime/session access, graph queries, catalog publication, and DDL synchronization. These
+// capabilities must be split behind snapshot-bound ports before removing this exception.
+// code-moniker: ignore[code-single-responsibility-flags-large-classes,code-single-responsibility-flags-method-size-disharmony]
 export class WorkbenchIndexController {
   private readonly stateListeners = new Set<(state: WorkbenchIndexState) => void>();
 

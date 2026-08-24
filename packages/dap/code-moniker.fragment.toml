@@ -2,12 +2,12 @@ fragment = "dap"
 enabled = true
 
 [aliases]
-dap_package_source = "source ~ '**/dir:packages/dir:dap/**'"
-dap_package_allowed = "target ~ '**/dir:packages/dir:dap/**' OR target ~ '**/dir:packages/dir:sql/**'"
+debugger_source = "source ~ '**/dir:packages/dir:dap/**'"
+debugger_sql_analysis_target = "target ~ '**/dir:packages/dir:dap/**' OR target ~ '**/dir:packages/dir:sql/**'"
 
 [[ts.refs.where]]
-id = "package-depends-only-on-what-it-reads"
+id = "debugger-dependency-is-limited-to-sql-analysis"
 severity = "error"
-expr = "$dap_package_source AND $architectural_dependency AND ($workbench_package_target OR $extension_local_target) => $dap_package_allowed"
+expr = "$debugger_source AND $structural_edge AND ($engine_package_target OR $host_local_target) => $debugger_sql_analysis_target"
 message = "packages/dap debugs PL/pgSQL through the SQL analysis layer; it depends on that package and nothing else."
 rationale = "The standalone DAP executable and the VS Code adapter ship the same library. Rows, the catalog, coverage and the views are Workbench concerns a debugger running without VS Code must not carry."

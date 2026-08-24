@@ -24,6 +24,9 @@ export function clampInspectorHeight(height: number, availableHeight: number): n
   return Math.max(240, Math.min(560, availableHeight * 0.55, height));
 }
 
+// CockpitInspector receives one named presentation contract; destructuring its fields does not
+// create independent positional collaborators.
+// code-moniker: ignore[code-single-responsibility-flags-long-parameter-lists]
 export function CockpitInspector({
   preview,
   onClose,

@@ -466,7 +466,7 @@ function groupTargetsByConnection(
 }
 
 // The six logical parameters are over-counted because nested Map type arguments contain commas.
-// code-moniker: ignore[smell-long-parameter-list]
+// code-moniker: ignore[code-single-responsibility-flags-long-parameter-lists]
 async function executeTestSuite(
   client: CoverageTestClient,
   tests: readonly PgTapTestRoutine[],
