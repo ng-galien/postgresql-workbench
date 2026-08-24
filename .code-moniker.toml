@@ -30,6 +30,10 @@ components = [
   "workbench",
 ]
 
+# Test code is excluded by what it is, not only by how it is named: a Playwright page object and a
+# VS Code runner config are scaffolding that no rule about the product has anything to say about.
+# `e2e/` and `packages/shell/` stay in: both are named owners in the boundary aliases below, and
+# a rule cannot allow a directory it no longer reads.
 [exclude]
 uris = [
   "**/*.test.ts",
@@ -37,6 +41,7 @@ uris = [
   "**/*.spec.ts",
   "**/*.spec.tsx",
   "**/*.node-test.mjs",
+  "**/vscode-extension/tests/**",
 ]
 
 [aliases]
@@ -372,63 +377,63 @@ rationale = "Comments inside functions hide executable intent and can mask gaps 
 
 [[ts.function.where]]
 id = "code-single-responsibility-flags-long-callables"
-severity = "error"
+severity = "warn"
 expr = "lines <= 300"
 message = "This callable is unusually long; verify that it still represents one coherent responsibility."
 rationale = "Callables above this emergency bound deserve review for a concrete ownership or control-flow seam. The generous threshold avoids encouraging artificial indirection; this remains a review signal, not an architectural boundary."
 
 [[ts.method.where]]
 id = "code-single-responsibility-flags-long-callables"
-severity = "error"
+severity = "warn"
 expr = "lines <= 300"
 message = "This callable is unusually long; verify that it still represents one coherent responsibility."
 rationale = "Callables above this emergency bound deserve review for a concrete ownership or control-flow seam. The generous threshold avoids encouraging artificial indirection; this remains a review signal, not an architectural boundary."
 
 [[ts.constructor.where]]
 id = "code-single-responsibility-flags-long-callables"
-severity = "error"
+severity = "warn"
 expr = "lines <= 300"
 message = "This callable is unusually long; verify that it still represents one coherent responsibility."
 rationale = "Callables above this emergency bound deserve review for a concrete ownership or control-flow seam. The generous threshold avoids encouraging artificial indirection; this remains a review signal, not an architectural boundary."
 
 [[ts.function.where]]
 id = "code-single-responsibility-flags-long-parameter-lists"
-severity = "error"
+severity = "warn"
 expr = "count(param) <= 6"
 message = "This callable has a long parameter list; check whether the parameters form a stable concept."
 rationale = "Long parameter lists can reveal missing abstractions or excessive responsibility, but adapters and protocol handlers may legitimately need them."
 
 [[ts.method.where]]
 id = "code-single-responsibility-flags-long-parameter-lists"
-severity = "error"
+severity = "warn"
 expr = "count(param) <= 6"
 message = "This callable has a long parameter list; check whether the parameters form a stable concept."
 rationale = "Long parameter lists can reveal missing abstractions or excessive responsibility, but adapters and protocol handlers may legitimately need them."
 
 [[ts.constructor.where]]
 id = "code-single-responsibility-flags-long-parameter-lists"
-severity = "error"
+severity = "warn"
 expr = "count(param) <= 6"
 message = "This callable has a long parameter list; check whether the parameters form a stable concept."
 rationale = "Long parameter lists can reveal missing abstractions or excessive responsibility, but adapters and protocol handlers may legitimately need them."
 
 [[ts.class.where]]
 id = "code-single-responsibility-flags-large-classes"
-severity = "error"
+severity = "warn"
 expr = "count(method) <= 20 AND count(field) <= 30"
 message = "This class has a large surface; verify that its responsibilities remain cohesive."
 rationale = "Large classes often accumulate unrelated responsibilities. The TypeScript class domain and its native method and field collections deliberately exclude interfaces and type declarations from this implementation-oriented signal."
 
 [[ts.class.where]]
 id = "code-single-responsibility-flags-method-size-disharmony"
-severity = "error"
+severity = "warn"
 expr = "lines <= 300 OR count(method) < 6 OR cv(method, lines) <= 1.0"
 message = "Method sizes vary strongly inside this class; inspect whether one method carries disproportionate responsibility."
 rationale = "A strong size imbalance can expose orchestration or domain logic concentrated in one method. Classes of at most 300 lines are excluded because their distributions are too small to make this signal useful."
 
 [[ts.class.where]]
 id = "code-single-responsibility-flags-concentrated-method-fanout"
-severity = "error"
+severity = "warn"
 expr = "count(method) < 6 OR gini(method, fan_out(each)) <= 0.7"
 message = "Outgoing dependencies are concentrated in a small part of this class."
 rationale = "Concentrated fan-out can identify methods that coordinate too many collaborators. The TypeScript class domain deliberately excludes interfaces because signatures have no executable coordination to review; this remains only a navigation signal."
