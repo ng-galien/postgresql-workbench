@@ -11,8 +11,8 @@ from the Workbench Index and written back in one guarded transaction.
 
 ### Data View
 
-- Added the **Data View**, opened from a table or view in the database tree,
-  from the statement under the cursor in a SQL file, or from a Scratchpad result
+- Added the **Data View**, opened from a table or view in the database tree, or
+  from the statement under the cursor in a SQL file
 - Composed the query from inside the view: project a table's remaining columns,
   join a related table on the key the planner derives from the foreign keys, add
   any other relation, and take a table back out with everything that referenced
@@ -97,6 +97,33 @@ from the Workbench Index and written back in one guarded transaction.
 
 ### Scratchpads and results
 
+- Paged every read-only result through one shared `LIMIT`/`OFFSET` envelope
+  instead of a PostgreSQL cursor. The first page and each Next execute the
+  wrapped query independently and release the connection: no cursor and no
+  Transaction stay open between two pages, so a result left on screen holds
+  nothing on the server. Previous reads a page already in memory. Because each
+  page is its own statement, a query with no `ORDER BY` of its own is not
+  guaranteed to divide into stable pages — the Data View completes the order
+  with the keys of the relations it projects wherever it can prove them
+- Removed the settings the cursor needed —
+  `postgresql-workbench.results.maxCachedRows` and
+  `postgresql-workbench.results.cursorIdleTimeoutSeconds` — and added
+  `postgresql-workbench.results.maxCellBytes` (256 KiB) in their place. Remove
+  the first two from your settings if you set them; VS Code reports a setting
+  it no longer knows. The new one is the hard limit of what a result retains
+  per cell: the grid shortens a long value only to draw it, and inspection,
+  clipboard and export read the retained value, not the shortened one
+- Showed a command report for a successful `INSERT`, `UPDATE` or `DELETE`
+  without `RETURNING`: the operation and the rows it affected, in the result
+  grid, so a statement that returns no row set still answers with something to
+  read, select and copy. A data-changing statement with `RETURNING` remains a
+  regular row result
+- Exported a result as CSV, TSV, JSON or Markdown at three scopes — the
+  selection, the rows loaded, or the entire query — with a preview written by
+  the module that writes the file. **Entire query** runs the statement again
+  and streams its new result; the panel says so before the export, because the
+  order and the values can differ and a statement with side effects will have
+  them again
 - Gave every result grid a row gutter, so rows can be selected, copied, and
   taken out of any of them, and kept the column headings fixed at the top of a
   scrolled result
@@ -108,6 +135,14 @@ from the Workbench Index and written back in one guarded transaction.
 
 ### Commands and menus
 
+- Renamed the six commands that still carried the former domain term:
+  `postgresql-workbench.addServer`, `removeServer`, `connectServer`,
+  `disconnectServer`, `editServer` and `renameServer` become `addConnection`,
+  `removeConnection`, `connectConnection`, `disconnectConnection`,
+  `editConnection` and `renameConnection`. Update custom keybindings, tasks or
+  `command:` links that referenced the old identifiers. Saved Connections,
+  their passwords and their per-workspace open state are untouched: the
+  storage keys are deliberately unchanged
 - Filed every command under one category root, `PostgreSQL Workbench`. The
   palette printed six families of prefix — `PL/pgSQL:`, `PL/pgSQL Results:`,
   `PostgreSQL Workbench:` and three sub-scopes — for one extension, and one
@@ -497,7 +532,7 @@ databases.
   require confirmation, and CSV/TSV use `\N` for PostgreSQL `NULL`
 - Debugging a callsite pins its SQL editor so revealing the stopped routine
   source no longer closes the originating file
-- New command **PL/pgSQL: Check Connection Requirements** with a guided setup:
+- New command **PL/pgSQL: Check Server Requirements** with a guided setup:
   Docker one-liner, self-hosted instructions, managed-cloud guidance
 - Registered Connections appear as dynamic configurations in "Run and Debug" —
   no launch.json needed; the SQL statement is prompted at launch
@@ -507,7 +542,7 @@ databases.
 - Status bar distinguishes "connection lost" (warning color) from
   "no connection"; welcome view with prerequisites shown on first open
 - Re-adding an existing Connection offers to connect; Connection removal asks for
-  confirmation; consistent Escape/empty-value handling in the Add Connection wizard
+  confirmation; consistent Escape/empty-value handling in the Add Server wizard
 - Context commands no longer appear (and crash) in the Command Palette
 
 ## [0.1.0] - 2026-04-08
