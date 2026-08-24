@@ -6,6 +6,7 @@ SELECT c.oid::int AS table_oid,
        n.nspname AS schema,
        c.relname AS name,
        c.relkind::text AS relkind,
+       c.relhassubclass AS has_subclasses,
        COALESCE((
          SELECT json_agg(json_build_object(
                   'attnum', a.attnum,
@@ -50,6 +51,7 @@ interface CatalogRow {
   schema: string;
   name: string;
   relkind: string;
+  has_subclasses: boolean;
   columns: Array<{
     attnum: number;
     name: string;
@@ -86,6 +88,7 @@ export async function loadDataViewCatalog(
     schema: row.schema,
     name: row.name,
     relkind: row.relkind,
+    hasSubclasses: row.has_subclasses === true,
     columns: (row.columns ?? []).map((column) => ({
       attnum: Number(column.attnum),
       name: column.name,

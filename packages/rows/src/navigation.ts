@@ -15,6 +15,8 @@ export interface ResultNavigationState {
   navigation?: SqlNotebookResultNavigation;
   /** An action is already running. */
   busy: boolean;
+  /** The running action owns a page read that this control can cancel. */
+  cancellable: boolean;
   /** The paged result cannot execute more queries. */
   closed: boolean;
 }
@@ -27,11 +29,27 @@ export function canNavigate(
   action: ResultNavigationCommand,
   state: ResultNavigationState,
 ): boolean {
-  if (action === "cancel") return state.busy;
+  if (action === "cancel") return state.cancellable;
   if (state.busy || state.closed || !state.navigation) return false;
   if (action === "previous") return state.navigation.hasPrevious;
   if (action === "next") return state.navigation.hasNext;
   return state.navigation.canLoadAll;
+}
+
+/** Whether an action must open PostgreSQL rather than only rearranging pages already retained. */
+export function navigationReadsPostgres(
+  action: ResultNavigationAction,
+  payload: SqlNotebookResultPayload | undefined,
+): boolean {
+  const navigation = payload?.navigation;
+  if (!navigation) return false;
+  if (action === "next") {
+    return navigation.hasNext && navigation.pageEnd >= navigation.loadedRowCount;
+  }
+  if (action === "load-all") {
+    return navigation.canLoadAll && payload.rowCount === undefined;
+  }
+  return false;
 }
 
 /**

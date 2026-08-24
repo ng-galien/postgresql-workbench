@@ -4,7 +4,8 @@ import { rowOrder } from "../../../rows/src/dataView/rowOrder.js";
 import { shownValues } from "../../../rows/src/dataView/shownValues.js";
 import type { DataViewExportChoice, DataViewExportScope } from "../../../rows/src/export.js";
 import { followLinkRequest } from "../../../rows/src/followLink.js";
-import type { SqlNotebookResultPayload } from "../../../rows/src/resultPayload.js";
+import { navigationReadsPostgres } from "../../../rows/src/navigation.js";
+import type { SqlStatementResultPayload } from "../../../rows/src/resultPayload.js";
 import { ExportDialog, type ExportSource } from "./ExportDialog.js";
 import { type GridSelection, selectedOrdinals, selectedRows } from "./gridSelection.js";
 import { IconButton } from "./IconButton.js";
@@ -17,10 +18,17 @@ import {
 } from "./payload.js";
 import { ResultGrid } from "./ResultGrid.js";
 import { ResultNavigation } from "./ResultNavigation.js";
-import { type ResultSort, resultRowSummary, sortedResultRows } from "./resultFormatting.js";
+import { type ResultSort, sortedResultRows } from "./resultFormatting.js";
+import {
+  statementResultBadge,
+  statementResultCapabilities,
+  statementResultRegionLabel,
+  statementResultSummary,
+  statementResultTable,
+} from "./statementResult.js";
 
 export interface SqlResultViewProps {
-  payload: SqlNotebookResultPayload;
+  payload: SqlStatementResultPayload;
   messaging?: SqlResultMessaging;
 }
 
@@ -67,12 +75,17 @@ export function SqlResultView({ payload, messaging }: SqlResultViewProps) {
 
   useEffect(() => setCurrent(payload), [payload]);
 
+  const rowset = current.kind === "rowset" ? current : undefined;
+  const table = statementResultTable(current);
+  const capabilities = statementResultCapabilities(current);
+  const summary = statementResultSummary(current);
+
   useEffect(() => {
-    const sessionId = current.navigation?.sessionId;
+    const sessionId = rowset?.navigation?.sessionId;
     if (!messaging) return undefined;
     const unsubscribe = messaging.subscribe((message) => {
       if (message.type === "sql-result/previewed") {
-        if (message.resultId === current.resultId && message.requestId === pendingPreview.current) {
+        if (message.resultId === rowset?.resultId && message.requestId === pendingPreview.current) {
           setExportPreview(message.text);
           setExportError(message.error ? message.text : undefined);
         }
@@ -80,7 +93,7 @@ export function SqlResultView({ payload, messaging }: SqlResultViewProps) {
       }
       if (message.type === "sql-result/inspected") {
         if (
-          message.resultId === current.resultId &&
+          message.resultId === rowset?.resultId &&
           message.requestId === pendingInspection.current
         ) {
           setInspectedCell(message.cell);
@@ -113,31 +126,31 @@ export function SqlResultView({ payload, messaging }: SqlResultViewProps) {
       messaging.postMessage({ type: "sql-result/request", sessionId, action: "attach" });
     }
     return unsubscribe;
-  }, [current.navigation?.sessionId, current.resultId, messaging]);
+  }, [rowset?.navigation?.sessionId, rowset?.resultId, messaging]);
 
   const inspectCell = useCallback(
     (row: number, ordinal: number) => {
-      if (!messaging || !current.resultId) return;
-      const requestId = `${current.resultId}:${++inspectionSequence.current}`;
+      if (!messaging || !rowset?.resultId) return;
+      const requestId = `${rowset.resultId}:${++inspectionSequence.current}`;
       pendingInspection.current = requestId;
       setInspectedCell(undefined);
       messaging.postMessage({
         type: "sql-result/inspect",
         requestId,
-        resultId: current.resultId,
+        resultId: rowset.resultId,
         page: {
-          start: current.navigation?.pageStart ?? 1,
-          length: current.rows.length,
+          start: rowset.navigation?.pageStart ?? 1,
+          length: rowset.rows.length,
         },
         row,
         ordinal,
         ...(sort ? { sort } : {}),
       });
     },
-    [current.navigation?.pageStart, current.resultId, current.rows.length, messaging, sort],
+    [rowset, messaging, sort],
   );
 
-  const navigation = current.navigation;
+  const navigation = rowset?.navigation;
   const request = (action: SqlNotebookResultAction) => {
     if (!navigation || !messaging) return;
     setActiveAction(action);
@@ -150,8 +163,8 @@ export function SqlResultView({ payload, messaging }: SqlResultViewProps) {
     });
   };
   const busy = activeAction !== undefined;
-  const ordinals = current.columns.map((_column, ordinal) => ordinal);
-  const displayedRows = sortedResultRows(current.rows, sort);
+  const ordinals = table.columns.map((_column, ordinal) => ordinal);
+  const displayedRows = sortedResultRows(table.rows, sort);
   const order = useMemo(() => rowOrder([], displayedRows.length), [displayedRows.length]);
   const selected = selection
     ? {
@@ -162,7 +175,7 @@ export function SqlResultView({ payload, messaging }: SqlResultViewProps) {
   const exportSource: ExportSource = {
     valuesFor: (scope) =>
       shownValues({
-        columns: current.columns,
+        columns: table.columns,
         rows: displayedRows,
         order,
         ordinals: scope === "selection" ? (selected?.ordinals ?? []) : ordinals,
@@ -171,16 +184,22 @@ export function SqlResultView({ payload, messaging }: SqlResultViewProps) {
       }),
     counts: {
       selection: selected ? selected.last - selected.first + 1 : 0,
-      loaded: current.navigation?.loadedRowCount ?? displayedRows.length,
-      ...(current.statement ? { all: current.rowCount } : {}),
+      loaded: rowset?.navigation?.loadedRowCount ?? displayedRows.length,
+      ...(rowset?.statement ? { all: rowset.rowCount } : {}),
     },
   };
-  const exportTitle = `${current.command.toLowerCase()}-result`;
+  const exportTitle = `${statementResultBadge(current).toLowerCase()}-result`;
   const exportResult = (choice: DataViewExportChoice, scope: DataViewExportScope): void => {
-    if (!messaging || !current.resultId || !isSqlResultExportFormat(choice.format)) return;
+    if (
+      !capabilities.export ||
+      !messaging ||
+      !rowset?.resultId ||
+      !isSqlResultExportFormat(choice.format)
+    )
+      return;
     messaging.postMessage({
       type: "sql-result/export",
-      resultId: current.resultId,
+      resultId: rowset.resultId,
       title: exportTitle,
       choice: { ...choice, format: choice.format },
       scope,
@@ -188,8 +207,8 @@ export function SqlResultView({ payload, messaging }: SqlResultViewProps) {
         ? {}
         : {
             page: {
-              start: current.navigation?.pageStart ?? 1,
-              length: current.rows.length,
+              start: rowset.navigation?.pageStart ?? 1,
+              length: rowset.rows.length,
             },
             ...(sort ? { sort } : {}),
             ...(scope === "selection" && selected
@@ -206,7 +225,13 @@ export function SqlResultView({ payload, messaging }: SqlResultViewProps) {
     closeExport();
   };
   const previewExport = (choice: DataViewExportChoice, scope: DataViewExportScope): void => {
-    if (!messaging || !current.resultId || !isSqlResultExportFormat(choice.format)) return;
+    if (
+      !capabilities.export ||
+      !messaging ||
+      !rowset?.resultId ||
+      !isSqlResultExportFormat(choice.format)
+    )
+      return;
     const requestId = ++previewSequence.current;
     pendingPreview.current = requestId;
     setExportPreview(undefined);
@@ -214,15 +239,15 @@ export function SqlResultView({ payload, messaging }: SqlResultViewProps) {
     messaging.postMessage({
       type: "sql-result/preview",
       requestId,
-      resultId: current.resultId,
+      resultId: rowset.resultId,
       choice: { ...choice, format: choice.format },
       scope,
       ...(scope === "all"
         ? {}
         : {
             page: {
-              start: current.navigation?.pageStart ?? 1,
-              length: current.rows.length,
+              start: rowset.navigation?.pageStart ?? 1,
+              length: rowset.rows.length,
             },
             ...(sort ? { sort } : {}),
             ...(scope === "selection" && selected
@@ -239,52 +264,60 @@ export function SqlResultView({ payload, messaging }: SqlResultViewProps) {
   };
 
   return (
-    <section className="sql-result" aria-label="PostgreSQL query result">
+    <section className="sql-result" aria-label={statementResultRegionLabel(current)}>
       <header className="result-toolbar">
         <div className="result-summary">
-          <span className="result-badge">{current.command}</span>
+          <span className="result-badge">{statementResultBadge(current)}</span>
           <span
             className="result-binding"
             title={`Result binding: ${current.binding.connectionName} · ${current.binding.database}`}
           >
             {current.binding.database}
           </span>
-          {messaging ? (
+          {capabilities.navigation && messaging && rowset ? (
             <ResultNavigation
-              state={{ navigation, busy, closed }}
-              payload={current}
+              state={{
+                navigation,
+                busy,
+                cancellable: activeAction ? navigationReadsPostgres(activeAction, rowset) : false,
+                closed,
+              }}
+              payload={rowset}
               onAction={request}
+              focusFallback={inspectorButton}
             />
           ) : (
-            <span>{resultRowSummary(current)}</span>
+            <span>{summary}</span>
           )}
           <span className="result-duration">{current.durationMs} ms</span>
-          {current.truncated ? (
+          {rowset?.truncated ? (
             <span
               className="result-badge result-warning-badge"
-              title={current.truncationReasons.join(", ")}
+              title={rowset.truncationReasons.join(", ")}
             >
               Preview truncated
             </span>
           ) : null}
         </div>
-        {current.columns.length > 0 ? (
+        {capabilities.inspection || (capabilities.export && messaging && rowset?.resultId) ? (
           <div className="result-actions">
-            <IconButton
-              icon="inspect"
-              label={
-                inspecting
-                  ? "Stop showing the value under the cursor"
-                  : "Show the value under the cursor, whole"
-              }
-              primary={inspecting}
-              buttonRef={inspectorButton}
-              expanded={inspecting}
-              controls={inspectorId}
-              popup={false}
-              onClick={() => showInspector(!inspecting)}
-            />
-            {messaging && current.resultId ? (
+            {capabilities.inspection ? (
+              <IconButton
+                icon="inspect"
+                label={
+                  inspecting
+                    ? "Stop showing the value under the cursor"
+                    : "Show the value under the cursor, whole"
+                }
+                primary={inspecting}
+                buttonRef={inspectorButton}
+                expanded={inspecting}
+                controls={inspectorId}
+                popup={false}
+                onClick={() => showInspector(!inspecting)}
+              />
+            ) : null}
+            {capabilities.export && messaging && rowset?.resultId ? (
               <IconButton
                 icon="arrow-circle-up"
                 label="Export rows to a file…"
@@ -301,7 +334,7 @@ export function SqlResultView({ payload, messaging }: SqlResultViewProps) {
       <span className="sr-only" role="status" aria-live="polite">
         {activeAction && activeAction !== "cancel"
           ? `Loading ${activeAction === "load-all" ? "all result rows" : `${activeAction} result page`}…`
-          : resultRowSummary(current)}
+          : summary}
       </span>
       {progress !== undefined ? (
         <p className="result-progress" role="status">
@@ -313,40 +346,48 @@ export function SqlResultView({ payload, messaging }: SqlResultViewProps) {
           {resultError}
         </p>
       ) : null}
-      {current.columns.length > 0 ? (
+      {table.columns.length > 0 ? (
         <ResultGrid
-          payload={current}
-          localSorting={{
-            sort,
-            onSort: (next) => {
-              setSort(next);
-              setSelection(undefined);
-              setInspectedCell(undefined);
-              setExporting(false);
-            },
-          }}
+          payload={table}
+          {...(capabilities.sorting
+            ? {
+                localSorting: {
+                  sort,
+                  onSort: (next: ResultSort | undefined) => {
+                    setSort(next);
+                    setSelection(undefined);
+                    setInspectedCell(undefined);
+                    setExporting(false);
+                  },
+                },
+              }
+            : {})}
           selection={selection}
           onSelect={(next) => {
             setSelection(next);
             setExporting(false);
           }}
-          inspecting={inspecting}
-          inspectorId={inspectorId}
-          onInspecting={showInspector}
-          inspectedCell={inspectedCell}
-          {...(messaging && current.resultId ? { onInspectCell: inspectCell } : {})}
-          {...(messaging
+          {...(capabilities.inspection
+            ? {
+                inspecting,
+                inspectorId,
+                onInspecting: showInspector,
+                inspectedCell,
+                ...(messaging && rowset?.resultId ? { onInspectCell: inspectCell } : {}),
+              }
+            : {})}
+          {...(capabilities.links && messaging
             ? { onFollowLink: (href) => messaging.postMessage(followLinkRequest(href)) }
             : {})}
         />
       ) : (
-        <p className="result-empty">{current.command} completed without a row set.</p>
+        <p className="result-empty">{statementResultBadge(current)} completed without a row set.</p>
       )}
-      {exporting ? (
+      {exporting && capabilities.export && rowset ? (
         <ExportDialog
           source={exportSource}
           title={exportTitle}
-          scopes={current.statement ? ["selection", "loaded", "all"] : ["selection", "loaded"]}
+          scopes={rowset.statement ? ["selection", "loaded", "all"] : ["selection", "loaded"]}
           formats={SQL_RESULT_EXPORT_FORMATS}
           presentation="panel"
           panelId={exportPanelId}

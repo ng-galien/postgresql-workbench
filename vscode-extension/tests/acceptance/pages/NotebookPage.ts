@@ -138,7 +138,9 @@ export class NotebookPage {
     while (Date.now() < deadline) {
       for (const frame of this.page.frames()) {
         const result = frame
-          .getByRole("region", { name: "PostgreSQL query result" })
+          .getByRole("region", {
+            name: /^PostgreSQL (?:query result|.+ command report)$/u,
+          })
           .filter({ visible: true });
         if (
           (await result.count()) > 0 &&

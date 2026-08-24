@@ -230,7 +230,7 @@ test.describe("Scratchpads", () => {
     });
   });
 
-  test("stacks only row-producing results from a multi-statement cell", async ({
+  test("stacks rowsets and INSERT, UPDATE and DELETE reports from a multi-statement cell", async ({
     workbench,
     notebook,
   }) => {
@@ -241,7 +241,9 @@ test.describe("Scratchpads", () => {
       [
         "SELECT 1::integer AS sequence, 'first'::text AS state;",
         "CREATE TEMP TABLE acceptance_silent(id integer);",
-        "INSERT INTO acceptance_silent VALUES (2);",
+        "INSERT INTO acceptance_silent VALUES (2), (4);",
+        "UPDATE acceptance_silent SET id = 3 WHERE id = 2;",
+        "DELETE FROM acceptance_silent WHERE id = 4;",
         "SELECT id AS sequence, 'second'::text AS state FROM acceptance_silent;",
         "SET application_name = 'postgresql-workbench-acceptance';",
       ].join("\n"),
@@ -251,17 +253,53 @@ test.describe("Scratchpads", () => {
     await expect
       .poll(async () => (await notebook.snapshot())?.cells[0]?.outputGroups.length, {
         timeout: 10_000,
-        message: "The multi-statement cell must expose exactly its two row-producing results",
+        message: "The cell must expose its two rowsets and three DML command reports",
       })
-      .toBe(2);
+      .toBe(5);
     const snapshot = await notebook.snapshot();
-    expect(snapshot?.cells[0]?.outputGroups).toHaveLength(2);
+    expect(snapshot?.cells[0]?.outputGroups).toHaveLength(5);
     for (const group of snapshot?.cells[0]?.outputGroups ?? []) expect(group).toContain(resultMime);
 
     const first = await notebook.frameContainingText("first");
     const second = await notebook.frameContainingText("second");
     await expect(first.getByText("first", { exact: true })).toBeVisible();
     await expect(second.getByText("second", { exact: true })).toBeVisible();
+
+    for (const [operation, affectedRows] of [
+      ["INSERT", "2"],
+      ["UPDATE", "1"],
+      ["DELETE", "1"],
+    ] as const) {
+      const frame = await notebook.resultFrame(operation);
+      const reportRegion = frame.getByRole("region", {
+        name: `PostgreSQL ${operation} command report`,
+      });
+      const report = new ResultTable(reportRegion);
+      await expect(report.cellsWithText(operation)).toBeVisible();
+      await expect(report.cellsWithText(affectedRows)).toBeVisible();
+      await expect(
+        reportRegion
+          .locator(".result-summary")
+          .getByText(`${affectedRows} ${affectedRows === "1" ? "row" : "rows"} affected`, {
+            exact: true,
+          }),
+      ).toBeVisible();
+      await expect(
+        reportRegion.getByRole("button", { name: "Show the value under the cursor, whole" }),
+      ).toHaveCount(0);
+      await expect(
+        reportRegion.getByRole("button", { name: "Export rows to a file…" }),
+      ).toHaveCount(0);
+      await expect(reportRegion.getByRole("button", { name: "Next page" })).toHaveCount(0);
+      if (operation === "INSERT") {
+        await report.cell(0, 0).click();
+        await expect(report.cell(0, 0)).toHaveClass(/selected/u);
+
+        const sort = reportRegion.getByTitle("Sort displayed rows by operation");
+        await sort.click();
+        await expect(sort.locator("xpath=..")).toHaveAttribute("aria-sort", "ascending");
+      }
+    }
     expect(await notebook.renderedTextCount(/completed without a row set/i)).toBe(0);
   });
 
@@ -297,6 +335,8 @@ test.describe("Scratchpads", () => {
     for (const id of ["1", "2", "3"]) {
       await expect(result.locator("tbody td").getByText(id, { exact: true })).toBeVisible();
     }
+    const exportPanel = await new ResultTable(result).openExport();
+    await expect(exportPanel.getByRole("radio", { name: /Entire query/u })).toHaveCount(0);
   });
 
   test("executes a wide SQL projection beyond the former parser budget", async ({
@@ -329,10 +369,13 @@ test.describe("Scratchpads", () => {
   }) => {
     await createScratchpad(workbench, notebook, demoAssociationText);
     const code = notebook.cell(0);
-    await notebook.typeInCell(code, "SELECT value FROM generate_series(1, 1000) AS value");
+    await notebook.typeInCell(
+      code,
+      "SELECT value, pg_sleep(0.002) FROM generate_series(1, 1000) AS value",
+    );
     await notebook.executeCode(code);
 
-    const frame = await notebook.resultFrame("1–200 / ?");
+    const frame = await notebook.resultFrame("1–200");
     /*
      * The paging controls say what they do with an icon and nothing else, so the font has to be
      * there: a result draws in a shadow root, and a font declared inside one is parsed and then
@@ -350,7 +393,18 @@ test.describe("Scratchpads", () => {
       .toBe(true);
 
     const result = new ResultTable(frame);
-    await expect(result.summary("1–200 / ?")).toBeVisible({ timeout: 10_000 });
+    await expect(result.summary("1–200")).toBeVisible({ timeout: 10_000 });
+    const navigation = frame.locator(".result-navigation");
+    const navigationGeometry = () =>
+      navigation.evaluate((element) => {
+        const bounds = element.getBoundingClientRect();
+        return {
+          x: Math.round(bounds.x),
+          y: Math.round(bounds.y),
+          width: Math.round(bounds.width),
+        };
+      });
+    const geometryBeforePaging = await navigationGeometry();
     const scrollbarContract = await frame.locator(".result-scroller").evaluate((element) => ({
       vertical: getComputedStyle(element).overflowY,
       horizontal: getComputedStyle(element).overflowX,
@@ -362,11 +416,19 @@ test.describe("Scratchpads", () => {
     await frame.page().mouse.wheel(0, 120);
     await expect.poll(() => scroller.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
     await result.next();
-    await expect(result.summary("201–400 / ?")).toBeVisible({ timeout: 5_000 });
+    await expect(frame.getByRole("button", { name: "Cancel loading" })).toBeVisible();
+    expect(await navigationGeometry()).toEqual(geometryBeforePaging);
+    await expect(result.summary("201–400")).toBeVisible({ timeout: 5_000 });
+    expect(await navigationGeometry()).toEqual(geometryBeforePaging);
     await result.previous();
-    await expect(result.summary("1–200 / ?")).toBeVisible({ timeout: 5_000 });
+    await expect(result.summary("1–200")).toBeVisible({ timeout: 5_000 });
+    expect(await navigationGeometry()).toEqual(geometryBeforePaging);
     await result.loadAll();
+    await expect(frame.getByRole("button", { name: "Cancel loading" })).toBeVisible();
+    expect(await navigationGeometry()).toEqual(geometryBeforePaging);
     await expect(result.summary("1000 rows")).toBeVisible({ timeout: 10_000 });
+    // Once every row is loaded there is no paging action left, so the host removes the control.
+    await expect(navigation).toHaveCount(0);
   });
 
   test("inspects a full retained Scratchpad value and prepares each export scope", async ({

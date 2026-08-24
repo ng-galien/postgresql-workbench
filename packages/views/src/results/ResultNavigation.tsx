@@ -1,3 +1,4 @@
+import { type RefObject, useLayoutEffect, useRef } from "react";
 import {
   canNavigate,
   type ResultNavigationCommand,
@@ -20,11 +21,27 @@ export function ResultNavigation({
   state,
   payload,
   onAction,
+  focusFallback,
 }: {
   state: ResultNavigationState;
   payload?: ResultTable;
   onAction: (action: ResultNavigationCommand) => void;
+  /** Stable control outside this group, used when loading ends with no enabled page action. */
+  focusFallback?: RefObject<HTMLButtonElement | null>;
 }) {
+  const nextButton = useRef<HTMLButtonElement>(null);
+  const cancelFocused = useRef(false);
+  const canCancel = Boolean(state.navigation && payload && canNavigate("cancel", state));
+  useLayoutEffect(() => {
+    if (!canCancel) return;
+    return () => {
+      if (!cancelFocused.current) return;
+      cancelFocused.current = false;
+      const next = nextButton.current;
+      if (next && !next.disabled) next.focus();
+      else focusFallback?.current?.focus();
+    };
+  }, [canCancel, focusFallback]);
   if (!state.navigation || !payload) return null;
   return (
     <div className="result-navigation">
@@ -46,6 +63,7 @@ export function ResultNavigation({
       <IconButton
         icon="chevron-right"
         label="Next page"
+        buttonRef={nextButton}
         disabled={!canNavigate("next", state)}
         onClick={() => onAction("next")}
       />
@@ -55,10 +73,22 @@ export function ResultNavigation({
         disabled={!canNavigate("load-all", state)}
         onClick={() => onAction("load-all")}
       />
-      {/* A stop is worth showing while there is something to stop, and takes no room otherwise. */}
-      {canNavigate("cancel", state) ? (
-        <IconButton icon="stop-circle" label="Cancel loading" onClick={() => onAction("cancel")} />
-      ) : null}
+      {/* The reserved slot prevents a short page load from shifting the controls under the pointer. */}
+      <span className="result-navigation-cancel-slot">
+        {canCancel ? (
+          <IconButton
+            icon="stop-circle"
+            label="Cancel loading"
+            onFocus={() => {
+              cancelFocused.current = true;
+            }}
+            onBlur={(event) => {
+              if (event.relatedTarget) cancelFocused.current = false;
+            }}
+            onClick={() => onAction("cancel")}
+          />
+        ) : null}
+      </span>
     </div>
   );
 }

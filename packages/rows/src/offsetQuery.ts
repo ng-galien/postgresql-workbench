@@ -24,6 +24,13 @@ export interface OffsetQueryBatch {
   typeNames?: ReadonlyMap<number, string>;
 }
 
+/** One ordering criterion expressed against the wrapped query's output columns. */
+export interface OffsetQueryOrder {
+  columnIndex: number;
+  direction: "ascending" | "descending";
+  nulls?: "first" | "last";
+}
+
 /** One independently executed page. It must not retain a database transaction. */
 export interface OffsetQuerySource {
   read(offset: number, limit: number): Promise<OffsetQueryBatch>;
@@ -41,12 +48,25 @@ export interface OffsetResultOptions {
 }
 
 /** The single LIMIT/OFFSET envelope shared by every paged result surface. */
-export function offsetPageSql(sql: string, limit: number, offset: number): string {
+export function offsetPageSql(
+  sql: string,
+  limit: number,
+  offset: number,
+  orderBy: readonly OffsetQueryOrder[] = [],
+): string {
   const source = sql.trim().replace(/;+\s*$/u, "");
   if (!source) throw new Error("A paged query cannot be empty.");
   const safeLimit = Math.max(0, Math.trunc(limit));
   const safeOffset = Math.max(0, Math.trunc(offset));
-  return `SELECT * FROM (\n${source}\n) AS "postgresql_workbench_page" LIMIT ${safeLimit} OFFSET ${safeOffset}`;
+  const ordering = orderBy
+    .filter((item) => Number.isInteger(item.columnIndex) && item.columnIndex >= 0)
+    .map((item) => {
+      const direction = item.direction === "descending" ? "DESC" : "ASC";
+      const nulls = item.nulls ? ` NULLS ${item.nulls === "first" ? "FIRST" : "LAST"}` : "";
+      return `${item.columnIndex + 1} ${direction}${nulls}`;
+    })
+    .join(", ");
+  return `SELECT * FROM (\n${source}\n) AS "postgresql_workbench_page"${ordering ? ` ORDER BY ${ordering}` : ""} LIMIT ${safeLimit} OFFSET ${safeOffset}`;
 }
 
 /** Opens one connection for one page, executes it, and releases it unconditionally. */
@@ -60,6 +80,7 @@ export class PostgresOffsetQuerySource implements OffsetQuerySource {
     private readonly options: {
       types?: OffsetQueryTypes;
       configure?: (client: Client) => Promise<void>;
+      orderBy?: readonly OffsetQueryOrder[];
     } = {},
   ) {}
 
@@ -74,7 +95,7 @@ export class PostgresOffsetQuerySource implements OffsetQuerySource {
     try {
       await this.options.configure?.(client);
       const result = await client.query<unknown[]>({
-        text: offsetPageSql(this.sql, limit, offset),
+        text: offsetPageSql(this.sql, limit, offset, this.options.orderBy),
         rowMode: "array",
         ...(this.options.types ? { types: this.options.types as never } : {}),
       });
@@ -166,7 +187,8 @@ export class OffsetResultSession {
     const reasons = new Set(this.reasons);
     if (rows.some((row) => row.some((cell) => cell.truncated))) reasons.add("cell");
     return {
-      version: 2,
+      version: 3,
+      kind: "rowset",
       resultId: this.id,
       binding: this.binding,
       ...(this.statement !== undefined ? { statement: this.statement } : {}),

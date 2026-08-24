@@ -1,6 +1,7 @@
 import type { Client, FieldDef } from "pg";
 import { types as pgTypes } from "pg";
 import {
+  type OffsetQueryOrder,
   type OffsetQueryTypes,
   OffsetResultSession,
   offsetPageSql,
@@ -15,7 +16,7 @@ import {
   dataViewColumnKeys,
   dataViewKeysAt,
 } from "./dataView.js";
-import { resolveDataViewEditability } from "./editability.js";
+import { type CatalogTable, resolveDataViewEditability } from "./editability.js";
 
 /**
  * Data View pages keep every value as PostgreSQL text except booleans and binary values, so
@@ -62,6 +63,68 @@ export interface DataViewResultSettings {
   maxCellBytes: number;
 }
 
+export interface DataViewResultSort {
+  direction: "ascending" | "descending";
+  nulls?: "first" | "last";
+  /** Projected output column resolved by the SQL query model. */
+  column?: string;
+}
+
+/**
+ * Keeps the reader's requested sort first, then completes it with every relation key. An empty
+ * result means the projection does not prove a stable order and the original query is left alone.
+ */
+export function dataViewPageOrder(
+  fields: readonly Pick<FieldDef, "name">[],
+  editability: DataViewEditability,
+  sourcesAreNamedRelations: boolean | undefined,
+  relationCount: number | undefined,
+  requested: readonly DataViewResultSort[],
+): OffsetQueryOrder[] {
+  if (
+    sourcesAreNamedRelations !== true ||
+    relationCount === undefined ||
+    relationCount === 0 ||
+    relationCount !== editability.tables.length
+  ) {
+    return [];
+  }
+  const order: OffsetQueryOrder[] = [];
+  const orderedColumns = new Set<number>();
+  for (const item of requested) {
+    if (!item.column) return [];
+    const matches = fields.flatMap((field, index) => (field.name === item.column ? [index] : []));
+    if (matches.length !== 1) return [];
+    const columnIndex = matches[0];
+    if (columnIndex === undefined) return [];
+    order.push({
+      columnIndex,
+      direction: item.direction,
+      ...(item.nulls ? { nulls: item.nulls } : {}),
+    });
+    orderedColumns.add(columnIndex);
+  }
+  for (const table of editability.tables) {
+    for (const columnIndex of table.keyOrdinals) {
+      if (orderedColumns.has(columnIndex)) continue;
+      order.push({ columnIndex, direction: "ascending" });
+      orderedColumns.add(columnIndex);
+    }
+  }
+  return order;
+}
+
+/** Whether each projected key belongs to a table whose own constraint covers every returned row. */
+export function dataViewCatalogKeysCoverRows(
+  editability: DataViewEditability,
+  catalog: readonly Pick<CatalogTable, "tableOid" | "hasSubclasses">[],
+): boolean {
+  return editability.tables.every(
+    (table) =>
+      catalog.find((candidate) => candidate.tableOid === table.tableOid)?.hasSubclasses === false,
+  );
+}
+
 /** Opens the shared LIMIT/OFFSET result; every page owns and releases its connection. */
 export async function openOffsetResult(options: {
   openClient(): Promise<Client>;
@@ -94,12 +157,28 @@ export async function openDataViewResult(options: {
   settings: DataViewResultSettings;
   binding: ScratchpadAssociationSnapshot;
   accents: TableAccents;
+  orderBy?: readonly DataViewResultSort[];
+  /** Direct relations in the analyzed FROM clause; repeated relations count separately. */
+  relationCount?: number;
+  /** True only when the AST proves every FROM source is a named catalog relation. */
+  sourcesAreNamedRelations?: boolean;
   /** Throws when the caller no longer wants this load; the client is then released. */
   checkpoint(): void;
   /** Gives the host an abort handle before opening either the probe or first-page connection. */
   registerCancellation(cancel: () => Promise<void>): void;
 }): Promise<OpenedDataViewResult> {
-  const { openClient, sql, settings, binding, accents, checkpoint, registerCancellation } = options;
+  const {
+    openClient,
+    sql,
+    settings,
+    binding,
+    accents,
+    orderBy = [],
+    relationCount,
+    sourcesAreNamedRelations,
+    checkpoint,
+    registerCancellation,
+  } = options;
   let cancelled = false;
   let client: Client | undefined;
   let source: PostgresOffsetQuerySource | undefined;
@@ -160,12 +239,21 @@ export async function openDataViewResult(options: {
     // One derivation of the column keys, so hiding technical columns matches what the grid shows.
     const columnKeys = dataViewColumnKeys(projection, columnNames);
     const technicalKeys = dataViewKeysAt(columnKeys, editability.technicalOrdinals);
+    const catalogKeysCoverRows = dataViewCatalogKeysCoverRows(editability, catalog);
+    const pageOrder = dataViewPageOrder(
+      probe.fields,
+      editability,
+      sourcesAreNamedRelations === true && catalogKeysCoverRows,
+      relationCount,
+      orderBy,
+    );
     await client.end().catch(() => {});
     client = undefined;
     assertNotCancelled();
     checkpoint();
     source = new PostgresOffsetQuerySource(openClient, sql, {
       types: TEXT_PASSTHROUGH_TYPES,
+      ...(pageOrder.length > 0 ? { orderBy: pageOrder } : {}),
     });
     session = await OffsetResultSession.open(source, {
       pageSize: settings.pageSize,

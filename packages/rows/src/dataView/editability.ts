@@ -45,6 +45,8 @@ export interface CatalogTable {
   schema: string;
   name: string;
   relkind: string;
+  /** PostgreSQL may read descendant rows whose keys are not covered by this table's constraints. */
+  hasSubclasses: boolean;
   columns: CatalogColumn[];
   uniqueIndexes: CatalogUniqueIndex[];
   foreignKeyAttnums: number[];

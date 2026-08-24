@@ -4,11 +4,11 @@ import {
   notebookErrorPayload,
   type SqlFailure,
   type SqlNotebookErrorPayload,
-  type SqlNotebookResultPayload,
+  type SqlStatementResultPayload,
   sqlFailurePayload,
 } from "../../../packages/rows/src/resultPayload.js";
 import type { SqlExecutionPlan } from "../../../packages/sql/src/analysis/sqlStatements.js";
-import { resultRowSummary } from "../../../packages/views/src/results/resultFormatting.js";
+import { statementResultSummary } from "../../../packages/views/src/results/statementResult.js";
 import { errorMessage } from "../errorMessage.js";
 import { SQL_NOTEBOOK_RESULT_MIME } from "./notebookFile.js";
 
@@ -25,16 +25,22 @@ export function errorOutput(payload: SqlNotebookErrorPayload): vscode.NotebookCe
   ]);
 }
 
-export function resultOutput(payload: SqlNotebookResultPayload): vscode.NotebookCellOutput {
+export function resultOutput(payload: SqlStatementResultPayload): vscode.NotebookCellOutput {
   return new vscode.NotebookCellOutput([
     vscode.NotebookCellOutputItem.json(payload, SQL_NOTEBOOK_RESULT_MIME),
     vscode.NotebookCellOutputItem.text(resultSummary(payload)),
   ]);
 }
 
-function resultSummary(result: SqlNotebookResultPayload): string {
-  const truncation = result.truncated ? " · preview truncated" : "";
-  return `${result.command} · ${resultRowSummary(result)} · ${result.durationMs} ms${truncation}`;
+function resultSummary(result: SqlStatementResultPayload): string {
+  const command =
+    result.kind === "rowset"
+      ? result.command
+      : result.entries.length === 1
+        ? result.entries[0]?.operation
+        : "COMMANDS";
+  const truncation = result.kind === "rowset" && result.truncated ? " · preview truncated" : "";
+  return `${command ?? "COMMAND"} · ${statementResultSummary(result)} · ${result.durationMs} ms${truncation}`;
 }
 
 function errorSummary(error: SqlNotebookErrorPayload): string {

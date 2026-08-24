@@ -145,7 +145,7 @@ export function resultRowSummary(payload: ResultTable): string {
 
 /**
  * Where the reader is in the result, in as few characters as it can be said: the rows on screen
- * over the rows there are. It goes between the two arrows that page through them, and those arrows
+ * and, when known, the rows there are. It goes between the two arrows that page through them, and those arrows
  * must not move as a reader uses them — so the shape is always the same, whichever page they are
  * on, and the sentence explaining it is left to `resultRowSummary` and a title.
  */
@@ -163,8 +163,8 @@ export function resultRowRange(payload: ResultTable): string {
   if (total !== undefined && navigation.pageStart === 1 && navigation.pageEnd === total) {
     return `${total}`;
   }
-  // A question mark rather than an ellipsis: the total is not yet known, not cut off.
-  return `${navigation.pageStart}–${navigation.pageEnd} / ${total ?? "?"}`;
+  const range = `${navigation.pageStart}–${navigation.pageEnd}`;
+  return total === undefined ? range : `${range} / ${total}`;
 }
 
 export function resultSortNotice(payload: ResultTable): string | undefined {

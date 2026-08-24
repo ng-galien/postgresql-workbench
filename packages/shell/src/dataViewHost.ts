@@ -38,6 +38,7 @@ import {
   dataViewExportWriter,
   exportFileExtension,
 } from "../../rows/src/export.js";
+import { navigationReadsPostgres } from "../../rows/src/navigation.js";
 import type { OffsetResultSession } from "../../rows/src/offsetQuery.js";
 import { createCodeMonikerSyntaxParser } from "../../sql/src/analysis/codeMonikerSyntax.js";
 import type { SyntaxParser } from "../../sql/src/analysis/syntaxTree.js";
@@ -66,6 +67,8 @@ export interface DataViewHostOptions {
   languageServerPath?: string;
   /** Whether identity and relationship columns start hidden. The product reads this from settings. */
   hideKeyColumns?: boolean;
+  /** Optional harness latency used to make transient navigation states observable in UI tests. */
+  navigationDelayMs?: number;
   /** Where the responses go: the browser bridge, or a test's recorder. */
   emit(response: DataViewResponse): void;
 }
@@ -80,6 +83,7 @@ export interface DataViewDevHost {
 export async function startDataViewHost(options: DataViewHostOptions): Promise<DataViewDevHost> {
   const { connection, relation, emit } = options;
   const hideKeyColumns = options.hideKeyColumns ?? true;
+  const navigationDelayMs = Math.max(0, Math.trunc(options.navigationDelayMs ?? 0));
   const connectionId = `${connection.host}:${connection.port}/${connection.database}:${connection.user}`;
   // The chip names the Connection; the database is shown beside it, not in its place.
   const connectionName = `${connection.host}:${connection.port}`;
@@ -150,12 +154,14 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
     payload?: DataViewState["payload"];
     editability: DataViewState["editability"];
     busy: boolean;
+    cancellable: boolean;
     session?: OffsetResultSession;
   } = {
     projection: { tables: [], columnTable: [] },
     status: "loading",
     editability: EMPTY_DATA_VIEW_EDITABILITY,
     busy: false,
+    cancellable: false,
   };
   // The same pending edits the Extension Host keeps: local until they are written in one
   // transaction. A shell that cannot hold a change cannot show what holding one looks like.
@@ -288,6 +294,7 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
         editability: state.editability,
         edits,
         busy: state.busy,
+        cancellable: state.cancellable,
       }),
     });
 
@@ -299,6 +306,7 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
     pendingLoadCancel = undefined;
     await previousLoadCancel?.().catch(() => {});
     state.busy = true;
+    state.cancellable = true;
     broadcast();
     if (query.isEmpty) {
       // A Data View with nothing in it is a legal state: the reader adds the first relation.
@@ -310,6 +318,7 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
       state.status = "ready";
       state.message = "The query is empty: add a table with +.";
       state.busy = false;
+      state.cancellable = false;
       broadcast();
       return;
     }
@@ -326,6 +335,9 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
         },
         binding: { connectionId, connectionName, database: connection.database },
         accents,
+        orderBy: query.orderBy(),
+        relationCount: query.analysis?.relations.length,
+        sourcesAreNamedRelations: query.analysis?.fromSourcesAreNamedRelations,
         checkpoint: () => {},
         registerCancellation: (cancel) => {
           if (generation !== loadGeneration) void cancel();
@@ -361,6 +373,7 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
       if (generation === loadGeneration) {
         pendingLoadCancel = undefined;
         state.busy = false;
+        state.cancellable = false;
         broadcast();
       }
     }
@@ -544,17 +557,48 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
           return;
         }
         case "data-view/navigate": {
+          if (request.action === "cancel") {
+            loadGeneration += 1;
+            const pending = pendingLoadCancel;
+            pendingLoadCancel = undefined;
+            const result = state.session;
+            state.session = undefined;
+            await Promise.all([pending?.().catch(() => {}), result?.close().catch(() => {})]);
+            state.busy = false;
+            state.cancellable = false;
+            state.message = "Loading cancelled. Refresh to load the rows again.";
+            broadcast();
+            return;
+          }
           const result = state.session;
           if (!result) return;
-          state.payload =
-            request.action === "next"
-              ? await result.next()
-              : request.action === "previous"
-                ? await result.previous()
-                : request.action === "load-all"
-                  ? await result.loadAll()
-                  : result.snapshot();
+          if (state.busy) return;
+          state.busy = true;
+          state.cancellable = navigationReadsPostgres(request.action, state.payload);
           broadcast();
+          try {
+            if (navigationDelayMs > 0) {
+              await new Promise((resolve) => setTimeout(resolve, navigationDelayMs));
+            }
+            if (state.session !== result) return;
+            const payload =
+              request.action === "next"
+                ? await result.next()
+                : request.action === "previous"
+                  ? await result.previous()
+                  : await result.loadAll();
+            if (state.session !== result) return;
+            state.payload = payload;
+          } catch (error) {
+            if (state.session !== result) return;
+            throw error;
+          } finally {
+            if (state.session === result) {
+              state.busy = false;
+              state.cancellable = false;
+              broadcast();
+            }
+          }
           return;
         }
         case "data-view/edit": {

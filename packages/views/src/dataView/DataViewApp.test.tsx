@@ -132,6 +132,15 @@ describe("the Data View", () => {
     expect(document.querySelector(".result-navigation-summary")?.textContent).toBe("0");
   });
 
+  it("disables paging without offering Cancel loading while row changes are applied", () => {
+    open(readyDataView({ busy: false, applying: true }));
+
+    expect(screen.queryByRole("button", { name: "Cancel loading" })).toBeNull();
+    expect(screen.getByRole<HTMLButtonElement>("button", { name: "Next page" }).disabled).toBe(
+      true,
+    );
+  });
+
   it("sends the filter the reader typed", async () => {
     const harness = open();
 

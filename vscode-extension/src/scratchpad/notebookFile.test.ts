@@ -11,6 +11,7 @@ import {
   scratchpadExecutionMode,
   scratchpadStatementTimeoutMs,
   serializeSqlNotebookFile,
+  sqlNotebookCommandReportPayload,
   sqlNotebookResultPayload,
 } from "./notebookFile.js";
 
@@ -209,7 +210,8 @@ describe("SQL notebook model", () => {
     };
 
     expect(sqlNotebookResultPayload(result, TEST_BINDING)).toEqual({
-      version: 2,
+      version: 3,
+      kind: "rowset",
       binding: TEST_BINDING,
       command: "SELECT",
       columns: result.columns,
@@ -220,5 +222,52 @@ describe("SQL notebook model", () => {
       truncated: false,
       truncationReasons: [],
     });
+  });
+
+  it("projects INSERT, UPDATE and DELETE command tags into closed command reports", () => {
+    const result = (command: "INSERT" | "UPDATE" | "DELETE", rowCount: number): DebugResult => ({
+      id: command,
+      command,
+      columns: [],
+      rows: [],
+      rowCount,
+      capturedRowCount: 0,
+      truncated: false,
+      truncationReasons: [],
+      durationMs: 7,
+      timestamp: "2026-08-24T00:00:00.000Z",
+      payloadBytes: 100,
+    });
+
+    expect(
+      [result("INSERT", 2), result("UPDATE", 3), result("DELETE", 1)].map((entry) =>
+        sqlNotebookCommandReportPayload(entry, TEST_BINDING),
+      ),
+    ).toEqual([
+      {
+        version: 3,
+        kind: "command-report",
+        binding: TEST_BINDING,
+        durationMs: 7,
+        entries: [{ operation: "INSERT", affectedRows: 2 }],
+      },
+      {
+        version: 3,
+        kind: "command-report",
+        binding: TEST_BINDING,
+        durationMs: 7,
+        entries: [{ operation: "UPDATE", affectedRows: 3 }],
+      },
+      {
+        version: 3,
+        kind: "command-report",
+        binding: TEST_BINDING,
+        durationMs: 7,
+        entries: [{ operation: "DELETE", affectedRows: 1 }],
+      },
+    ]);
+    expect(
+      sqlNotebookCommandReportPayload({ ...result("UPDATE", 3), command: "CREATE" }, TEST_BINDING),
+    ).toBeUndefined();
   });
 });

@@ -31,6 +31,7 @@ export interface DataViewStateOf {
   editability: DataViewEditability;
   edits: PendingEdits;
   busy: boolean;
+  cancellable: boolean;
 }
 
 /**
@@ -56,6 +57,7 @@ export function dataViewState(of: DataViewStateOf): DataViewState {
     removedRows: [...of.edits.removedRows],
     addedRows: [...of.edits.addedRows],
     busy: of.busy,
+    cancellable: of.cancellable,
     applying: of.edits.applying,
   };
 }

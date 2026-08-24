@@ -1,17 +1,23 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { createRef } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { SqlNotebookResultPayload } from "../../../rows/src/resultPayload.js";
+import type {
+  SqlCommandReportPayload,
+  SqlNotebookResultPayload,
+} from "../../../rows/src/resultPayload.js";
 import type { SqlNotebookRendererResponse } from "./payload.js";
+import { ResultNavigation } from "./ResultNavigation.js";
 import { SqlResultView } from "./SqlResultView.js";
 
 afterEach(cleanup);
 
 function payload(overrides: Partial<SqlNotebookResultPayload> = {}): SqlNotebookResultPayload {
   return {
-    version: 2,
+    version: 3,
+    kind: "rowset",
     resultId: "result-1",
     binding: {
       connectionId: "test-connection",
@@ -59,7 +65,7 @@ describe("SqlResultView", () => {
     expect(html).toContain('aria-label="Vertical result scroll"');
   });
 
-  it("renders LIMIT/OFFSET page navigation and an unknown total", () => {
+  it("renders LIMIT/OFFSET page navigation without inventing a total", () => {
     const html = renderToStaticMarkup(
       <SqlResultView
         payload={payload({
@@ -82,12 +88,90 @@ describe("SqlResultView", () => {
       />,
     );
 
-    expect(html).toContain("1–200 / ?");
+    expect(html).toContain("1–200");
     // The navigation is the shared control: icons, named for anyone who cannot see them.
     expect(html).toContain('aria-label="Previous page"');
     expect(html).toContain('aria-label="Next page"');
     expect(html).toContain('aria-label="Load every remaining row');
     expect(html).toContain("may use significant memory");
+    expect(html).toContain('class="result-navigation-cancel-slot"');
+  });
+
+  it("returns focus to a stable paging control when Cancel loading disappears", () => {
+    const paged = payload({
+      rowCount: undefined,
+      navigation: {
+        sessionId: "session-1",
+        mode: "paged",
+        pageIndex: 0,
+        pageSize: 200,
+        pageStart: 1,
+        pageEnd: 200,
+        loadedRowCount: 201,
+        hasPrevious: false,
+        hasNext: true,
+        canLoadAll: true,
+      },
+    });
+    const { rerender } = render(
+      <ResultNavigation
+        state={{ navigation: paged.navigation, busy: true, cancellable: true, closed: false }}
+        payload={paged}
+        onAction={() => {}}
+      />,
+    );
+    screen.getByRole("button", { name: "Cancel loading" }).focus();
+
+    rerender(
+      <ResultNavigation
+        state={{ navigation: paged.navigation, busy: false, cancellable: false, closed: false }}
+        payload={paged}
+        onAction={() => {}}
+      />,
+    );
+
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Next page" }));
+  });
+
+  it("returns Cancel focus outside navigation when no page action remains", () => {
+    const fallback = createRef<HTMLButtonElement>();
+    const paged = payload({
+      rowCount: undefined,
+      navigation: {
+        sessionId: "session-1",
+        mode: "paged",
+        pageIndex: 0,
+        pageSize: 200,
+        pageStart: 1,
+        pageEnd: 200,
+        loadedRowCount: 200,
+        hasPrevious: false,
+        hasNext: true,
+        canLoadAll: true,
+      },
+    });
+    const { rerender } = render(
+      <>
+        <button type="button" ref={fallback}>
+          Inspect
+        </button>
+        <ResultNavigation
+          state={{ navigation: paged.navigation, busy: true, cancellable: true, closed: false }}
+          payload={paged}
+          focusFallback={fallback}
+          onAction={() => {}}
+        />
+      </>,
+    );
+    screen.getByRole("button", { name: "Cancel loading" }).focus();
+
+    rerender(
+      <button type="button" ref={fallback}>
+        Inspect
+      </button>,
+    );
+
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Inspect" }));
   });
 
   it("shows the complete value under the grid cursor", async () => {
@@ -286,10 +370,64 @@ describe("SqlResultView", () => {
     expect(html).toContain("--result-spacer-height");
   });
 
-  it("renders command-only and truncated result states", () => {
+  it("renders a command report through the grid with only its supported controls", () => {
+    const report: SqlCommandReportPayload = {
+      version: 3,
+      kind: "command-report",
+      binding: {
+        connectionId: "test-connection",
+        connectionName: "Test PostgreSQL",
+        database: "testdb",
+      },
+      durationMs: 6,
+      entries: [{ operation: "UPDATE", affectedRows: 37 }],
+    };
     const commandOnly = renderToStaticMarkup(
-      <SqlResultView payload={payload({ columns: [], rows: [], rowCount: 0 })} />,
+      <SqlResultView
+        payload={report}
+        messaging={{ postMessage() {}, subscribe: () => () => {} }}
+      />,
     );
+
+    expect(commandOnly).toContain("UPDATE");
+    expect(commandOnly).toContain('aria-label="PostgreSQL UPDATE command report"');
+    expect(commandOnly).toContain("37 rows affected");
+    expect(commandOnly).toContain("operation");
+    expect(commandOnly).toContain("rows_affected");
+    expect(commandOnly).toContain('role="grid"');
+    expect(commandOnly).toContain("Sort displayed rows by operation");
+    expect(commandOnly).not.toContain("Show the value under the cursor");
+    expect(commandOnly).not.toContain("Export rows to a file");
+    expect(commandOnly).not.toContain("Next page");
+  });
+
+  it("copies a selected command report row through the common grid clipboard", () => {
+    const setData = vi.fn();
+    const { container } = render(
+      <SqlResultView
+        payload={{
+          version: 3,
+          kind: "command-report",
+          binding: {
+            connectionId: "test-connection",
+            connectionName: "Test PostgreSQL",
+            database: "testdb",
+          },
+          durationMs: 6,
+          entries: [{ operation: "DELETE", affectedRows: 12 }],
+        }}
+      />,
+    );
+
+    fireEvent.mouseDown(container.querySelector("tbody th.row-gutter") as HTMLElement);
+    fireEvent.copy(container.querySelector("textarea.grid-clipboard") as HTMLTextAreaElement, {
+      clipboardData: { setData },
+    });
+
+    expect(setData).toHaveBeenCalledWith("text/plain", "DELETE\t12");
+  });
+
+  it("renders truncated result states", () => {
     const truncated = renderToStaticMarkup(
       <SqlResultView
         payload={payload({
@@ -301,7 +439,6 @@ describe("SqlResultView", () => {
       />,
     );
 
-    expect(commandOnly).toContain("SELECT completed without a row set.");
     expect(truncated).toContain("Preview truncated");
     expect(truncated).toContain("200 of 5000 rows");
     expect(truncated).toContain('title="rows"');

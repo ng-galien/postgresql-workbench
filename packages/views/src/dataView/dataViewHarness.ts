@@ -56,7 +56,8 @@ export function dataViewPayload(
   rows: readonly (readonly (string | null)[])[],
 ): SqlNotebookResultPayload {
   return {
-    version: 2,
+    version: 3,
+    kind: "rowset",
     binding: { connectionId: "demo", connectionName: "demo", database: "demo" },
     command: "SELECT",
     durationMs: 3,
@@ -119,6 +120,7 @@ export function readyDataView(overrides: Partial<DataViewState> = {}): DataViewS
     removedRows: [],
     addedRows: [],
     busy: false,
+    cancellable: false,
     applying: false,
     ...overrides,
   };

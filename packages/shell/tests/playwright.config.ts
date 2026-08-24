@@ -41,6 +41,10 @@ export default defineConfig({
     reuseExistingServer: false,
     timeout: 120_000,
     // Exports land in the run's own directory: a test must not write into the reader's downloads.
-    env: { PGWB_DEV_PORT: String(PORT), PGWB_EXPORT_DIR: EXPORTS },
+    env: {
+      PGWB_DEV_PORT: String(PORT),
+      PGWB_EXPORT_DIR: EXPORTS,
+      PGWB_NAVIGATION_DELAY_MS: "150",
+    },
   },
 });

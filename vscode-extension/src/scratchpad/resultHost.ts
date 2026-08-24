@@ -121,7 +121,7 @@ export class SqlNotebookResultHost implements vscode.Disposable {
     rows: SqlNotebookResultPayload["rows"],
     cell: vscode.NotebookCell,
     association: ScratchpadAssociationSnapshot,
-    statement: string,
+    statement: string | undefined,
     exportLimits: { maxCellBytes?: number; statementTimeoutMs?: number } = {},
   ): SqlNotebookResultPayload {
     const result = {
@@ -136,7 +136,7 @@ export class SqlNotebookResultHost implements vscode.Disposable {
       cellUri: cell.document.uri.toString(),
       associationFingerprint: associationFingerprint(association),
       binding: { ...association },
-      statement,
+      ...(statement ? { statement } : {}),
       maxCellBytes: exportLimits.maxCellBytes ?? 256 * 1024,
       ...(exportLimits.statementTimeoutMs !== undefined
         ? { statementTimeoutMs: exportLimits.statementTimeoutMs }
@@ -144,7 +144,7 @@ export class SqlNotebookResultHost implements vscode.Disposable {
       busy: false,
     };
     this.sessions.set(resultId, hosted);
-    return { ...payload, resultId, statement };
+    return { ...payload, resultId, ...(statement ? { statement } : {}) };
   }
 
   async closeCell(cellUri: string): Promise<void> {

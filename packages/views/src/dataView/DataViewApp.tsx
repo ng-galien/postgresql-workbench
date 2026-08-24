@@ -635,6 +635,8 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
     navigation,
     // A result being written to is not navigable either: the rule states it, no caller overrides it.
     busy: state.busy || state.applying,
+    // Applying changes is busy but not a page read, so Cancel loading must never target it.
+    cancellable: state.cancellable,
     closed: state.status !== "ready" || Boolean(state.message),
   };
   const disabled = state.busy || state.applying;
@@ -1513,6 +1515,7 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
           state={navigationState}
           payload={payload}
           onAction={(action) => post({ type: "data-view/navigate", action })}
+          focusFallback={inspectorButton}
         />
         {/*
           What stands outside the count, so that nothing beside the arrows changes width as a

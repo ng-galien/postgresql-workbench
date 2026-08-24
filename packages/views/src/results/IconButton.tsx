@@ -1,4 +1,9 @@
-import type { MouseEvent as ReactMouseEvent, ReactNode, Ref } from "react";
+import type {
+  FocusEvent as ReactFocusEvent,
+  MouseEvent as ReactMouseEvent,
+  ReactNode,
+  Ref,
+} from "react";
 
 /** A toolbar control that shows a codicon, and optionally a short text beside it. */
 export function IconButton({
@@ -12,6 +17,8 @@ export function IconButton({
   popup,
   buttonRef,
   text,
+  onFocus,
+  onBlur,
 }: {
   icon: string;
   label: string;
@@ -25,6 +32,8 @@ export function IconButton({
   buttonRef?: Ref<HTMLButtonElement>;
   /** Optional short text shown next to the icon. */
   text?: ReactNode;
+  onFocus?: (event: ReactFocusEvent<HTMLButtonElement>) => void;
+  onBlur?: (event: ReactFocusEvent<HTMLButtonElement>) => void;
 }) {
   return (
     <button
@@ -42,6 +51,8 @@ export function IconButton({
             ...(controls ? { "aria-controls": controls } : {}),
           })}
       onClick={onClick}
+      onFocus={onFocus}
+      onBlur={onBlur}
     >
       <span className={`codicon codicon-${icon}`} aria-hidden="true" />
       {text !== undefined ? <span className="icon-button-text">{text}</span> : null}

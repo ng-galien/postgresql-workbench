@@ -5,6 +5,8 @@ import {
 import type { DebugResult } from "../../../packages/dap/src/debugger/launch/index.js";
 import type {
   ScratchpadAssociationSnapshot,
+  SqlCommandReportOperation,
+  SqlCommandReportPayload,
   SqlNotebookResultPayload,
 } from "../../../packages/rows/src/resultPayload.js";
 
@@ -231,7 +233,8 @@ export function sqlNotebookResultPayload(
   statement?: string,
 ): SqlNotebookResultPayload {
   return {
-    version: 2,
+    version: 3,
+    kind: "rowset",
     binding,
     ...(statement !== undefined ? { statement } : {}),
     command: result.command,
@@ -243,6 +246,24 @@ export function sqlNotebookResultPayload(
     truncated: result.truncated,
     truncationReasons: result.truncationReasons,
   };
+}
+
+export function sqlNotebookCommandReportPayload(
+  result: DebugResult,
+  binding: ScratchpadAssociationSnapshot,
+): SqlCommandReportPayload | undefined {
+  if (!isCommandReportOperation(result.command)) return undefined;
+  return {
+    version: 3,
+    kind: "command-report",
+    binding,
+    durationMs: result.durationMs,
+    entries: [{ operation: result.command, affectedRows: result.rowCount }],
+  };
+}
+
+function isCommandReportOperation(command: string): command is SqlCommandReportOperation {
+  return command === "INSERT" || command === "UPDATE" || command === "DELETE";
 }
 
 /**

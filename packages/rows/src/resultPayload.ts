@@ -35,16 +35,37 @@ export interface ResultTable {
   navigation?: SqlNotebookResultNavigation;
 }
 
-export interface SqlNotebookResultPayload extends ResultTable {
-  version: 2;
+interface SqlStatementResultBase {
+  version: 3;
+  binding: ScratchpadAssociationSnapshot;
+  durationMs: number;
+}
+
+/** A genuine row set returned by PostgreSQL. */
+export interface SqlNotebookResultPayload extends SqlStatementResultBase, ResultTable {
+  kind: "rowset";
   /** Stable identity of a paged result. */
   resultId?: string;
-  binding: ScratchpadAssociationSnapshot;
   /** SQL Statement that produced the result, when the producer knows it. */
   statement?: string;
   command: string;
-  durationMs: number;
 }
+
+export type SqlCommandReportOperation = "INSERT" | "UPDATE" | "DELETE";
+
+export interface SqlCommandReportEntry {
+  operation: SqlCommandReportOperation;
+  affectedRows: number;
+}
+
+/** Successful DML that produced a command tag rather than a PostgreSQL row set. */
+export interface SqlCommandReportPayload extends SqlStatementResultBase {
+  kind: "command-report";
+  entries: readonly SqlCommandReportEntry[];
+}
+
+/** The closed set of successful statement results a Scratchpad can render. */
+export type SqlStatementResultPayload = SqlNotebookResultPayload | SqlCommandReportPayload;
 
 export interface SqlNotebookErrorPayload {
   version: 1;
@@ -78,7 +99,7 @@ export interface SqlNotebookResultNavigation {
   canLoadAll: boolean;
 }
 
-export type SqlNotebookOutputPayload = SqlNotebookResultPayload | SqlNotebookErrorPayload;
+export type SqlNotebookOutputPayload = SqlStatementResultPayload | SqlNotebookErrorPayload;
 
 /** One captured debug result as a history lists it: enough to name it and to say how it ended. */
 export interface DebugResultSummary {

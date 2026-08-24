@@ -36,6 +36,8 @@ export interface DataViewState {
   /** Rows the reader added, not in the database until the changes are applied. */
   addedRows: DataViewRowInsertion[];
   busy: boolean;
+  /** A PostgreSQL page read is active and can be stopped without misrepresenting another action. */
+  cancellable: boolean;
   applying: boolean;
 }
 

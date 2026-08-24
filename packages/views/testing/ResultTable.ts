@@ -26,7 +26,7 @@ export class ResultTable {
       .filter({ hasText: new RegExp(`^${escapeRegExp(text)}$`, "u") });
   }
 
-  /** The compact range the shared navigation shows: `1–200 / ?`, `1000`, and so on. */
+  /** The compact range the shared navigation shows: `1–200`, `201–400`, and so on. */
   /** What a surface says in prose about how much of the result it is showing. */
   summary(text: string): Locator {
     return this.root.getByText(text, { exact: true });

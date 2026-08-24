@@ -108,6 +108,12 @@ remaining offsets explicitly.
 Statements that cannot be paged safely, including data-changing statements
 with `RETURNING`, use the separate `nonPagedMaxRows` limit.
 
+Successful `INSERT`, `UPDATE`, and `DELETE` Statements without `RETURNING` show
+a static command report with the operation and its affected-row count. The
+report reuses the result grid for selection, clipboard copy, and local sorting,
+but does not offer value inspection, pagination, or file export. A data-changing
+Statement with `RETURNING` remains a regular row result.
+
 > The limits protect the Workbench UI, not PostgreSQL itself. An intentionally
 > huge Load all can still consume substantial memory.
 

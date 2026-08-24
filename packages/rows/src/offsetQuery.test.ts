@@ -47,6 +47,17 @@ describe("LIMIT/OFFSET result contract", () => {
     );
   });
 
+  it("can add an outer order by projected positions without changing the source query", () => {
+    expect(
+      offsetPageSql("select id, name from inventory order by name desc", 201, 400, [
+        { columnIndex: 1, direction: "descending", nulls: "first" },
+        { columnIndex: 0, direction: "ascending" },
+      ]),
+    ).toBe(
+      'SELECT * FROM (\nselect id, name from inventory order by name desc\n) AS "postgresql_workbench_page" ORDER BY 2 DESC NULLS FIRST, 1 ASC LIMIT 201 OFFSET 400',
+    );
+  });
+
   it("executes independent offset pages and keeps prior pages in memory", async () => {
     const source = new MemoryOffsetSource(
       Array.from({ length: 45 }, (_, index) => [String(index + 1)]),

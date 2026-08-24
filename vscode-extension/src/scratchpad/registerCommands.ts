@@ -53,6 +53,7 @@ import {
   scratchpadExecutionMode,
   scratchpadStatementTimeoutMs,
   serializeSqlNotebookFile,
+  sqlNotebookCommandReportPayload,
   sqlNotebookResultPayload,
 } from "./notebookFile.js";
 import {
@@ -1187,11 +1188,14 @@ class SqlNotebookController implements vscode.Disposable {
                   retainedRows.slice(0, payload.rows.length),
                   cell,
                   association.snapshot,
-                  statement.sql,
+                  statement.resultKind === "paged-query" ? statement.sql : undefined,
                   { maxCellBytes: settings.maxCellBytes, statementTimeoutMs },
                 ),
               ),
             );
+          } else {
+            const report = sqlNotebookCommandReportPayload(result, association.snapshot);
+            if (report) outputs.push(resultOutput(report));
           }
           schemaChanged ||= statement.schemaMutation === true;
         } catch (error) {

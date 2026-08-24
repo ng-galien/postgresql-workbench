@@ -773,22 +773,62 @@ test("pages a relation too large to load at once, and loads the rest on demand",
    * is asserted is the text of that slot and, just as much, that the arrows do not move.
    */
   const summary = page.locator(".result-navigation-summary");
+  const navigation = page.locator(".result-navigation");
   const nextArrow = page.locator('.data-view-rows-line button[title="Next page"]');
   const where = () => nextArrow.evaluate((b) => Math.round(b.getBoundingClientRect().x));
-  await expect(summary).toHaveText("1–200 / ?");
+  const navigationWidth = () =>
+    navigation.evaluate((element) => Math.round(element.getBoundingClientRect().width));
+  await expect(summary).toHaveText("1–200");
   const arrowAt = await where();
+  const widthBeforePaging = await navigationWidth();
 
   await rows.next();
-  await expect(summary).toHaveText("201–400 / ?");
+  await expect(page.getByTitle("Cancel loading")).toBeVisible();
   expect(await where()).toBe(arrowAt);
+  expect(await navigationWidth()).toBe(widthBeforePaging);
+  await expect(summary).toHaveText("201–400");
+  expect(await where()).toBe(arrowAt);
+  expect(await navigationWidth()).toBe(widthBeforePaging);
   await rows.previous();
-  await expect(summary).toHaveText("1–200 / ?");
+  await expect(nextArrow).toBeDisabled();
+  await expect(page.getByTitle("Cancel loading")).toHaveCount(0);
+  await expect(summary).toHaveText("1–200");
   expect(await where()).toBe(arrowAt);
+  expect(await navigationWidth()).toBe(widthBeforePaging);
 
   await rows.loadAll();
+  await expect(page.getByTitle("Cancel loading")).toBeVisible();
+  expect(await navigationWidth()).toBe(widthBeforePaging);
   // The whole table, however many rows the seed holds and whatever a reader has since deleted:
   // what matters is that nothing is left to fetch.
   await expect(summary).toHaveText(/^\d+$/u, { timeout: 20_000 });
+  expect(await navigationWidth()).toBe(widthBeforePaging);
+
+  const largeRange = await summary.evaluate((element) => {
+    element.textContent = "99999901–100000000";
+    const next = element.nextElementSibling;
+    const bounds = element.getBoundingClientRect();
+    const nextBounds = next?.getBoundingClientRect();
+    return {
+      clipped: element.scrollWidth > element.clientWidth,
+      clearsNext: nextBounds !== undefined && bounds.right <= nextBounds.left,
+    };
+  });
+  expect(largeRange).toEqual({ clipped: true, clearsNext: true });
+});
+
+test("cancels a delayed page read without reporting a second session error", async ({ page }) => {
+  await openEmpty(page);
+  const rows = await add(page, "shop.inventory_movement");
+
+  await rows.next();
+  await expect(page.getByTitle("Cancel loading")).toBeVisible();
+  await rows.cancel();
+  await expect(page.locator(".data-view-statusline-text")).toHaveText(
+    "Loading cancelled. Refresh to load the rows again.",
+  );
+  await page.waitForTimeout(300);
+  await expect(page.getByText(/This SQL result is closed/u)).toHaveCount(0);
 });
 
 test("hides the key columns a reader has no use for, and offers them back", async ({ page }) => {

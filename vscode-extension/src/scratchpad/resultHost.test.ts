@@ -42,7 +42,8 @@ const binding = {
 };
 
 const payload: SqlNotebookResultPayload = {
-  version: 2,
+  version: 3,
+  kind: "rowset",
   resultId: "result-1",
   binding,
   statement: "select id from inventory",

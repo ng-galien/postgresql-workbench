@@ -37,6 +37,7 @@ import type {
 import { dataViewExportText } from "../../../packages/rows/src/export.js";
 import {
   navigateResult,
+  navigationReadsPostgres,
   type ResultNavigationCommand,
 } from "../../../packages/rows/src/navigation.js";
 import type { OffsetResultSession } from "../../../packages/rows/src/offsetQuery.js";
@@ -84,6 +85,7 @@ export class DataViewDocument implements vscode.CustomDocument {
   private status: DataViewState["status"] = "loading";
   private message: string | undefined;
   private busy = false;
+  private cancellable = false;
   private loadGeneration = 0;
   private readonly webviews = new Set<vscode.Webview>();
   private readonly _onDidChangeTitle = new vscode.EventEmitter<string>();
@@ -151,6 +153,7 @@ export class DataViewDocument implements vscode.CustomDocument {
       editability: this.editability,
       edits: this.edits,
       busy: this.busy,
+      cancellable: this.cancellable,
     });
   }
 
@@ -622,6 +625,7 @@ export class DataViewDocument implements vscode.CustomDocument {
     this.status = "loading";
     this.message = undefined;
     this.busy = true;
+    this.cancellable = true;
     this.broadcastState();
     try {
       await this.ensureInitialized();
@@ -645,6 +649,9 @@ export class DataViewDocument implements vscode.CustomDocument {
           database: this.source.database,
         },
         accents: this.accents,
+        orderBy: this.query.orderBy(),
+        relationCount: this.query.analysis?.relations.length,
+        sourcesAreNamedRelations: this.query.analysis?.fromSourcesAreNamedRelations,
         checkpoint: () => this.assertGeneration(generation),
         registerCancellation: (cancel) => {
           if (generation !== this.loadGeneration || this.disposed) void cancel();
@@ -676,6 +683,7 @@ export class DataViewDocument implements vscode.CustomDocument {
       if (generation === this.loadGeneration) {
         this.pendingLoadCancel = undefined;
         this.busy = false;
+        this.cancellable = false;
         this.broadcastState();
       }
     }
@@ -686,17 +694,20 @@ export class DataViewDocument implements vscode.CustomDocument {
       this.loadGeneration += 1;
       await this.closeSession();
       this.busy = false;
+      this.cancellable = false;
       this.message = "Loading cancelled. Refresh to load the rows again.";
       this.broadcastState();
       return;
     }
     const session = this.session;
+    const generation = this.loadGeneration;
     if (!session) {
       this.notify("The result is closed. Refresh to load the rows again.", "info");
       return;
     }
     if (this.busy) return;
     this.busy = true;
+    this.cancellable = navigationReadsPostgres(action, this.payload);
     this.broadcastState();
     try {
       const payload = await navigateResult(session, action, (loadedRowCount) =>
@@ -707,11 +718,16 @@ export class DataViewDocument implements vscode.CustomDocument {
     } catch (error) {
       if (this.session === session) {
         await this.closeSession();
-        this.message = `${errorMessage(error)} Refresh to load the rows again.`;
+        if (generation === this.loadGeneration) {
+          this.message = `${errorMessage(error)} Refresh to load the rows again.`;
+        }
       }
     } finally {
-      this.busy = false;
-      this.broadcastState();
+      if (generation === this.loadGeneration) {
+        this.busy = false;
+        this.cancellable = false;
+        this.broadcastState();
+      }
     }
   }
 
