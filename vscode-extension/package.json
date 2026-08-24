@@ -1231,7 +1231,7 @@
           "default": 1024,
           "minimum": 1,
           "scope": "window",
-          "description": "Maximum PostgreSQL syntax-tree depth used to classify SQL safely before execution and composition. Code Moniker 0.7.0 applies this client-selected budget without an additional server cap."
+          "description": "Maximum PostgreSQL syntax-tree depth used to classify SQL safely before execution and composition. Code Moniker 0.8.0 applies this client-selected budget without an additional server cap."
         },
         "postgresql-workbench.sqlAuthoring.syntaxMaxNodes": {
           "type": "integer",
@@ -1625,7 +1625,7 @@
     "vscode:prepublish": "npm run build:production"
   },
   "dependencies": {
-    "@code-moniker/client": "0.7.1",
+    "@code-moniker/client": "0.8.0",
     "@shikijs/core": "^4.4.1",
     "@shikijs/engine-javascript": "^4.4.1",
     "@shikijs/langs": "^4.4.1",

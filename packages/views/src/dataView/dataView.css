@@ -295,6 +295,11 @@ body,
   max-height: none;
 }
 
+/* Data View gives the grid the remaining pane height, so its paired scrollbar must fill it too. */
+.data-view-grid .result-scroller-frame:has(.cell-inspector) .result-scrollbar {
+  max-height: none;
+}
+
 .data-view-grid .result-detail {
   flex: 0 0 auto;
   max-height: 30%;

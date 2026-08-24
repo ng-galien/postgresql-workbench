@@ -375,8 +375,9 @@ test("inspects a timestamp as PostgreSQL text, not as JSON", async ({ page }) =>
   await inspectorToggle.click();
 
   const inspector = page.getByRole("complementary", { name: "Value of created_at" });
-  await expect(inspectorToggle).toHaveAttribute("aria-expanded", "true");
-  await expect(inspectorToggle).toHaveAttribute(
+  const activeInspectorToggle = page.getByTitle("Stop showing the value under the cursor");
+  await expect(activeInspectorToggle).toHaveAttribute("aria-expanded", "true");
+  await expect(activeInspectorToggle).toHaveAttribute(
     "aria-controls",
     await inspector.getAttribute("id"),
   );
@@ -960,7 +961,7 @@ test("moves rows out through a dialog of their own", async ({ page }) => {
   const dialog = page.getByRole("dialog", { name: "Export rows" });
   // Which rows, which shape, and what that gives — three questions, not six near-identical lines.
   await expect(dialog.getByRole("radio", { name: /The rows loaded/u })).toBeVisible();
-  await expect(dialog.getByRole("radio", { name: /Every row of the query/u })).toBeVisible();
+  await expect(dialog.getByRole("radio", { name: /Entire query/u })).toBeVisible();
   await expect(dialog.getByRole("radio", { name: "CSV" })).toBeVisible();
   await expect(dialog.locator(".export-preview")).not.toBeEmpty();
 
@@ -1468,7 +1469,9 @@ test("writes the rows the reader picked out, in the shape they chose", async ({ 
   await openExport(page);
   const dialog = page.getByRole("dialog", { name: "Export rows" });
   await dialog.getByRole("radio", { name: "TSV" }).check();
-  const written = (await dialog.locator(".export-preview").textContent()) ?? "";
+  const preview = dialog.locator(".export-preview");
+  await expect(preview).toContainText("label\tline1");
+  const written = (await preview.textContent()) ?? "";
   await dialog.getByRole("button", { name: "Export" }).click();
 
   await expect(page.locator(".data-view-statusline-text")).toContainText(/Exported 2 rows/u);

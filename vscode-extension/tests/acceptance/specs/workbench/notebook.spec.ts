@@ -60,10 +60,9 @@ test.describe("Scratchpads", () => {
       await notebook.executeCode(code);
 
       const result = await notebook.resultFrame("1");
-      // The value, not the row number beside it: every grid carries a gutter now.
-      await expect(result.locator("tbody td").getByText("1", { exact: true })).toBeVisible({
-        timeout: 10_000,
-      });
+      const queryResult = result.getByRole("region", { name: "PostgreSQL query result" });
+      // The SELECT value, not the row number or the INSERT report beside it.
+      await expect(new ResultTable(queryResult).cell(0, 0)).toHaveText("1", { timeout: 10_000 });
       await workbench.scratchpads.expand(scratchpad);
       const transaction = await workbench.scratchpads.transaction(scratchpad, "in progress");
       await expect(transaction).toContainText("3 Statements", { timeout: 5_000 });
