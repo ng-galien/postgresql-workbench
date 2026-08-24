@@ -34,7 +34,6 @@ import { CallSiteConnectionStore, ConnectionManager } from "./connection/index.j
 import { registerConnectionCommands } from "./connection/registerCommands.js";
 import { openCoverageClient, PgTapTestController } from "./coverage/index.js";
 import { DataViewEditorProvider } from "./dataView/dataViewEditorProvider.js";
-import { dataViewSqlLabel } from "./dataView/dataViewUri.js";
 import { DataViewQueryFileSystem } from "./dataView/queryFileSystem.js";
 import { registerDataViewQueryLens } from "./dataView/queryLens.js";
 import {
@@ -266,14 +265,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
       planSqlResultExecution(sql, await workbenchIndex.syntaxParser(), sqlSyntaxAnalysisBudget()),
     (request) => debugScratchpadSql(request),
     (request) => canDebugScratchpadSql(request),
-    (request) =>
-      dataViews.open({
-        kind: "sql",
-        connectionId: request.association.connectionId,
-        database: request.association.database,
-        sql: request.sql,
-        label: dataViewSqlLabel(request.sql),
-      }),
     (association) => {
       void cm.refreshDebugCapability(association.connectionId);
       // A listening Schema Sync already refreshes this Connection incrementally

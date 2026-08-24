@@ -136,7 +136,6 @@ export function registerSqlNotebook(
   planResult: ResultPlanner,
   debug: ScratchpadDebugger,
   canDebug: ScratchpadDebugEligibility = async () => false,
-  openDataView: (request: ScratchpadDataViewRequest) => Promise<void> = async () => {},
   onSchemaMutation: ScratchpadSchemaMutation = () => {},
 ): ScratchpadFeature {
   const serializer = new SqlNotebookSerializer();
@@ -147,7 +146,6 @@ export function registerSqlNotebook(
     transactions,
     debug,
     canDebug,
-    openDataView,
     onSchemaMutation,
   );
   const statusProvider = new SqlNotebookStatusProvider(connections, canDebug);
@@ -424,12 +422,6 @@ export interface ScratchpadFeature {
   refreshCellStatus(): void;
   /** Creates and shows a Scratchpad holding one SQL cell, associated with the given Connection. */
   openWithSql(sql: string, association: ConnectionConfig | undefined): Promise<vscode.Uri>;
-}
-
-/** A result renderer asked to open its Statement in a Data View. */
-export interface ScratchpadDataViewRequest {
-  sql: string;
-  association: ScratchpadAssociationSnapshot;
 }
 
 interface SqlNotebookPick extends vscode.QuickPickItem {
@@ -788,10 +780,9 @@ class SqlNotebookController implements vscode.Disposable {
     private readonly transactions: ScratchpadTransactionManager,
     private readonly debug: ScratchpadDebugger,
     private readonly canDebug: ScratchpadDebugEligibility,
-    openDataView: (request: ScratchpadDataViewRequest) => Promise<void>,
     private readonly onSchemaMutation: ScratchpadSchemaMutation,
   ) {
-    this.resultHost = new SqlNotebookResultHost(openDataView);
+    this.resultHost = new SqlNotebookResultHost();
     this.controller = vscode.notebooks.createNotebookController(
       "postgresql-workbench.sql",
       SQL_NOTEBOOK_TYPE,

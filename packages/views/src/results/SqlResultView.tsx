@@ -98,23 +98,6 @@ export function SqlResultView({ payload, messaging }: SqlResultViewProps) {
             {messaging ? (
               <ResultNavigation state={{ navigation, busy, closed }} onAction={request} />
             ) : null}
-            {current.statement && messaging ? (
-              <button
-                className="result-button"
-                type="button"
-                title="Open this Statement in a Data View: sort and filter in PostgreSQL, edit identified rows."
-                onClick={() =>
-                  messaging.postMessage({
-                    type: "sql-result/open-data-view",
-                    sql: current.statement ?? "",
-                    binding: current.binding,
-                  })
-                }
-              >
-                <span className="codicon codicon-table" aria-hidden="true" />
-                Open in Data View
-              </button>
-            ) : null}
             <div className="copy-action">
               <button
                 className="copy-button"

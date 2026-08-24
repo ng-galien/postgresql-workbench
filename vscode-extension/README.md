@@ -72,8 +72,7 @@ A row that changed since it was loaded stops the write instead of overwriting it
 Export the selection, the loaded rows, or the whole query as CSV, TSV, JSON, SQL
 `INSERT`, or Markdown.
 
-Open one from the database tree, from a statement in a SQL file, or from a
-Scratchpad result. See the [Data View
+Open one from the database tree or from a statement in a SQL file. See the [Data View
 guide](https://ng-galien.github.io/postgresql-workbench/docs/data-view.html).
 
 ## One database context, one connected workflow

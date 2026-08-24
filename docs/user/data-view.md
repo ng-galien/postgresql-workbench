@@ -22,9 +22,6 @@ other Workbench surface.
 - **From a SQL editor** — **PostgreSQL Workbench: Open Data View for Statement**
   opens the statement under the cursor in a `.sql` or `.pgsql` file that has a
   Connection Association.
-- **From a Scratchpad result** — **Open in Data View** carries the rows a cell
-  produced into a view of their own, with the statement that produced them.
-
 A relation opens on an explicit projection of its columns, written from the
 Workbench Index — never `SELECT *`. A statement opens exactly as you wrote it.
 
