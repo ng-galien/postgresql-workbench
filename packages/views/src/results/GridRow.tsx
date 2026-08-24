@@ -149,13 +149,39 @@ export function GridRow({
               .filter(Boolean)
               .join(" ")}
             title={
-              cell.edited
-                ? `Original: ${cell.raw ?? "NULL"}`
-                : policy && !policy.editable
-                  ? policy.reason
-                  : undefined
+              cell.retainedTruncated
+                ? "Value truncated at the configured results.maxCellBytes limit. Change PostgreSQL Workbench › Results: Max Cell Bytes in Settings."
+                : cell.truncated
+                  ? "Value shortened in the grid. Inspect it to read the full retained value."
+                  : cell.edited
+                    ? `Original: ${cell.raw ?? "NULL"}`
+                    : policy && !policy.editable
+                      ? policy.reason
+                      : undefined
             }
             onContextMenu={(event) => context.onCellMenu(event, shownRow, ordinal, shown)}
+            onClick={(event) => {
+              const target = event.target instanceof HTMLElement ? event.target : undefined;
+              if (
+                shown !== null &&
+                isWebAddress(shown) &&
+                target?.closest(`.${CELL_LINK}`) &&
+                followsCellLink(event)
+              ) {
+                context.onFollowLink(shown);
+              }
+            }}
+            onKeyDown={(event) => {
+              if (
+                event.key === "Enter" &&
+                shown !== null &&
+                isWebAddress(shown) &&
+                followsCellLink(event)
+              ) {
+                event.preventDefault();
+                context.onFollowLink(shown);
+              }
+            }}
             onMouseDown={(event) => {
               // A click puts the anchor here; a shifted one reaches from where it was.
               takeKeys(event);
@@ -181,45 +207,17 @@ export function GridRow({
                 onCancel={() => context.closeEditor()}
               />
             ) : shown !== null && isWebAddress(shown) ? (
-              <>
-                <a
-                  className={`cell-value ${CELL_LINK}`}
-                  href={shown}
-                  /*
-                   * An address is somewhere to go, and a cell is something to select: the click
-                   * belongs to the grid unless it carries the chord, and it never reaches the host
-                   * that would follow it on its own. What follows it is the request below.
-                   *
-                   * The grid is one stop in the tabbing order, so the link is not another one: the
-                   * keys reach it through the cell menu.
-                   */
-                  tabIndex={-1}
-                  title={`${chordName()}+click to open ${shown}`}
-                  onClick={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    if (followsCellLink(event)) context.onFollowLink(shown);
-                  }}
-                >
-                  {shown}
-                </a>
-                {/* The mark that says there is somewhere to go, and takes a plain click there. */}
-                <button
-                  type="button"
-                  className="cell-link-open"
-                  title={`Open ${shown}`}
-                  aria-label={`Open ${shown}`}
-                  tabIndex={-1}
-                  onMouseDown={(event) => event.stopPropagation()}
-                  onClick={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    context.onFollowLink(shown);
-                  }}
-                >
-                  <span className="codicon codicon-link-external" aria-hidden="true" />
-                </button>
-              </>
+              <span
+                className={`cell-value ${CELL_LINK}`}
+                /*
+                 * The value stays text because its only pointer action is the editor chord. A real
+                 * anchor would promise Enter and an ordinary click, both of which belong to the
+                 * grid. Keyboard readers reach the explicit Open action in the cell menu.
+                 */
+                title={`${chordName()}+click to open ${shown}`}
+              >
+                {shown}
+              </span>
             ) : (
               <span className="cell-value">{shown === null ? emptyLabel(subject) : shown}</span>
             )}

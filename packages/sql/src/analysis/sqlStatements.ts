@@ -41,6 +41,8 @@ export type SqlExecutionPlan =
     };
 
 const MUTATING_STATEMENT_KINDS = new Set(["InsertStmt", "UpdateStmt", "DeleteStmt", "MergeStmt"]);
+const SELECT_INTO_KINDS = new Set(["IntoClause"]);
+const SELECT_LOCKING_KINDS = new Set(["LockingClause", "for_locking_clause"]);
 const SCHEMA_MUTATING_STATEMENT_KINDS = new Set([
   "AlterDatabaseStmt",
   "AlterDomainStmt",
@@ -138,15 +140,20 @@ export async function planSqlResultExecution(
       status: "ready",
       statements: statements.map((statement) => {
         const statementNode = topLevelStatementNode(statement);
+        const selectInto = syntaxTreeHasKind(statement, SELECT_INTO_KINDS);
+        const selectLocking = syntaxTreeHasKind(statement, SELECT_LOCKING_KINDS);
         return {
           sql: syntaxNodeText(sql, statement).trim(),
           resultKind:
             !syntaxTreeHasKind(statement, MUTATING_STATEMENT_KINDS) &&
+            !selectInto &&
+            !selectLocking &&
             statementNode?.kind === "SelectStmt"
               ? "paged-query"
               : "non-paged",
           line: statement.start.line,
-          ...(statementNode && SCHEMA_MUTATING_STATEMENT_KINDS.has(statementNode.kind)
+          ...(selectInto ||
+          (statementNode && SCHEMA_MUTATING_STATEMENT_KINDS.has(statementNode.kind))
             ? { schemaMutation: true as const }
             : {}),
           ...(syntaxTreeHasKind(statement, new Set(["TransactionStmt"]))

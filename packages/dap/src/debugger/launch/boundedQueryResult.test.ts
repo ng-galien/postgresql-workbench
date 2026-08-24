@@ -1,7 +1,7 @@
 import { Buffer } from "node:buffer";
 import type { Client, FieldDef, Query } from "pg";
 import { describe, expect, it } from "vitest";
-import { runBoundedQuery } from "./boundedQueryResult.js";
+import { formatQueryResultRow, runBoundedQuery } from "./boundedQueryResult.js";
 import {
   clampDebugResultRows,
   createDebugResultContext,
@@ -50,6 +50,19 @@ function fakeClient(rows: unknown[][], fields = FIELDS): Client {
 }
 
 describe("bounded query results", () => {
+  it("keeps a timestamp returned as a Date in its PostgreSQL text shape", () => {
+    const timestamp = new Date("2026-08-21T14:00:08.399Z");
+    const field: FieldDef = {
+      ...FIELDS[0],
+      name: "created_at",
+      dataTypeID: 1184,
+    };
+
+    expect(formatQueryResultRow([timestamp], [field])).toEqual([
+      { kind: "text", value: "2026-08-21T14:00:08.399Z" },
+    ]);
+  });
+
   it("streams every row but only retains the configured preview", async () => {
     const rows = Array.from({ length: 5 }, (_, index) => [
       index + 1,
@@ -120,6 +133,7 @@ describe("bounded query results", () => {
       kind: "binary",
       value: "\\x0000000000…",
       truncated: true,
+      retainedTruncated: true,
     });
     expect(Buffer.byteLength(result.rows[0][0].value ?? "", "utf8")).toBeLessThanOrEqual(16);
   });

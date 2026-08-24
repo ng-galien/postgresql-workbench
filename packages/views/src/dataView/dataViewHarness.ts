@@ -69,8 +69,7 @@ export function dataViewPayload(
     capturedRowCount: rows.length,
     truncated: false,
     truncationReasons: [],
-    // A Data View result always comes from a bounded cursor, and a cursor always says where the
-    // reader stands: a payload without this is a shape the host never sends.
+    // A Data View result always says where the reader stands in its LIMIT/OFFSET pages.
     navigation: {
       sessionId: "data-view-1",
       mode: "paged",
@@ -79,7 +78,6 @@ export function dataViewPayload(
       pageStart: rows.length === 0 ? 0 : 1,
       pageEnd: rows.length,
       loadedRowCount: rows.length,
-      cacheStart: 1,
       hasPrevious: false,
       hasNext: false,
       canLoadAll: false,

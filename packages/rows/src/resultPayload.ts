@@ -6,7 +6,7 @@ import type {
 
 /**
  * What a SQL result is: the rows PostgreSQL returned or the error it raised, the Connection they
- * came from, and where the reader stands in a cursor. Produced by the Extension Host, rendered by
+ * came from, and where the reader stands in a paged result. Produced by the Extension Host, rendered by
  * the result views.
  */
 
@@ -27,7 +27,7 @@ export interface ScratchpadAssociationSnapshot {
 export interface ResultTable {
   columns: DebugResult["columns"];
   rows: DebugResult["rows"];
-  /** Exact total when known. Cursor-backed results leave it undefined until exhausted. */
+  /** Exact total when known. Paged results leave it undefined until the final page. */
   rowCount?: number;
   capturedRowCount: number;
   truncated: boolean;
@@ -37,6 +37,8 @@ export interface ResultTable {
 
 export interface SqlNotebookResultPayload extends ResultTable {
   version: 2;
+  /** Stable identity of a paged result. */
+  resultId?: string;
   binding: ScratchpadAssociationSnapshot;
   /** SQL Statement that produced the result, when the producer knows it. */
   statement?: string;
@@ -71,7 +73,6 @@ export interface SqlNotebookResultNavigation {
   pageStart: number;
   pageEnd: number;
   loadedRowCount: number;
-  cacheStart: number;
   hasPrevious: boolean;
   hasNext: boolean;
   canLoadAll: boolean;

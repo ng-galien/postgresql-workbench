@@ -103,13 +103,22 @@ export interface ResultGridProps {
    * the whole of what the cursor is on.
    */
   inspecting?: boolean;
+  inspectorId?: string;
   onInspecting?: (on: boolean) => void;
+  /** Full retained value supplied on demand by a host; absent surfaces inspect the display cell. */
+  inspectedCell?: DebugResultCell;
+  onInspectCell?: (loadedRow: number, ordinal: number) => void;
   /** When set, sorting is delegated to the host (server-side) instead of sorting loaded rows. */
   serverSort?: {
     /** Active server-side sorts in priority order. */
     sorts: ResultSort[];
     /** `additive` (Shift+click) keeps the other sorts and toggles this column. */
     onSort(columnIndex: number, additive: boolean): void;
+  };
+  /** Lets a surrounding surface use the exact loaded-row order for actions such as export. */
+  localSorting?: {
+    sort?: ResultSort;
+    onSort(sort: ResultSort | undefined): void;
   };
   /** When set, cells become editable according to the column policies. */
   editing?: GridEditing;
@@ -140,17 +149,21 @@ export interface GridLayout {
 export function ResultGrid({
   payload,
   serverSort,
+  localSorting,
   editing,
   layout,
   onFollowLink,
   selection: heldSelection,
   onSelect,
   inspecting,
+  inspectorId,
   onInspecting,
+  inspectedCell,
+  onInspectCell,
 }: ResultGridProps) {
   /** Which cell of which added row is being filled in right now. */
   const [activeAdded, setActiveAdded] = useState<{ localId: string; ordinal: number }>();
-  const [localSort, setLocalSort] = useState<ResultSort>();
+  const [ownLocalSort, setOwnLocalSort] = useState<ResultSort>();
   const [activeCell, setActiveCell] = useState<{ row: number; ordinal: number }>();
   /** Where the grid points when nobody is holding a selection for it. */
   const [ownSelection, setOwnSelection] = useState<GridSelection>(cellSelection(0, 0));
@@ -162,9 +175,15 @@ export function ResultGrid({
   const [chosenWidths, setChosenWidths] = useState<Record<number, number>>({});
   /* What the reader is looking for among the rows on screen; absent when they are not looking. */
   const [looking, setLooking] = useState<string>();
+  /** Extra vertical room claimed by a value panel the reader has made taller. */
+  const [inspectorHeight, setInspectorHeight] = useState<number>();
+  useEffect(() => {
+    if (!inspecting) setInspectorHeight(undefined);
+  }, [inspecting]);
   const setChosenWidth = (ordinal: number, widthCh: number) =>
     setChosenWidths((current) => ({ ...current, [ordinal]: widthCh }));
   const isVisible = (ordinal: number) => !layout?.hidden.has(ordinal);
+  const localSort = localSorting ? localSorting.sort : ownLocalSort;
   const sort = serverSort ? serverSort.sorts[0] : localSort;
   const sortRank = (
     ordinal: number,
@@ -180,7 +199,11 @@ export function ResultGrid({
   };
   const requestSort = (ordinal: number, additive = false) => {
     if (serverSort) serverSort.onSort(ordinal, additive);
-    else setLocalSort((current) => nextResultSort(current, ordinal));
+    else {
+      const next = nextResultSort(localSort, ordinal);
+      if (localSorting) localSorting.onSort(next);
+      else setOwnLocalSort(next);
+    }
   };
   const [scrollTop, setScrollTop] = useState(0);
   const [scrollMetrics, setScrollMetrics] = useState<ScrollMetrics>({
@@ -189,6 +212,30 @@ export function ResultGrid({
   });
   const scroller = useRef<HTMLElement>(null);
   const scrollerId = useId();
+  useEffect(() => {
+    const element = scroller.current;
+    if (!element) return undefined;
+    const scrollWithWheel = (event: WheelEvent) => {
+      const horizontal = event.deltaX || (event.shiftKey ? event.deltaY : 0);
+      const vertical = event.shiftKey && event.deltaX === 0 ? 0 : event.deltaY;
+      const nextTop = clamp(
+        element.scrollTop + vertical,
+        0,
+        element.scrollHeight - element.clientHeight,
+      );
+      const nextLeft = clamp(
+        element.scrollLeft + horizontal,
+        0,
+        element.scrollWidth - element.clientWidth,
+      );
+      if (nextTop === element.scrollTop && nextLeft === element.scrollLeft) return;
+      element.scrollTop = nextTop;
+      element.scrollLeft = nextLeft;
+      event.preventDefault();
+    };
+    element.addEventListener("wheel", scrollWithWheel, { passive: false });
+    return () => element.removeEventListener("wheel", scrollWithWheel);
+  }, []);
   /*
    * Turning the grid writable is an act on the grid, so the grid takes the keystrokes: a reader
    * who opens edit mode and pastes has not clicked a cell, and would otherwise be pasting into
@@ -329,14 +376,19 @@ export function ResultGrid({
     overCells ? selectedOrdinals(selection, visibleOrdinals) : [],
   );
   /*
-   * The grid is what holds the cursor, so a host tracking it is told what the cursor really is —
-   * on the first render, and again whenever a shorter result or a hidden column has clamped it.
-   * Otherwise the host would describe one selection while the reader looks at another.
+   * When the host already holds an explicit selection, tell it if a shorter result or a hidden
+   * column clamps that selection. The grid's initial keyboard cursor remains internal until the
+   * reader deliberately selects something.
    */
   const reportSelection = onSelect;
   // biome-ignore lint/correctness/useExhaustiveDependencies: the clamped selection is the subject.
   useEffect(() => {
-    if (reportSelection && !sameSelection(heldSelection, selection)) reportSelection(selection);
+    // `undefined` is a deliberate absence for hosts with selection actions: keep the grid's
+    // internal keyboard cursor, but do not turn it back into an actionable row after a page or
+    // server sort explicitly cleared the selection.
+    if (reportSelection && heldSelection && !sameSelection(heldSelection, selection)) {
+      reportSelection(selection);
+    }
   }, [
     reportSelection,
     heldSelection,
@@ -602,6 +654,36 @@ export function ResultGrid({
     const edit = editing?.editFor(row ?? [], shown.loaded, selection.anchor.ordinal);
     return edit ? { ...cell, value: edit.value } : cell;
   })();
+  const lastInspection = useRef<
+    | {
+        loaded: number;
+        ordinal: number;
+        request: NonNullable<ResultGridProps["onInspectCell"]>;
+      }
+    | undefined
+  >(undefined);
+  useEffect(() => {
+    if (!inspecting || !onInspectCell) {
+      lastInspection.current = undefined;
+      return;
+    }
+    const shown = order.at(selection.anchor.row);
+    if (!("loaded" in shown)) return;
+    const previous = lastInspection.current;
+    if (
+      previous?.loaded === shown.loaded &&
+      previous.ordinal === selection.anchor.ordinal &&
+      previous.request === onInspectCell
+    ) {
+      return;
+    }
+    lastInspection.current = {
+      loaded: shown.loaded,
+      ordinal: selection.anchor.ordinal,
+      request: onInspectCell,
+    };
+    onInspectCell(shown.loaded, selection.anchor.ordinal);
+  }, [inspecting, onInspectCell, order.at, selection.anchor.ordinal, selection.anchor.row]);
 
   const focusedShownRow = order.at(focus.row);
   const loadedFocusRow = "loaded" in focusedShownRow ? focusedShownRow.loaded : -1;
@@ -642,7 +724,14 @@ export function ResultGrid({
 
   return (
     <>
-      <div className="result-scroller-frame">
+      <div
+        className="result-scroller-frame"
+        style={
+          inspectorHeight
+            ? ({ "--cell-inspector-room": `${inspectorHeight + 24}px` } as CSSProperties)
+            : undefined
+        }
+      >
         {/*
           A grid is not an editable element, so a browser fires neither copy nor paste while a
           cell holds the focus: those events go to whatever can hold text. This textarea is that
@@ -908,10 +997,12 @@ export function ResultGrid({
         />
         {inspecting ? (
           <CellInspector
+            inspectorId={inspectorId}
             column={payload.columns[selection.anchor.ordinal]?.name ?? ""}
             typeName={payload.columns[selection.anchor.ordinal]?.typeName}
-            cell={cursorCell}
+            cell={inspectedCell ?? cursorCell}
             onClose={() => onInspecting?.(false)}
+            onResize={setInspectorHeight}
           />
         ) : null}
       </div>

@@ -274,9 +274,9 @@ test.describe("Scratchpads", () => {
     await notebook.typeInCell(
       code,
       [
-        "CREATE TEMP TABLE notebook_cursor_safety(id integer);",
+        "CREATE TEMP TABLE notebook_paging_safety(id integer);",
         "WITH inserted AS (",
-        "  INSERT INTO notebook_cursor_safety (id)",
+        "  INSERT INTO notebook_paging_safety (id)",
         "  SELECT value FROM generate_series(1, 3) AS value",
         "  RETURNING id",
         ")",
@@ -288,7 +288,7 @@ test.describe("Scratchpads", () => {
     await expect
       .poll(async () => (await notebook.snapshot())?.cells[0]?.outputGroups.length, {
         timeout: 10_000,
-        message: "The data-modifying CTE must expose its returned rows without opening a cursor",
+        message: "The data-modifying CTE must expose its returned rows without paginating it",
       })
       .toBe(1);
     const result = await notebook.resultFrame("3");
@@ -332,7 +332,7 @@ test.describe("Scratchpads", () => {
     await notebook.typeInCell(code, "SELECT value FROM generate_series(1, 1000) AS value");
     await notebook.executeCode(code);
 
-    const frame = await notebook.resultFrame("Rows 1–200 · more available");
+    const frame = await notebook.resultFrame("1–200 / ?");
     /*
      * The paging controls say what they do with an icon and nothing else, so the font has to be
      * there: a result draws in a shadow root, and a font declared inside one is parsed and then
@@ -350,13 +350,91 @@ test.describe("Scratchpads", () => {
       .toBe(true);
 
     const result = new ResultTable(frame);
-    await expect(result.summary("Rows 1–200 · more available")).toBeVisible({ timeout: 10_000 });
+    await expect(result.summary("1–200 / ?")).toBeVisible({ timeout: 10_000 });
+    const scrollbarContract = await frame.locator(".result-scroller").evaluate((element) => ({
+      vertical: getComputedStyle(element).overflowY,
+      horizontal: getComputedStyle(element).overflowX,
+    }));
+    expect(scrollbarContract).toEqual({ vertical: "hidden", horizontal: "auto" });
+    await expect(frame.getByRole("scrollbar", { name: "Vertical result scroll" })).toHaveCount(1);
+    const scroller = frame.locator(".result-scroller");
+    await scroller.hover();
+    await frame.page().mouse.wheel(0, 120);
+    await expect.poll(() => scroller.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
     await result.next();
-    await expect(result.summary("Rows 201–400 · more available")).toBeVisible({ timeout: 5_000 });
+    await expect(result.summary("201–400 / ?")).toBeVisible({ timeout: 5_000 });
     await result.previous();
-    await expect(result.summary("Rows 1–200 · more available")).toBeVisible({ timeout: 5_000 });
+    await expect(result.summary("1–200 / ?")).toBeVisible({ timeout: 5_000 });
     await result.loadAll();
     await expect(result.summary("1000 rows")).toBeVisible({ timeout: 10_000 });
+  });
+
+  test("inspects a full retained Scratchpad value and prepares each export scope", async ({
+    workbench,
+    notebook,
+  }) => {
+    await createScratchpad(workbench, notebook, demoAssociationText);
+    const code = notebook.cell(0);
+    await notebook.typeInCell(code, `SELECT 7 AS id, repeat('x', 70000) AS details`);
+    await notebook.executeCode(code);
+
+    const frame = await notebook.resultFrame("7");
+    const result = new ResultTable(frame);
+    await expect(frame.getByRole("button", { name: "Copy TSV" })).toHaveCount(0);
+    await result.cell(0, 1).click();
+    await result.inspect();
+    const inspector = frame.getByRole("complementary", { name: "Value of details" });
+    await expect
+      .poll(() =>
+        inspector
+          .locator(".cell-inspector-text")
+          .textContent()
+          .then((text) => text?.length),
+      )
+      .toBe(70_000);
+    const initialInspector = await inspector.boundingBox();
+    expect(initialInspector?.height).toBeGreaterThan(100);
+    if (!initialInspector) throw new Error("The value inspector has no visible bounds");
+    const grip = inspector.getByRole("button", {
+      name: "Resize the value panel (arrow keys)",
+    });
+    const gripBounds = await grip.boundingBox();
+    if (!gripBounds) throw new Error("The value inspector resize handle has no visible bounds");
+    await frame.page().mouse.move(gripBounds.x + 4, gripBounds.y + 4);
+    await frame.page().mouse.down();
+    await frame.page().mouse.move(gripBounds.x - 20, gripBounds.y - 120, { steps: 6 });
+    await frame.page().mouse.up();
+    expect((await inspector.boundingBox())?.height).toBeGreaterThan(initialInspector.height + 90);
+
+    const panel = await result.openExport();
+    await expect
+      .poll(() =>
+        panel.evaluate(
+          (element) => (element.getRootNode() as ShadowRoot).activeElement === element,
+        ),
+      )
+      .toBe(true);
+    await expect(frame.getByRole("dialog", { name: "Export rows" })).toHaveCount(0);
+    await expect(panel.getByRole("radio", { name: /The selection/u })).toBeVisible();
+    await expect(panel.getByRole("radio", { name: /The rows loaded/u })).toBeVisible();
+    await expect(panel.getByRole("radio", { name: /Entire query/u })).toBeVisible();
+    await expect(panel.getByRole("radio", { name: /^CSV\b/u })).toBeVisible();
+    await panel.getByRole("radio", { name: /^JSON\b/u }).click();
+    await expect(panel.getByRole("radio", { name: "SQL" })).toHaveCount(0);
+    await expect(panel.locator(".export-preview")).toContainText('"details":"xxx');
+    await panel.getByRole("radio", { name: /Entire query/u }).click();
+    await expect(panel.getByRole("note")).toContainText("side effects will execute again");
+    expect((await panel.boundingBox())?.height).toBeGreaterThan(300);
+    await panel.press("Escape");
+    await expect(panel).toHaveCount(0);
+    const exportButton = frame.getByRole("button", { name: "Export rows to a file…" });
+    await expect
+      .poll(() =>
+        exportButton.evaluate(
+          (element) => (element.getRootNode() as ShadowRoot).activeElement === element,
+        ),
+      )
+      .toBe(true);
   });
 
   test("renders syntax and PostgreSQL failures without internal stack traces", async ({

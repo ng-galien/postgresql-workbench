@@ -1,3 +1,4 @@
+import type { DebugResultCell } from "../../../dap/src/debugger/launch/index.js";
 import type { NamedSqlToken } from "../../../sql/src/languageServer/protocol.js";
 import type { DataViewExportChoice, DataViewExportScope } from "../export.js";
 import type { FollowLinkRequest } from "../followLink.js";
@@ -81,6 +82,13 @@ export type DataViewRequest =
   | { type: "data-view/discard" }
   | { type: "data-view/apply" }
   | { type: "data-view/copy"; text: string }
+  | {
+      type: "data-view/inspect";
+      requestId: number;
+      page: { start: number; length: number };
+      row: number;
+      ordinal: number;
+    }
   /** A Workbench tree item was dropped on the view: compose it into the query. */
   | { type: "data-view/drop-tree" }
   /* Following an address a cell holds; the same request every result surface sends. */
@@ -93,6 +101,13 @@ export type DataViewRequest =
        * Which rows and columns the reader picked out, counted as the grid shows them. The host
        * knows the rows and the order they are in; only what is selected lives in the view.
        */
+      selected?: { from: number; to: number; ordinals: number[] };
+    }
+  | {
+      type: "data-view/export-preview";
+      requestId: number;
+      choice: DataViewExportChoice;
+      scope: DataViewExportScope;
       selected?: { from: number; to: number; ordinals: number[] };
     }
   | { type: "data-view/open-sql" }
@@ -111,6 +126,8 @@ export type DataViewSqlToken = NamedSqlToken;
 
 export type DataViewResponse =
   | { type: "data-view/state"; state: DataViewState }
+  | { type: "data-view/inspected"; requestId: number; cell?: DebugResultCell }
+  | { type: "data-view/export-preview"; requestId: number; text: string }
   | { type: "data-view/additions"; items: DataViewAddition[] }
   /** Several JOIN paths lead to the addition: the user picks one, in the view. */
   | {

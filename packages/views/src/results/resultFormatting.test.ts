@@ -3,7 +3,6 @@ import type { SqlNotebookResultPayload } from "../../../rows/src/resultPayload.j
 import {
   formattedCellValue,
   nextResultSort,
-  resultAsTsv,
   resultSortNotice,
   sortedResultRows,
 } from "./resultFormatting.js";
@@ -19,31 +18,6 @@ describe("SQL notebook result formatting", () => {
     expect(formattedCellValue({ kind: "json", value: '{"answer":42}' })).toBe(
       '{\n  "answer": 42\n}',
     );
-  });
-
-  it("keeps null distinct and neutralizes spreadsheet formulas", () => {
-    const payload: SqlNotebookResultPayload = {
-      version: 2,
-      binding: TEST_BINDING,
-      command: "SELECT",
-      columns: [
-        { name: "formula", dataTypeId: 25 },
-        { name: "missing", dataTypeId: 25 },
-      ],
-      rows: [
-        [
-          { kind: "text", value: "=1+1" },
-          { kind: "null", value: null },
-        ],
-      ],
-      rowCount: 1,
-      capturedRowCount: 1,
-      durationMs: 1,
-      truncated: false,
-      truncationReasons: [],
-    };
-
-    expect(resultAsTsv(payload)).toBe("formula\tmissing\n'=1+1\t\\N");
   });
 
   it("sorts captured rows by typed column without mutating their source order", () => {

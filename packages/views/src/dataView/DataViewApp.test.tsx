@@ -59,6 +59,43 @@ describe("the Data View", () => {
     });
   });
 
+  it("forgets a selected editable row before sorting replaces the page", async () => {
+    const state = readyDataView({
+      editability: {
+        tables: [
+          {
+            tableOid: 1,
+            schema: "shop",
+            name: "product",
+            keyOrdinals: [0],
+            keyColumns: ["id"],
+            keyTypes: ["integer"],
+            referencedBy: [],
+          },
+        ],
+        columns: [
+          { editable: false, reason: "Identity value (primary key)." },
+          { editable: true, tableOid: 1, column: "name", dataType: "text", editor: "text" },
+        ],
+        requiredOrdinals: [],
+        technicalOrdinals: [0],
+      },
+    });
+    const harness = open(state);
+    await userEvent.click(screen.getByRole("button", { name: "Edit mode" }));
+    fireEvent.mouseDown(screen.getByTitle(/^Row 1 /u));
+    expect(screen.getByText("1 row selected")).toBeDefined();
+
+    await userEvent.click(screen.getByTitle(/^Sort by name/u));
+    expect(document.querySelector(".edit-bar-selection")?.textContent).toBe("Nothing selected");
+    expect(document.querySelector<HTMLButtonElement>(".edit-bar-button.remove")?.disabled).toBe(
+      true,
+    );
+    expect(harness.lastPost("data-view/sort")?.sorts).toEqual([
+      { column: "name", direction: "ascending" },
+    ]);
+  });
+
   it("cycles a column through ascending, descending, and no order at all", async () => {
     const harness = open();
 
@@ -84,7 +121,9 @@ describe("the Data View", () => {
   it("reports what the host says went wrong, without losing the view", () => {
     open(readyDataView({ status: "error", message: 'relation "shop.gone" does not exist' }));
 
-    expect(screen.getByRole("status").textContent).toContain("does not exist");
+    expect(document.querySelector(".data-view-statusline-text")?.textContent).toContain(
+      "does not exist",
+    );
   });
 
   it("says so when the query returned no rows", () => {

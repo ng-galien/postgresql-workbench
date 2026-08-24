@@ -1,14 +1,15 @@
-import type { ReactNode } from "react";
 import {
   canNavigate,
   type ResultNavigationCommand,
   type ResultNavigationState,
 } from "../../../rows/src/navigation.js";
+import type { ResultTable } from "../../../rows/src/resultPayload.js";
 import { IconButton } from "./IconButton.js";
+import { resultRowRange, resultRowSummary } from "./resultFormatting.js";
 
 /**
  * Moving through a bounded result: the page before, the page after, every remaining row, and the
- * stop that abandons a load. One control for every surface that reads rows through a cursor, so a
+ * stop that abandons a load. One control for every surface that reads LIMIT/OFFSET pages, so a
  * rule fixed once is fixed everywhere. What a surface shows between the pages — a row count, a
  * truncation mark — it composes as children.
  *
@@ -17,14 +18,14 @@ import { IconButton } from "./IconButton.js";
  */
 export function ResultNavigation({
   state,
-  children,
+  payload,
   onAction,
 }: {
   state: ResultNavigationState;
-  children?: ReactNode;
+  payload?: ResultTable;
   onAction: (action: ResultNavigationCommand) => void;
 }) {
-  if (!state.navigation) return null;
+  if (!state.navigation || !payload) return null;
   return (
     <div className="result-navigation">
       <IconButton
@@ -33,7 +34,15 @@ export function ResultNavigation({
         disabled={!canNavigate("previous", state)}
         onClick={() => onAction("previous")}
       />
-      {children}
+      <span
+        className="result-navigation-summary"
+        title={[
+          resultRowSummary(payload),
+          ...(payload.truncated ? payload.truncationReasons : []),
+        ].join(" · ")}
+      >
+        {resultRowRange(payload)}
+      </span>
       <IconButton
         icon="chevron-right"
         label="Next page"

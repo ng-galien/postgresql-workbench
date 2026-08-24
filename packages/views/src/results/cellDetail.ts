@@ -9,8 +9,8 @@ import { onMac } from "../platform.js";
  * It decides the shape and leaves the drawing to whoever asked: nothing here knows about a view.
  */
 export type CellDetail =
-  /** A document, laid out. `invalid` when the value did not parse, which is worth saying. */
-  | { shape: "json"; text: string; invalid?: string }
+  /** A JSON document, laid out. */
+  | { shape: "json"; text: string }
   /** A list in one cell, taken apart. */
   | { shape: "list"; items: string[] }
   /**
@@ -50,7 +50,12 @@ const MAGIC: { prefix: string; name: string; mediaType?: string }[] = [
 export function cellDetail(cell: DebugResultCell, typeName?: string): CellDetail {
   if (cell.value === null) return { shape: "empty" };
   if (cell.kind === "binary") return binaryDetail(cell.value, cell.truncated === true);
-  if (cell.kind === "json") return jsonDetail(cell.value);
+  if (
+    cell.kind === "json" &&
+    (typeName === undefined || typeName === "json" || typeName === "jsonb")
+  ) {
+    return jsonDetail(cell.value);
+  }
   const items = postgresArrayItems(cell.value, typeName);
   if (items) return { shape: "list", items };
   if (isWebAddress(cell.value)) return { shape: "link", href: cell.value.trim() };
@@ -63,10 +68,10 @@ export function isWebAddress(value: string): boolean {
 }
 
 /**
- * The class the anchor a cell draws for an address carries, and what counts as asking for it.
+ * The class the text a cell draws for an address carries, and what counts as asking for it.
  *
  * Both sides of the gesture are named here rather than agreed on in passing: the row draws the
- * anchor and decides which clicks belong to it, the grid's menu asks for the same thing without
+ * marked text and decides which clicks belong to it, the grid's menu asks for the same thing without
  * one. Following it is nobody's business here — a view says what was asked for and the host that
  * put it on screen opens it.
  */
@@ -83,16 +88,12 @@ export function followsCellLink(event: { metaKey: boolean; ctrlKey: boolean }): 
   return onMac() ? event.metaKey : event.ctrlKey;
 }
 
-/** A document laid out over several lines, or the text as it stands with why it would not parse. */
+/** A document laid out over several lines, or plain text when it cannot be parsed. */
 function jsonDetail(value: string): CellDetail {
   try {
     return { shape: "json", text: JSON.stringify(JSON.parse(value), null, 2) };
-  } catch (error) {
-    return {
-      shape: "json",
-      text: value,
-      invalid: error instanceof Error ? error.message : "This is not JSON.",
-    };
+  } catch {
+    return { shape: "text", text: value };
   }
 }
 

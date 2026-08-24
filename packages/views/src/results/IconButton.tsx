@@ -1,4 +1,4 @@
-import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
+import type { MouseEvent as ReactMouseEvent, ReactNode, Ref } from "react";
 
 /** A toolbar control that shows a codicon, and optionally a short text beside it. */
 export function IconButton({
@@ -8,6 +8,9 @@ export function IconButton({
   disabled,
   primary,
   expanded,
+  controls,
+  popup,
+  buttonRef,
   text,
 }: {
   icon: string;
@@ -17,11 +20,15 @@ export function IconButton({
   primary?: boolean;
   /** Whether the menu this control opens is showing — given only by a control that opens one. */
   expanded?: boolean;
+  controls?: string;
+  popup?: "menu" | "dialog" | false;
+  buttonRef?: Ref<HTMLButtonElement>;
   /** Optional short text shown next to the icon. */
   text?: ReactNode;
 }) {
   return (
     <button
+      ref={buttonRef}
       className={`icon-button${primary ? " primary" : ""}`}
       type="button"
       title={label}
@@ -29,7 +36,11 @@ export function IconButton({
       disabled={disabled}
       {...(expanded === undefined
         ? {}
-        : { "aria-haspopup": "menu" as const, "aria-expanded": expanded })}
+        : {
+            ...(popup === false ? {} : { "aria-haspopup": popup ?? ("menu" as const) }),
+            "aria-expanded": expanded,
+            ...(controls ? { "aria-controls": controls } : {}),
+          })}
       onClick={onClick}
     >
       <span className={`codicon codicon-${icon}`} aria-hidden="true" />

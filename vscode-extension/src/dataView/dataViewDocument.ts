@@ -1,5 +1,4 @@
 import * as vscode from "vscode";
-import type { SqlResultSession } from "../../../packages/rows/src/cursor.js";
 import {
   composeIntoDataViewQuery,
   dataViewAdditions,
@@ -35,10 +34,12 @@ import type {
   DataViewExportChoice,
   DataViewExportScope,
 } from "../../../packages/rows/src/export.js";
+import { dataViewExportText } from "../../../packages/rows/src/export.js";
 import {
   navigateResult,
   type ResultNavigationCommand,
 } from "../../../packages/rows/src/navigation.js";
+import type { OffsetResultSession } from "../../../packages/rows/src/offsetQuery.js";
 import type { SqlNotebookResultPayload } from "../../../packages/rows/src/resultPayload.js";
 import { namedSemanticTokens } from "../../../packages/sql/src/languageServer/protocol.js";
 import { type QueryRewrite, SqlQueryModel } from "../../../packages/sql/src/query/model.js";
@@ -48,6 +49,7 @@ import type {
 } from "../../../packages/sql/src/snapshot.js";
 import { quoteSqlIdentifierIfNeeded } from "../../../packages/sql/src/text/identifiers.js";
 import { followLinkFromView } from "../followLink.js";
+import { configuredScratchpadStatementTimeoutMs } from "../scratchpad/scratchpadSettings.js";
 import { DATA_VIEW_SCRATCHES, dataViewQueryUri, dataViewScratchUri } from "./dataViewUri.js";
 import { exportAllRows, exportHeldRows, pickExportTarget } from "./exportResult.js";
 import { completeDataViewFilter } from "./filterCompletion.js";
@@ -57,7 +59,7 @@ class LoadCancelledError extends Error {}
 
 /**
  * One open Data View. Orchestrates its collaborators — the query text and its rewrites, the
- * bounded result cursor, the pending edits — and mirrors their state to the webviews. Every
+ * bounded paged result, the pending edits — and mirrors their state to the webviews. Every
  * VS Code integration point (query file, editor, completion document) is reached through the
  * injected host services.
  */
@@ -74,7 +76,8 @@ export class DataViewDocument implements vscode.CustomDocument {
   private readonly accents = new TableAccents();
   private readonly hidden = new HiddenColumns();
   private initialized: Promise<void> | undefined;
-  private session: SqlResultSession | undefined;
+  private session: OffsetResultSession | undefined;
+  private pendingLoadCancel: (() => Promise<void>) | undefined;
   private payload: SqlNotebookResultPayload | undefined;
   private editability: DataViewEditability = EMPTY_DATA_VIEW_EDITABILITY;
   private projection: DataViewProjection = { tables: [], columnTable: [] };
@@ -82,7 +85,6 @@ export class DataViewDocument implements vscode.CustomDocument {
   private message: string | undefined;
   private busy = false;
   private loadGeneration = 0;
-  private idleTimer: ReturnType<typeof setTimeout> | undefined;
   private readonly webviews = new Set<vscode.Webview>();
   private readonly _onDidChangeTitle = new vscode.EventEmitter<string>();
   private said = "";
@@ -169,6 +171,29 @@ export class DataViewDocument implements vscode.CustomDocument {
       case "data-view/refresh":
         await this.load();
         return;
+      case "data-view/inspect": {
+        const retained = this.session?.loadedResult();
+        const first = Math.max(0, request.page.start - 1);
+        const cell = retained?.rows[first + request.row]?.[request.ordinal];
+        this.broadcast({
+          type: "data-view/inspected",
+          requestId: request.requestId,
+          ...(cell ? { cell } : {}),
+        });
+        return;
+      }
+      case "data-view/export-preview": {
+        const values = this.heldValues(request.scope, request.selected);
+        this.broadcast({
+          type: "data-view/export-preview",
+          requestId: request.requestId,
+          text: dataViewExportText(values.columns, values.rows.slice(0, 12), {
+            ...request.choice,
+            finalNewline: false,
+          }),
+        });
+        return;
+      }
       case "data-view/sort":
         await this.applyRewrite(this.query.sorted(request.sorts, tabSize()));
         return;
@@ -588,9 +613,9 @@ export class DataViewDocument implements vscode.CustomDocument {
     await this.updateQueryText(outcome.text);
   }
 
-  // --- Result cursor -------------------------------------------------------------------------
+  // --- Paged result --------------------------------------------------------------------------
 
-  /** (Re)opens the bounded cursor for the current query text. */
+  /** (Re)opens the LIMIT/OFFSET result for the current query text. */
   async load(): Promise<void> {
     const generation = ++this.loadGeneration;
     await this.closeSession();
@@ -610,10 +635,8 @@ export class DataViewDocument implements vscode.CustomDocument {
           "The query is empty: add a table with + or drop one from the Workbench tree.";
         return;
       }
-      const client = await this.services.openClient(this.source.connectionId);
-      this.assertGeneration(generation);
       const opened = await openDataViewResult({
-        client,
+        openClient: () => this.services.openClient(this.source.connectionId),
         sql: this.query.effectiveSql(),
         settings: this.services.resultSettings(),
         binding: {
@@ -623,8 +646,13 @@ export class DataViewDocument implements vscode.CustomDocument {
         },
         accents: this.accents,
         checkpoint: () => this.assertGeneration(generation),
+        registerCancellation: (cancel) => {
+          if (generation !== this.loadGeneration || this.disposed) void cancel();
+          else this.pendingLoadCancel = cancel;
+        },
       });
       this.session = opened.session;
+      this.pendingLoadCancel = undefined;
       this.payload = opened.session.snapshot();
       this.editability = opened.editability;
       this.projection = opened.projection;
@@ -633,14 +661,20 @@ export class DataViewDocument implements vscode.CustomDocument {
       if (forgotten) this.notify(forgotten, "info");
       this.hidden.afterLoad(opened, hideKeyColumns());
       this.status = "ready";
-      this.touch(opened.idleTimeoutMs);
     } catch (error) {
-      if (error instanceof LoadCancelledError) return;
+      if (
+        generation !== this.loadGeneration ||
+        this.disposed ||
+        error instanceof LoadCancelledError
+      ) {
+        return;
+      }
       this.status = "error";
       this.message = errorMessage(error);
       this.log(`failed to load: ${this.message}`);
     } finally {
       if (generation === this.loadGeneration) {
+        this.pendingLoadCancel = undefined;
         this.busy = false;
         this.broadcastState();
       }
@@ -648,25 +682,28 @@ export class DataViewDocument implements vscode.CustomDocument {
   }
 
   private async navigate(action: ResultNavigationCommand): Promise<void> {
-    const session = this.session;
-    if (!session) {
-      this.notify("The result cursor is closed. Refresh to load the rows again.", "info");
-      return;
-    }
     if (action === "cancel") {
+      this.loadGeneration += 1;
       await this.closeSession();
+      this.busy = false;
       this.message = "Loading cancelled. Refresh to load the rows again.";
       this.broadcastState();
+      return;
+    }
+    const session = this.session;
+    if (!session) {
+      this.notify("The result is closed. Refresh to load the rows again.", "info");
       return;
     }
     if (this.busy) return;
     this.busy = true;
     this.broadcastState();
     try {
-      this.payload = await navigateResult(session, action, (loadedRowCount) =>
+      const payload = await navigateResult(session, action, (loadedRowCount) =>
         this.broadcast({ type: "data-view/progress", loadedRowCount }),
       );
-      this.touch(this.services.resultSettings().cursorIdleTimeoutSeconds * 1_000);
+      if (this.session !== session) return;
+      this.payload = payload;
     } catch (error) {
       if (this.session === session) {
         await this.closeSession();
@@ -678,23 +715,12 @@ export class DataViewDocument implements vscode.CustomDocument {
     }
   }
 
-  private touch(idleTimeoutMs: number): void {
-    if (this.idleTimer) clearTimeout(this.idleTimer);
-    this.idleTimer = setTimeout(() => {
-      void this.closeSession().then(() => {
-        this.message =
-          "The result cursor was closed after being idle. Refresh to load the rows again.";
-        this.broadcastState();
-      });
-    }, idleTimeoutMs);
-  }
-
   private async closeSession(): Promise<void> {
-    if (this.idleTimer) clearTimeout(this.idleTimer);
-    this.idleTimer = undefined;
+    const pendingLoadCancel = this.pendingLoadCancel;
+    this.pendingLoadCancel = undefined;
     const session = this.session;
     this.session = undefined;
-    await session?.close().catch(() => {});
+    await Promise.all([pendingLoadCancel?.().catch(() => {}), session?.close().catch(() => {})]);
   }
 
   private assertGeneration(generation: number): void {
@@ -770,6 +796,8 @@ export class DataViewDocument implements vscode.CustomDocument {
               sql: this.query.effectiveSql(),
               title: this.title,
               openClient: () => this.services.openClient(this.source.connectionId),
+              maxCellBytes: this.services.resultSettings().maxCellBytes,
+              statementTimeoutMs: configuredScratchpadStatementTimeoutMs(),
               typeFor: (name) =>
                 declaredColumnType(
                   this.editability,
@@ -793,8 +821,23 @@ export class DataViewDocument implements vscode.CustomDocument {
     scope: DataViewExportScope,
     selected: { from: number; to: number; ordinals: number[] } | undefined,
   ) {
+    const retained = this.session?.loadedResult();
+    const pageStart = this.payload?.navigation?.pageStart ?? 1;
+    const fullPayload =
+      this.payload && retained
+        ? {
+            ...this.payload,
+            rows:
+              scope === "selection"
+                ? retained.rows.slice(
+                    Math.max(0, pageStart - 1),
+                    Math.max(0, pageStart - 1) + this.payload.rows.length,
+                  )
+                : retained.rows,
+          }
+        : this.payload;
     return heldValues({
-      payload: this.payload,
+      payload: fullPayload,
       addedRows: this.edits.addedRows,
       editability: this.editability,
       shownOrdinals: () => this.hidden.shownOrdinals(),

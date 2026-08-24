@@ -7,7 +7,6 @@ import {
   type LocalCodeMonikerSession,
 } from "../../catalog/src/localCodeMoniker.js";
 import { readPostgresCatalog } from "../../catalog/src/postgresCatalog.js";
-import type { SqlResultSession } from "../../rows/src/cursor.js";
 import { composeIntoDataViewQuery, dataViewAdditions } from "../../rows/src/dataView/additions.js";
 import { conditionForCell, withCondition } from "../../rows/src/dataView/cellFilter.js";
 import {
@@ -39,6 +38,7 @@ import {
   dataViewExportWriter,
   exportFileExtension,
 } from "../../rows/src/export.js";
+import type { OffsetResultSession } from "../../rows/src/offsetQuery.js";
 import { createCodeMonikerSyntaxParser } from "../../sql/src/analysis/codeMonikerSyntax.js";
 import type { SyntaxParser } from "../../sql/src/analysis/syntaxTree.js";
 import type { SqlQueryAnalysis } from "../../sql/src/query/analysis.js";
@@ -150,7 +150,7 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
     payload?: DataViewState["payload"];
     editability: DataViewState["editability"];
     busy: boolean;
-    session?: SqlResultSession;
+    session?: OffsetResultSession;
   } = {
     projection: { tables: [], columnTable: [] },
     status: "loading",
@@ -206,15 +206,28 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
   const held = (
     scope: DataViewExportScope,
     selected: { from: number; to: number; ordinals: number[] } | undefined,
-  ) =>
-    heldValues({
-      payload: state.payload,
+  ) => {
+    const retained = state.session?.loadedResult();
+    const pageStart = state.payload?.navigation?.pageStart ?? 1;
+    const payload =
+      state.payload && retained
+        ? {
+            ...state.payload,
+            rows:
+              scope === "selection"
+                ? retained.rows.slice(pageStart - 1, pageStart - 1 + state.payload.rows.length)
+                : retained.rows,
+          }
+        : state.payload;
+    return heldValues({
+      payload,
       addedRows: edits.addedRows,
       editability: state.editability,
       shownOrdinals: () => hidden.shownOrdinals(),
       scope,
       ...(selected ? { selected } : {}),
     });
+  };
 
   /** Every row of the query, read back a batch at a time and written as it arrives. */
   const streamExportToFile = async (
@@ -278,7 +291,13 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
       }),
     });
 
+  let pendingLoadCancel: (() => Promise<void>) | undefined;
+  let loadGeneration = 0;
   const load = async () => {
+    const generation = ++loadGeneration;
+    const previousLoadCancel = pendingLoadCancel;
+    pendingLoadCancel = undefined;
+    await previousLoadCancel?.().catch(() => {});
     state.busy = true;
     broadcast();
     if (query.isEmpty) {
@@ -294,20 +313,31 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
       broadcast();
       return;
     }
-    // A cursor owns the connection it reads through, so every load opens its own, exactly as the
-    // Extension Host does: the previous one goes with the session it belonged to.
-    await state.session?.close().catch(() => {});
-    const reader = await connect();
+    const previousSession = state.session;
+    state.session = undefined;
+    await previousSession?.close().catch(() => {});
     try {
       const opened = await openDataViewResult({
-        client: reader,
+        openClient: connect,
         sql: query.effectiveSql(),
-        settings: { pageSize: 200, maxCachedRows: 5_000, cursorIdleTimeoutSeconds: 300 },
+        settings: {
+          pageSize: 200,
+          maxCellBytes: 256 * 1024,
+        },
         binding: { connectionId, connectionName, database: connection.database },
         accents,
         checkpoint: () => {},
+        registerCancellation: (cancel) => {
+          if (generation !== loadGeneration) void cancel();
+          else pendingLoadCancel = cancel;
+        },
       });
+      if (generation !== loadGeneration) {
+        await opened.session.close().catch(() => {});
+        return;
+      }
       state.session = opened.session;
+      pendingLoadCancel = undefined;
       state.payload = opened.session.snapshot();
       state.editability = opened.editability;
       // The query may have composed away the table a held change was written against.
@@ -318,9 +348,9 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
       state.status = "ready";
       state.message = undefined;
     } catch (error) {
+      if (generation !== loadGeneration) return;
       state.status = "error";
       state.message = error instanceof Error ? error.message : String(error);
-      await reader.end().catch(() => {});
       // The catalog connection dies with the database; the next load opens a fresh one.
       if (catalogLost) {
         catalogLost = false;
@@ -328,8 +358,11 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
         client = await connect(true).catch(() => client);
       }
     } finally {
-      state.busy = false;
-      broadcast();
+      if (generation === loadGeneration) {
+        pendingLoadCancel = undefined;
+        state.busy = false;
+        broadcast();
+      }
     }
   };
 
@@ -511,16 +544,16 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
           return;
         }
         case "data-view/navigate": {
-          const cursor = state.session;
-          if (!cursor) return;
+          const result = state.session;
+          if (!result) return;
           state.payload =
             request.action === "next"
-              ? await cursor.next()
+              ? await result.next()
               : request.action === "previous"
-                ? await cursor.previous()
+                ? await result.previous()
                 : request.action === "load-all"
-                  ? await cursor.loadAll()
-                  : cursor.snapshot();
+                  ? await result.loadAll()
+                  : result.snapshot();
           broadcast();
           return;
         }
@@ -575,6 +608,18 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
           // The reader has already been told what happened; the shell has no save of its own.
           await edits.apply(writeHost, state.editability).catch(() => {});
           return;
+        case "data-view/export-preview": {
+          const values = held(request.scope === "all" ? "loaded" : request.scope, request.selected);
+          emit({
+            type: "data-view/export-preview",
+            requestId: request.requestId,
+            text: dataViewExportText(values.columns, values.rows.slice(0, 12), {
+              ...request.choice,
+              finalNewline: false,
+            }),
+          });
+          return;
+        }
         case "data-view/export": {
           /*
            * The shell writes the file itself: it runs on the reader's machine, so an export that

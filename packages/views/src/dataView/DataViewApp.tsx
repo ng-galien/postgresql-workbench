@@ -2,7 +2,9 @@ import {
   type CSSProperties,
   type KeyboardEvent,
   type MouseEvent as ReactMouseEvent,
+  useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -30,6 +32,7 @@ import { rowOrder } from "../../../rows/src/dataView/rowOrder.js";
 import { shownValues } from "../../../rows/src/dataView/shownValues.js";
 import { followLinkRequest } from "../../../rows/src/followLink.js";
 import { hasWorkbenchTreeDrag } from "../cockpit/dragAndDrop.js";
+import { ExportDialog, type ExportSource } from "../results/ExportDialog.js";
 import {
   type GridSelection,
   selectedOrdinals,
@@ -41,9 +44,8 @@ import { anchorUnder, Menu, type MenuEntry, type MenuPoint } from "../results/Me
 import { Modal } from "../results/Modal.js";
 import { type GridEditing, type GridLayout, ResultGrid } from "../results/ResultGrid.js";
 import { ResultNavigation } from "../results/ResultNavigation.js";
-import { nextResultSort, resultRowRange, resultRowSummary } from "../results/resultFormatting.js";
+import { nextResultSort, resultRowSummary } from "../results/resultFormatting.js";
 import type { WebviewMessaging } from "../webviewPage.js";
-import { ExportDialog, type ExportSource } from "./ExportDialog.js";
 import { FilterHighlight, useScrollFollower } from "./FilterHighlight.js";
 import { useReorderable } from "./reorder.js";
 import { nextRequestId } from "./requests.js";
@@ -327,6 +329,7 @@ type ToolbarMenu = "columns" | "more" | "changes";
 
 export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
   const [state, setState] = useState<DataViewState>();
+  const pageStart = useRef<number | undefined>(undefined);
   const [progress, setProgress] = useState<number>();
   const [notice, setNotice] = useState<Notice>();
   /** The failure the reader has read and put away, so it is not shown again unchanged. */
@@ -336,6 +339,11 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
   const [editMode, setEditMode] = useState(false);
   /** Whether the value the cursor is on is shown whole, beside the grid. */
   const [inspecting, setInspecting] = useState(false);
+  const [inspectedCell, setInspectedCell] = useState<DebugResultCell>();
+  const inspectorButton = useRef<HTMLButtonElement>(null);
+  const inspectorId = useId();
+  const inspectionSequence = useRef(0);
+  const pendingInspection = useRef(0);
   /** What is selected in the grid, held here because the edit bar acts on it. */
   const [selection, setSelection] = useState<GridSelection>();
   /*
@@ -345,6 +353,9 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
   const [toolbar, setToolbar] = useState<{ at: MenuPoint; which: ToolbarMenu }>();
   /** Which dialog is open over the view: rows coming in from a file, or rows going out to one. */
   const [transfer, setTransfer] = useState<"import" | "export">();
+  const [exportPreview, setExportPreview] = useState<string>();
+  const exportPreviewSequence = useRef(0);
+  const pendingExportPreview = useRef(0);
   const [dropActive, setDropActive] = useState(false);
   const [additions, setAdditions] = useState<DataViewAddition[]>();
   /** Where the proposals were asked for, which is where the paths to choose between open too. */
@@ -355,16 +366,41 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
     title: string;
     choices: Array<{ index: number; label: string; description: string }>;
   }>();
+  const showInspector = useCallback((shown: boolean) => {
+    if (!shown) inspectorButton.current?.focus();
+    setInspecting(shown);
+  }, []);
 
   useEffect(() => {
     const unsubscribe = messaging.subscribe((message) => {
       if (message.type === "data-view/state") {
+        const nextPageStart = message.state.payload?.navigation?.pageStart;
+        if (pageStart.current !== undefined && pageStart.current !== nextPageStart) {
+          setSelection(undefined);
+          setInspectedCell(undefined);
+          setTransfer(undefined);
+        }
+        pageStart.current = nextPageStart;
         setState(message.state);
         setProgress(undefined);
         return;
       }
+      if (
+        message.type === "data-view/inspected" &&
+        message.requestId === pendingInspection.current
+      ) {
+        setInspectedCell(message.cell);
+        return;
+      }
       if (message.type === "data-view/progress") {
         setProgress(message.loadedRowCount);
+        return;
+      }
+      if (
+        message.type === "data-view/export-preview" &&
+        message.requestId === pendingExportPreview.current
+      ) {
+        setExportPreview(message.text);
         return;
       }
       if (message.type === "data-view/notice") {
@@ -391,6 +427,27 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
     const timer = window.setTimeout(() => setNotice(undefined), 4_000);
     return () => window.clearTimeout(timer);
   }, [notice]);
+
+  const inspectCell = useCallback(
+    (row: number, ordinal: number) => {
+      const payload = state?.payload;
+      if (!payload) return;
+      const requestId = ++inspectionSequence.current;
+      pendingInspection.current = requestId;
+      setInspectedCell(undefined);
+      messaging.post({
+        type: "data-view/inspect",
+        requestId,
+        page: {
+          start: payload.navigation?.pageStart ?? 1,
+          length: payload.rows.length,
+        },
+        row,
+        ordinal,
+      });
+    },
+    [messaging, state?.payload],
+  );
 
   const editing = useMemo<GridEditing | undefined>(() => {
     // Nothing is editable, and no gutter shows, until the reader asks for it.
@@ -656,7 +713,7 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
         }),
       counts: {
         selection: selectedOnly.to - selectedOnly.from + 1,
-        loaded: order.count,
+        loaded: (payload?.navigation?.loadedRowCount ?? order.count) + state.addedRows.length,
         all: payload?.rowCount,
       },
       table: exportTable,
@@ -690,8 +747,12 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
         ? notice.message
         : undefined;
   const alert = failure === dismissed ? undefined : failure;
-  const applySorts = (sorts: { column: string; direction: "ascending" | "descending" }[]) =>
+  const applySorts = (sorts: { column: string; direction: "ascending" | "descending" }[]) => {
+    setSelection(undefined);
+    setInspectedCell(undefined);
+    setTransfer(undefined);
     post({ type: "data-view/sort", sorts });
+  };
   /** Toggles one column: none → asc → desc → none; `additive` keeps the other criteria. */
   const requestSort = (ordinal: number, additive: boolean) => {
     const current = gridSorts.find((sort) => sort.columnIndex === ordinal);
@@ -1152,6 +1213,27 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
         <ExportDialog
           source={exportSource}
           title={query.structured ? (state.projection.tables[0]?.name ?? "result") : "result"}
+          preview={exportPreview}
+          onPreview={(choice, scope) => {
+            const requestId = ++exportPreviewSequence.current;
+            pendingExportPreview.current = requestId;
+            setExportPreview(undefined);
+            post({
+              type: "data-view/export-preview",
+              requestId,
+              choice,
+              scope,
+              ...(scope === "selection" && selection
+                ? {
+                    selected: {
+                      from: selectedRows(selection).first,
+                      to: selectedRows(selection).last,
+                      ordinals: selectedOrdinals(selection, visibleOrdinals),
+                    },
+                  }
+                : {}),
+            });
+          }}
           onClose={() => setTransfer(undefined)}
           onExport={(choice, scope) => {
             setTransfer(undefined);
@@ -1420,27 +1502,21 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
         rows themselves — a control put beside the connection would say it acted on the connection.
       */}
       <div className="data-view-rows-line">
+        <span className="sr-only" role="status" aria-live="polite">
+          {state.busy && state.payload?.navigation
+            ? "Loading result page…"
+            : state.payload
+              ? resultRowSummary(state.payload)
+              : ""}
+        </span>
         <ResultNavigation
           state={navigationState}
+          payload={payload}
           onAction={(action) => post({ type: "data-view/navigate", action })}
-        >
-          <span
-            className="result-navigation-summary"
-            title={
-              payload
-                ? [
-                    resultRowSummary(payload),
-                    ...(payload.truncated ? payload.truncationReasons : []),
-                  ].join(" · ")
-                : undefined
-            }
-          >
-            {payload ? resultRowRange(payload) : ""}
-          </span>
-        </ResultNavigation>
+        />
         {/*
           What stands outside the count, so that nothing beside the arrows changes width as a
-          reader pages: a mark for a result cut short, and one for a cursor that has closed.
+          reader pages: a mark for a result cut short, and one for a result that cannot continue.
         */}
         {payload?.truncated ? (
           <span
@@ -1450,8 +1526,8 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
         ) : null}
         {navigationState.closed ? (
           <span
-            className="codicon codicon-debug-disconnect data-view-rows-mark"
-            title="Cursor closed; refresh to load again"
+            className="codicon codicon-warning data-view-rows-mark"
+            title="More pages unavailable; refresh to retry"
           />
         ) : null}
         <span className="data-view-rows-spacer" />
@@ -1467,7 +1543,11 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
               : "Show the value under the cursor, whole"
           }
           primary={inspecting}
-          onClick={() => setInspecting((on) => !on)}
+          buttonRef={inspectorButton}
+          expanded={inspecting}
+          controls={inspectorId}
+          popup={false}
+          onClick={() => showInspector(!inspecting)}
         />
         {editable ? (
           <IconButton
@@ -1580,7 +1660,10 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
             selection={selection}
             onSelect={setSelection}
             inspecting={inspecting}
-            onInspecting={setInspecting}
+            inspectorId={inspectorId}
+            onInspecting={showInspector}
+            inspectedCell={inspectedCell}
+            onInspectCell={inspectCell}
             serverSort={{ sorts: gridSorts, onSort: requestSort }}
             editing={editing}
             layout={layout}

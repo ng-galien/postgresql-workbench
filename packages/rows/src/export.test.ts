@@ -3,6 +3,7 @@ import {
   CLIPBOARD_EXPORT,
   type DataViewExportChoice,
   DEFAULT_DATA_VIEW_EXPORT,
+  dataViewExportChunks,
   dataViewExportText,
   dataViewExportWriter,
   type ExportColumn,
@@ -157,7 +158,7 @@ VALUES ('Bob', NULL, 'Bordeaux');
     );
   });
 
-  it("lines a Markdown table's columns up", () => {
+  it("writes a valid Markdown table without retaining every row to align it", () => {
     expect(
       dataViewExportText(
         named("id", "label"),
@@ -167,10 +168,10 @@ VALUES ('Bob', NULL, 'Bordeaux');
         ],
         choose({ format: "markdown" }),
       ),
-    ).toBe(`| id  | label |
-|-----|-------|
-| 1   | Bob   |
-| 10  |       |
+    ).toBe(`| id | label |
+| --- | --- |
+| 1 | Bob |
+| 10 |  |
 `);
   });
 
@@ -198,11 +199,17 @@ describe("writing a result out a piece at a time", () => {
     expect(exportStreams("csv")).toBe(true);
     expect(exportStreams("json")).toBe(true);
     expect(exportStreams("sql")).toBe(true);
-    // A Markdown table cannot: its columns are lined up, which needs every row measured first.
-    expect(exportStreams("markdown")).toBe(false);
-    expect(() => dataViewExportWriter(COLUMNS, choose({ format: "markdown" }))).toThrow(
-      /written whole/u,
+    expect(exportStreams("markdown")).toBe(true);
+    expect(dataViewExportWriter(COLUMNS, choose({ format: "markdown" })).opening()).toContain(
+      "| label |",
     );
+  });
+
+  it("bounds renderer-to-host chunks without changing the exported text", () => {
+    const choice = choose({ format: "json" });
+    const chunks = [...dataViewExportChunks(COLUMNS, ROWS, choice, 16)];
+    expect(chunks.every((chunk) => chunk.length <= 16)).toBe(true);
+    expect(chunks.join("")).toBe(dataViewExportText(COLUMNS, ROWS, choice));
   });
 
   it("reads back what it wrote, quotes and line breaks and all", () => {

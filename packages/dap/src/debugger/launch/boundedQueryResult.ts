@@ -19,7 +19,10 @@ export interface BoundedQueryResultOptions {
   timestamp?: string;
   maxRows: number;
   maxCellBytes?: number;
+  /** Hard limit for the full values handed to a cursor/result host before display projection. */
+  maxRetainedCellBytes?: number;
   maxPayloadBytes?: number;
+  onRetainedRows?: (rows: readonly DebugResultCell[][]) => void;
   now?: () => number;
 }
 
@@ -67,9 +70,9 @@ function truncateUtf8(value: string, maxBytes: number): { value: string; truncat
   return { value: `${value.slice(0, bounded.read)}${suffix}`, truncated: true };
 }
 
-function formatBuffer(value: Buffer, maxBytes: number): DebugResultCell {
+function formatBuffer(value: Buffer, maxBytes?: number): DebugResultCell {
   const fullHexBytes = 2 + value.length * 2;
-  if (fullHexBytes <= maxBytes) {
+  if (maxBytes === undefined || fullHexBytes <= maxBytes) {
     return { kind: "binary", value: `\\x${value.toString("hex")}` };
   }
 
@@ -98,7 +101,7 @@ function stringifyObject(value: object): string {
 function cellKind(value: unknown, dataTypeId: number): DebugResultCellKind {
   if (value === null || value === undefined) return "null";
   if (BINARY_TYPE_OIDS.has(dataTypeId) || Buffer.isBuffer(value)) return "binary";
-  if (JSON_TYPE_OIDS.has(dataTypeId) || typeof value === "object") return "json";
+  if (JSON_TYPE_OIDS.has(dataTypeId)) return "json";
   if (BOOLEAN_TYPE_OIDS.has(dataTypeId) || typeof value === "boolean") return "boolean";
   if (NUMBER_TYPE_OIDS.has(dataTypeId) || typeof value === "number" || typeof value === "bigint") {
     return "number";
@@ -106,7 +109,7 @@ function cellKind(value: unknown, dataTypeId: number): DebugResultCellKind {
   return "text";
 }
 
-function formatCell(value: unknown, field: FieldDef, maxBytes: number): DebugResultCell {
+function formatCell(value: unknown, field: FieldDef, maxBytes?: number): DebugResultCell {
   const kind = cellKind(value, field.dataTypeID);
   if (kind === "null") return { kind, value: null };
   if (Buffer.isBuffer(value)) return formatBuffer(value, maxBytes);
@@ -120,6 +123,7 @@ function formatCell(value: unknown, field: FieldDef, maxBytes: number): DebugRes
     display = String(value);
   }
 
+  if (maxBytes === undefined) return { kind, value: display };
   const bounded = truncateUtf8(display, maxBytes);
   return {
     kind,
@@ -169,6 +173,46 @@ export function formatQueryResultRow(
   return fields.map((field, index) => formatCell(row[index], field, boundedCellBytes));
 }
 
+/**
+ * Converts a PostgreSQL row without applying the renderer's cell budget. Cursor-backed result
+ * sessions retain this representation so inspection and export never inherit display truncation.
+ */
+export function formatQueryResultRowFull(
+  row: readonly unknown[],
+  fields: readonly FieldDef[],
+): DebugResultCell[] {
+  return fields.map((field, index) => formatCell(row[index], field));
+}
+
+/** Converts a row for retained session memory, applying only the configured hard safety limit. */
+export function formatQueryResultRowRetained(
+  row: readonly unknown[],
+  fields: readonly FieldDef[],
+  maximumCellBytes: number,
+): DebugResultCell[] {
+  const retainedBytes = Math.max(1, Math.trunc(maximumCellBytes));
+  return fields.map((field, index) => {
+    const cell = formatCell(row[index], field, retainedBytes);
+    return cell.truncated ? { ...cell, retainedTruncated: true as const } : cell;
+  });
+}
+
+/** Applies the renderer budget to a retained full cell, without changing the retained value. */
+export function boundedQueryResultCell(
+  cell: DebugResultCell,
+  maxCellBytes = DEBUG_RESULT_LIMITS.MAX_CELL_BYTES,
+): DebugResultCell {
+  if (cell.value === null) return cell;
+  const boundedBytes = Math.min(DEBUG_RESULT_LIMITS.MAX_CELL_BYTES, Math.max(1, maxCellBytes));
+  const bounded = truncateUtf8(cell.value, boundedBytes);
+  return {
+    kind: cell.kind,
+    value: bounded.value,
+    ...(cell.truncated || bounded.truncated ? { truncated: true as const } : {}),
+    ...(cell.retainedTruncated ? { retainedTruncated: true as const } : {}),
+  };
+}
+
 function resultPayloadBytes(result: Omit<DebugResult, "payloadBytes">): number {
   return Buffer.byteLength(JSON.stringify(result), "utf8");
 }
@@ -191,6 +235,10 @@ export function runBoundedQuery(
   const maxCellBytes = Math.min(
     DEBUG_RESULT_LIMITS.MAX_CELL_BYTES,
     Math.max(1, options.maxCellBytes ?? DEBUG_RESULT_LIMITS.MAX_CELL_BYTES),
+  );
+  const maxRetainedCellBytes = Math.max(
+    maxCellBytes,
+    Math.trunc(options.maxRetainedCellBytes ?? maxCellBytes),
   );
   const maxPayloadBytes = Math.min(
     DEBUG_RESULT_LIMITS.MAX_PAYLOAD_BYTES,
@@ -220,7 +268,7 @@ export function runBoundedQuery(
       }
 
       const row = rawRow as unknown[];
-      const formatted = formatQueryResultRow(row, fields, maxCellBytes);
+      const formatted = formatQueryResultRowRetained(row, fields, maxRetainedCellBytes);
       if (formatted.some((cell) => cell.truncated)) reasons.add("cell");
       rows.push(formatted);
     });
@@ -231,12 +279,17 @@ export function runBoundedQuery(
         : rawResult) as unknown as QueryResultBase;
       fields = result?.fields ?? fields;
 
+      options.onRetainedRows?.(rows);
+      const displayedRows = rows.map((row) =>
+        row.map((cell) => boundedQueryResultCell(cell, maxCellBytes)),
+      );
+      if (displayedRows.some((row) => row.some((cell) => cell.truncated))) reasons.add("cell");
       const base: Omit<DebugResult, "payloadBytes"> = {
         id: options.id,
         ...context,
         command: result?.command ?? "SQL",
         columns: queryResultColumns(fields),
-        rows,
+        rows: displayedRows,
         rowCount: result?.rowCount ?? seenRows,
         capturedRowCount: rows.length,
         truncated: false,

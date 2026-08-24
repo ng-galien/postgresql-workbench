@@ -1308,23 +1308,15 @@
           "minimum": 20,
           "maximum": 1000,
           "scope": "window",
-          "description": "Number of rows loaded initially and by each Next action for cursor-backed Scratchpad results."
+          "description": "Number of rows requested by each LIMIT/OFFSET result page."
         },
-        "postgresql-workbench.results.maxCachedRows": {
+        "postgresql-workbench.results.maxCellBytes": {
           "type": "number",
-          "default": 1000,
-          "minimum": 20,
-          "maximum": 100000,
+          "default": 262144,
+          "minimum": 65536,
+          "maximum": 8388608,
           "scope": "window",
-          "description": "Maximum number of cursor-backed Scratchpad rows retained for Previous navigation. Load all explicitly bypasses this limit."
-        },
-        "postgresql-workbench.results.cursorIdleTimeoutSeconds": {
-          "type": "number",
-          "default": 300,
-          "minimum": 30,
-          "maximum": 3600,
-          "scope": "window",
-          "description": "Close an idle PostgreSQL Scratchpad result cursor after this many seconds."
+          "description": "Hard maximum number of UTF-8 bytes retained for one result cell. Grid display remains compact; inspection and export use the retained value."
         },
         "postgresql-workbench.results.nonPagedMaxRows": {
           "type": "number",
@@ -1641,7 +1633,6 @@
     "@vscode/codicons": "^0.0.46-24",
     "@xyflow/react": "^12.11.2",
     "pg": "^8.20.0",
-    "pg-cursor": "^2.21.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "sql-formatter": "^15.8.2",
@@ -1654,7 +1645,6 @@
     "@playwright/test": "^1.62.1",
     "@types/mocha": "^10.0.10",
     "@types/pg": "^8.18.0",
-    "@types/pg-cursor": "^2.7.2",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
     "@types/vscode": "1.109.0",

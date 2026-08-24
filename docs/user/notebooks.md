@@ -98,14 +98,15 @@ the Transaction remains visible as failed and requires **Rollback**.
 
 ## Result navigation
 
-Read-only queries use a dedicated PostgreSQL cursor. The first page and each
-Next action load `postgresql-workbench.results.pageSize` rows (200 by default).
-Previous uses the bounded local cache. Load all is an explicit decision that
-bypasses the cache limit.
+Read-only queries use one shared `LIMIT`/`OFFSET` contract. The first page and
+each Next action independently execute the wrapped query for
+`postgresql-workbench.results.pageSize` rows (200 by default), then release the
+database connection. No PostgreSQL cursor or Transaction remains active between
+pages. Previous reads an already loaded page from memory. Load all executes the
+remaining offsets explicitly.
 
 Statements that cannot be paged safely, including data-changing statements
-with `RETURNING`, use the separate `nonPagedMaxRows` limit. Copy and export
-disclose truncation and require confirmation for incomplete previews.
+with `RETURNING`, use the separate `nonPagedMaxRows` limit.
 
 > The limits protect the Workbench UI, not PostgreSQL itself. An intentionally
 > huge Load all can still consume substantial memory.
@@ -113,9 +114,16 @@ disclose truncation and require confirmation for incomplete previews.
 ## Result values and export
 
 Sort columns in the result header. Scalar values remain lightweight text; JSON,
-binary, and truncated values open an inspector. PostgreSQL `NULL` remains
-distinct from an empty string. CSV and TSV exports neutralize spreadsheet
-formulas.
+binary, and long values open an inspector. The grid shortens long values only for
+display; the result retains up to `postgresql-workbench.results.maxCellBytes`
+per cell (256 KiB by default) for inspection and export. A cell that reaches this
+hard limit says so and points back to the setting. PostgreSQL `NULL` remains
+distinct from an empty string. CSV and TSV exports neutralize spreadsheet formulas.
 
-The relevant page size, cache, cursor timeout, and non-paged limits are listed
+**Selection** and **Loaded rows** export retained values without running SQL again.
+**Entire query** executes the statement again and streams its new result. Its row
+order and values may differ, and procedures or statements with side effects run
+those effects again; the export panel repeats this warning before export.
+
+The relevant page size, cell, and non-paged limits are listed
 in the [settings reference](reference.md).

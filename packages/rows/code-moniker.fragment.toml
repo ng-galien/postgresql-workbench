@@ -33,7 +33,7 @@ id = "the-data-view-is-read-by-nothing-above-it"
 severity = "error"
 expr = "$rows_package_source AND NOT $rows_data_view_source AND $architectural_dependency AND target ~ '**/dir:packages/dir:rows/**' => NOT $rows_data_view_target"
 message = "The Data View reads what every result surface offers; nothing above it reads back down into the Data View."
-rationale = "Two thirds of this package is one feature, and it was indistinguishable from the rest until it was cut out. The cut is only worth something if it keeps one direction: the Data View reaches up for the cursor, the payload, navigation and the export writer, and the Scratchpad output and the debugger output never reach down for anything of the Data View's. That is also what makes promoting it to a package of its own a rename rather than an untangling."
+rationale = "Two thirds of this package is one feature, and it was indistinguishable from the rest until it was cut out. The cut is only worth something if it keeps one direction: the Data View reaches up for shared LIMIT/OFFSET paging, the payload, navigation and the export writer, and the Scratchpad output and the debugger output never reach down for anything of the Data View's. That is also what makes promoting it to a package of its own a rename rather than an untangling."
 
 [[ts.refs.where]]
 id = "hidden-columns-are-answered-in-one-place"

@@ -120,7 +120,7 @@ export function GridHeader({
                     ? `${policy.reason} Click to sort by ${column.name}.`
                     : serverSort
                       ? `Sort by ${column.name} in PostgreSQL (Shift+click adds a secondary sort)`
-                      : `Sort loaded rows by ${column.name}`
+                      : `Sort displayed rows by ${column.name}`
                 }
                 onClick={(event) => onSort(ordinal, event.shiftKey)}
               >

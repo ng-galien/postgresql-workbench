@@ -6,12 +6,12 @@ import {
 } from "../../../packages/catalog/src/savedConnection.js";
 import type {
   DebugResult,
+  DebugResultCell,
   DebugResultEntry,
   DebugResultStatus,
 } from "../../../packages/dap/src/debugger/launch/index.js";
 import { countLabel } from "../../../packages/rows/src/countLabel.js";
-import type { PostgresCursorReader } from "../../../packages/rows/src/cursor.js";
-import { openBoundedCursor } from "../../../packages/rows/src/dataView/openRows.js";
+import { openOffsetResult } from "../../../packages/rows/src/dataView/openRows.js";
 import {
   configureNotebookStatementTimeout,
   createDedicatedNotebookClient,
@@ -782,7 +782,9 @@ class SqlNotebookController implements vscode.Disposable {
     private readonly canDebug: ScratchpadDebugEligibility,
     private readonly onSchemaMutation: ScratchpadSchemaMutation,
   ) {
-    this.resultHost = new SqlNotebookResultHost();
+    this.resultHost = new SqlNotebookResultHost((connectionId) =>
+      createDedicatedNotebookClient(this.connections, connectionId),
+    );
     this.controller = vscode.notebooks.createNotebookController(
       "postgresql-workbench.sql",
       SQL_NOTEBOOK_TYPE,
@@ -1108,7 +1110,7 @@ class SqlNotebookController implements vscode.Disposable {
     }
   }
 
-  private executeStatementPlan(
+  private async executeStatementPlan(
     cell: vscode.NotebookCell,
     statements: readonly SqlExecutionStatement[],
     settings: SqlResultSettings,
@@ -1117,6 +1119,7 @@ class SqlNotebookController implements vscode.Disposable {
     statementTimeoutMs: number,
     cancellation: NotebookClientCancellation,
   ): Promise<{ outputs: vscode.NotebookCellOutput[]; success: boolean; schemaChanged: boolean }> {
+    await this.resultHost.closeCell(cell.document.uri.toString());
     const execute = async (client: import("pg").Client) => {
       cancellation.bind(this.connections, association.connection.id, client);
       cancellation.throwIfCancellationRequested();
@@ -1127,6 +1130,7 @@ class SqlNotebookController implements vscode.Disposable {
       for (const [index, statement] of statements.entries()) {
         cancellation.throwIfCancellationRequested();
         try {
+          let retainedRows: readonly DebugResultCell[][] = [];
           const result = await executeSqlSelection(
             client,
             {
@@ -1144,6 +1148,10 @@ class SqlNotebookController implements vscode.Disposable {
             },
             {
               maxRows: settings.nonPagedMaxRows,
+              maxRetainedCellBytes: settings.maxCellBytes,
+              onRetainedRows: (rows) => {
+                retainedRows = rows;
+              },
               classifyStatementCount: async () => "single-statement",
             },
           );
@@ -1170,12 +1178,17 @@ class SqlNotebookController implements vscode.Disposable {
             this.transactions.record(cell.notebook.uri.toString(), statement.sql, true);
           }
           if (result.columns.length > 0) {
+            const payload = sqlNotebookResultPayload(result, association.snapshot);
             outputs.push(
               resultOutput(
-                sqlNotebookResultPayload(
-                  result,
+                this.resultHost.registerStatic(
+                  result.id,
+                  payload,
+                  retainedRows.slice(0, payload.rows.length),
+                  cell,
                   association.snapshot,
-                  statement.resultKind === "paged-query" ? statement.sql : undefined,
+                  statement.sql,
+                  { maxCellBytes: settings.maxCellBytes, statementTimeoutMs },
                 ),
               ),
             );
@@ -1210,30 +1223,29 @@ class SqlNotebookController implements vscode.Disposable {
     statementTimeoutMs: number,
     cancellation: NotebookClientCancellation,
   ): Promise<SqlNotebookResultPayload> {
-    const client = await createDedicatedNotebookClient(this.connections, association.connectionId);
-    cancellation.bind(this.connections, association.connectionId, client);
-    let reader: PostgresCursorReader | undefined;
-    try {
-      cancellation.throwIfCancellationRequested();
-      await configureNotebookStatementTimeout(client, statementTimeoutMs);
-      cancellation.throwIfCancellationRequested();
-      const cursor = await openBoundedCursor({
-        client,
-        sql,
-        settings,
-        binding: association,
-      });
-      reader = cursor.reader;
-      const { session, idleTimeoutMs: resultIdleTimeoutMs } = cursor;
-      cancellation.throwIfCancellationRequested();
-      return this.resultHost.register(session, cell, resultIdleTimeoutMs, association, () =>
-        this.isAssociationCurrent(cell.notebook, association),
-      );
-    } catch (error) {
-      if (reader) await reader.close().catch(() => {});
-      else await client.end().catch(() => {});
-      throw error;
-    }
+    cancellation.throwIfCancellationRequested();
+    const session = await openOffsetResult({
+      openClient: async () => {
+        const client = await createDedicatedNotebookClient(
+          this.connections,
+          association.connectionId,
+        );
+        cancellation.bind(this.connections, association.connectionId, client);
+        return client;
+      },
+      sql,
+      settings,
+      binding: association,
+      configure: (client) => configureNotebookStatementTimeout(client, statementTimeoutMs),
+    });
+    cancellation.throwIfCancellationRequested();
+    return this.resultHost.register(
+      session,
+      cell,
+      association,
+      () => this.isAssociationCurrent(cell.notebook, association),
+      { maxCellBytes: settings.maxCellBytes, statementTimeoutMs },
+    );
   }
 
   private async showError(cell: vscode.NotebookCell, message: string): Promise<void> {

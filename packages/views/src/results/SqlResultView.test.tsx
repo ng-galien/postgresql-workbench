@@ -1,11 +1,18 @@
+// @vitest-environment happy-dom
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SqlNotebookResultPayload } from "../../../rows/src/resultPayload.js";
+import type { SqlNotebookRendererResponse } from "./payload.js";
 import { SqlResultView } from "./SqlResultView.js";
+
+afterEach(cleanup);
 
 function payload(overrides: Partial<SqlNotebookResultPayload> = {}): SqlNotebookResultPayload {
   return {
     version: 2,
+    resultId: "result-1",
     binding: {
       connectionId: "test-connection",
       connectionName: "Test PostgreSQL",
@@ -44,15 +51,15 @@ describe("SqlResultView", () => {
      */
     expect(html).not.toContain("inspectable");
     expect(html).not.toContain("Inspect details");
-    expect(html).toContain("Copy TSV");
+    expect(html).not.toContain("Copy TSV");
     expect(html).not.toContain("aria-sort");
-    expect(html).toContain("Sort loaded rows by id");
+    expect(html).toContain("Sort displayed rows by id");
     expect(html).not.toContain("Inspect id");
     expect(html).toContain('role="scrollbar"');
     expect(html).toContain('aria-label="Vertical result scroll"');
   });
 
-  it("renders cursor navigation and an unknown total", () => {
+  it("renders LIMIT/OFFSET page navigation and an unknown total", () => {
     const html = renderToStaticMarkup(
       <SqlResultView
         payload={payload({
@@ -66,7 +73,6 @@ describe("SqlResultView", () => {
             pageStart: 1,
             pageEnd: 200,
             loadedRowCount: 201,
-            cacheStart: 1,
             hasPrevious: false,
             hasNext: true,
             canLoadAll: true,
@@ -76,12 +82,187 @@ describe("SqlResultView", () => {
       />,
     );
 
-    expect(html).toContain("Rows 1–200 · more available");
+    expect(html).toContain("1–200 / ?");
     // The navigation is the shared control: icons, named for anyone who cannot see them.
     expect(html).toContain('aria-label="Previous page"');
     expect(html).toContain('aria-label="Next page"');
     expect(html).toContain('aria-label="Load every remaining row');
     expect(html).toContain("may use significant memory");
+  });
+
+  it("shows the complete value under the grid cursor", async () => {
+    render(<SqlResultView payload={payload()} />);
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Show the value under the cursor, whole" }),
+    );
+
+    const inspector = screen.getByRole("complementary", { name: "Value of id" });
+    expect(within(inspector).getByText("7")).toBeDefined();
+  });
+
+  it("keeps a full inspected host value instead of repeatedly restoring the display preview", async () => {
+    const postMessage = vi.fn();
+    let listener: ((message: SqlNotebookRendererResponse) => void) | undefined;
+    render(
+      <SqlResultView
+        payload={payload({
+          rows: [
+            [
+              { kind: "number", value: "7", truncated: true },
+              { kind: "json", value: '{"ready":true}' },
+            ],
+          ],
+          truncated: true,
+          truncationReasons: ["cell"],
+        })}
+        messaging={{
+          postMessage,
+          subscribe: (next) => {
+            listener = next;
+            return () => {};
+          },
+        }}
+      />,
+    );
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Show the value under the cursor, whole" }),
+    );
+    const request = postMessage.mock.calls[0]?.[0];
+    expect(request).toMatchObject({
+      type: "sql-result/inspect",
+      resultId: "result-1",
+      row: 0,
+      ordinal: 0,
+    });
+    listener?.({
+      type: "sql-result/inspected",
+      requestId: request.requestId,
+      resultId: "result-1",
+      cell: { kind: "number", value: "70000-full" },
+    });
+
+    await waitFor(() =>
+      expect(screen.getByRole("complementary", { name: "Value of id" }).textContent).toContain(
+        "70000-full",
+      ),
+    );
+    expect(postMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it("exports held Scratchpad rows by reference in result-safe shapes", async () => {
+    const postMessage = vi.fn();
+    render(
+      <SqlResultView payload={payload()} messaging={{ postMessage, subscribe: () => () => {} }} />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Export rows to a file…" }));
+    const panel = screen.getByRole("region", { name: "Export rows" });
+    expect(screen.queryByRole("dialog", { name: "Export rows" })).toBeNull();
+    expect(within(panel).getByRole("radio", { name: /The selection/u })).toBeDefined();
+    expect(within(panel).getByRole("radio", { name: /The rows loaded/u })).toBeDefined();
+    expect(within(panel).queryByRole("radio", { name: /Entire query/u })).toBeNull();
+    expect(within(panel).queryByRole("radio", { name: "SQL" })).toBeNull();
+
+    await userEvent.click(within(panel).getByRole("radio", { name: /^JSON\b/ }));
+    await userEvent.click(within(panel).getByRole("button", { name: "Export" }));
+
+    expect(postMessage).toHaveBeenCalledWith({
+      type: "sql-result/export",
+      resultId: "result-1",
+      title: "select-result",
+      choice: {
+        format: "json",
+        header: true,
+        nullAs: "empty",
+        delimiter: ",",
+        spreadsheetSafe: true,
+        finalNewline: true,
+        createTable: false,
+      },
+      scope: "loaded",
+      page: { start: 1, length: 1 },
+    });
+  });
+
+  it("exports a sorted selection against the same local order as the grid", async () => {
+    const postMessage = vi.fn();
+    render(
+      <SqlResultView
+        payload={payload({
+          rows: [
+            [
+              { kind: "number", value: "2" },
+              { kind: "text", value: "two" },
+            ],
+            [
+              { kind: "number", value: "1" },
+              { kind: "text", value: "one" },
+            ],
+          ],
+          rowCount: 2,
+          capturedRowCount: 2,
+        })}
+        messaging={{ postMessage, subscribe: () => () => {} }}
+      />,
+    );
+
+    await userEvent.click(screen.getByTitle("Sort displayed rows by id"));
+    fireEvent.mouseDown(document.querySelector('[data-row="0"][data-column="0"]') as HTMLElement);
+    await userEvent.click(screen.getByRole("button", { name: "Export rows to a file…" }));
+    const panel = screen.getByRole("region", { name: "Export rows" });
+    await userEvent.click(within(panel).getByRole("radio", { name: /The selection/u }));
+    await userEvent.click(within(panel).getByRole("button", { name: "Export" }));
+
+    expect(postMessage).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        type: "sql-result/export",
+        scope: "selection",
+        page: { start: 1, length: 2 },
+        sort: { columnIndex: 0, direction: "ascending" },
+        selection: { from: 0, to: 0, ordinals: [0] },
+      }),
+    );
+  });
+
+  it("names and warns about the replayed entire-query scope", async () => {
+    const postMessage = vi.fn();
+    render(
+      <SqlResultView
+        payload={payload({ statement: "select * from volatile_source()" })}
+        messaging={{ postMessage, subscribe: () => () => {} }}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Export rows to a file…" }));
+    const panel = screen.getByRole("region", { name: "Export rows" });
+    await userEvent.click(within(panel).getByRole("radio", { name: /Entire query/u }));
+    expect(within(panel).getByRole("note").textContent).toMatch(/side effects will execute again/u);
+    await userEvent.click(within(panel).getByRole("button", { name: "Export" }));
+    expect(postMessage).toHaveBeenLastCalledWith(
+      expect.objectContaining({ type: "sql-result/export", scope: "all" }),
+    );
+  });
+
+  it("moves focus into the inline export panel and returns it to the opener", async () => {
+    const escapedPanel = vi.fn();
+    document.addEventListener("keydown", escapedPanel);
+    render(
+      <SqlResultView
+        payload={payload()}
+        messaging={{ postMessage() {}, subscribe: () => () => {} }}
+      />,
+    );
+    const opener = screen.getByRole("button", { name: "Export rows to a file…" });
+    await userEvent.click(opener);
+    const panel = screen.getByRole("region", { name: "Export rows" });
+    expect(document.activeElement).toBe(panel);
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(document.activeElement).toBe(opener));
+    expect(escapedPanel).not.toHaveBeenCalled();
+    expect(opener.getAttribute("aria-expanded")).toBe("false");
+    document.removeEventListener("keydown", escapedPanel);
   });
 
   it("virtualizes a large loaded result", () => {
@@ -121,7 +302,6 @@ describe("SqlResultView", () => {
     );
 
     expect(commandOnly).toContain("SELECT completed without a row set.");
-    expect(commandOnly).not.toContain("Copy TSV");
     expect(truncated).toContain("Preview truncated");
     expect(truncated).toContain("200 of 5000 rows");
     expect(truncated).toContain('title="rows"');

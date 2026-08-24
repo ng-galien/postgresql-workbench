@@ -139,7 +139,7 @@ rules = ["ts.refs.dap.package-depends-only-on-what-it-reads"]
 [[views.boundaries]]
 id = "result-rows"
 owns = [
-  "the bounded cursor every surface reads rows through",
+  "the LIMIT/OFFSET paging contract every result surface reads rows through",
   "what a result is: its payload, its navigation, and writing it out",
   "the Data View, in src/dataView: its protocol, its query, its editability, its pending edits, and which of its columns are hidden",
 ]
@@ -152,9 +152,9 @@ forbid_rules = [
   "ts.refs.rows.package-depends-only-on-what-it-reads",
   "the-data-view-is-read-by-nothing-above-it",
 ]
-rationale = "A result comes from a query the SQL layer understands or a debugged call the DAP layer captured. The Scratchpad output, the Data View and the debugger output all read rows through the same cursor; depending on the catalog or the views would close a cycle around the thing every result view renders. Two thirds of the package is the Data View, which is why it sits in a directory of its own: it reaches up for the cursor, the payload, navigation and the export writer, and nothing above it reaches down. What a host may not do is answer for the Data View itself — both of them held their own hidden columns, and both wrote out the ones the reader had hidden."
+rationale = "A result comes from a query the SQL layer understands or a debugged call the DAP layer captured. The Scratchpad output and the Data View read rows through the same LIMIT/OFFSET contract; depending on the catalog or the views would close a cycle around the thing every result view renders. Two thirds of the package is the Data View, which is why it sits in a directory of its own: it reaches up for paging, the payload, navigation and the export writer, and nothing above it reaches down. What a host may not do is answer for the Data View itself — both of them held their own hidden columns, and both wrote out the ones the reader had hidden."
 symbols = [
-  "ts:packages/rows/src/cursor.class:SqlResultSession",
+  "ts:packages/rows/src/offsetQuery.class:OffsetResultSession",
   "ts:packages/rows/src/dataView/hiddenColumns.class:HiddenColumns",
 ]
 rules = [
@@ -255,14 +255,14 @@ owns = [
   "the Scratchpad file format and its Association value objects",
   "workspace persistence of Scratchpads",
   "dedicated execution connections and Transaction mode",
-  "hosting the bounded result session a notebook cell renders",
+  "hosting the LIMIT/OFFSET result state a notebook cell renders",
 ]
 forbids = [
   "connection or execution lifecycle inside the serialized file",
   "reusing the shared interactive client for notebook execution",
 ]
 forbid_rules = ["scratchpad-file-remains-passive"]
-rationale = "A Scratchpad opens before anything connects, so reading and writing one must not need a live Connection. Execution, transactions and cursors belong to register, association and resultHost."
+rationale = "A Scratchpad opens before anything connects, so reading and writing one must not need a live Connection. Execution, explicit transactions and LIMIT/OFFSET paging belong to register, association, resultHost and the shared row engine."
 symbols = [
   "ts:vscode-extension/src/scratchpad/notebookFile.interface:SqlNotebookFile",
   "ts:vscode-extension/src/scratchpad/workspace.class:SqlNotebookWorkspace",

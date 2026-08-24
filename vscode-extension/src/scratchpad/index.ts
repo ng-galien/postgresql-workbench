@@ -1,6 +1,6 @@
 /**
  * Scratchpads: the SQL notebooks the user runs statements in — their file format, their Connection
- * Association, the bounded cursor that streams results, and the explicit transactions they hold.
+ * Association, LIMIT/OFFSET result pages, and the explicit transactions they hold.
  * The module has two public doors, and nothing else under `scratchpad/` may be imported:
  * - this file, for everything that runs inside VS Code;
  * - `notebookFile.ts`, for the file format and result payload types, which are pure and therefore
