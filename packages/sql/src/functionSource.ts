@@ -1,3 +1,4 @@
+import { plpgsqlStep } from "./analysis/postgresGrammar.js";
 import { sqlFunctionApplications } from "./analysis/sqlSyntax.js";
 import {
   assertUsableSyntaxTree,
@@ -59,30 +60,6 @@ interface ParsedSqlReference {
   recordFields: PlRecordField[];
 }
 
-const STEPPABLE_STATEMENT_KINDS = new Set([
-  "stmt_assert",
-  "stmt_assign",
-  "stmt_call",
-  "stmt_case",
-  "stmt_close",
-  "stmt_dynexecute",
-  "stmt_execsql",
-  "stmt_exit",
-  "stmt_fetch",
-  "stmt_for",
-  "stmt_foreach_a",
-  "stmt_getdiag",
-  "stmt_if",
-  "stmt_loop",
-  "stmt_open",
-  "stmt_perform",
-  "stmt_raise",
-  "stmt_return",
-  "stmt_return_next",
-  "stmt_return_query",
-  "stmt_while",
-]);
-
 /**
  * Analyze one authoritative `pg_proc.prosrc` PL/pgSQL body through Code Moniker syntax trees.
  * SQL expressions are reparsed stateless only for debugger metadata that requires SQL structure.
@@ -110,12 +87,11 @@ export async function analyzeFunction(
   const sqlReferences: SqlReference[] = [];
 
   for (const wrapper of findSyntaxNodes(block, "proc_stmt")) {
-    const statement = wrapper.children.find((child) => child.kind.startsWith("stmt_"));
-    if (!statement) continue;
-    if (STEPPABLE_STATEMENT_KINDS.has(statement.kind)) {
-      steppableLines.add(statement.start.line);
-    }
-    collectStatementMetadata(source, statement, variableNames, variablesByLine, sqlReferences);
+    const step = plpgsqlStep(wrapper);
+    if (step?.held !== "statement") continue;
+    // Every statement of a body is one PostgreSQL stops on; the grammar says which nodes are one.
+    steppableLines.add(step.node.start.line);
+    collectStatementMetadata(source, step.node, variableNames, variablesByLine, sqlReferences);
   }
   for (const clause of findSyntaxNodes(block, "elsif_clause")) {
     steppableLines.add(clause.start.line);

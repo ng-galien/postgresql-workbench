@@ -1,8 +1,14 @@
 import { byteToCharOffsets } from "../query/analysis.js";
+import {
+  SQL_KEYWORD_PREFIX,
+  SQL_LEXICAL_KINDS,
+  SQL_NAME_POSITIONS,
+  type SqlLexicalKind,
+} from "./postgresGrammar.js";
 import type { SyntaxNode, SyntaxTree } from "./syntaxTree.js";
 
 /**
- * What a statement is made of, read from the parse rather than from a second grammar.
+ * Placing what a statement is made of, read from the parse rather than from a second grammar.
  *
  * Colouring SQL takes two answers: what each piece *is* — a keyword, a literal, a comment — and
  * what each name *means*, which needs the catalog. The second was always the server's. The first
@@ -13,51 +19,13 @@ import type { SyntaxNode, SyntaxTree } from "./syntaxTree.js";
  * `SELECT name FROM t` and paints `name` as a keyword, because in PostgreSQL's grammar it is one.
  * The tree knows it stands where a column name stands and says so.
  */
-export const SQL_LEXICAL_TOKEN_TYPES = [
-  "keyword",
-  "string",
-  "number",
-  "comment",
-  "operator",
-  "punctuation",
-] as const;
-
-export type SqlLexicalTokenType = (typeof SQL_LEXICAL_TOKEN_TYPES)[number];
-
 /** One piece of a statement, placed as the language server counts: zero-based, in UTF-16 units. */
 export interface SqlLexicalToken {
   line: number;
   character: number;
   length: number;
-  type: SqlLexicalTokenType;
+  type: SqlLexicalKind;
 }
-
-/**
- * Node kinds whose whole span is one piece, whatever they contain. A dollar-quoted body is a
- * string even though a PL/pgSQL parse would find statements inside it.
- */
-const BY_KIND = new Map<string, SqlLexicalTokenType>([
-  ["comment", "comment"],
-  ["string_literal", "string"],
-  ["dollar_quoted_string", "string"],
-  ["bit_string_literal", "string"],
-  ["integer_literal", "number"],
-  ["float_literal", "number"],
-]);
-
-/**
- * Where a keyword stands for a name rather than for itself. PostgreSQL lets most of its words be
- * used as identifiers, and the parser still lexes them as the keywords they are — so the tree is
- * asked where the word sits, not what it is spelled.
- */
-const NAME_POSITIONS = new Set([
-  "ColId",
-  "ColLabel",
-  "attr_name",
-  "qualified_name",
-  "name",
-  "type_function_name",
-]);
 
 const PUNCTUATION = /^[(),;.[\]{}]$/u;
 
@@ -88,11 +56,11 @@ function typeOf(
   node: SyntaxNode,
   ancestors: readonly string[],
   written: string,
-): SqlLexicalTokenType | undefined {
-  const known = BY_KIND.get(node.kind);
+): SqlLexicalKind | undefined {
+  const known = SQL_LEXICAL_KINDS.get(node.kind);
   if (known) return known;
-  if (node.kind.startsWith("kw_")) {
-    return ancestors.some((kind) => NAME_POSITIONS.has(kind)) ? undefined : "keyword";
+  if (node.kind.startsWith(SQL_KEYWORD_PREFIX)) {
+    return ancestors.some((kind) => SQL_NAME_POSITIONS.has(kind)) ? undefined : "keyword";
   }
   if (node.named) return undefined;
   return PUNCTUATION.test(written) ? "punctuation" : "operator";
@@ -107,7 +75,7 @@ function walk(
   ancestors: string[],
   visit: (node: SyntaxNode, ancestors: readonly string[]) => void,
 ): void {
-  if (BY_KIND.has(node.kind) || node.children.length === 0) {
+  if (SQL_LEXICAL_KINDS.has(node.kind) || node.children.length === 0) {
     visit(node, ancestors);
     return;
   }
@@ -123,7 +91,7 @@ function walk(
 function placed(
   start: number,
   end: number,
-  type: SqlLexicalTokenType,
+  type: SqlLexicalKind,
   lineStarts: readonly number[],
 ): SqlLexicalToken[] {
   const tokens: SqlLexicalToken[] = [];

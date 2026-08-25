@@ -177,8 +177,16 @@ function plpgsqlTree(source: string, withCommit: boolean): SyntaxTree {
     ]),
   ];
   if (withCommit) {
+    // On a line of its own, as PostgreSQL would have it: two statements never share one.
     statements.push(
-      node("proc_stmt", returnEnd, returnEnd, [node("stmt_commit", returnEnd, returnEnd)]),
+      node(
+        "proc_stmt",
+        returnEnd,
+        returnEnd,
+        [node("stmt_commit", returnEnd, returnEnd, [], null, 2)],
+        null,
+        2,
+      ),
     );
   }
   return tree(
@@ -219,6 +227,7 @@ function node(
   end: number,
   children: SyntaxNode[] = [],
   language: string | null = null,
+  line = 1,
 ): SyntaxNode {
   return {
     kind,
@@ -227,8 +236,8 @@ function node(
     error: false,
     missing: false,
     byteRange: [start, end],
-    start: { line: 1, column: start },
-    end: { line: 1, column: end },
+    start: { line, column: start },
+    end: { line, column: end },
     text: null,
     children,
   };
