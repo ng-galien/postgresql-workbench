@@ -507,8 +507,13 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
                 removedKeys.size > 0 && removedKeys.has(dataViewRowKey(identityOf(onlyTable, row))),
               added: state.addedRows,
               drop: (localId) => messaging.post({ type: "data-view/drop-row", localId }),
-              fill: (localId, values) =>
-                messaging.post({ type: "data-view/fill-row", localId, values }),
+              fill: (localId, values, unset) =>
+                messaging.post({
+                  type: "data-view/fill-row",
+                  localId,
+                  values,
+                  ...(unset && unset.length > 0 ? { unset } : {}),
+                }),
               appendPasted: (values, above) =>
                 messaging.post({ type: "data-view/add-row", values, above }),
             },

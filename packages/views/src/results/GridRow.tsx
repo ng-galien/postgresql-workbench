@@ -197,6 +197,15 @@ export function GridRow({
               <CellEditor
                 editor={policy.editor}
                 value={shown}
+                given={cell.given}
+                {...(subject.of === "added" && added
+                  ? {
+                      onLeaveToDatabase: () => {
+                        context.closeEditor();
+                        editing.rows?.fill(added.localId, {}, [column.name]);
+                      },
+                    }
+                  : {})}
                 onCommit={(next) => {
                   context.closeEditor();
                   if (added) editing.rows?.fill(added.localId, { [column.name]: next });
@@ -219,7 +228,9 @@ export function GridRow({
                 {shown}
               </span>
             ) : (
-              <span className="cell-value">{shown === null ? emptyLabel(subject) : shown}</span>
+              <span className="cell-value">
+                {shown === null ? emptyLabel(subject, cell.given === true) : shown}
+              </span>
             )}
           </td>
         );
@@ -237,6 +248,8 @@ interface ShownCell extends DebugResultCell {
    * would become what the database is told the row used to hold.
    */
   raw: string | null;
+  /** On a row being added: whether the reader has given this column anything, NULL included. */
+  given?: boolean;
 }
 
 function cellOf(
@@ -246,8 +259,9 @@ function cellOf(
   editing?: GridEditing,
 ): ShownCell {
   if (subject.of === "added") {
-    const filled = subject.added.values[columnName] ?? null;
-    return { kind: filled === null ? "null" : "text", value: filled, raw: filled };
+    const given = columnName in subject.added.values;
+    const filled = given ? (subject.added.values[columnName] ?? null) : null;
+    return { kind: filled === null ? "null" : "text", value: filled, raw: filled, given };
   }
   const cell = subject.cells[ordinal] ?? { kind: "null" as const, value: null };
   const edit = editing?.editFor(subject.cells, subject.loadedIndex, ordinal);
@@ -257,9 +271,11 @@ function cellOf(
 }
 
 /*
- * A row being added has a third answer for a column with nothing in it: not a value, not an empty
- * text, but "whatever the database would have given it". That is not the same as a loaded NULL.
+ * A cell holding no text says which of three things that means. On a loaded row there is only one:
+ * NULL. On a row being added there are two, and they are not the same row in the database — an
+ * explicit NULL is inserted, a column left alone is not named at all and takes the table's default.
  */
-function emptyLabel(subject: GridRowSubject): string {
-  return subject.of === "added" ? "DEFAULT" : "NULL";
+function emptyLabel(subject: GridRowSubject, given: boolean): string {
+  if (subject.of !== "added") return "NULL";
+  return given ? "NULL" : "DEFAULT";
 }

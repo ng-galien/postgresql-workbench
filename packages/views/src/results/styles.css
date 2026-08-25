@@ -702,10 +702,18 @@ td.editing {
   overflow: visible;
 }
 
+/*
+ * An open editor is wider than its column when the column is narrow: the field, and the controls
+ * that say what having no value means, have to be reachable whatever width the reader gave it. It
+ * paints over its neighbours rather than under them, or the press lands on the cell beside it.
+ */
 .cell-editor {
+  position: relative;
+  z-index: 2;
   display: flex;
   align-items: stretch;
   height: 27px;
+  min-width: max-content;
   outline: 1px solid var(--vscode-focusBorder);
   outline-offset: -1px;
   background: var(--vscode-input-background);
@@ -731,7 +739,7 @@ td.editing {
   outline: none;
 }
 
-.cell-editor-null {
+.cell-editor-empty {
   flex: 0 0 auto;
   padding: 0 6px;
   color: var(--vscode-descriptionForeground);
@@ -740,11 +748,19 @@ td.editing {
   border-left: 1px solid var(--vscode-panel-border);
   cursor: pointer;
   font: inherit;
+  font-size: 0.85em;
+  letter-spacing: 0.04em;
 }
 
-.cell-editor-null:hover {
+.cell-editor-empty:hover {
   color: var(--vscode-foreground);
   background: var(--vscode-list-hoverBackground);
+}
+
+/* The state the cell is in right now, so the reader can read it off the editor and not guess. */
+.cell-editor-empty[aria-pressed="true"] {
+  color: var(--vscode-foreground);
+  background: var(--vscode-list-activeSelectionBackground);
 }
 
 /* Column layout controls (Data View) */

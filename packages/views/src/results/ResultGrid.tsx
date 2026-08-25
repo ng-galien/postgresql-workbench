@@ -82,7 +82,8 @@ export interface GridEditing {
     added: readonly DataViewRowInsertion[];
     drop(localId: string): void;
     /** Fills columns of an added row; null leaves a column to PostgreSQL. */
-    fill(localId: string, values: Record<string, string | null>): void;
+    /** `unset` names the columns to leave out of the INSERT, which is not the same as NULL. */
+    fill(localId: string, values: Record<string, string | null>, unset?: readonly string[]): void;
     /** Adds a row already filled in — a line of a paste that fell past the last loaded row. */
     appendPasted(values: Record<string, string | null>, above: number): void;
   };
@@ -443,11 +444,12 @@ export function ResultGrid({
   /*
    * A press has to leave the keystrokes with the grid. Letting the browser handle it would move
    * the focus to whatever it finds around the cell — in practice the page itself — so the press is
-   * refused and the proxy takes the focus instead. A press inside an open editor is left alone:
-   * that one is placing a caret in a real field.
+   * refused and the proxy takes the focus instead. A press anywhere inside an open editor is left
+   * alone — the field, and the controls beside it that say what having no value means. Taking the
+   * focus from one of those blurs the field, a blurred field commits, and the press never lands.
    */
   const takeKeys = (event: ReactMouseEvent<HTMLElement>) => {
-    if ((event.target as HTMLElement).closest("input, textarea, select")) return;
+    if ((event.target as HTMLElement).closest(".cell-editor")) return;
     event.preventDefault();
     focusClipboard();
   };

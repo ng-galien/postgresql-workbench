@@ -338,7 +338,7 @@ export class DataViewDocument implements vscode.CustomDocument {
         this.broadcastState();
         return;
       case "data-view/fill-row":
-        this.edits.fillRow(request.localId, request.values);
+        this.edits.fillRow(request.localId, request.values, request.unset ?? []);
         this.broadcastState();
         return;
       case "data-view/remove-rows": {

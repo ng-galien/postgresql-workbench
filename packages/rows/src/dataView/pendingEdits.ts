@@ -194,13 +194,20 @@ export class PendingEdits {
   }
 
   /** Fills columns of an added row; clearing one back to nothing leaves it to PostgreSQL. */
-  fillRow(localId: string, values: Record<string, string | null>): void {
+  /**
+   * A cell of a row being added holds one of three things, and they are not the same row in the
+   * database: a value, an explicit NULL, or nothing at all. Only the third is left out of the
+   * INSERT, which is what makes the column take the default the table gives it.
+   */
+  fillRow(
+    localId: string,
+    values: Record<string, string | null>,
+    unset: readonly string[] = [],
+  ): void {
     const row = this.insertions.find((candidate) => candidate.localId === localId);
     if (!row) return;
-    for (const [column, value] of Object.entries(values)) {
-      if (value === null) delete row.values[column];
-      else row.values[column] = value;
-    }
+    for (const [column, value] of Object.entries(values)) row.values[column] = value;
+    for (const column of unset) delete row.values[column];
   }
 
   clear(): void {

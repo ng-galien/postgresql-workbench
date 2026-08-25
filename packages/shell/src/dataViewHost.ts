@@ -641,7 +641,7 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
           broadcast();
           return;
         case "data-view/fill-row":
-          edits.fillRow(request.localId, request.values);
+          edits.fillRow(request.localId, request.values, request.unset ?? []);
           broadcast();
           return;
         case "data-view/discard":

@@ -79,8 +79,17 @@ export type DataViewRequest =
   /** Takes away every row of the selection, by identity. */
   | { type: "data-view/remove-rows"; rows: DataViewRowRemoval[] }
   | { type: "data-view/drop-row"; localId: string }
-  /** Fills columns of an added row; a paste arrives as one message, not one per column. */
-  | { type: "data-view/fill-row"; localId: string; values: Record<string, string | null> }
+  /**
+   * Fills columns of an added row; a paste arrives as one message, not one per column. A column a
+   * reader gives NULL is inserted as NULL; one named in `unset` is left out of the INSERT, so the
+   * database gives it whatever it would have given — a DEFAULT, a sequence, an identity.
+   */
+  | {
+      type: "data-view/fill-row";
+      localId: string;
+      values: Record<string, string | null>;
+      unset?: readonly string[];
+    }
   | { type: "data-view/discard" }
   | { type: "data-view/apply" }
   | { type: "data-view/copy"; text: string }
