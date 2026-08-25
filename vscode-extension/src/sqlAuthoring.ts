@@ -13,6 +13,10 @@ import {
   answerSyntaxRequest,
   type SqlAuthoringSyntaxRequest,
 } from "../../packages/sql/src/languageServer/answerSyntax.js";
+import {
+  createSqlAuthoringClient,
+  type SqlAuthoringClient,
+} from "../../packages/sql/src/languageServer/client.js";
 import { sqlAuthoringEditStillApplies } from "../../packages/sql/src/languageServer/composeRequest.js";
 import {
   type SqlAuthoringScope,
@@ -82,6 +86,12 @@ export interface SqlAuthoringRegistration extends vscode.Disposable {
     request: SqlAuthoringComposeRequest,
     token?: vscode.CancellationToken,
   ): Promise<SqlAuthoringComposeResult>;
+  /**
+   * Asks the server, through the client every surface of the Workbench asks it through. The caller
+   * says only how its own documents reach the server, because that is the one thing VS Code does
+   * differently from a host that runs the server itself.
+   */
+  ask(sync: (uri: string, text: string) => Promise<void>): SqlAuthoringClient;
 }
 
 export async function registerSqlAuthoring(
@@ -107,6 +117,8 @@ export async function registerSqlAuthoring(
     serverOptions,
     clientOptions,
   );
+  const legend = () =>
+    client.initializeResult?.capabilities.semanticTokensProvider?.legend.tokenTypes ?? [];
 
   client.onRequest(
     SQL_AUTHORING_PLPGSQL_TOKENS_REQUEST,
@@ -349,6 +361,7 @@ export async function registerSqlAuthoring(
             token,
           )
         : client.sendRequest<SqlAuthoringComposeResult>(SQL_AUTHORING_COMPOSE_REQUEST, request),
+    ask: (sync) => createSqlAuthoringClient({ connection: client, legend, sync }),
   };
 }
 

@@ -5,6 +5,7 @@ import type * as vscode from "vscode";
 import type { DataViewSource } from "../../../packages/rows/src/dataView/dataView.js";
 import type { DataViewResultSettings } from "../../../packages/rows/src/dataView/openRows.js";
 import type { SyntaxParser } from "../../../packages/sql/src/analysis/syntaxTree.js";
+import type { SqlAuthoringClient } from "../../../packages/sql/src/languageServer/client.js";
 import type {
   SqlAuthoringComposeRequest,
   SqlAuthoringComposeResult,
@@ -33,6 +34,11 @@ export interface DataViewHostServices {
   parser(): Promise<SyntaxParser>;
   /** Composes through the SQL authoring server: the same guarded entry a Scratchpad drop uses. */
   compose(request: SqlAuthoringComposeRequest): Promise<SqlAuthoringComposeResult>;
+  /**
+   * The client every surface asks the SQL authoring server through, told how this view's documents
+   * reach it. Undefined while the server is starting, or when it failed to start at all.
+   */
+  askAuthoring(sync: (uri: string, text: string) => Promise<void>): SqlAuthoringClient | undefined;
   authoringSnapshot(connectionId: string, database: string): SqlAuthoringSnapshot | undefined;
   authoringSettings(uri: string): SqlAuthoringSettings;
   queryFiles: DataViewQueryFileSystem;

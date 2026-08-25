@@ -221,9 +221,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
     status: "rejected",
     message: "The SQL authoring server is still starting.",
   });
+  // Nothing to ask until the server is up; a surface then falls back to what it can answer alone.
+  let askSqlAuthoring: SqlAuthoringRegistration["ask"] | undefined;
   const dataViews = new DataViewEditorProvider({
     parser: () => workbenchIndex.syntaxParser(),
     compose: (request) => composeSqlAuthoring(request),
+    askAuthoring: (sync) => askSqlAuthoring?.(sync),
     authoringSnapshot: (connectionId, database) =>
       workbenchIndex.sqlAuthoringSnapshot({ connectionId, database }),
     authoringSettings: (uri) => resolveSqlAuthoringSettings(uri),
@@ -574,6 +577,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
       (uri) => callSiteConnections.getDocument(uri),
     );
     composeSqlAuthoring = (request, token) => authoring.compose(request, token);
+    askSqlAuthoring = (sync) => authoring.ask(sync);
     context.subscriptions.push(authoring);
   } catch (error) {
     out.appendLine(

@@ -24,8 +24,8 @@ import type {
   DataViewState,
 } from "../../rows/src/dataView/dataViewProtocol.js";
 import { dataViewState } from "../../rows/src/dataView/dataViewState.js";
-import { localFilterCompletions } from "../../rows/src/dataView/filterCompletions.js";
-import { filterDraft, filterTokensOf } from "../../rows/src/dataView/filterTokens.js";
+import { dataViewFilterProposals } from "../../rows/src/dataView/filterCompletions.js";
+import { filterTokensOf } from "../../rows/src/dataView/filterTokens.js";
 import { HiddenColumns } from "../../rows/src/dataView/hiddenColumns.js";
 import { initialDataViewQuery } from "../../rows/src/dataView/initialProjection.js";
 import { openDataViewResult, TableAccents } from "../../rows/src/dataView/openRows.js";
@@ -417,17 +417,15 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
     analysis: SqlQueryAnalysis,
     text: string,
     offset: number,
-  ): Promise<DataViewCompletion[]> => {
-    if (!languageServer) return localFilterCompletions(analysis, text, offset);
-    const draft = filterDraft(query.text, analysis, text);
-    if (!draft) return localFilterCompletions(analysis, text, offset);
-    const proposals = await languageServer.complete(
-      `${queryUri}.filter`,
-      draft.text,
-      draft.start + Math.min(offset, text.length),
-    );
-    return proposals.length > 0 ? proposals : localFilterCompletions(analysis, text, offset);
-  };
+  ): Promise<DataViewCompletion[]> =>
+    dataViewFilterProposals({
+      queryText: query.text,
+      analysis,
+      text,
+      offset,
+      uri: `${queryUri}.filter`,
+      ask: languageServer,
+    });
 
   /** What the server makes of the names in a SQL text; nothing at all when no server answers. */
   const askTokens = async (uri: string, sql: string): Promise<DataViewSqlToken[]> =>

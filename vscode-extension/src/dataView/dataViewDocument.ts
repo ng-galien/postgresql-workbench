@@ -20,6 +20,7 @@ import type {
   DataViewState,
 } from "../../../packages/rows/src/dataView/dataViewProtocol.js";
 import { dataViewState } from "../../../packages/rows/src/dataView/dataViewState.js";
+import { dataViewFilterProposals } from "../../../packages/rows/src/dataView/filterCompletions.js";
 import { filterTokensOf } from "../../../packages/rows/src/dataView/filterTokens.js";
 import { HiddenColumns } from "../../../packages/rows/src/dataView/hiddenColumns.js";
 import { initialDataViewQuery } from "../../../packages/rows/src/dataView/initialProjection.js";
@@ -43,7 +44,7 @@ import {
 } from "../../../packages/rows/src/navigation.js";
 import type { OffsetResultSession } from "../../../packages/rows/src/offsetQuery.js";
 import type { SqlNotebookResultPayload } from "../../../packages/rows/src/resultPayload.js";
-import { namedSemanticTokens } from "../../../packages/sql/src/languageServer/protocol.js";
+import type { SqlAuthoringClient } from "../../../packages/sql/src/languageServer/client.js";
 import { type QueryRewrite, SqlQueryModel } from "../../../packages/sql/src/query/model.js";
 import type {
   SqlAuthoringDragPayload,
@@ -54,7 +55,6 @@ import { followLinkFromView } from "../followLink.js";
 import { configuredScratchpadStatementTimeoutMs } from "../scratchpad/scratchpadSettings.js";
 import { DATA_VIEW_SCRATCHES, dataViewQueryUri, dataViewScratchUri } from "./dataViewUri.js";
 import { exportAllRows, exportHeldRows, pickExportTarget } from "./exportResult.js";
-import { completeDataViewFilter } from "./filterCompletion.js";
 import { type DataViewHostServices, errorMessage } from "./hostServices.js";
 
 class LoadCancelledError extends Error {}
@@ -72,7 +72,7 @@ export class DataViewDocument implements vscode.CustomDocument {
   private readonly completionUri: vscode.Uri;
   private readonly tokensUri: vscode.Uri;
   private readonly filterTokensUri: vscode.Uri;
-  private legend?: Promise<readonly string[]>;
+  private client?: SqlAuthoringClient;
   private readonly query: SqlQueryModel;
   private readonly edits = new PendingEdits();
   private readonly accents = new TableAccents();
@@ -287,13 +287,13 @@ export class DataViewDocument implements vscode.CustomDocument {
       case "data-view/complete": {
         const analysis = this.query.analysis;
         const items = analysis
-          ? await completeDataViewFilter({
+          ? await dataViewFilterProposals({
               queryText: this.query.text,
               analysis,
-              completionUri: this.completionUri,
               text: request.text,
               offset: request.offset,
-              log: (line) => this.log(line),
+              uri: this.completionUri.toString(),
+              ask: this.authoring(),
             })
           : [];
         this.broadcast({ type: "data-view/completions", requestId: request.requestId, items });
@@ -386,37 +386,36 @@ export class DataViewDocument implements vscode.CustomDocument {
    * token number means nothing without it, and the kinds are the connection's to name.
    */
   private async semanticTokensOf(uri: vscode.Uri, sql: string): Promise<DataViewSqlToken[]> {
-    this.services.queryFiles.set(uri, sql);
-    const document = await vscode.workspace.openTextDocument(uri);
-    if (document.languageId !== "sql") {
-      await vscode.languages.setTextDocumentLanguage(document, "sql");
-    }
-    const [legend, answer] = await Promise.all([
-      this.tokenLegend(uri),
-      vscode.commands.executeCommand<vscode.SemanticTokens | undefined>(
-        "vscode.provideDocumentSemanticTokens",
-        uri,
-      ),
-    ]);
-    return namedSemanticTokens(answer?.data, legend);
+    return (await this.authoring()?.semanticTokens(uri.toString(), sql)) ?? [];
+  }
+
+  /**
+   * The client this view asks the language server through, and the one way its documents reach it:
+   * a real SQL document the server's own client already watches, holding exactly this text.
+   */
+  private authoring(): SqlAuthoringClient | undefined {
+    this.client ??= this.services.askAuthoring(async (uri, text) => {
+      const target = vscode.Uri.parse(uri);
+      this.services.queryFiles.set(target, text);
+      const document = await vscode.workspace.openTextDocument(target);
+      if (document.languageId !== "sql") {
+        await vscode.languages.setTextDocumentLanguage(document, "sql");
+      }
+      const held = document.getText();
+      if (held === text) return;
+      const edit = new vscode.WorkspaceEdit();
+      edit.replace(
+        target,
+        new vscode.Range(document.positionAt(0), document.positionAt(held.length)),
+        text,
+      );
+      await vscode.workspace.applyEdit(edit);
+    });
+    return this.client;
   }
 
   private scratchUris(): vscode.Uri[] {
     return DATA_VIEW_SCRATCHES.map((purpose) => dataViewScratchUri(this.source, purpose));
-  }
-
-  /**
-   * The kinds the provider numbers its tokens against. It does not change while a view is open, so
-   * it is asked for once instead of on every keystroke of the filter.
-   */
-  private async tokenLegend(uri: vscode.Uri): Promise<readonly string[]> {
-    this.legend ??= Promise.resolve(
-      vscode.commands.executeCommand<vscode.SemanticTokensLegend | undefined>(
-        "vscode.provideDocumentSemanticTokensLegend",
-        uri,
-      ),
-    ).then((legend): readonly string[] => legend?.tokenTypes ?? []);
-    return this.legend;
   }
 
   private async relationColumns(): Promise<string[]> {

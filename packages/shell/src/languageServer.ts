@@ -1,19 +1,27 @@
 import { spawn } from "node:child_process";
 import {
-  createMessageConnection,
-  type MessageConnection,
+  createProtocolConnection,
+  DidChangeTextDocumentNotification,
+  DidOpenTextDocumentNotification,
+  ExitNotification,
+  InitializedNotification,
+  InitializeRequest,
+  type InitializeResult,
+  type ProtocolConnection,
+  ShutdownRequest,
   StreamMessageReader,
   StreamMessageWriter,
-} from "vscode-jsonrpc/node";
-import type { DataViewCompletion } from "../../rows/src/dataView/dataView.js";
-import type { DataViewSqlToken } from "../../rows/src/dataView/dataViewProtocol.js";
+} from "vscode-languageserver-protocol/node";
 import type { SyntaxParser } from "../../sql/src/analysis/syntaxTree.js";
 import {
   answerSyntaxRequest,
   type SqlAuthoringSyntaxRequest,
 } from "../../sql/src/languageServer/answerSyntax.js";
 import {
-  namedSemanticTokens,
+  createSqlAuthoringClient,
+  type SqlAuthoringClient,
+} from "../../sql/src/languageServer/client.js";
+import {
   SQL_AUTHORING_CONTEXT_REQUEST,
   SQL_AUTHORING_SETTINGS_REQUEST,
   SQL_AUTHORING_SYNTAX_REQUEST,
@@ -22,65 +30,21 @@ import {
   DEFAULT_SQL_AUTHORING_SETTINGS,
   type SqlAuthoringSnapshot,
 } from "../../sql/src/snapshot.js";
-import {
-  offsetAtPosition,
-  positionAtOffset,
-  type TextPosition,
-} from "../../sql/src/text/positions.js";
 
 /**
- * The SQL authoring language server, spoken to directly. It is a Node process over stdio and needs
- * no VS Code — what VS Code supplies is the client, and this is one. It has no parser of its own,
- * so it asks its host back for the syntax of every document, which the shell answers with the same
- * function the extension answers with.
+ * The SQL authoring language server, run and spoken to without VS Code.
+ *
+ * It is a Node process over stdio, and this is the shape a host that is not VS Code takes: the
+ * process is started here, the protocol library carries the requests, and the answers are read by
+ * the one client every surface asks. What VS Code supplies is a client of the same protocol; it is
+ * one host of this server, not the condition for having one.
+ *
+ * The server has no parser of its own, so it asks its host back for the syntax of every document —
+ * answered here with the same function the extension answers with.
  */
-export interface SqlLanguageServer {
-  /** What the server proposes at `offset` of `text`, as the WHERE input shows proposals. */
-  complete(uri: string, text: string, offset: number): Promise<DataViewCompletion[]>;
-  /** What the server makes of the names in `text`: the tokens the SQL panel is coloured with. */
-  semanticTokens(uri: string, text: string): Promise<DataViewSqlToken[]>;
+export interface SqlLanguageServer extends SqlAuthoringClient {
   dispose(): Promise<void>;
 }
-
-interface CompletionItem {
-  label: string | { label: string };
-  insertText?: string;
-  detail?: string;
-  kind?: number;
-  textEdit?: { range: { start: TextPosition; end: TextPosition } };
-}
-
-interface InitializeResult {
-  capabilities?: { semanticTokensProvider?: { legend?: { tokenTypes?: string[] } } };
-}
-
-const COMPLETION_KINDS = [
-  "Text",
-  "Method",
-  "Function",
-  "Constructor",
-  "Field",
-  "Variable",
-  "Class",
-  "Interface",
-  "Module",
-  "Property",
-  "Unit",
-  "Value",
-  "Enum",
-  "Keyword",
-  "Snippet",
-  "Color",
-  "File",
-  "Reference",
-  "Folder",
-  "EnumMember",
-  "Constant",
-  "Struct",
-  "Event",
-  "Operator",
-  "TypeParameter",
-];
 
 export async function startSqlLanguageServer(options: {
   /** The bundled server to run. */
@@ -91,12 +55,11 @@ export async function startSqlLanguageServer(options: {
   const child = spawn(process.execPath, [options.serverPath, "--stdio"], {
     stdio: ["pipe", "pipe", "inherit"],
   });
-  const connection: MessageConnection = createMessageConnection(
+  const connection: ProtocolConnection = createProtocolConnection(
     new StreamMessageReader(child.stdout),
     new StreamMessageWriter(child.stdin),
   );
 
-  // The three questions the server sends back to whoever hosts it.
   connection.onRequest(SQL_AUTHORING_CONTEXT_REQUEST, () => ({
     status: "available" as const,
     snapshot: options.snapshot(),
@@ -107,7 +70,7 @@ export async function startSqlLanguageServer(options: {
   );
 
   connection.listen();
-  const initialized = await connection.sendRequest<InitializeResult>("initialize", {
+  const initialized: InitializeResult = await connection.sendRequest(InitializeRequest.type, {
     processId: process.pid,
     rootUri: null,
     capabilities: {
@@ -122,67 +85,39 @@ export async function startSqlLanguageServer(options: {
       },
     },
   });
-  await connection.sendNotification("initialized", {});
-  const legend = initialized.capabilities?.semanticTokensProvider?.legend?.tokenTypes ?? [];
+  await connection.sendNotification(InitializedNotification.type, {});
+  const legend = initialized.capabilities.semanticTokensProvider?.legend.tokenTypes ?? [];
 
   const open = new Set<string>();
   let version = 0;
 
-  const sync = async (uri: string, text: string) => {
-    version += 1;
-    if (open.has(uri)) {
-      await connection.sendNotification("textDocument/didChange", {
-        textDocument: { uri, version },
-        contentChanges: [{ text }],
+  const client = createSqlAuthoringClient({
+    connection,
+    legend: () => legend,
+    async sync(uri, text) {
+      version += 1;
+      if (open.has(uri)) {
+        await connection.sendNotification(DidChangeTextDocumentNotification.type, {
+          textDocument: { uri, version },
+          contentChanges: [{ text }],
+        });
+        return;
+      }
+      await connection.sendNotification(DidOpenTextDocumentNotification.type, {
+        textDocument: { uri, languageId: "sql", version, text },
       });
-      return;
-    }
-    await connection.sendNotification("textDocument/didOpen", {
-      textDocument: { uri, languageId: "sql", version, text },
-    });
-    open.add(uri);
-  };
+      open.add(uri);
+    },
+  });
 
   return {
-    async complete(uri, text, offset) {
-      await sync(uri, text);
-      const items = await connection.sendRequest<CompletionItem[] | { items: CompletionItem[] }>(
-        "textDocument/completion",
-        { textDocument: { uri }, position: positionAtOffset(text, offset) },
-      );
-      const list = Array.isArray(items) ? items : (items?.items ?? []);
-      return list.map((item) => proposal(item, text, offset));
-    },
-    async semanticTokens(uri, text) {
-      await sync(uri, text);
-      const answer = await connection.sendRequest<{ data: number[] } | null>(
-        "textDocument/semanticTokens/full",
-        { textDocument: { uri } },
-      );
-      return namedSemanticTokens(answer?.data, legend);
-    },
+    complete: client.complete,
+    semanticTokens: client.semanticTokens,
     async dispose() {
-      await connection.sendRequest("shutdown").catch(() => {});
+      await connection.sendRequest(ShutdownRequest.type, undefined).catch(() => {});
+      await connection.sendNotification(ExitNotification.type).catch(() => {});
       connection.dispose();
       child.kill();
     },
   };
-}
-
-function proposal(item: CompletionItem, text: string, offset: number): DataViewCompletion {
-  const label = typeof item.label === "string" ? item.label : item.label.label;
-  return {
-    label,
-    insertText: item.insertText ?? label,
-    ...(item.detail ? { detail: item.detail } : {}),
-    ...(item.kind ? { kind: COMPLETION_KINDS[item.kind - 1] ?? "Text" } : {}),
-    replaceLength: replacedLength(item, text, offset),
-  };
-}
-
-/** How much of what is typed a proposal replaces: what the server says, or the word at the caret. */
-function replacedLength(item: CompletionItem, text: string, offset: number): number {
-  const start = item.textEdit?.range.start;
-  if (start) return Math.max(0, offset - offsetAtPosition(text, start));
-  return /[\w$"]*$/u.exec(text.slice(0, offset))?.[0].length ?? 0;
 }
