@@ -26,7 +26,6 @@ import {
 import type {
   DataViewRequest,
   DataViewResponse,
-  DataViewSqlToken,
   DataViewState,
 } from "../../../rows/src/dataView/dataViewProtocol.js";
 import { READ_ONLY_REASONS } from "../../../rows/src/dataView/editability.js";
@@ -52,6 +51,7 @@ import { FilterHighlight, useScrollFollower } from "./FilterHighlight.js";
 import { useReorderable } from "./reorder.js";
 import { nextRequestId } from "./requests.js";
 import { SqlPanel } from "./SqlPanel.js";
+import { useSqlNames } from "./useSqlNames.js";
 
 /** What each kind of provisioned change is marked with, so the three are told apart at a glance. */
 const CHANGE_MARKS = { delete: "trash", insert: "add", update: "edit" } as const;
@@ -103,15 +103,14 @@ function FilterInput({
 }) {
   const [draft, setDraft] = useState(value);
   const [items, setItems] = useState<DataViewCompletion[]>([]);
-  const [named, setNamed] = useState<readonly DataViewSqlToken[]>([]);
   const [selected, setSelected] = useState(0);
   const [focused, setFocused] = useState(false);
   const requestId = useRef(0);
-  const tokenRequestId = useRef(0);
   const timer = useRef<number | undefined>(undefined);
   const textarea = useRef<HTMLTextAreaElement>(null);
   const highlight = useRef<HTMLDivElement>(null);
   const dirty = draft.trim() !== value.trim();
+  const named = useSqlNames(messaging, draft, "filter", COMPLETION_DEBOUNCE_MS);
 
   const followScroll = useScrollFollower(textarea, highlight, draft);
 
@@ -119,33 +118,9 @@ function FilterInput({
     if (!focused) setDraft(value);
   }, [value, focused]);
 
-  useEffect(() => {
-    tokenRequestId.current = nextRequestId();
-    const requested = tokenRequestId.current;
-    // Nothing typed, nothing to colour: an empty condition would cost a round trip to answer none.
-    if (draft.trim() === "") {
-      setNamed([]);
-      return;
-    }
-    const timer = window.setTimeout(
-      () =>
-        messaging.post({
-          type: "data-view/tokens",
-          requestId: requested,
-          of: { filter: draft },
-        }),
-      COMPLETION_DEBOUNCE_MS,
-    );
-    return () => window.clearTimeout(timer);
-  }, [draft, messaging]);
-
   useEffect(
     () =>
       messaging.subscribe((message) => {
-        if (message.type === "data-view/tokens" && message.requestId === tokenRequestId.current) {
-          setNamed(message.tokens);
-          return;
-        }
         if (message.type !== "data-view/completions" || message.requestId !== requestId.current) {
           return;
         }

@@ -1,12 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { DataViewSqlToken } from "../../../rows/src/dataView/dataViewProtocol.js";
+import { useMemo } from "react";
 import { useClipboardCopy } from "../clipboardCopy.js";
 import { IconButton } from "../results/IconButton.js";
 import { PostgresSourceView } from "../source/PostgresSourceView.js";
 import { withSemanticTokens } from "../source/semanticTokens.js";
 import { useHighlightedPostgresSource } from "../source/useHighlightedSource.js";
 import type { DataViewMessaging } from "./DataViewApp.js";
-import { nextRequestId } from "./requests.js";
+import { useSqlNames } from "./useSqlNames.js";
 
 /**
  * The SQL the view is running, read in the view. It opens and closes where the reader is, instead
@@ -29,27 +28,9 @@ export function SqlPanel({
   onClose: () => void;
 }) {
   const source = useHighlightedPostgresSource(sql);
-  const [named, setNamed] = useState<readonly DataViewSqlToken[]>([]);
-  const asked = useRef(0);
+  const named = useSqlNames(messaging, sql, "query");
   const painted = useMemo(() => withSemanticTokens(source, named), [source, named]);
   const clipboard = useClipboardCopy();
-
-  useEffect(
-    () =>
-      messaging.subscribe((message) => {
-        if (message.type === "data-view/tokens" && message.requestId === asked.current) {
-          setNamed(message.tokens);
-        }
-      }),
-    [messaging],
-  );
-
-  // biome-ignore lint/correctness/useExhaustiveDependencies: a new statement is what has to re-ask.
-  useEffect(() => {
-    setNamed([]);
-    asked.current = nextRequestId();
-    messaging.post({ type: "data-view/tokens", requestId: asked.current, of: "query" });
-  }, [sql, messaging]);
 
   return (
     <section className="data-view-sql" aria-label="Query SQL">
