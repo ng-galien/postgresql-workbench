@@ -267,8 +267,19 @@ export function dataViewRelationOwning(
 }
 
 /** One provisioned change, told the way a reader needs to read it back. */
+/**
+ * Which change a summary stands for, so a reader who reads the list can take one out of it. A
+ * summary otherwise holds only what to show — `id = 12` is a sentence, not a row it can be found by.
+ */
+export type DataViewChangeHandle =
+  | { of: "edit"; tableOid: number; key: (string | null)[]; ordinal: number }
+  | { of: "removal"; tableOid: number; key: (string | null)[] }
+  | { of: "insertion"; localId: string };
+
 export interface DataViewChangeSummary {
   kind: "update" | "delete" | "insert";
+  /** The change itself, to take it back out of what is waiting. */
+  handle: DataViewChangeHandle;
   /** `schema.name` of the table the change is written to, when the projection still holds it. */
   table: string;
   /** The row it lands on, by its key: `id = 12`, or `region = 'FR', year = '2026'`. */
@@ -306,9 +317,23 @@ export function describeDataViewChanges(
   };
   // In the order they are written: rows away, then cells, then rows added.
   return [
-    ...removals.map((removal) => ({ kind: "delete" as const, ...describe(removal) })),
+    ...removals.map((removal) => ({
+      kind: "delete" as const,
+      handle: {
+        of: "removal" as const,
+        tableOid: removal.tableOid,
+        key: [...removal.key],
+      },
+      ...describe(removal),
+    })),
     ...edits.map((edit) => ({
       kind: "update" as const,
+      handle: {
+        of: "edit" as const,
+        tableOid: edit.tableOid,
+        key: [...edit.key],
+        ordinal: edit.ordinal,
+      },
       ...describe(edit),
       column: edit.column,
       original: edit.original,
@@ -319,6 +344,7 @@ export function describeDataViewChanges(
       const filled = Object.entries(insertion.values);
       return {
         kind: "insert" as const,
+        handle: { of: "insertion" as const, localId: insertion.localId },
         table: describe({ tableOid: insertion.tableOid, key: [] }).table,
         // A row with nothing filled in is a row of defaults, which is worth saying out loud.
         row:

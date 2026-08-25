@@ -6,6 +6,7 @@ import type { ResultNavigationCommand } from "../navigation.js";
 import type { SqlNotebookResultPayload } from "../resultPayload.js";
 import type {
   DataViewAddition,
+  DataViewChangeHandle,
   DataViewCompletion,
   DataViewEdit,
   DataViewEditability,
@@ -90,6 +91,8 @@ export type DataViewRequest =
       values: Record<string, string | null>;
       unset?: readonly string[];
     }
+  /** Takes one change back out of what is waiting, leaving every other one held. */
+  | { type: "data-view/discard-change"; change: DataViewChangeHandle }
   | { type: "data-view/discard" }
   | { type: "data-view/apply" }
   | { type: "data-view/copy"; text: string }

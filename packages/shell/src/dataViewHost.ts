@@ -644,6 +644,10 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
           edits.fillRow(request.localId, request.values, request.unset ?? []);
           broadcast();
           return;
+        case "data-view/discard-change":
+          edits.discardChange(request.change);
+          broadcast();
+          return;
         case "data-view/discard":
           edits.clear();
           broadcast();

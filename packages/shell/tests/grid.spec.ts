@@ -189,6 +189,52 @@ test("tells apart the three things a cell of a new row can hold", async ({ page 
   await expect(page.locator("tbody tr", { hasText: mark })).toHaveCount(0);
 });
 
+test("takes one change back out of the list, and the rows follow", async ({ page }) => {
+  await openEmpty(page);
+  await add(page, "shop.address");
+  await enterEditMode(page);
+  const bar = editBar(page);
+  const city = (await columns(page)).find((column) => column.name === "city");
+  if (!city) throw new Error("The address view must show its city column");
+
+  const rows = page.locator("tbody tr:not(.result-spacer)");
+  const edited = rows.nth(0).locator(`td[data-column="${city.ordinal}"]`);
+  const held = (await edited.innerText()).trim();
+
+  // One of each kind waiting at once: a cell changed, a row going, a row arriving.
+  await edited.dblclick();
+  await page.keyboard.press("ControlOrMeta+a");
+  await page.keyboard.type("Marseille");
+  await page.keyboard.press("Enter");
+  await expect(edited).toHaveText("Marseille");
+  await selectRows(page, 2);
+  await bar.remove.click();
+  await expect(page.locator("tbody tr.removed")).toHaveCount(1);
+  await bar.add.click();
+  await expect(page.locator("tbody tr.added")).toHaveCount(1);
+
+  await bar.changes.click();
+  const dismiss = page.getByRole("menu").locator(".menu-note-dismiss");
+  await expect(dismiss).toHaveCount(3);
+
+  /*
+   * Reading the list is one thing; changing one's mind about a single line of it is another. What
+   * the grid draws is these three lists and nothing else, so taking one out puts the rows back as
+   * they were without the eight others being discarded with it.
+   */
+  await dismiss.nth(0).click();
+  await expect(page.locator("tbody tr.removed")).toHaveCount(0);
+
+  await dismiss.nth(0).click();
+  await expect(edited).toHaveText(held);
+
+  // The last one out closes the list: a drawer of changes with nothing left in it is not opened.
+  await dismiss.nth(0).click();
+  await expect(page.locator("tbody tr.added")).toHaveCount(0);
+  await expect(page.getByRole("menu")).toBeHidden();
+  await expect(bar.changes).toBeDisabled();
+});
+
 test("holds a row waiting to go still, and lets it be copied all the same", async ({ page }) => {
   await openEmpty(page);
   await add(page, "shop.address");

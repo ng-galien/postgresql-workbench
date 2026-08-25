@@ -1,6 +1,7 @@
 import type { Client } from "pg";
 import { countLabel } from "../countLabel.js";
 import {
+  type DataViewChangeHandle,
   type DataViewEdit,
   type DataViewEditability,
   type DataViewRowInsertion,
@@ -214,6 +215,27 @@ export class PendingEdits {
     if (!row) return;
     for (const [column, value] of Object.entries(values)) row.values[column] = value;
     for (const column of unset) delete row.values[column];
+  }
+
+  /**
+   * Takes one change back out of what is waiting, whichever kind it is. A reader who reads the list
+   * before committing to it should be able to change their mind about one line of it without
+   * discarding the eight others — and the grid answers straight away, because what it draws is
+   * these three lists and nothing else.
+   */
+  discardChange(change: DataViewChangeHandle): void {
+    if (change.of === "insertion") {
+      this.insertions = this.insertions.filter((row) => row.localId !== change.localId);
+      return;
+    }
+    const key = dataViewRowKey({ tableOid: change.tableOid, key: change.key });
+    if (change.of === "removal") {
+      this.removals = this.removals.filter((row) => dataViewRowKey(row) !== key);
+      return;
+    }
+    this.items = this.items.filter(
+      (edit) => !(dataViewRowKey(edit) === key && edit.ordinal === change.ordinal),
+    );
   }
 
   clear(): void {

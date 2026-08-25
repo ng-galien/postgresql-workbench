@@ -50,6 +50,8 @@ describe("provisioned changes", () => {
     expect(describeDataViewChanges([edit()], [], [], editability)).toEqual([
       {
         kind: "update",
+        // The change itself, so a reader who reads the list can take this one line out of it.
+        handle: { of: "edit", tableOid: 42, key: ["12"], ordinal: 3 },
         table: "shop.address",
         row: "id = 12",
         column: "city",
@@ -94,7 +96,14 @@ describe("provisioned row removals", () => {
   it("tells a whole row apart from a change to one of its cells", () => {
     const summaries = describeDataViewChanges([], [{ tableOid: 42, key: ["12"] }], [], editability);
 
-    expect(summaries).toEqual([{ kind: "delete", table: "shop.address", row: "id = 12" }]);
+    expect(summaries).toEqual([
+      {
+        kind: "delete",
+        handle: { of: "removal", tableOid: 42, key: ["12"] },
+        table: "shop.address",
+        row: "id = 12",
+      },
+    ]);
   });
 
   it("lists rows before cells, the order they are written in", () => {
@@ -123,7 +132,12 @@ describe("provisioned row insertions", () => {
     );
 
     expect(summaries).toEqual([
-      { kind: "insert", table: "shop.address", row: "city = Brest, label = Dépôt" },
+      {
+        kind: "insert",
+        handle: { of: "insertion", localId: "new-1" },
+        table: "shop.address",
+        row: "city = Brest, label = Dépôt",
+      },
     ]);
   });
 

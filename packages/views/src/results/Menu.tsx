@@ -35,7 +35,12 @@ export type MenuEntry =
     }
   | { kind: "check"; label: string; checked: boolean; disabled?: string; run(): void }
   | { kind: "group"; heading?: string; accent?: string; entries: readonly MenuEntry[] }
-  | { kind: "note"; content: ReactNode }
+  /**
+   * Something to read rather than to run — and, where what it describes can be taken back, one
+   * control to take it. The control is a menu item like any other, so the arrows reach it and
+   * Enter runs it: a list a reader can only act on with the pointer is half a list.
+   */
+  | { kind: "note"; content: ReactNode; dismiss?: { label: string; run(): void } }
   | { kind: "separator" };
 
 /** The entries a reader can act on: what the arrows walk, and what Enter runs. */
@@ -213,7 +218,25 @@ function MenuLine({
   onRun,
 }: { entry: MenuEntry } & Drawing) {
   if (entry.kind === "separator") return <hr className="menu-separator" />;
-  if (entry.kind === "note") return <div className="menu-note">{entry.content}</div>;
+  if (entry.kind === "note") {
+    return (
+      <div className="menu-note">
+        {entry.content}
+        {entry.dismiss ? (
+          <button
+            type="button"
+            role="menuitem"
+            className="menu-note-dismiss codicon codicon-close"
+            title={entry.dismiss.label}
+            aria-label={entry.dismiss.label}
+            /* The menu stays open: taking several changes out of the list is one gesture, and a
+               list with nothing left in it closes itself. */
+            onClick={() => entry.dismiss?.run()}
+          />
+        ) : null}
+      </div>
+    );
+  }
   if (entry.kind === "group") {
     return (
       <div

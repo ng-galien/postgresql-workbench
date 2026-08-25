@@ -1225,6 +1225,43 @@ tr.row-selected td:first-of-type {
   border-top: 1px solid var(--vscode-panel-border);
 }
 
+/*
+ * Something to read, and — where what it describes can be taken back — one control to take it,
+ * at the end of the line. Faint at rest so it does not compete with what the note says, and plain
+ * once the reader is on it, by pointer or by arrow.
+ */
+.menu-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.menu-note-dismiss {
+  flex: 0 0 auto;
+  align-self: center;
+  margin-right: 8px;
+  padding: 3px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--vscode-descriptionForeground);
+  cursor: pointer;
+  font-size: 13px;
+  opacity: 0.45;
+}
+
+.menu-note:hover .menu-note-dismiss,
+.menu-note-dismiss:hover,
+.menu-note-dismiss:focus-visible {
+  opacity: 1;
+}
+
+.menu-note-dismiss:hover,
+.menu-note-dismiss:focus-visible {
+  color: var(--vscode-foreground);
+  background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
+}
+
 .menu-heading {
   display: flex;
   align-items: center;

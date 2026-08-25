@@ -960,6 +960,10 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
           previous?.kind === change.kind;
         return {
           kind: "note",
+          dismiss: {
+            label: `Take this change out of what is waiting`,
+            run: () => post({ type: "data-view/discard-change", change: change.handle }),
+          },
           content: (
             <div className={`pending-edit ${change.kind}${sameRow ? " continues" : ""}`}>
               <span

@@ -364,6 +364,10 @@ export class DataViewDocument implements vscode.CustomDocument {
       case "data-view/open-sql":
         await this.services.openSql(this.source, this.query.effectiveSql());
         return;
+      case "data-view/discard-change":
+        this.edits.discardChange(request.change);
+        this.broadcastState();
+        return;
       case "data-view/discard":
       case "data-view/apply":
         // Routed by the provider: native save/revert or direct apply/discard.
