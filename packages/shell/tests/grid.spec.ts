@@ -218,6 +218,12 @@ test("gives a written column back to the default the table would have given it",
   await page.locator('.cell-editor button[title="Leave it to the database"]').click();
   await expect(status).toHaveText("DEFAULT");
 
+  // The list of what is waiting says the same thing the cell does, and not the NULL beside it.
+  await bar.changes.click();
+  await expect(page.getByRole("menu").locator(".pending-edit-value")).toHaveText("DEFAULT");
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("menu")).toBeHidden();
+
   await bar.apply.click();
   await expect(status).toHaveText("pending");
 

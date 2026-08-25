@@ -51,6 +51,9 @@ import { useReorderable } from "./reorder.js";
 import { nextRequestId } from "./requests.js";
 import { SqlPanel } from "./SqlPanel.js";
 
+/** What each kind of provisioned change is marked with, so the three are told apart at a glance. */
+const CHANGE_MARKS = { delete: "trash", insert: "add", update: "edit" } as const;
+
 export type DataViewMessaging = WebviewMessaging<DataViewRequest, DataViewResponse>;
 
 interface Notice {
@@ -948,34 +951,50 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
         state.removedRows,
         state.addedRows,
         state.editability,
-      ).map(
-        (change): MenuEntry => ({
+      ).map((change, index, all): MenuEntry => {
+        // Several cells of one row are one place, said once: the row above is where they all land.
+        const previous = all[index - 1];
+        const sameRow =
+          previous?.table === change.table &&
+          previous?.row === change.row &&
+          previous?.kind === change.kind;
+        return {
           kind: "note",
           content: (
-            <div className="pending-edit">
-              <span className="pending-edit-target">
-                {change.table} · {change.row}
-              </span>
-              {change.kind === "delete" ? (
-                <span className="pending-edit-change">
-                  <span className="pending-edit-removal">The whole row goes away</span>
-                </span>
-              ) : change.kind === "insert" ? (
-                <span className="pending-edit-change">
-                  <span className="pending-edit-insertion">A new row</span>
-                </span>
-              ) : (
-                <span className="pending-edit-change">
-                  <span className="pending-edit-column">{change.column}</span>
-                  <span className="pending-edit-original">{change.original ?? "NULL"}</span>
-                  <span className="codicon codicon-arrow-right" aria-hidden="true" />
-                  <span className="pending-edit-value">{change.value ?? "NULL"}</span>
-                </span>
-              )}
+            <div className={`pending-edit ${change.kind}${sameRow ? " continues" : ""}`}>
+              <span
+                className={`pending-edit-mark codicon codicon-${CHANGE_MARKS[change.kind]}`}
+                aria-hidden="true"
+              />
+              <div className="pending-edit-body">
+                {sameRow ? null : (
+                  <span className="pending-edit-target">
+                    {change.table} · {change.row}
+                  </span>
+                )}
+                {change.kind === "delete" ? (
+                  <span className="pending-edit-change">
+                    <span className="pending-edit-removal">The whole row goes away</span>
+                  </span>
+                ) : change.kind === "insert" ? (
+                  <span className="pending-edit-change">
+                    <span className="pending-edit-insertion">A new row</span>
+                  </span>
+                ) : (
+                  <span className="pending-edit-change">
+                    <span className="pending-edit-column">{change.column}</span>
+                    <span className="pending-edit-original">{change.original ?? "NULL"}</span>
+                    <span className="codicon codicon-arrow-right" aria-hidden="true" />
+                    <span className="pending-edit-value">
+                      {change.toDefault ? "DEFAULT" : (change.value ?? "NULL")}
+                    </span>
+                  </span>
+                )}
+              </div>
             </div>
           ),
-        }),
-      ),
+        };
+      }),
     },
   ];
 
@@ -1545,11 +1564,13 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
             title="More pages unavailable; refresh to retry"
           />
         ) : null}
-        <span className="data-view-rows-spacer" />
         {/*
           The value panel shows what a cell holds, so it belongs with the rows and not with the
-          view — beside the control that decides whether those rows may be written.
+          view — beside the control that decides whether those rows may be written, and beside the
+          arrows that move through them. Sent to the far edge they would be a journey to reach for
+          something a reader uses constantly.
         */}
+        <span className="data-view-rows-divider" aria-hidden="true" />
         <IconButton
           icon="inspect"
           label={
@@ -1576,6 +1597,7 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
             }}
           />
         ) : null}
+        <span className="data-view-rows-spacer" />
       </div>
       {/*
         The edit bar: what a reader has selected, what they can do to it, and what is waiting to be

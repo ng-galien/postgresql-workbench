@@ -109,11 +109,15 @@ export function Menu({
     const y = at.y + height > window.innerHeight - EDGE ? Math.max(EDGE, at.y - height) : at.y;
     /* A menu that already fits where it was asked for is not drawn a second time to say so. */
     setPlaced((current) => (current.x === x && current.y === y ? current : { x, y }));
-    /* Whoever holds the focus reads the keys: the field when there is one, the first entry else. */
+    /*
+     * Whoever holds the focus reads the keys: the field when there is one, the first entry else,
+     * and the menu itself when it holds neither. A menu of nothing but text to read still answers
+     * to Escape — one a reader can open and not close is worse than one that never opened.
+     */
     const first = walking
       ? element.querySelector<HTMLElement>(".menu-header :is(input, textarea, select)")
       : element.querySelector<HTMLElement>("[role=menuitem]:not(:disabled)");
-    first?.focus();
+    (first ?? element).focus();
     // The field is the caller's to render; it does not change which point the menu opened at.
   }, [at, walking]);
 
@@ -140,6 +144,7 @@ export function Menu({
         role="menu"
         aria-label={label}
         ref={menu}
+        tabIndex={-1}
         style={{ left: placed.x, top: placed.y }}
         onKeyDown={(event) =>
           walk(event, {

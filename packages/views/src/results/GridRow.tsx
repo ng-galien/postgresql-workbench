@@ -112,13 +112,17 @@ export function GridRow({
         }}
       >
         {subject.of === "added" ? (
-          <span className="row-gutter-state added" role="img" aria-label="New row">
-            ✚
-          </span>
+          <span
+            className="row-gutter-state added codicon codicon-add"
+            role="img"
+            aria-label="New row"
+          />
         ) : subject.removed ? (
-          <span className="row-gutter-state removed" role="img" aria-label="Row deleted">
-            ✕
-          </span>
+          <span
+            className="row-gutter-state removed codicon codicon-trash"
+            role="img"
+            aria-label="Row deleted"
+          />
         ) : (
           <span className="row-gutter-number">{subject.number}</span>
         )}

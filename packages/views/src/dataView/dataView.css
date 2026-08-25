@@ -360,6 +360,15 @@ body,
   background: var(--vscode-editor-background);
 }
 
+/* Between what moves through the rows and what is done to them: one hairline, the bar's own. */
+.data-view-rows-divider {
+  flex: 0 0 auto;
+  width: 1px;
+  height: 1.2em;
+  margin: 0 2px;
+  background: color-mix(in srgb, var(--vscode-foreground) 20%, transparent);
+}
+
 .data-view-rows-spacer {
   flex: 1;
 }
@@ -785,16 +794,50 @@ body,
  * The provisioned changes, read before they are written: what table and row each lands on, and
  * the value it replaces.
  */
+/*
+ * What is waiting to be written, as a list to read before committing to it. Each change wears the
+ * mark of what it is — a row going, a row arriving, a cell changing — so the three are told apart
+ * before a word is read. Several cells of one row say the row once and sit under it as a block.
+ */
 .pending-edit {
   display: flex;
-  max-width: 440px;
-  flex-direction: column;
-  padding: 4px 10px;
-  gap: 1px;
+  max-width: 460px;
+  align-items: flex-start;
+  padding: 5px 10px;
+  gap: 8px;
 }
 
-.pending-edit + .pending-edit {
+.pending-edit + .pending-edit:not(.continues) {
   border-top: 1px solid color-mix(in srgb, var(--vscode-foreground) 12%, transparent);
+}
+
+.pending-edit.continues {
+  padding-top: 0;
+}
+
+.pending-edit-mark {
+  flex: 0 0 auto;
+  margin-top: 0.15em;
+  font-size: 12px;
+  color: var(--vscode-descriptionForeground);
+  opacity: 0.7;
+}
+
+/* A row leaving is the one change that cannot be read back afterwards, so it is the one in colour. */
+.pending-edit.delete .pending-edit-mark {
+  color: var(--vscode-errorForeground, var(--vscode-descriptionForeground));
+  opacity: 1;
+}
+
+.pending-edit.continues .pending-edit-mark {
+  visibility: hidden;
+}
+
+.pending-edit-body {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
 }
 
 .pending-edit-target {
@@ -808,22 +851,36 @@ body,
 .pending-edit-change {
   display: flex;
   overflow: hidden;
-  align-items: center;
+  align-items: baseline;
   gap: 6px;
 }
 
 .pending-edit-column {
+  flex: 0 0 auto;
   font-weight: 600;
 }
 
 .pending-edit-original {
+  overflow: hidden;
   color: var(--vscode-descriptionForeground);
   text-decoration: line-through;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
+.pending-edit-change .codicon-arrow-right {
+  flex: 0 0 auto;
+  align-self: center;
+  font-size: 12px;
+  color: var(--vscode-descriptionForeground);
+  opacity: 0.7;
+}
+
+/* The value that will be written carries the weight; the one it replaces is struck through. */
 .pending-edit-value {
   overflow: hidden;
-  color: var(--vscode-charts-green, var(--vscode-foreground));
+  color: var(--vscode-foreground);
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -832,8 +889,9 @@ body,
   color: var(--vscode-errorForeground, var(--vscode-foreground));
 }
 
+/* The mark already says a row is arriving; saying it again in colour says nothing more. */
 .pending-edit-insertion {
-  color: var(--vscode-charts-green, var(--vscode-foreground));
+  color: var(--vscode-foreground);
 }
 
 /*

@@ -967,16 +967,35 @@ th.row-gutter.selected .row-gutter-number {
   opacity: 1;
 }
 
+/*
+ * What a row is waiting to become is said by the row, not by a mark in the gutter a reader has to
+ * go looking for. The gutter only stands in for the number the row has not got: quiet, and the same
+ * weight as the numbers above and below it.
+ */
 .row-gutter-state {
   line-height: 1;
+  /* Smaller than the body text, and as faint as the numbers it stands in for: a mark, not a badge. */
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  opacity: 0.6;
 }
 
-.row-gutter-state.removed {
-  color: var(--vscode-errorForeground);
+th.row-gutter.selected .row-gutter-state,
+th.row-gutter.in-selection .row-gutter-state {
+  opacity: 1;
 }
 
-.row-gutter-state.added {
-  color: var(--vscode-charts-green, var(--vscode-foreground));
+/* A row waiting to go is struck through until the change is applied, which is what it is. */
+tr.removed td,
+tr.removed th {
+  color: var(--vscode-descriptionForeground);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+/* A row waiting to be written is tinted, not coloured: it is neither an error nor a selection. */
+tr.added td {
+  background: color-mix(in srgb, var(--vscode-foreground) 6%, transparent);
 }
 
 /*

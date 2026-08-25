@@ -277,6 +277,8 @@ export interface DataViewChangeSummary {
   column?: string;
   original?: string | null;
   value?: string | null;
+  /** The column is given back to the table's own default, which is not the same as giving it NULL. */
+  toDefault?: true;
 }
 
 /**
@@ -311,6 +313,7 @@ export function describeDataViewChanges(
       column: edit.column,
       original: edit.original,
       value: edit.value,
+      ...(edit.toDefault ? { toDefault: edit.toDefault } : {}),
     })),
     ...insertions.map((insertion) => {
       const filled = Object.entries(insertion.values);
