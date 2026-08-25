@@ -1,6 +1,6 @@
 import {
+  demoConnectionTreeItem as connection,
   demoDatabaseTreeItem as database,
-  demoConnexionTreeItem as server,
 } from "../../fixtures/demoDatabase";
 import { expect, test } from "../../fixtures/test";
 import type { CockpitPage } from "../../pages/CockpitPage";
@@ -13,7 +13,12 @@ async function openCockpitFromTree(
   source: RegExp,
   expectedFocus: string,
 ): Promise<void> {
-  const schema = await workbench.tree.expandPath([server, database, SCHEMAS_TREE_ITEM, /^shop/]);
+  const schema = await workbench.tree.expandPath([
+    connection,
+    database,
+    SCHEMAS_TREE_ITEM,
+    /^shop/,
+  ]);
   const item = await workbench.tree.findChild(schema, source);
   await expect(item).toBeVisible({ timeout: 5_000 });
   await workbench.dragTreeItemToEditor(item);
@@ -43,7 +48,7 @@ test.describe("Workbench graph", () => {
 
     await test.step("drop product into the open Cockpit exactly like selecting it", async () => {
       const schema = await workbench.tree.expandPath([
-        server,
+        connection,
         database,
         SCHEMAS_TREE_ITEM,
         /^shop/,
@@ -63,7 +68,7 @@ test.describe("Workbench graph", () => {
 
     await test.step("reject a column without changing the current focus", async () => {
       const address = await workbench.tree.expandPath([
-        server,
+        connection,
         database,
         SCHEMAS_TREE_ITEM,
         /^shop/,

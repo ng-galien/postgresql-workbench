@@ -30,7 +30,7 @@ function result(id: string, payloadBytes = 100): DebugResult {
 }
 
 describe("DebugResultStore", () => {
-  it("attributes each result to the Connexion that produced it", () => {
+  it("attributes each result to the Connection that produced it", () => {
     const store = new DebugResultStore(2, 1_000);
     store.add(result("one"), "postgres@first:5432/demo");
     store.add(result("two"), "postgres@second:5432/demo");

@@ -1,7 +1,17 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, type Page, test } from "@playwright/test";
-import { ResultTable } from "../../views/testing/ResultTable.js";
+import {
+  add,
+  editBar,
+  enterEditMode,
+  openColumns,
+  openEmpty,
+  openExport,
+  putOnClipboard,
+  readClipboard,
+  selectRows,
+} from "./harness.js";
 import { EXPORTS } from "./playwright.config.js";
 
 /**
@@ -10,68 +20,6 @@ import { EXPORTS } from "./playwright.config.js";
  * joins from the database's own foreign keys. A view opens empty, the first relation added becomes
  * the base, and everything else composes onto it.
  */
-
-/** Opens an empty view: the shell is one running application, so each scenario starts it over. */
-async function openEmpty(page: Page) {
-  await page.request.post("/reset");
-  await page.goto("/");
-  await expect(page.getByText("The query is empty")).toBeVisible();
-}
-
-/** Adds a relation from the additions menu, and waits for what it composed to load. */
-async function add(page: Page, relation: string): Promise<ResultTable> {
-  await page.getByTitle(/Add (the first table|a column or a related table)/u).click();
-  await page.getByTitle(new RegExp(`^(Start the query with|JOIN) ${relation}(\\s|$)`, "u")).click();
-  await expect(page.getByTitle(new RegExp(`^${relation} — its columns`, "u"))).toBeVisible();
-  return new ResultTable(page);
-}
-
-/** Opens the columns menu, whose control names how many columns are hidden right now. */
-async function openColumns(page: Page) {
-  await page.getByTitle(/^(Show or hide columns|Columns \()/u).click();
-  await expect(page.getByRole("menu")).toBeVisible();
-}
-
-/** Turns editing on: the gutter, the edit bar and cell editing all follow that one control. */
-async function enterEditMode(page: Page) {
-  await page.getByTitle("Edit mode", { exact: true }).click();
-  await expect(page.getByRole("toolbar", { name: "Row editing" })).toBeVisible();
-}
-
-/** Selects whole rows the way a reader does: in the gutter, extending with shift. */
-/** Puts text on the clipboard the reader will paste from. */
-async function putOnClipboard(page: Page, text: string) {
-  await page.evaluate((value) => navigator.clipboard.writeText(value), text);
-}
-
-/** Reads back what the grid put on the clipboard. */
-function readClipboard(page: Page): Promise<string> {
-  return page.evaluate(() => navigator.clipboard.readText());
-}
-
-/** Opens the export dialog from the toolbar. */
-async function openExport(page: Page) {
-  await page.getByRole("button", { name: /Export rows to a file/u }).click();
-  await expect(page.getByRole("dialog", { name: "Export rows" })).toBeVisible();
-}
-
-async function selectRows(page: Page, first: number, last = first) {
-  const gutters = page.locator("tbody th.row-gutter");
-  await gutters.nth(first).click();
-  if (last !== first) await gutters.nth(last).click({ modifiers: ["Shift"] });
-}
-
-/** The edit bar's own controls, by the words on them. */
-function editBar(page: Page) {
-  const bar = page.getByRole("toolbar", { name: "Row editing" });
-  return {
-    selection: bar.locator(".edit-bar-selection"),
-    add: bar.getByRole("button", { name: /Add row/u }),
-    remove: bar.getByRole("button", { name: /Delete/u }),
-    changes: bar.locator(".edit-bar-button.count"),
-    apply: bar.getByRole("button", { name: /Apply/u }),
-  };
-}
 
 /** The SQL the view says it is running, read line by line out of its panel. */
 async function runningSql(page: Page): Promise<string> {
@@ -338,7 +286,7 @@ test("opens an address with the chord, and selects the cell without it", async (
   await openEmpty(page);
   const table = await add(page, "shop.brand");
 
-  const link = page.locator("a.cell-link").first();
+  const link = page.locator(".cell-link").first();
   await expect(link).toHaveAttribute("title", /(Cmd|Ctrl)\+click to open https:/u);
 
   /*
@@ -349,8 +297,11 @@ test("opens an address with the chord, and selects the cell without it", async (
   await expect(page).toHaveURL(/localhost/u);
   await expect(table.cellsWithText("https://example.test/fumoir").first()).toHaveClass(/selected/u);
 
-  // The grid is one stop in the tabbing order: the keys reach the link through the cell menu.
-  await expect(link).toHaveAttribute("tabindex", "-1");
+  // It is marked text, not a false native link: the keys reach Open through the cell menu.
+  await expect(link).not.toHaveAttribute("href");
+  await expect(
+    table.cellsWithText("https://example.test/fumoir").first().getByRole("button"),
+  ).toHaveCount(0);
 
   /*
    * And the chord goes there. Asserting only what is refused is how a link that never opened at
@@ -363,21 +314,97 @@ test("opens an address with the chord, and selects the cell without it", async (
   );
 });
 
-test("takes a plain click on the mark a link cell carries", async ({ page }) => {
+test("inspects a timestamp as PostgreSQL text, not as JSON", async ({ page }) => {
   await openEmpty(page);
-  const table = await add(page, "shop.brand");
+  const table = await add(page, "shop.address");
 
-  /* The chord is not something a reader guesses, so the cell carries a target of its own. */
-  const cell = table.cellsWithText("https://example.test/fumoir").first();
-  await cell.hover();
-  const open = cell.getByRole("button", { name: /^Open https:/u });
-  await expect(open).toBeVisible();
+  await table.cell(0, 7).click();
+  const inspectorToggle = page.getByTitle("Show the value under the cursor, whole");
+  await inspectorToggle.click();
 
-  await open.click();
-  await expect(page.locator("body")).toHaveAttribute(
-    "data-followed-link",
-    "https://example.test/fumoir",
+  const inspector = page.getByRole("complementary", { name: "Value of created_at" });
+  const activeInspectorToggle = page.getByTitle("Stop showing the value under the cursor");
+  await expect(activeInspectorToggle).toHaveAttribute("aria-expanded", "true");
+  await expect(activeInspectorToggle).toHaveAttribute(
+    "aria-controls",
+    await inspector.getAttribute("id"),
   );
+  await expect(inspector.locator(".cell-inspector-text")).toContainText(/^\d{4}-\d{2}-\d{2}[ T]/u);
+  await expect(inspector.locator(".cell-inspector-json")).toHaveCount(0);
+  await expect(inspector).not.toContainText("Not valid JSON");
+  const scrollerHeight = await page
+    .locator(".result-scroller")
+    .evaluate((element) => element.clientHeight);
+  const scrollbarHeight = await page
+    .locator(".result-scrollbar")
+    .evaluate((element) => element.clientHeight);
+  expect(Math.abs(scrollbarHeight - scrollerHeight)).toBeLessThanOrEqual(1);
+
+  const before = await inspector.boundingBox();
+  const handle = inspector.getByTitle("Drag to move");
+  const handleBounds = await handle.boundingBox();
+  if (!before || !handleBounds) throw new Error("The value inspector must expose its move handle");
+  await page.mouse.move(
+    handleBounds.x + handleBounds.width / 2,
+    handleBounds.y + handleBounds.height / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(handleBounds.x - 100, handleBounds.y + handleBounds.height / 2, {
+    steps: 6,
+  });
+  await page.mouse.up();
+  const moved = await inspector.boundingBox();
+  expect(moved?.x).toBeLessThan(before.x - 70);
+
+  await handle.focus();
+  await handle.press("ArrowLeft");
+  expect((await inspector.boundingBox())?.x).toBeLessThan((moved?.x ?? 0) - 10);
+
+  const resize = inspector.getByRole("button", { name: "Resize the value panel (arrow keys)" });
+  const beforeKeyboardResize = await inspector.boundingBox();
+  await resize.focus();
+  await resize.press("ArrowRight");
+  await resize.press("ArrowDown");
+  const keyboardResized = await inspector.boundingBox();
+  expect(keyboardResized?.width).toBeGreaterThan((beforeKeyboardResize?.width ?? 0) + 10);
+  expect(keyboardResized?.height).toBeGreaterThan((beforeKeyboardResize?.height ?? 0) + 10);
+
+  const resizeBounds = await resize.boundingBox();
+  if (!resizeBounds) throw new Error("The value inspector must expose its resize handle");
+  const beforePointerResize = await inspector.boundingBox();
+  if (!beforePointerResize) throw new Error("The value inspector must have visible bounds");
+  await page.mouse.move(resizeBounds.x + 3, resizeBounds.y + 3);
+  await page.mouse.down();
+  await page.mouse.move(-200, resizeBounds.y - 100, { steps: 6 });
+  await page.mouse.up();
+  expect((await inspector.boundingBox())?.height).toBeGreaterThan(beforePointerResize.height + 70);
+  const frame = inspector.locator("xpath=..");
+  await expect
+    .poll(async () => {
+      const panelBounds = await inspector.boundingBox();
+      const frameBounds = await frame.boundingBox();
+      if (!panelBounds || !frameBounds) return false;
+      return (
+        panelBounds.x >= frameBounds.x - 1 &&
+        panelBounds.y >= frameBounds.y - 1 &&
+        panelBounds.x + panelBounds.width <= frameBounds.x + frameBounds.width + 1 &&
+        panelBounds.y + panelBounds.height <= frameBounds.y + frameBounds.height + 1
+      );
+    })
+    .toBe(true);
+  await page.setViewportSize({ width: 700, height: 720 });
+  await expect
+    .poll(async () => {
+      const panelBounds = await inspector.boundingBox();
+      const frameBounds = await frame.boundingBox();
+      if (!panelBounds || !frameBounds) return false;
+      return panelBounds.x + panelBounds.width <= frameBounds.x + frameBounds.width + 1;
+    })
+    .toBe(true);
+  await inspector.getByRole("button", { name: "Close the value panel" }).click();
+  await expect(inspector).toBeHidden();
+  await expect(inspectorToggle).toBeFocused();
+  await expect(inspectorToggle).toHaveAttribute("aria-expanded", "false");
 });
 
 test("opens the menu of the cell the box is on, from the keys alone", async ({ page }) => {
@@ -414,9 +441,9 @@ test("shows the way across a result wider than the pane", async ({ page }) => {
   /*
    * Rows are loaded as a reader walks them, so the bar beside them is drawn by hand — but every
    * column is already there, and the browser's own bar is what says a result runs past the edge.
-   * `scrollbar-width: none` hides both axes, and hiding the one down the rows took this one with
-   * it. Whether a bar takes room on screen is the browser's business — some overlay it — so what
-   * is checked here is that nothing asks for it to be gone.
+   * `scrollbar-width: none` hides both axes. The grid therefore hides native vertical interaction
+   * with `overflow-y`, while preserving the browser's horizontal bar. The result's own vertical
+   * control is the only one a reader should see beside the rows.
    */
   const across = await page.locator(".result-scroller").evaluate((element) => {
     const style = getComputedStyle(element);
@@ -424,14 +451,33 @@ test("shows the way across a result wider than the pane", async ({ page }) => {
       overflows: element.scrollWidth > element.clientWidth,
       hiding: style.scrollbarWidth,
       overflowX: style.overflowX,
+      overflowY: style.overflowY,
     };
   });
 
   expect(across.overflows).toBe(true);
   expect(across.overflowX).toBe("auto");
   expect(across.hiding).not.toBe("none");
+  expect(across.overflowY).toBe("hidden");
   // And the one down the rows is still the hand-drawn one.
   await expect(page.locator(".result-scrollbar")).toBeVisible();
+  const scroller = page.locator(".result-scroller");
+  const diagonalLeft = await scroller.evaluate((element) => {
+    element.scrollLeft = 0;
+    element.dispatchEvent(
+      new WheelEvent("wheel", { bubbles: true, cancelable: true, deltaX: 80, deltaY: 20 }),
+    );
+    return element.scrollLeft;
+  });
+  expect(diagonalLeft).toBeGreaterThan(0);
+  const shiftedLeft = await scroller.evaluate((element) => {
+    element.scrollLeft = 0;
+    element.dispatchEvent(
+      new WheelEvent("wheel", { bubbles: true, cancelable: true, deltaY: 80, shiftKey: true }),
+    );
+    return element.scrollLeft;
+  });
+  expect(shiftedLeft).toBeGreaterThan(0);
 });
 
 test("gives a column the width the reader drags it to, and takes it back", async ({ page }) => {
@@ -679,22 +725,62 @@ test("pages a relation too large to load at once, and loads the rest on demand",
    * is asserted is the text of that slot and, just as much, that the arrows do not move.
    */
   const summary = page.locator(".result-navigation-summary");
+  const navigation = page.locator(".result-navigation");
   const nextArrow = page.locator('.data-view-rows-line button[title="Next page"]');
   const where = () => nextArrow.evaluate((b) => Math.round(b.getBoundingClientRect().x));
-  await expect(summary).toHaveText("1–200 / ?");
+  const navigationWidth = () =>
+    navigation.evaluate((element) => Math.round(element.getBoundingClientRect().width));
+  await expect(summary).toHaveText("1–200");
   const arrowAt = await where();
+  const widthBeforePaging = await navigationWidth();
 
   await rows.next();
-  await expect(summary).toHaveText("201–400 / ?");
+  await expect(page.getByTitle("Cancel loading")).toBeVisible();
   expect(await where()).toBe(arrowAt);
+  expect(await navigationWidth()).toBe(widthBeforePaging);
+  await expect(summary).toHaveText("201–400");
+  expect(await where()).toBe(arrowAt);
+  expect(await navigationWidth()).toBe(widthBeforePaging);
   await rows.previous();
-  await expect(summary).toHaveText("1–200 / ?");
+  await expect(nextArrow).toBeDisabled();
+  await expect(page.getByTitle("Cancel loading")).toHaveCount(0);
+  await expect(summary).toHaveText("1–200");
   expect(await where()).toBe(arrowAt);
+  expect(await navigationWidth()).toBe(widthBeforePaging);
 
   await rows.loadAll();
+  await expect(page.getByTitle("Cancel loading")).toBeVisible();
+  expect(await navigationWidth()).toBe(widthBeforePaging);
   // The whole table, however many rows the seed holds and whatever a reader has since deleted:
   // what matters is that nothing is left to fetch.
   await expect(summary).toHaveText(/^\d+$/u, { timeout: 20_000 });
+  expect(await navigationWidth()).toBe(widthBeforePaging);
+
+  const largeRange = await summary.evaluate((element) => {
+    element.textContent = "99999901–100000000";
+    const next = element.nextElementSibling;
+    const bounds = element.getBoundingClientRect();
+    const nextBounds = next?.getBoundingClientRect();
+    return {
+      clipped: element.scrollWidth > element.clientWidth,
+      clearsNext: nextBounds !== undefined && bounds.right <= nextBounds.left,
+    };
+  });
+  expect(largeRange).toEqual({ clipped: true, clearsNext: true });
+});
+
+test("cancels a delayed page read without reporting a second session error", async ({ page }) => {
+  await openEmpty(page);
+  const rows = await add(page, "shop.inventory_movement");
+
+  await rows.next();
+  await expect(page.getByTitle("Cancel loading")).toBeVisible();
+  await rows.cancel();
+  await expect(page.locator(".data-view-statusline-text")).toHaveText(
+    "Loading cancelled. Refresh to load the rows again.",
+  );
+  await page.waitForTimeout(300);
+  await expect(page.getByText(/This SQL result is closed/u)).toHaveCount(0);
 });
 
 test("hides the key columns a reader has no use for, and offers them back", async ({ page }) => {
@@ -826,7 +912,7 @@ test("moves rows out through a dialog of their own", async ({ page }) => {
   const dialog = page.getByRole("dialog", { name: "Export rows" });
   // Which rows, which shape, and what that gives — three questions, not six near-identical lines.
   await expect(dialog.getByRole("radio", { name: /The rows loaded/u })).toBeVisible();
-  await expect(dialog.getByRole("radio", { name: /Every row of the query/u })).toBeVisible();
+  await expect(dialog.getByRole("radio", { name: /Entire query/u })).toBeVisible();
   await expect(dialog.getByRole("radio", { name: "CSV" })).toBeVisible();
   await expect(dialog.locator(".export-preview")).not.toBeEmpty();
 
@@ -956,9 +1042,9 @@ test("selects rows in the gutter and takes them away together", async ({ page })
   await enterEditMode(page);
   const bar = editBar(page);
 
-  // Edit mode opens with the cursor on the first cell, and says so — a grid always has one. A
-  // cell is not a row, so there is still nothing to delete.
-  await expect(bar.selection).toHaveText("1 row × 1 column");
+  // The keyboard cursor starts in the first cell, but it is not an actionable selection until the
+  // reader explicitly picks cells or rows.
+  await expect(bar.selection).toHaveText("Nothing selected");
   await expect(bar.remove).toBeDisabled();
 
   await selectRows(page, 1, 3);
@@ -967,6 +1053,15 @@ test("selects rows in the gutter and takes them away together", async ({ page })
   await expect(page.locator("th.row-gutter.selected")).toHaveCount(3);
   // The band reads across every column, not only down the gutter.
   await expect(page.locator("tbody tr.row-selected")).toHaveCount(3);
+  await expect(bar.remove).toBeEnabled();
+
+  // A server sort replaces the rows under their coordinates, so it must clear the selection
+  // before those coordinates could designate different database keys.
+  await page.locator("button.column-sort").first().click();
+  await expect(bar.selection).toHaveText("Nothing selected");
+  await expect(bar.remove).toBeDisabled();
+
+  await selectRows(page, 1, 3);
   await expect(bar.remove).toBeEnabled();
 
   await bar.remove.click();
@@ -1260,7 +1355,8 @@ test("shows what an export will give, before it is written", async ({ page }) =>
   await add(page, "shop.address");
 
   await selectRows(page, 2, 4);
-  await openExport(page);
+  const opener = page.getByRole("button", { name: "Export rows to a file…" });
+  await opener.click();
 
   // The reader's selection is the scope offered first, and it says how much it covers.
   const dialog = page.getByRole("dialog", { name: "Export rows" });
@@ -1271,6 +1367,9 @@ test("shows what an export will give, before it is written", async ({ page }) =>
   const preview = dialog.locator(".export-preview");
   await expect(preview).toContainText("label,line1");
   expect((await preview.textContent())?.trim().split("\n")).toHaveLength(4);
+  await dialog.getByRole("button", { name: "Copy preview" }).click();
+  expect(await readClipboard(page)).toBe(await preview.textContent());
+  await expect(dialog.getByRole("button", { name: "Preview copied" })).toBeVisible();
 
   /*
    * And the panel does not move as the reader tries the shapes. It hangs from the top and keeps
@@ -1283,10 +1382,16 @@ test("shows what an export will give, before it is written", async ({ page }) =>
   // A different shape, the same rows, read back before anything is written.
   await dialog.getByRole("radio", { name: "Markdown" }).check();
   expect(await where()).toBe(before);
-  await expect(preview).toContainText("|---");
+  await expect(preview).toContainText("| ---");
   await dialog.getByRole("radio", { name: "JSON" }).check();
   await expect(preview).toContainText('"label"');
   expect(await where()).toBe(before);
+  await dialog.getByRole("button", { name: "Export" }).focus();
+  await page.keyboard.press("Tab");
+  await expect(dialog.getByRole("button", { name: "Close" })).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(opener).toBeFocused();
 });
 
 test("offers no INSERT statements where no one table owns the rows", async ({ page }) => {
@@ -1304,7 +1409,7 @@ test("offers no INSERT statements where no one table owns the rows", async ({ pa
   // offering a shape it would refuse afterwards.
   const joined = page.getByRole("dialog", { name: "Export rows" });
   await expect(joined.getByRole("radio", { name: "SQL" })).toBeDisabled();
-  await expect(joined.getByText(/INSERT statements need one table/u)).toBeVisible();
+  await expect(joined.getByText("Requires a single table.")).toBeVisible();
 });
 
 test("writes the rows the reader picked out, in the shape they chose", async ({ page }) => {
@@ -1315,7 +1420,9 @@ test("writes the rows the reader picked out, in the shape they chose", async ({ 
   await openExport(page);
   const dialog = page.getByRole("dialog", { name: "Export rows" });
   await dialog.getByRole("radio", { name: "TSV" }).check();
-  const written = (await dialog.locator(".export-preview").textContent()) ?? "";
+  const preview = dialog.locator(".export-preview");
+  await expect(preview).toContainText("label\tline1");
+  const written = (await preview.textContent()) ?? "";
   await dialog.getByRole("button", { name: "Export" }).click();
 
   await expect(page.locator(".data-view-statusline-text")).toContainText(/Exported 2 rows/u);

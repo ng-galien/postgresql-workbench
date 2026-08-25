@@ -1,6 +1,6 @@
 import {
+  demoConnectionTreeItem as connection,
   demoDatabaseTreeItem as database,
-  demoConnexionTreeItem as server,
 } from "../../fixtures/demoDatabase";
 import { expect, test } from "../../fixtures/test";
 
@@ -9,7 +9,7 @@ test.describe("Workbench virtual source cleanup", () => {
     workbench,
     vscode,
   }) => {
-    await workbench.openIndexedDefinition(server, database, /^shop/, /^address$/);
+    await workbench.openIndexedDefinition(connection, database, /^shop/, /^address$/);
 
     const sourceTab = workbench.page.getByRole("tab", { name: "address, preview" });
     await expect(sourceTab).toBeVisible({ timeout: 5_000 });

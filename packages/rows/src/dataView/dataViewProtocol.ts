@@ -1,3 +1,4 @@
+import type { DebugResultCell } from "../../../dap/src/debugger/launch/index.js";
 import type { NamedSqlToken } from "../../../sql/src/languageServer/protocol.js";
 import type { DataViewExportChoice, DataViewExportScope } from "../export.js";
 import type { FollowLinkRequest } from "../followLink.js";
@@ -5,6 +6,7 @@ import type { ResultNavigationCommand } from "../navigation.js";
 import type { SqlNotebookResultPayload } from "../resultPayload.js";
 import type {
   DataViewAddition,
+  DataViewChangeHandle,
   DataViewCompletion,
   DataViewEdit,
   DataViewEditability,
@@ -22,7 +24,7 @@ export type DataViewStatus = "loading" | "ready" | "error";
 
 export interface DataViewState {
   source: DataViewSource;
-  serverName: string;
+  connectionName: string;
   query: DataViewQueryInfo;
   projection: DataViewProjection;
   status: DataViewStatus;
@@ -35,6 +37,8 @@ export interface DataViewState {
   /** Rows the reader added, not in the database until the changes are applied. */
   addedRows: DataViewRowInsertion[];
   busy: boolean;
+  /** A PostgreSQL page read is active and can be stopped without misrepresenting another action. */
+  cancellable: boolean;
   applying: boolean;
 }
 
@@ -76,11 +80,29 @@ export type DataViewRequest =
   /** Takes away every row of the selection, by identity. */
   | { type: "data-view/remove-rows"; rows: DataViewRowRemoval[] }
   | { type: "data-view/drop-row"; localId: string }
-  /** Fills columns of an added row; a paste arrives as one message, not one per column. */
-  | { type: "data-view/fill-row"; localId: string; values: Record<string, string | null> }
+  /**
+   * Fills columns of an added row; a paste arrives as one message, not one per column. A column a
+   * reader gives NULL is inserted as NULL; one named in `unset` is left out of the INSERT, so the
+   * database gives it whatever it would have given — a DEFAULT, a sequence, an identity.
+   */
+  | {
+      type: "data-view/fill-row";
+      localId: string;
+      values: Record<string, string | null>;
+      unset?: readonly string[];
+    }
+  /** Takes one change back out of what is waiting, leaving every other one held. */
+  | { type: "data-view/discard-change"; change: DataViewChangeHandle }
   | { type: "data-view/discard" }
   | { type: "data-view/apply" }
   | { type: "data-view/copy"; text: string }
+  | {
+      type: "data-view/inspect";
+      requestId: number;
+      page: { start: number; length: number };
+      row: number;
+      ordinal: number;
+    }
   /** A Workbench tree item was dropped on the view: compose it into the query. */
   | { type: "data-view/drop-tree" }
   /* Following an address a cell holds; the same request every result surface sends. */
@@ -93,6 +115,13 @@ export type DataViewRequest =
        * Which rows and columns the reader picked out, counted as the grid shows them. The host
        * knows the rows and the order they are in; only what is selected lives in the view.
        */
+      selected?: { from: number; to: number; ordinals: number[] };
+    }
+  | {
+      type: "data-view/export-preview";
+      requestId: number;
+      choice: DataViewExportChoice;
+      scope: DataViewExportScope;
       selected?: { from: number; to: number; ordinals: number[] };
     }
   | { type: "data-view/open-sql" }
@@ -111,6 +140,8 @@ export type DataViewSqlToken = NamedSqlToken;
 
 export type DataViewResponse =
   | { type: "data-view/state"; state: DataViewState }
+  | { type: "data-view/inspected"; requestId: number; cell?: DebugResultCell }
+  | { type: "data-view/export-preview"; requestId: number; text: string }
   | { type: "data-view/additions"; items: DataViewAddition[] }
   /** Several JOIN paths lead to the addition: the user picks one, in the view. */
   | {

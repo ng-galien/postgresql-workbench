@@ -3,47 +3,47 @@ import type { SqlNotebookResultPayload } from "../../../rows/src/resultPayload.j
 import {
   formattedCellValue,
   nextResultSort,
-  resultAsTsv,
+  resultRowRange,
   resultSortNotice,
   sortedResultRows,
 } from "./resultFormatting.js";
 
 const TEST_BINDING = {
-  serverId: "test-server",
-  serverName: "Test PostgreSQL",
+  connectionId: "test-connection",
+  connectionName: "Test PostgreSQL",
   database: "testdb",
 };
 
 describe("SQL notebook result formatting", () => {
+  it("shows a known page total while leaving an unknown total absent", () => {
+    const payload = {
+      columns: [],
+      rows: [],
+      capturedRowCount: 200,
+      truncated: false,
+      truncationReasons: [],
+      navigation: {
+        sessionId: "result-1",
+        mode: "paged" as const,
+        pageIndex: 0,
+        pageSize: 200,
+        pageStart: 1,
+        pageEnd: 200,
+        loadedRowCount: 201,
+        hasPrevious: false,
+        hasNext: true,
+        canLoadAll: true,
+      },
+    };
+
+    expect(resultRowRange(payload)).toBe("1–200");
+    expect(resultRowRange({ ...payload, rowCount: 350 })).toBe("1–200 / 350");
+  });
+
   it("formats structured JSON for inspection", () => {
     expect(formattedCellValue({ kind: "json", value: '{"answer":42}' })).toBe(
       '{\n  "answer": 42\n}',
     );
-  });
-
-  it("keeps null distinct and neutralizes spreadsheet formulas", () => {
-    const payload: SqlNotebookResultPayload = {
-      version: 2,
-      binding: TEST_BINDING,
-      command: "SELECT",
-      columns: [
-        { name: "formula", dataTypeId: 25 },
-        { name: "missing", dataTypeId: 25 },
-      ],
-      rows: [
-        [
-          { kind: "text", value: "=1+1" },
-          { kind: "null", value: null },
-        ],
-      ],
-      rowCount: 1,
-      capturedRowCount: 1,
-      durationMs: 1,
-      truncated: false,
-      truncationReasons: [],
-    };
-
-    expect(resultAsTsv(payload)).toBe("formula\tmissing\n'=1+1\t\\N");
   });
 
   it("sorts captured rows by typed column without mutating their source order", () => {
@@ -109,7 +109,8 @@ describe("SQL notebook result formatting", () => {
 
   it("describes whether sorting uses a partial row set or truncated values", () => {
     const base: SqlNotebookResultPayload = {
-      version: 2,
+      version: 3,
+      kind: "rowset",
       binding: TEST_BINDING,
       command: "SELECT",
       columns: [],

@@ -1,10 +1,17 @@
-import { type KeyboardEvent, useEffect, useRef, useState } from "react";
+import { type ChangeEvent, type KeyboardEvent, useEffect, useRef, useState } from "react";
 import type { DataViewValueEditor } from "../../../rows/src/dataView/dataView.js";
 
 export interface CellEditorProps {
   editor: DataViewValueEditor;
   value: string | null;
+  /** Whether the reader has given this column anything, NULL included. A loaded row always has. */
+  given: boolean;
   onCommit(value: string | null): void;
+  /**
+   * Leaves the column out of the INSERT, so the table gives it whatever it would have given. Only
+   * a row being added has this state; a loaded row already holds something, if only NULL.
+   */
+  onLeaveToDatabase?: () => void;
   onCancel(): void;
 }
 
@@ -44,14 +51,27 @@ export function validateCellValue(editor: DataViewValueEditor, value: string): s
   return undefined;
 }
 
-export function CellEditor({ editor, value, onCommit, onCancel }: CellEditorProps) {
+export function CellEditor({
+  editor,
+  value,
+  given,
+  onCommit,
+  onLeaveToDatabase,
+  onCancel,
+}: CellEditorProps) {
   const [draft, setDraft] = useState(value ?? "");
   const [error, setError] = useState<string>();
+  const typed = useRef(false);
   const input = useRef<HTMLInputElement & HTMLSelectElement & HTMLTextAreaElement>(null);
   useEffect(() => {
     input.current?.focus();
     input.current?.select?.();
   }, []);
+
+  const onDraft = (event: ChangeEvent<HTMLTextAreaElement | HTMLInputElement>) => {
+    typed.current = true;
+    setDraft(event.target.value);
+  };
 
   const commit = (next: string | null) => {
     if (next !== null) {
@@ -63,6 +83,18 @@ export function CellEditor({ editor, value, onCommit, onCancel }: CellEditorProp
     }
     onCommit(next);
   };
+  /*
+   * Enter and a lost focus commit whatever the field holds, whether or not the reader put it there.
+   * If they never typed, that is not a value they chose: looking at an empty cell used to set it to
+   * an empty text, and a column left to the database — a DEFAULT, a sequence — was then given `''`
+   * to insert, which its type refuses. Typing is what is asked about and not the value the draft
+   * ended on, so a reader who types and then clears still means the empty text.
+   *
+   * Every other way of committing carries a value the reader picked — an option, NULL, the default —
+   * and goes straight to `commit`, which is why this question is asked here and not in there.
+   */
+  const commitDraft = () => (typed.current ? commit(draft) : onCancel());
+
   const handleKey = (event: KeyboardEvent<HTMLElement>) => {
     // Typing belongs to the editor: the grid behind it navigates and acts on the same keys.
     event.stopPropagation();
@@ -71,7 +103,7 @@ export function CellEditor({ editor, value, onCommit, onCancel }: CellEditorProp
       onCancel();
     } else if (event.key === "Enter" && !(editor === "json" && event.shiftKey)) {
       event.preventDefault();
-      commit(draft);
+      commitDraft();
     }
   };
 
@@ -95,6 +127,9 @@ export function CellEditor({ editor, value, onCommit, onCancel }: CellEditorProp
     );
   }
 
+  /* Which of the two the cell is holding right now, named once rather than spelled on each button. */
+  const leftToDatabase = onLeaveToDatabase !== undefined && !given;
+
   return (
     <div className={`cell-editor${error ? " invalid" : ""}`} title={error}>
       {editor === "json" ? (
@@ -104,9 +139,9 @@ export function CellEditor({ editor, value, onCommit, onCancel }: CellEditorProp
           value={draft}
           rows={1}
           placeholder={PLACEHOLDERS[editor]}
-          onChange={(event) => setDraft(event.target.value)}
+          onChange={onDraft}
           onKeyDown={handleKey}
-          onBlur={() => commit(draft)}
+          onBlur={commitDraft}
           aria-label="Cell value"
           aria-invalid={error ? true : undefined}
         />
@@ -116,23 +151,38 @@ export function CellEditor({ editor, value, onCommit, onCancel }: CellEditorProp
           className="cell-editor-input"
           value={draft}
           placeholder={PLACEHOLDERS[editor]}
-          onChange={(event) => setDraft(event.target.value)}
+          onChange={onDraft}
           onKeyDown={handleKey}
-          onBlur={() => commit(draft)}
+          onBlur={commitDraft}
           aria-label="Cell value"
           aria-invalid={error ? true : undefined}
           spellCheck={false}
         />
       )}
-      <button
-        type="button"
-        className="cell-editor-null"
-        title="Set NULL"
-        onMouseDown={(event) => event.preventDefault()}
-        onClick={() => onCommit(null)}
-      >
-        ∅
-      </button>
+      <div className="cell-editor-empties">
+        <button
+          type="button"
+          className="cell-editor-empty"
+          title="Insert NULL"
+          aria-pressed={value === null && !leftToDatabase}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => onCommit(null)}
+        >
+          NULL
+        </button>
+        {onLeaveToDatabase ? (
+          <button
+            type="button"
+            className="cell-editor-empty"
+            title="Leave it to the database"
+            aria-pressed={leftToDatabase}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={onLeaveToDatabase}
+          >
+            DEFAULT
+          </button>
+        ) : null}
+      </div>
     </div>
   );
 }

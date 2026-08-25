@@ -18,28 +18,28 @@ import type { DataViewQueryFileSystem } from "./queryFileSystem.js";
 
 /** Everything a Data View needs from the Extension Host, injected so the module stays testable. */
 export interface DataViewHostServices {
-  /** Opens a dedicated PostgreSQL client for the saved Connexion; rejects when it is unavailable. */
-  openClient(serverId: string): Promise<Client>;
-  /** Display name of the saved Connexion — its alias when set, its URL otherwise. */
-  serverName(serverId: string): string | undefined;
+  /** Opens a dedicated PostgreSQL client for the saved Connection; rejects when it is unavailable. */
+  openClient(connectionId: string): Promise<Client>;
+  /** Display name of the saved Connection — its alias when set, its URL otherwise. */
+  connectionName(connectionId: string): string | undefined;
   /**
-   * Notifies the Data View when saved Connexions change, so it can restate its Association.
-   * `serverIds` empty means every Connexion; nothing is emitted for changes a Data View cannot show.
+   * Notifies the Data View when saved Connections change, so it can restate its Association.
+   * `connectionIds` empty means every Connection; nothing is emitted for changes a Data View cannot show.
    */
-  onConnectionsChanged(listener: (serverIds: readonly string[]) => void): vscode.Disposable;
+  onConnectionsChanged(listener: (connectionIds: readonly string[]) => void): vscode.Disposable;
   resultSettings(): DataViewResultSettings;
   /** Opens the SQL of a Data View in a Scratchpad for free-form refinement. */
   openSql(source: DataViewSource, sql: string): Promise<void>;
   parser(): Promise<SyntaxParser>;
   /** Composes through the SQL authoring server: the same guarded entry a Scratchpad drop uses. */
   compose(request: SqlAuthoringComposeRequest): Promise<SqlAuthoringComposeResult>;
-  authoringSnapshot(serverId: string, database: string): SqlAuthoringSnapshot | undefined;
+  authoringSnapshot(connectionId: string, database: string): SqlAuthoringSnapshot | undefined;
   authoringSettings(uri: string): SqlAuthoringSettings;
   queryFiles: DataViewQueryFileSystem;
   /** SQL authoring payload of the tree item being dragged, if any (consumed on read). */
   treeDragPayload(consume: boolean): SqlAuthoringDragPayload | undefined;
   /** Registers the Document Association of a query document so SQL authoring resolves it. */
-  associate(documentUri: string, serverId: string): Promise<void>;
+  associate(documentUri: string, connectionId: string): Promise<void>;
   dissociate(documentUri: string): Promise<void>;
   output: vscode.OutputChannel;
   extensionUri: vscode.Uri;

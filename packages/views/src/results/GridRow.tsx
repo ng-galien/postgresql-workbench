@@ -59,7 +59,7 @@ export interface GridRowContext {
   editing?: GridEditing;
   /** Which cell is open for editing right now, whichever kind of row it is on. */
   isEditingCell(subject: GridRowSubject, ordinal: number): boolean;
-  openEditor(subject: GridRowSubject, ordinal: number, cell: DebugResultCell): void;
+  openEditor(shownRow: number, ordinal: number): void;
   closeEditor(): void;
   /** What the reader asked for when they asked for the address a cell holds. */
   onFollowLink(href: string): void;
@@ -112,13 +112,17 @@ export function GridRow({
         }}
       >
         {subject.of === "added" ? (
-          <span className="row-gutter-state added" role="img" aria-label="New row">
-            ✚
-          </span>
+          <span
+            className="row-gutter-state added codicon codicon-add"
+            role="img"
+            aria-label="New row"
+          />
         ) : subject.removed ? (
-          <span className="row-gutter-state removed" role="img" aria-label="Row deleted">
-            ✕
-          </span>
+          <span
+            className="row-gutter-state removed codicon codicon-trash"
+            role="img"
+            aria-label="Row deleted"
+          />
         ) : (
           <span className="row-gutter-number">{subject.number}</span>
         )}
@@ -126,6 +130,14 @@ export function GridRow({
       {columns.map(({ key, ordinal, value: column }) => {
         const policy = editing?.policies[ordinal];
         const cell = cellOf(subject, ordinal, column.name, editing);
+        /* Leaving a column to the database: the same sentence, said to whichever list holds the row. */
+        const leaveToDatabase = () => {
+          context.closeEditor();
+          if (added) editing?.rows?.fill(added.localId, {}, [column.name]);
+          else if (subject.of === "loaded") {
+            editing?.onEdit(subject.cells, subject.loadedIndex, ordinal, null, cell.raw, true);
+          }
+        };
         const shown = cell.value;
         const editingHere = context.isEditingCell(subject, ordinal);
         return (
@@ -149,13 +161,39 @@ export function GridRow({
               .filter(Boolean)
               .join(" ")}
             title={
-              cell.edited
-                ? `Original: ${cell.raw ?? "NULL"}`
-                : policy && !policy.editable
-                  ? policy.reason
-                  : undefined
+              cell.retainedTruncated
+                ? "Value truncated at the configured results.maxCellBytes limit. Change PostgreSQL Workbench › Results: Max Cell Bytes in Settings."
+                : cell.truncated
+                  ? "Value shortened in the grid. Inspect it to read the full retained value."
+                  : cell.edited
+                    ? `Original: ${cell.raw ?? "NULL"}`
+                    : policy && !policy.editable
+                      ? policy.reason
+                      : undefined
             }
             onContextMenu={(event) => context.onCellMenu(event, shownRow, ordinal, shown)}
+            onClick={(event) => {
+              const target = event.target instanceof HTMLElement ? event.target : undefined;
+              if (
+                shown !== null &&
+                isWebAddress(shown) &&
+                target?.closest(`.${CELL_LINK}`) &&
+                followsCellLink(event)
+              ) {
+                context.onFollowLink(shown);
+              }
+            }}
+            onKeyDown={(event) => {
+              if (
+                event.key === "Enter" &&
+                shown !== null &&
+                isWebAddress(shown) &&
+                followsCellLink(event)
+              ) {
+                event.preventDefault();
+                context.onFollowLink(shown);
+              }
+            }}
             onMouseDown={(event) => {
               // A click puts the anchor here; a shifted one reaches from where it was.
               takeKeys(event);
@@ -165,12 +203,14 @@ export function GridRow({
                   : cellSelection(shownRow, ordinal),
               );
             }}
-            onDoubleClick={() => context.openEditor(subject, ordinal, cell)}
+            onDoubleClick={() => context.openEditor(shownRow, ordinal)}
           >
             {editingHere && policy?.editable && editing ? (
               <CellEditor
                 editor={policy.editor}
                 value={shown}
+                given={cell.given}
+                onLeaveToDatabase={added || policy.hasOwnValue ? leaveToDatabase : undefined}
                 onCommit={(next) => {
                   context.closeEditor();
                   if (added) editing.rows?.fill(added.localId, { [column.name]: next });
@@ -181,47 +221,19 @@ export function GridRow({
                 onCancel={() => context.closeEditor()}
               />
             ) : shown !== null && isWebAddress(shown) ? (
-              <>
-                <a
-                  className={`cell-value ${CELL_LINK}`}
-                  href={shown}
-                  /*
-                   * An address is somewhere to go, and a cell is something to select: the click
-                   * belongs to the grid unless it carries the chord, and it never reaches the host
-                   * that would follow it on its own. What follows it is the request below.
-                   *
-                   * The grid is one stop in the tabbing order, so the link is not another one: the
-                   * keys reach it through the cell menu.
-                   */
-                  tabIndex={-1}
-                  title={`${chordName()}+click to open ${shown}`}
-                  onClick={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    if (followsCellLink(event)) context.onFollowLink(shown);
-                  }}
-                >
-                  {shown}
-                </a>
-                {/* The mark that says there is somewhere to go, and takes a plain click there. */}
-                <button
-                  type="button"
-                  className="cell-link-open"
-                  title={`Open ${shown}`}
-                  aria-label={`Open ${shown}`}
-                  tabIndex={-1}
-                  onMouseDown={(event) => event.stopPropagation()}
-                  onClick={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    context.onFollowLink(shown);
-                  }}
-                >
-                  <span className="codicon codicon-link-external" aria-hidden="true" />
-                </button>
-              </>
+              <span
+                className={`cell-value ${CELL_LINK}`}
+                /*
+                 * The value stays text because its only pointer action is the editor chord. A real
+                 * anchor would promise Enter and an ordinary click, both of which belong to the
+                 * grid. Keyboard readers reach the explicit Open action in the cell menu.
+                 */
+                title={`${chordName()}+click to open ${shown}`}
+              >
+                {shown}
+              </span>
             ) : (
-              <span className="cell-value">{shown === null ? emptyLabel(subject) : shown}</span>
+              <span className="cell-value">{shown === null ? emptyLabel(cell.given) : shown}</span>
             )}
           </td>
         );
@@ -239,29 +251,40 @@ interface ShownCell extends DebugResultCell {
    * would become what the database is told the row used to hold.
    */
   raw: string | null;
+  /** Whether the reader has given this column anything, NULL included. A loaded row always has. */
+  given: boolean;
 }
 
-function cellOf(
+/** A cell the result has nothing for. One object, shared: `cellOf` runs per cell per frame. */
+const NOTHING: DebugResultCell = { kind: "null", value: null };
+
+export function cellOf(
   subject: GridRowSubject,
   ordinal: number,
   columnName: string,
   editing?: GridEditing,
 ): ShownCell {
   if (subject.of === "added") {
-    const filled = subject.added.values[columnName] ?? null;
-    return { kind: filled === null ? "null" : "text", value: filled, raw: filled };
+    const given = columnName in subject.added.values;
+    const filled = given ? (subject.added.values[columnName] ?? null) : null;
+    return { kind: filled === null ? "null" : "text", value: filled, raw: filled, given };
   }
-  const cell = subject.cells[ordinal] ?? { kind: "null" as const, value: null };
+  const source = subject.cells[ordinal] ?? NOTHING;
   const edit = editing?.editFor(subject.cells, subject.loadedIndex, ordinal);
-  return edit
-    ? { ...cell, value: edit.value, edited: true, raw: cell.value }
-    : { ...cell, raw: cell.value };
+  if (!edit) return { ...source, raw: source.value, given: true };
+  // A column asked for its default holds no value to show until PostgreSQL has written one.
+  if (edit.toDefault) {
+    return { ...source, kind: "null", value: null, edited: true, raw: source.value, given: false };
+  }
+  return { ...source, value: edit.value, edited: true, raw: source.value, given: true };
 }
 
 /*
- * A row being added has a third answer for a column with nothing in it: not a value, not an empty
- * text, but "whatever the database would have given it". That is not the same as a loaded NULL.
+ * A cell holding no text says which of the three things it means. A loaded row holds NULL — it was
+ * written once, if only with nothing. A row being added holds NULL where the reader gave it one,
+ * and DEFAULT where they gave nothing at all: that column is left out of the INSERT, so the table
+ * answers for it. Whether the answer is a default of its own or NULL again is PostgreSQL's to say.
  */
-function emptyLabel(subject: GridRowSubject): string {
-  return subject.of === "added" ? "DEFAULT" : "NULL";
+export function emptyLabel(given: boolean): string {
+  return given ? "NULL" : "DEFAULT";
 }

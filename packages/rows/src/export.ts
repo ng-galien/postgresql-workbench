@@ -97,7 +97,13 @@ export function exportFileExtension(format: DataViewExportFormat): string {
  * every row measured before the first one is written, so a result too large to hold cannot take it.
  */
 export function exportStreams(format: DataViewExportFormat): boolean {
-  return format !== "markdown";
+  return (
+    format === "csv" ||
+    format === "tsv" ||
+    format === "json" ||
+    format === "sql" ||
+    format === "markdown"
+  );
 }
 
 /** Writing a result out a piece at a time, which is what a result too large to hold needs. */
@@ -116,11 +122,7 @@ export function dataViewExportWriter(
 ): DataViewExportWriter {
   if (choice.format === "json") return jsonWriter(columns);
   if (choice.format === "sql") return sqlWriter(columns, choice);
-  if (choice.format === "markdown") {
-    throw new Error(
-      "A Markdown table lines its columns up, so it is written whole, not in pieces.",
-    );
-  }
+  if (choice.format === "markdown") return markdownWriter(columns);
   return delimitedWriter(columns, choice);
 }
 
@@ -133,16 +135,36 @@ export function dataViewExportText(
   rows: readonly (readonly (string | null)[])[],
   choice: DataViewExportChoice,
 ): string {
-  const text =
-    choice.format === "markdown"
-      ? markdownTable(columns, rows)
-      : ((writer) =>
-          [
-            writer.opening(),
-            ...rows.map((row, index) => writer.row(row, index)),
-            writer.closing(),
-          ].join(""))(dataViewExportWriter(columns, choice));
-  return choice.finalNewline ? text : text.replace(/\n$/u, "");
+  return [...dataViewExportChunks(columns, rows, choice)].join("");
+}
+
+/** Serializes held rows incrementally so a renderer never creates one result-sized string. */
+export function* dataViewExportChunks(
+  columns: readonly ExportColumn[],
+  rows: readonly (readonly (string | null)[])[],
+  choice: DataViewExportChoice,
+  maximumCharacters = 64 * 1024,
+): Generator<string> {
+  const writer = dataViewExportWriter(columns, choice);
+  let pending: string | undefined;
+  const pieces = (function* () {
+    yield writer.opening();
+    for (const [index, row] of rows.entries()) yield writer.row(row, index);
+    yield writer.closing();
+  })();
+  for (const piece of pieces) {
+    for (let at = 0; at < piece.length; at += maximumCharacters) {
+      let end = Math.min(piece.length, at + maximumCharacters);
+      if (end < piece.length && /[\uD800-\uDBFF]/u.test(piece[end - 1] ?? "")) end -= 1;
+      const chunk = piece.slice(at, end);
+      if (pending !== undefined) yield pending;
+      pending = chunk;
+      at = end - maximumCharacters;
+    }
+  }
+  if (pending !== undefined) {
+    yield choice.finalNewline ? pending : pending.replace(/\n$/u, "");
+  }
 }
 
 // --- The shapes ---------------------------------------------------------------------------------
@@ -217,23 +239,15 @@ function createTableStatement(table: string, columns: readonly ExportColumn[]): 
   ].join("");
 }
 
-function markdownTable(
-  columns: readonly ExportColumn[],
-  rows: readonly (readonly (string | null)[])[],
-): string {
-  // A NULL is written as nothing: a Markdown table has no way to say it, and an empty cell reads
-  // as an empty cell in every reader.
-  const cells = rows.map((row) => columns.map((_column, at) => markdownCell(row[at] ?? "")));
-  const widths = columns.map((column, at) =>
-    Math.max(markdownCell(column.name).length, 3, ...cells.map((row) => (row[at] ?? "").length)),
-  );
-  const line = (values: readonly string[]) =>
-    `| ${values.map((value, column) => value.padEnd(widths[column] ?? 0)).join(" | ")} |\n`;
-  return [
-    line(columns.map((column) => markdownCell(column.name))),
-    `|${widths.map((width) => "-".repeat(width + 2)).join("|")}|\n`,
-    ...cells.map(line),
-  ].join("");
+function markdownWriter(columns: readonly ExportColumn[]): DataViewExportWriter {
+  const line = (values: readonly string[]) => `| ${values.join(" | ")} |\n`;
+  return {
+    opening: () =>
+      `${line(columns.map((column) => markdownCell(column.name)))}${line(columns.map(() => "---"))}`,
+    // A Markdown table cannot distinguish NULL from an empty cell.
+    row: (values) => line(columns.map((_column, at) => markdownCell(values[at] ?? ""))),
+    closing: () => "",
+  };
 }
 
 // --- Writing one value --------------------------------------------------------------------------

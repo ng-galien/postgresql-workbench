@@ -6,7 +6,7 @@ import { WorkbenchGraphTreeSync } from "./treeSync.js";
 const snapshot = {
   status: "available" as const,
   result: {
-    serverId: "server",
+    connectionId: "connection",
     database: "testdb",
     revision: "revision",
     generation: 4,
@@ -15,8 +15,8 @@ const snapshot = {
 
 const object: WorkbenchObjectModel = {
   symbolUri: "sql:table:orders",
-  sourceUri: "postgresql://server/testdb/shop/table/12.sql",
-  serverId: "server",
+  sourceUri: "postgresql://connection/testdb/shop/table/12.sql",
+  connectionId: "connection",
   database: "testdb",
   schema: "shop",
   oid: 12,
@@ -32,7 +32,7 @@ function fixture() {
   const reveal = vi.fn(async () => undefined);
   let selectionListener: ((event: { selection: readonly PlpgsqlTreeItem[] }) => void) | undefined;
   const graph = {
-    currentDatabase: { serverId: "server", database: "testdb" },
+    currentDatabase: { connectionId: "connection", database: "testdb" },
     currentScope: "testdb",
     isOpen: true,
     openDatabase: vi.fn(async () => true),
@@ -49,8 +49,8 @@ function fixture() {
     } as never,
     { itemForObject: vi.fn(() => item) } as never,
     {
-      databaseState: vi.fn((identity: { serverId: string }) =>
-        identity.serverId === "server" ? snapshot : { status: "not-indexed" },
+      databaseState: vi.fn((identity: { connectionId: string }) =>
+        identity.connectionId === "connection" ? snapshot : { status: "not-indexed" },
       ),
     } as never,
     graph as never,
@@ -111,8 +111,8 @@ describe("Workbench graph and Sources tree synchronization", () => {
       await sync.select({
         kind: "schema",
         schema: "shop",
-        server: {
-          id: "server",
+        connection: {
+          id: "connection",
           host: "localhost",
           port: 5432,
           database: "testdb",
@@ -132,12 +132,12 @@ describe("Workbench graph and Sources tree synchronization", () => {
     expect(graph.syncObjectFromTree).toHaveBeenCalledWith(object, snapshot.result);
   });
 
-  it("does not project an unindexed Connexion into the Cockpit", async () => {
+  it("does not project an unindexed Connection into the Cockpit", async () => {
     const { graph, sync } = fixture();
     const inactive = {
       kind: "sourcesSnapshot",
-      server: {
-        id: "other-server",
+      connection: {
+        id: "other-connection",
         host: "localhost",
         port: 5433,
         database: "otherdb",
@@ -149,7 +149,7 @@ describe("Workbench graph and Sources tree synchronization", () => {
     expect(graph.openDatabase).not.toHaveBeenCalled();
   });
 
-  it("forgets a tree selection when the Cockpit Connexion changes", async () => {
+  it("forgets a tree selection when the Cockpit Connection changes", async () => {
     const { item, sync } = fixture();
 
     await sync.select(item);

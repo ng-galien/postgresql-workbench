@@ -32,7 +32,7 @@ import type { CommandCallSite, CommandFunctionDefinition } from "../codeLens/ind
 import {
   type CallSiteConnectionStore,
   type ConnectionManager,
-  ServerStore,
+  ConnectionStore,
 } from "../connection/index.js";
 import {
   buildRoutineArgs,
@@ -54,8 +54,8 @@ import {
 } from "../plpgsql/index.js";
 import { CodeMonikerContentProvider, closePostgresqlDapTabs } from "../sources/index.js";
 import type {
+  ConnectionItem,
   FunctionItem,
-  ServerItem,
   WorkbenchSourceUris,
   WorkbenchTreeProvider,
 } from "../workbench/index.js";
@@ -193,20 +193,20 @@ export function registerDebugInfrastructure(
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           output.appendLine(`Managed deploy rejected: ${message}`);
-          const bindingServerId = /^Index (?:missing|stale)/u.test(message)
-            ? sourceUris.sourceDescriptorForDocumentUri(target)?.serverId
+          const bindingConnectionId = /^Index (?:missing|stale)/u.test(message)
+            ? sourceUris.sourceDescriptorForDocumentUri(target)?.connectionId
             : undefined;
           void vscode.window
             .showWarningMessage(
               `Deploy rejected: ${message.slice(0, 240)}`,
-              ...(bindingServerId ? ["Index Association"] : []),
+              ...(bindingConnectionId ? ["Index Association"] : []),
               "Show Output",
             )
             .then((choice) => {
               if (choice === "Show Output") output.show(true);
               if (choice === "Index Association") {
                 void vscode.commands.executeCommand("postgresql-workbench.indexAssociation", {
-                  serverId: bindingServerId,
+                  connectionId: bindingConnectionId,
                 });
               }
             });
@@ -264,32 +264,32 @@ export function registerDebugInfrastructure(
             .get<number>("maxRows", DEBUG_RESULT_LIMITS.DEFAULT_ROWS);
         }
         if (!resolved) return undefined;
-        let serverId = String(resolved.server ?? "");
-        const configuredServer = serverId ? connections.store.get(serverId) : undefined;
-        const database = configuredServer?.database ?? String(resolved.database ?? "");
-        if (!configuredServer) {
+        let connectionId = String(resolved.connection ?? "");
+        const configuredConnection = connectionId ? connections.store.get(connectionId) : undefined;
+        const database = configuredConnection?.database ?? String(resolved.database ?? "");
+        if (!configuredConnection) {
           const host = String(resolved.host ?? "");
           const port = Number(resolved.port ?? 5432);
           const user = String(resolved.user ?? "");
           if (host && database && user) {
-            const inlineServerId = ServerStore.makeId(host, port, database, user);
-            if (!serverId || serverId === inlineServerId) {
-              serverId = inlineServerId;
-              resolved.server = serverId;
+            const inlineConnectionId = ConnectionStore.makeId(host, port, database, user);
+            if (!connectionId || connectionId === inlineConnectionId) {
+              connectionId = inlineConnectionId;
+              resolved.connection = connectionId;
             }
           }
         }
-        const indexed = index.sqlAuthoringSnapshot({ serverId, database });
+        const indexed = index.sqlAuthoringSnapshot({ connectionId, database });
         if (indexed?.status !== "available") {
           vscode.window.showInformationMessage(
             "Index the PostgreSQL context selected for this Debug action before starting the session.",
           );
           output.appendLine(
-            `resolveDebugConfiguration: rejected launch because ${serverId || "<unknown>"}/${database || "<unknown>"} has no available indexed snapshot`,
+            `resolveDebugConfiguration: rejected launch because ${connectionId || "<unknown>"}/${database || "<unknown>"} has no available indexed snapshot`,
           );
           return undefined;
         }
-        const routineSources = sourceUris.routineSourceUris(serverId);
+        const routineSources = sourceUris.routineSourceUris(connectionId);
         if (Object.keys(routineSources).length === 0) {
           vscode.window.showInformationMessage(
             "The active PostgreSQL index contains no debuggable routines.",
@@ -299,12 +299,12 @@ export function registerDebugInfrastructure(
         resolved.sourceUris = routineSources;
         if (resolved.routine) {
           const oid = Number(resolved.routine.oid ?? 0);
-          const symbol = oid > 0 ? index.routineSymbol(serverId, oid) : undefined;
+          const symbol = oid > 0 ? index.routineSymbol(connectionId, oid) : undefined;
           if (symbol) resolved.routine = { ...resolved.routine, symbolUri: symbol.uri };
         }
         if (resolved.entryRoutine) {
           const oid = Number(resolved.entryRoutine.oid ?? 0);
-          const symbol = oid > 0 ? index.routineSymbol(serverId, oid) : undefined;
+          const symbol = oid > 0 ? index.routineSymbol(connectionId, oid) : undefined;
           if (symbol) {
             resolved.entryRoutine = { ...resolved.entryRoutine, symbolUri: symbol.uri };
           }
@@ -338,11 +338,11 @@ export function registerDebugInfrastructure(
       "plpgsql",
       {
         provideDebugConfigurations(): vscode.ProviderResult<vscode.DebugConfiguration[]> {
-          return connections.servers.map((server) => ({
+          return connections.connections.map((connection) => ({
             type: "postgresql-workbench",
             request: "launch",
-            name: `PL/pgSQL on ${getConnectionName(server)}`,
-            server: server.id,
+            name: `PL/pgSQL on ${getConnectionName(connection)}`,
+            connection: connection.id,
           }));
         },
       },
@@ -380,14 +380,14 @@ export function registerDebugCommands(options: DebugCommandOptions): void {
     ),
     vscode.commands.registerCommand(
       "postgresql-workbench.checkRequirements",
-      async (item?: ServerItem) => {
-        let server = item?.server;
-        if (!server && connections.connectedServerIds.length === 1) {
-          server = connections.store.get(connections.connectedServerIds[0]);
+      async (item?: ConnectionItem) => {
+        let connection = item?.connection;
+        if (!connection && connections.connectedConnectionIds.length === 1) {
+          connection = connections.store.get(connections.connectedConnectionIds[0]);
         }
-        if (!server) {
+        if (!connection) {
           const action = await vscode.window.showInformationMessage(
-            "Choose a connected PostgreSQL Connexion.",
+            "Choose a connected PostgreSQL Connection.",
             "Pick Connection",
             "Setup Guide",
           );
@@ -395,11 +395,11 @@ export function registerDebugCommands(options: DebugCommandOptions): void {
           if (action === "Setup Guide") await showRequirementsGuide();
           return;
         }
-        const check = await connections.checkRequirements(server.id);
+        const check = await connections.checkRequirements(connection.id);
         if (!check) return;
         if (check.available) {
           vscode.window.showInformationMessage(
-            `${getConnectionName(server)}: pldbgapi ready — debugging available.`,
+            `${getConnectionName(connection)}: pldbgapi ready — debugging available.`,
           );
         } else {
           const action = await vscode.window.showWarningMessage(check.error, "Setup Guide");
@@ -428,7 +428,7 @@ export function registerDebugCommands(options: DebugCommandOptions): void {
           sessions,
           {
             name: `Debug ${item.schema}.${item.funcName}`,
-            serverId: item.serverId,
+            connectionId: item.connectionId,
             routine: {
               symbolUri: item.symbolUri,
               schema: item.schema,
@@ -464,12 +464,12 @@ export function registerDebugCommands(options: DebugCommandOptions): void {
     vscode.commands.registerCommand(
       "postgresql-workbench.debugDefinition",
       async (definition: CommandFunctionDefinition) => {
-        const serverId = definition.symbolUri
-          ? definition.serverId
+        const connectionId = definition.symbolUri
+          ? definition.connectionId
           : definition.documentUri
             ? documentConnections.getDocument(definition.documentUri)
-            : definition.serverId;
-        if (!serverId) {
+            : definition.connectionId;
+        if (!connectionId) {
           void vscode.window.showInformationMessage("Choose an available Document Association.");
           return false;
         }
@@ -485,7 +485,7 @@ export function registerDebugCommands(options: DebugCommandOptions): void {
           sessions,
           {
             name: configNameFromRoutine(routine),
-            serverId,
+            connectionId,
             routine,
             routineArgs: buildRoutineArgs(args),
           },
@@ -497,10 +497,10 @@ export function registerDebugCommands(options: DebugCommandOptions): void {
     vscode.commands.registerCommand(
       "postgresql-workbench.debugCall",
       async (call: CommandCallSite) => {
-        const serverId = call.documentUri
+        const connectionId = call.documentUri
           ? documentConnections.getDocument(call.documentUri)
-          : call.serverId;
-        if (!serverId) {
+          : call.connectionId;
+        if (!connectionId) {
           void vscode.window.showInformationMessage("Choose an available Document Association.");
           return false;
         }
@@ -519,7 +519,7 @@ export function registerDebugCommands(options: DebugCommandOptions): void {
           sessions,
           {
             sql: call.sql,
-            serverId,
+            connectionId,
             resultLabel: source
               ? `${(await configNameFromSql(call.sql, async (sql) => parseCall(sql, await index.syntaxParser()))).replace(/^Debug\s+/i, "")} · ${source.name}${source.line ? `:${source.line}` : ""}`
               : undefined,
@@ -545,8 +545,9 @@ export async function launchDebug(
   }
 
   const folder = vscode.workspace.workspaceFolders?.[0];
-  const serverId =
-    config.serverId ?? (cm.connectedServerIds.length === 1 ? cm.connectedServerIds[0] : undefined);
+  const connectionId =
+    config.connectionId ??
+    (cm.connectedConnectionIds.length === 1 ? cm.connectedConnectionIds[0] : undefined);
   const name =
     config.name ??
     (config.routine
@@ -569,7 +570,7 @@ export async function launchDebug(
     String(debugConfig.name)
       .replace(/^Debug\s+/i, "")
       .trim();
-  if (serverId) debugConfig.server = serverId;
+  if (connectionId) debugConfig.connection = connectionId;
 
   const launchToken = debugSessions.reserve(
     debugDescriptor(debugConfig, vscode.window.activeTextEditor?.viewColumn),
@@ -599,7 +600,7 @@ export async function launchDebug(
     debugSessions.cancelReservation(launchToken);
     output.appendLine("launchDebug: startDebugging returned false — session not started");
     vscode.window.showWarningMessage(
-      "PL/pgSQL debug not started — no server selected or configuration cancelled.",
+      "PL/pgSQL debug not started — no connection selected or configuration cancelled.",
     );
     return false;
   }
@@ -612,7 +613,7 @@ export async function launchDebug(
 /**
  * Write the launched configuration to .vscode/launch.json so the user can
  * relaunch with F5 or from the Run and Debug panel. Persisted configs contain
- * only the server ID and the target — never credentials.
+ * only the connection ID and the target — never credentials.
  */
 async function persistLaunchConfig(
   folder: vscode.WorkspaceFolder | undefined,
@@ -625,7 +626,7 @@ async function persistLaunchConfig(
     request: "launch",
     name: debugConfig.name,
   };
-  if (debugConfig.server) persisted.server = debugConfig.server;
+  if (debugConfig.connection) persisted.connection = debugConfig.connection;
   if (debugConfig.sql) persisted.sql = debugConfig.sql;
   if (debugConfig.entryRoutine) persisted.entryRoutine = debugConfig.entryRoutine;
   if (debugConfig.routine) persisted.routine = debugConfig.routine;
@@ -689,11 +690,11 @@ export function debugSessionConnectionName(
   connections: ConnectionManager,
   configuration: vscode.DebugConfiguration,
 ): string | undefined {
-  const server =
-    typeof configuration.server === "string"
-      ? connections.store.get(configuration.server)
+  const connection =
+    typeof configuration.connection === "string"
+      ? connections.store.get(configuration.connection)
       : undefined;
-  if (server) return getConnectionName(server);
+  if (connection) return getConnectionName(connection);
   const { host, port, database, user } = configuration;
   if (typeof host !== "string" || typeof database !== "string") return undefined;
   const userPrefix = typeof user === "string" ? `${user}@` : "";
@@ -706,7 +707,7 @@ export function debugDescriptor(
 ): DebugLaunchDescriptor {
   return {
     name: String(config.name ?? "Debug PL/pgSQL"),
-    ...(typeof config.server === "string" ? { serverId: config.server } : {}),
+    ...(typeof config.connection === "string" ? { connectionId: config.connection } : {}),
     ...(typeof config.sql === "string" ? { sql: config.sql } : {}),
     ...(config.routine || config.entryRoutine
       ? { routine: (config.routine ?? config.entryRoutine) as DebugLaunchRoutineTarget }
@@ -728,7 +729,7 @@ export interface LaunchDebugConfig {
   routineArgs?: DebugLaunchRoutineArgument[];
   resultLabel?: string;
   resultSource?: DebugResultSource;
-  serverId?: string;
+  connectionId?: string;
   stopOnEntry?: boolean;
 }
 export function isDebugResult(value: unknown): value is DebugResult {

@@ -687,3 +687,18 @@ BEGIN
     (target_inventory.id, p_user_id, 'transfer_in', p_quantity, 'Warehouse transfer');
 END;
 $procedure$;
+
+-- A table whose two ways of holding nothing are worth telling apart. `status` is nullable and
+-- carries a default, so leaving it out of an INSERT and giving it NULL write two different rows:
+-- one holds 'pending', the other holds nothing at all. `note` has no default, where the two agree.
+CREATE TABLE shop.stock_check (
+  id bigserial PRIMARY KEY,
+  counted_by text NOT NULL,
+  note text,
+  status text DEFAULT 'pending',
+  checked_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO shop.stock_check (counted_by, note, status) VALUES
+  ('Amélie', 'Comptage mensuel', 'done'),
+  ('Bruno', NULL, 'pending');

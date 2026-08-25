@@ -50,6 +50,8 @@ describe("provisioned changes", () => {
     expect(describeDataViewChanges([edit()], [], [], editability)).toEqual([
       {
         kind: "update",
+        // The change itself, so a reader who reads the list can take this one line out of it.
+        handle: { kind: "update", tableOid: 42, key: ["12"], ordinal: 3 },
         table: "shop.address",
         row: "id = 12",
         column: "city",
@@ -94,7 +96,14 @@ describe("provisioned row removals", () => {
   it("tells a whole row apart from a change to one of its cells", () => {
     const summaries = describeDataViewChanges([], [{ tableOid: 42, key: ["12"] }], [], editability);
 
-    expect(summaries).toEqual([{ kind: "delete", table: "shop.address", row: "id = 12" }]);
+    expect(summaries).toEqual([
+      {
+        kind: "delete",
+        handle: { kind: "delete", tableOid: 42, key: ["12"] },
+        table: "shop.address",
+        row: "id = 12",
+      },
+    ]);
   });
 
   it("lists rows before cells, the order they are written in", () => {
@@ -123,7 +132,12 @@ describe("provisioned row insertions", () => {
     );
 
     expect(summaries).toEqual([
-      { kind: "insert", table: "shop.address", row: "city = Brest, label = Dépôt" },
+      {
+        kind: "insert",
+        handle: { kind: "insert", localId: "new-1" },
+        table: "shop.address",
+        row: "city = Brest, label = Dépôt",
+      },
     ]);
   });
 
@@ -197,7 +211,7 @@ describe("what a deletion drags along", () => {
 describe("what a Data View is called", () => {
   const sql: DataViewSource = {
     kind: "sql",
-    serverId: "s",
+    connectionId: "s",
     database: "demo",
     sql: "SELECT inventory_movement.id, inventory_movement.inventory_id FROM shop.inventory_movement",
     label: "SELECT inventory_movement.id, inventory_movement.inventory_id…",
@@ -214,7 +228,7 @@ describe("what a Data View is called", () => {
       dataViewTitle(
         {
           kind: "relation",
-          serverId: "s",
+          connectionId: "s",
           database: "demo",
           schema: "shop",
           name: "brand",

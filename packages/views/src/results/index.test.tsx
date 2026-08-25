@@ -12,7 +12,7 @@ vi.mock("react-dom/client", () => ({
   }),
 }));
 
-import { activate } from "./index.js";
+import { activate, normalizeSqlNotebookOutputPayload } from "./index.js";
 
 afterEach(() => {
   roots.length = 0;
@@ -34,6 +34,22 @@ function outputElement(): HTMLElement {
 }
 
 describe("SQL notebook renderer lifecycle", () => {
+  it("upgrades an existing v2 rowset instead of treating it as a command report", () => {
+    expect(
+      normalizeSqlNotebookOutputPayload({
+        version: 2,
+        binding: { connectionId: "test", connectionName: "Test", database: "testdb" },
+        command: "SELECT",
+        columns: [],
+        rows: [],
+        capturedRowCount: 0,
+        durationMs: 1,
+        truncated: false,
+        truncationReasons: [],
+      }),
+    ).toMatchObject({ version: 3, kind: "rowset", command: "SELECT" });
+  });
+
   it("replaces and disposes React roots by output id", () => {
     const element = outputElement();
     const output = { id: "result-1", json: () => ({}) };

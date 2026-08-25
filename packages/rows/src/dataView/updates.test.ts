@@ -15,6 +15,7 @@ const address: CatalogTable = {
   schema: "shop",
   name: "address",
   relkind: "r",
+  hasSubclasses: false,
   columns: [
     {
       attnum: 1,
@@ -54,6 +55,7 @@ const salesOrder: CatalogTable = {
   schema: "shop",
   name: "sales_order",
   relkind: "r",
+  hasSubclasses: false,
   columns: [
     {
       attnum: 1,

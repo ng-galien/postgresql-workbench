@@ -26,7 +26,7 @@ export class ResultTable {
       .filter({ hasText: new RegExp(`^${escapeRegExp(text)}$`, "u") });
   }
 
-  /** The row count the navigation shows: `Rows 1–200 · more available`, `1000 rows`, and so on. */
+  /** The compact range the shared navigation shows: `1–200`, `201–400`, and so on. */
   /** What a surface says in prose about how much of the result it is showing. */
   summary(text: string): Locator {
     return this.root.getByText(text, { exact: true });
@@ -54,6 +54,17 @@ export class ResultTable {
 
   async cancel(): Promise<void> {
     await this.command("Cancel loading").click();
+  }
+
+  async inspect(): Promise<void> {
+    await this.root
+      .getByRole("button", { name: "Show the value under the cursor, whole", exact: true })
+      .click();
+  }
+
+  async openExport(): Promise<Locator> {
+    await this.root.getByRole("button", { name: "Export rows to a file…", exact: true }).click();
+    return this.root.getByRole("region", { name: "Export rows", exact: true });
   }
 
   private command(label: string): Locator {

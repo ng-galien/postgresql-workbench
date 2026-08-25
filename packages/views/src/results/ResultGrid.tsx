@@ -3,6 +3,7 @@ import {
   Fragment,
   type MouseEvent as ReactMouseEvent,
   type UIEvent,
+  useCallback,
   useEffect,
   useId,
   useMemo,
@@ -16,6 +17,7 @@ import type {
   DataViewEdit,
   DataViewRowInsertion,
 } from "../../../rows/src/dataView/dataView.js";
+import { reasonAgainstWriting } from "../../../rows/src/dataView/editability.js";
 import { rowOrder } from "../../../rows/src/dataView/rowOrder.js";
 import { shownValues } from "../../../rows/src/dataView/shownValues.js";
 import {
@@ -29,7 +31,7 @@ import { isWebAddress } from "./cellDetail.js";
 import { matchFrom, matchingCells } from "./findInRows.js";
 import { GridFinder } from "./GridFinder.js";
 import { GridHeader } from "./GridHeader.js";
-import { GridRow, type GridRowContext } from "./GridRow.js";
+import { cellOf, GridRow, type GridRowContext, type GridRowSubject } from "./GridRow.js";
 import {
   cellIsSelected,
   cellSelection,
@@ -69,6 +71,8 @@ export interface GridEditing {
     ordinal: number,
     value: string | null,
     original: string | null,
+    /** Writes `= DEFAULT` instead of the value, for a column that has one of its own. */
+    toDefault?: true,
   ): void;
   /**
    * Whole rows, when there is exactly one table to write them to. A grid over a join can still
@@ -80,8 +84,11 @@ export interface GridEditing {
     /** Rows the reader added, in the order they are shown, each over the row it was added on. */
     added: readonly DataViewRowInsertion[];
     drop(localId: string): void;
-    /** Fills columns of an added row; null leaves a column to PostgreSQL. */
-    fill(localId: string, values: Record<string, string | null>): void;
+    /**
+     * Fills columns of a row being added. A value is written, `null` is written as NULL, and a
+     * column named in `unset` is left out of the INSERT — which is not the same change at all.
+     */
+    fill(localId: string, values: Record<string, string | null>, unset?: readonly string[]): void;
     /** Adds a row already filled in — a line of a paste that fell past the last loaded row. */
     appendPasted(values: Record<string, string | null>, above: number): void;
   };
@@ -103,13 +110,22 @@ export interface ResultGridProps {
    * the whole of what the cursor is on.
    */
   inspecting?: boolean;
+  inspectorId?: string;
   onInspecting?: (on: boolean) => void;
+  /** Full retained value supplied on demand by a host; absent surfaces inspect the display cell. */
+  inspectedCell?: DebugResultCell;
+  onInspectCell?: (loadedRow: number, ordinal: number) => void;
   /** When set, sorting is delegated to the host (server-side) instead of sorting loaded rows. */
   serverSort?: {
     /** Active server-side sorts in priority order. */
     sorts: ResultSort[];
     /** `additive` (Shift+click) keeps the other sorts and toggles this column. */
     onSort(columnIndex: number, additive: boolean): void;
+  };
+  /** Lets a surrounding surface use the exact loaded-row order for actions such as export. */
+  localSorting?: {
+    sort?: ResultSort;
+    onSort(sort: ResultSort | undefined): void;
   };
   /** When set, cells become editable according to the column policies. */
   editing?: GridEditing;
@@ -137,20 +153,27 @@ export interface GridLayout {
   columnAccent?(ordinal: number): string | undefined;
 }
 
+// ResultGrid receives one named grid contract; Code Moniker reports the destructured properties as
+// parameters even though callers provide one cohesive object.
+// code-moniker: ignore[code-single-responsibility-flags-long-parameter-lists]
 export function ResultGrid({
   payload,
   serverSort,
+  localSorting,
   editing,
   layout,
   onFollowLink,
   selection: heldSelection,
   onSelect,
   inspecting,
+  inspectorId,
   onInspecting,
+  inspectedCell,
+  onInspectCell,
 }: ResultGridProps) {
   /** Which cell of which added row is being filled in right now. */
   const [activeAdded, setActiveAdded] = useState<{ localId: string; ordinal: number }>();
-  const [localSort, setLocalSort] = useState<ResultSort>();
+  const [ownLocalSort, setOwnLocalSort] = useState<ResultSort>();
   const [activeCell, setActiveCell] = useState<{ row: number; ordinal: number }>();
   /** Where the grid points when nobody is holding a selection for it. */
   const [ownSelection, setOwnSelection] = useState<GridSelection>(cellSelection(0, 0));
@@ -162,9 +185,15 @@ export function ResultGrid({
   const [chosenWidths, setChosenWidths] = useState<Record<number, number>>({});
   /* What the reader is looking for among the rows on screen; absent when they are not looking. */
   const [looking, setLooking] = useState<string>();
+  /** Extra vertical room claimed by a value panel the reader has made taller. */
+  const [inspectorHeight, setInspectorHeight] = useState<number>();
+  useEffect(() => {
+    if (!inspecting) setInspectorHeight(undefined);
+  }, [inspecting]);
   const setChosenWidth = (ordinal: number, widthCh: number) =>
     setChosenWidths((current) => ({ ...current, [ordinal]: widthCh }));
   const isVisible = (ordinal: number) => !layout?.hidden.has(ordinal);
+  const localSort = localSorting ? localSorting.sort : ownLocalSort;
   const sort = serverSort ? serverSort.sorts[0] : localSort;
   const sortRank = (
     ordinal: number,
@@ -180,7 +209,11 @@ export function ResultGrid({
   };
   const requestSort = (ordinal: number, additive = false) => {
     if (serverSort) serverSort.onSort(ordinal, additive);
-    else setLocalSort((current) => nextResultSort(current, ordinal));
+    else {
+      const next = nextResultSort(localSort, ordinal);
+      if (localSorting) localSorting.onSort(next);
+      else setOwnLocalSort(next);
+    }
   };
   const [scrollTop, setScrollTop] = useState(0);
   const [scrollMetrics, setScrollMetrics] = useState<ScrollMetrics>({
@@ -189,6 +222,30 @@ export function ResultGrid({
   });
   const scroller = useRef<HTMLElement>(null);
   const scrollerId = useId();
+  useEffect(() => {
+    const element = scroller.current;
+    if (!element) return undefined;
+    const scrollWithWheel = (event: WheelEvent) => {
+      const horizontal = event.deltaX || (event.shiftKey ? event.deltaY : 0);
+      const vertical = event.shiftKey && event.deltaX === 0 ? 0 : event.deltaY;
+      const nextTop = clamp(
+        element.scrollTop + vertical,
+        0,
+        element.scrollHeight - element.clientHeight,
+      );
+      const nextLeft = clamp(
+        element.scrollLeft + horizontal,
+        0,
+        element.scrollWidth - element.clientWidth,
+      );
+      if (nextTop === element.scrollTop && nextLeft === element.scrollLeft) return;
+      element.scrollTop = nextTop;
+      element.scrollLeft = nextLeft;
+      event.preventDefault();
+    };
+    element.addEventListener("wheel", scrollWithWheel, { passive: false });
+    return () => element.removeEventListener("wheel", scrollWithWheel);
+  }, []);
   /*
    * Turning the grid writable is an act on the grid, so the grid takes the keystrokes: a reader
    * who opens edit mode and pastes has not clicked a cell, and would otherwise be pasting into
@@ -205,10 +262,6 @@ export function ResultGrid({
    * and the panel is the reader's to open — a cell never decides on their behalf that they wanted
    * to see it.
    */
-  const activate = (rowIndex: number, ordinal: number, cell: DebugResultCell) => {
-    const policy = editing?.policies[ordinal];
-    if (policy?.editable && !cell.truncated) setActiveCell({ row: rowIndex, ordinal });
-  };
   const columns = keyedValues(
     payload.columns,
     (column) => `${column.name}:${column.dataTypeId}:${column.typeName ?? ""}`,
@@ -329,14 +382,19 @@ export function ResultGrid({
     overCells ? selectedOrdinals(selection, visibleOrdinals) : [],
   );
   /*
-   * The grid is what holds the cursor, so a host tracking it is told what the cursor really is —
-   * on the first render, and again whenever a shorter result or a hidden column has clamped it.
-   * Otherwise the host would describe one selection while the reader looks at another.
+   * When the host already holds an explicit selection, tell it if a shorter result or a hidden
+   * column clamps that selection. The grid's initial keyboard cursor remains internal until the
+   * reader deliberately selects something.
    */
   const reportSelection = onSelect;
   // biome-ignore lint/correctness/useExhaustiveDependencies: the clamped selection is the subject.
   useEffect(() => {
-    if (reportSelection && !sameSelection(heldSelection, selection)) reportSelection(selection);
+    // `undefined` is a deliberate absence for hosts with selection actions: keep the grid's
+    // internal keyboard cursor, but do not turn it back into an actionable row after a page or
+    // server sort explicitly cleared the selection.
+    if (reportSelection && heldSelection && !sameSelection(heldSelection, selection)) {
+      reportSelection(selection);
+    }
   }, [
     reportSelection,
     heldSelection,
@@ -382,23 +440,37 @@ export function ResultGrid({
     focusClipboard();
     document.execCommand("copy");
   };
-  const focusClipboard = () => {
+  const focusClipboard = useCallback(() => {
     const proxy = clipboard.current;
     if (!proxy) return;
     proxy.focus({ preventScroll: true });
     proxy.select();
-  };
+  }, []);
   /*
    * A press has to leave the keystrokes with the grid. Letting the browser handle it would move
    * the focus to whatever it finds around the cell — in practice the page itself — so the press is
-   * refused and the proxy takes the focus instead. A press inside an open editor is left alone:
-   * that one is placing a caret in a real field.
+   * refused and the proxy takes the focus instead. A press anywhere inside an open editor is left
+   * alone — the field, and the controls beside it that say what having no value means. Taking the
+   * focus from one of those blurs the field, a blurred field commits, and the press never lands.
    */
   const takeKeys = (event: ReactMouseEvent<HTMLElement>) => {
-    if ((event.target as HTMLElement).closest("input, textarea, select")) return;
+    if ((event.target as HTMLElement).closest(".cell-editor")) return;
     event.preventDefault();
     focusClipboard();
   };
+  /*
+   * An open editor holds the focus in a real field, and closing it unmounts that field — which
+   * leaves the focus on the page and the grid deaf to every arrow. Taking it back belongs after the
+   * unmount: reaching for it while the field is still there would blur it, and a blurred editor
+   * commits, so the edit would be written twice.
+   */
+  const editorIsOpen = activeCell !== undefined || activeAdded !== undefined;
+  const editorWasOpen = useRef(false);
+  useEffect(() => {
+    if (editorWasOpen.current && !editorIsOpen) focusClipboard();
+    editorWasOpen.current = editorIsOpen;
+  }, [editorIsOpen, focusClipboard]);
+
   /*
    * A keystroke lands where the focus is. Re-selecting after every move keeps the proxy ready for
    * the next Ctrl+C, and keeps the focus from drifting back to the page after a paste.
@@ -440,13 +512,20 @@ export function ResultGrid({
         editing.rows?.fill(shown.added.localId, values());
         return;
       }
-      const rowIndex = shown.loaded;
-      const row = rows[rowIndex];
+      const row = rows[shown.loaded];
       if (!row) {
         // A line with no row to land on becomes a row of its own, under the last one.
         editing.rows?.appendPasted(values(), rows.length);
         return;
       }
+      const rowIndex = shown.loaded;
+      /*
+       * A row on its way out is passed over rather than refused a column at a time: the values of
+       * one pasted line arrive together, and the held changes would answer the same sentence once
+       * per column of it. Which columns may be written is `editableHere`'s question, asked per cell
+       * below; this one is the row's, and it reads the same list the grid struck the row through by.
+       */
+      if (editing.rows?.isRemoved(row)) return;
       line.forEach((value, offset) => {
         const target = visibleOrdinals[from + offset];
         if (target === undefined || !editableHere(target)) return;
@@ -518,11 +597,7 @@ export function ResultGrid({
    * What the menu for one cell offers: what the caller says, plus the two things the grid itself
    * can do with a cell — follow what it holds, when that is an address, and copy what is selected.
    */
-  const cellMenuFor = (
-    shownRow: number,
-    ordinal: number,
-    value: string | null,
-  ): Omit<OpenMenu, "at"> => {
+  const cellMenuFor = (ordinal: number, value: string | null): Omit<OpenMenu, "at"> => {
     const offered = layout?.cellMenu?.(ordinal, value) ?? [];
     return {
       label: `Actions for ${payload.columns[ordinal]?.name ?? "cell"}`,
@@ -564,22 +639,28 @@ export function ResultGrid({
     },
     onCellMenu(event, shownRow, ordinal, value) {
       aimAt(shownRow, ordinal);
-      menu.open(event, cellMenuFor(shownRow, ordinal, value));
+      menu.open(event, cellMenuFor(ordinal, value));
     },
     isEditingCell(subject, ordinal) {
       return subject.of === "added"
         ? activeAdded?.localId === subject.added.localId && activeAdded.ordinal === ordinal
         : activeCell?.row === subject.loadedIndex && activeCell.ordinal === ordinal;
     },
-    openEditor(subject, ordinal, cell) {
-      const policy = editing?.policies[ordinal];
-      if (!policy?.editable) return;
+    // What the held changes would refuse, the grid does not offer. A value cut short on its way
+    // here is the grid's own refusal: writing it back would truncate what it stands for.
+    openEditor(shownRow, ordinal) {
+      const subject = subjectAt(shownRow);
+      if (!subject) return;
       if (subject.of === "added") {
-        setActiveAdded({ localId: subject.added.localId, ordinal });
+        if (editing?.policies[ordinal]?.editable) {
+          setActiveAdded({ localId: subject.added.localId, ordinal });
+        }
         return;
       }
-      // A value cut short on its way here is not a value to edit: writing it back would truncate it.
-      if (!cell.truncated) setActiveCell({ row: subject.loadedIndex, ordinal });
+      const cell = subject.cells[ordinal];
+      if (!cell || cell.truncated) return;
+      if (reasonAgainstWriting(editing?.policies[ordinal], subject.removed)) return;
+      setActiveCell({ row: subject.loadedIndex, ordinal });
     },
     closeEditor() {
       setActiveCell(undefined);
@@ -588,24 +669,66 @@ export function ResultGrid({
   };
 
   /*
-   * The cell the cursor is on, for whatever is showing it whole. A row waiting to be added has no
-   * loaded cell behind it, so what it has been filled with stands in for one.
+   * Which row stands at a place the arrows count to. The arrows walk the rows waiting to be added
+   * and the loaded ones alike, so everything that acts on "the row under the cursor" asks this and
+   * not the loaded rows directly — a shown index is not a loaded index once one waits above it.
+   */
+  const loadedSubject = (
+    cells: readonly DebugResultCell[],
+    loadedIndex: number,
+  ): GridRowSubject => ({
+    of: "loaded",
+    cells,
+    loadedIndex,
+    number: firstRowNumber + loadedIndex,
+    removed: editing?.rows?.isRemoved(cells) ?? false,
+  });
+  const subjectAt = (shownRow: number): GridRowSubject | undefined => {
+    const shown = order.at(shownRow);
+    if ("added" in shown) return { of: "added", added: shown.added };
+    const cells = rows[shown.loaded];
+    return cells ? loadedSubject(cells, shown.loaded) : undefined;
+  };
+  /*
+   * The cell the cursor is on, for whatever is showing it whole — projected by the one function
+   * that says what a cell shows, so the panel and the grid never disagree about what is in it.
    */
   const cursorCell = ((): DebugResultCell | undefined => {
-    const shown = order.at(selection.anchor.row);
-    if ("added" in shown) {
-      const filled = shown.added.values[payload.columns[selection.anchor.ordinal]?.name ?? ""];
-      return {
-        kind: filled === undefined || filled === null ? "null" : "text",
-        value: filled ?? null,
-      };
-    }
-    const row = rows[shown.loaded];
-    const cell = row?.[selection.anchor.ordinal];
-    if (!cell) return undefined;
-    const edit = editing?.editFor(row ?? [], shown.loaded, selection.anchor.ordinal);
-    return edit ? { ...cell, value: edit.value } : cell;
+    const subject = subjectAt(selection.anchor.row);
+    const column = payload.columns[selection.anchor.ordinal];
+    if (!subject || !column) return undefined;
+    return cellOf(subject, selection.anchor.ordinal, column.name, editing);
   })();
+  const lastInspection = useRef<
+    | {
+        loaded: number;
+        ordinal: number;
+        request: NonNullable<ResultGridProps["onInspectCell"]>;
+      }
+    | undefined
+  >(undefined);
+  useEffect(() => {
+    if (!inspecting || !onInspectCell) {
+      lastInspection.current = undefined;
+      return;
+    }
+    const shown = order.at(selection.anchor.row);
+    if (!("loaded" in shown)) return;
+    const previous = lastInspection.current;
+    if (
+      previous?.loaded === shown.loaded &&
+      previous.ordinal === selection.anchor.ordinal &&
+      previous.request === onInspectCell
+    ) {
+      return;
+    }
+    lastInspection.current = {
+      loaded: shown.loaded,
+      ordinal: selection.anchor.ordinal,
+      request: onInspectCell,
+    };
+    onInspectCell(shown.loaded, selection.anchor.ordinal);
+  }, [inspecting, onInspectCell, order.at, selection.anchor.ordinal, selection.anchor.row]);
 
   const focusedShownRow = order.at(focus.row);
   const loadedFocusRow = "loaded" in focusedShownRow ? focusedShownRow.loaded : -1;
@@ -646,7 +769,14 @@ export function ResultGrid({
 
   return (
     <>
-      <div className="result-scroller-frame">
+      <div
+        className="result-scroller-frame"
+        style={
+          inspectorHeight
+            ? ({ "--cell-inspector-room": `${inspectorHeight + 24}px` } as CSSProperties)
+            : undefined
+        }
+      >
         {/*
           A grid is not an editable element, so a browser fires neither copy nor paste while a
           cell holds the focus: those events go to whatever can hold text. This textarea is that
@@ -727,7 +857,7 @@ export function ResultGrid({
               aimAt(on.row, on.ordinal);
               menu.openAt(
                 cell ? anchorUnder(cell) : { x: 0, y: 0 },
-                cellMenuFor(on.row, on.ordinal, cursorCell?.value ?? null),
+                cellMenuFor(on.ordinal, cursorCell?.value ?? null),
               );
               return;
             }
@@ -776,11 +906,9 @@ export function ResultGrid({
                 step(-page, 0, extend);
                 break;
               case "Enter":
-              case " ": {
-                const cell = rows[focus.row]?.[focus.ordinal];
-                if (cell) activate(focus.row, focus.ordinal, cell);
+              case " ":
+                rowContext.openEditor(focus.row, focus.ordinal);
                 break;
-              }
               default:
                 return;
             }
@@ -860,13 +988,7 @@ export function ResultGrid({
                       />
                     ))}
                     <GridRow
-                      subject={{
-                        of: "loaded",
-                        cells: row,
-                        loadedIndex: rowIndex,
-                        number: firstRowNumber + rowIndex,
-                        removed: editing?.rows?.isRemoved(row) ?? false,
-                      }}
+                      subject={loadedSubject(row, rowIndex)}
                       shownRow={order.ofLoaded(rowIndex)}
                       context={rowContext}
                     />
@@ -912,10 +1034,12 @@ export function ResultGrid({
         />
         {inspecting ? (
           <CellInspector
+            inspectorId={inspectorId}
             column={payload.columns[selection.anchor.ordinal]?.name ?? ""}
             typeName={payload.columns[selection.anchor.ordinal]?.typeName}
-            cell={cursorCell}
+            cell={inspectedCell ?? cursorCell}
             onClose={() => onInspecting?.(false)}
+            onResize={setInspectorHeight}
           />
         ) : null}
       </div>

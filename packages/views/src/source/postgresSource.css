@@ -31,7 +31,7 @@
 }
 
 /*
- * A piece the language server named carries `--postgres-name`; everything else is coloured by the
+ * A piece the language Connection named carries `--postgres-name`; everything else is coloured by the
  * grammar. The name is read here rather than in a rule of its own so that neither layer has to
  * out-specify the other: a name that no host gave a value to leaves the variable invalid, and the
  * grammar's colour stands.
@@ -47,7 +47,7 @@ body.vscode-high-contrast .postgres-source-token {
 }
 
 /*
- * What the language server named, painted over what the grammar coloured.
+ * What the language Connection named, painted over what the grammar coloured.
  *
  * The colours are the view's own names — a schema, a relation, a column, a routine — with no
  * value of their own here beyond "leave it as it was". A host that has a theme says what they are

@@ -16,7 +16,7 @@ timeline will be coordinated according to severity.
 
 - Database passwords are stored through VS Code SecretStorage, not in
   `launch.json`.
-- The extension connects only to servers explicitly configured or selected by
+- The extension opens only Connections explicitly configured or selected by
   the user.
 - SQL entered in the Debug Console runs with the connected PostgreSQL user's
   permissions.

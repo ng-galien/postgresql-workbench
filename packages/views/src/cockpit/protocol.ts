@@ -42,7 +42,7 @@ export interface CockpitPerspective {
 
 export interface CockpitSession {
   renderId: number;
-  serverId: string;
+  connectionId: string;
   database: string;
   revision: string;
   generation: number | null;

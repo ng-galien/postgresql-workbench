@@ -25,11 +25,20 @@ export interface CatalogColumn {
 }
 
 /**
+ * Whether PostgreSQL has something of its own for this column, so a row can be written without the
+ * reader giving one: a DEFAULT, a sequence behind an identity, a generated expression. Asked by the
+ * two rules that turn on it — what a new row cannot go without, and what a cell can be given back to.
+ */
+export function columnHasOwnValue(column: CatalogColumn): boolean {
+  return column.hasDefault || column.identity !== "" || column.generated !== "";
+}
+
+/**
  * Whether a new row cannot be written without a value for this column. Generated columns and
  * anything PostgreSQL fills in on its own are not demanded of the reader.
  */
 export function columnDemandsValue(column: CatalogColumn): boolean {
-  return column.notNull && !column.hasDefault && column.generated === "" && column.identity === "";
+  return column.notNull && !columnHasOwnValue(column);
 }
 
 export interface CatalogUniqueIndex {
@@ -45,11 +54,26 @@ export interface CatalogTable {
   schema: string;
   name: string;
   relkind: string;
+  /** PostgreSQL may read descendant rows whose keys are not covered by this table's constraints. */
+  hasSubclasses: boolean;
   columns: CatalogColumn[];
   uniqueIndexes: CatalogUniqueIndex[];
   foreignKeyAttnums: number[];
   /** Tables whose foreign keys point at this one, and what PostgreSQL does when a row goes. */
   referencedBy: { table: string; onDelete: DataViewDeleteRule }[];
+}
+
+/**
+ * Why this cell cannot be written, or nothing when it can. Two rules meet here — a column that is
+ * not the view's to change, and a row on its way out — and they meet once, so the grid refusing to
+ * open an editor and the held changes refusing to take one give the reader the same sentence.
+ */
+export function reasonAgainstWriting(
+  policy: DataViewColumnPolicy | undefined,
+  rowIsRemoved: boolean,
+): string | undefined {
+  if (!policy?.editable) return policy?.reason ?? "This column cannot be edited.";
+  return rowIsRemoved ? READ_ONLY_REASONS.removed : undefined;
 }
 
 export const READ_ONLY_REASONS = {
@@ -64,6 +88,7 @@ export const READ_ONLY_REASONS = {
   binary: "Binary values are read-only.",
   unknownColumn: "Column no longer exists in the catalog.",
   applying: "Changes are being applied.",
+  removed: "This row is waiting to be taken away.",
 } as const;
 
 /**
@@ -247,5 +272,6 @@ function columnPolicy(
     column: column.name,
     dataType: column.type,
     editor: valueEditorForType(column.type),
+    hasOwnValue: columnHasOwnValue(column),
   };
 }

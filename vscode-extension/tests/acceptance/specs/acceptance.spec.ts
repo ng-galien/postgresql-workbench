@@ -3,6 +3,7 @@
 // each own an isolated lane.
 import "./workbench/cinematics.spec.js";
 import "./workbench/notebook.spec.js";
+import "./workbench/scratchpad-commands.spec.js";
 import "./workbench/graph-dnd.spec.js";
 import "./workbench/search.spec.js";
 import "./workbench/testing-coverage.spec.js";

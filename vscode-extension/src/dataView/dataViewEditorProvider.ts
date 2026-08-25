@@ -34,9 +34,9 @@ export class DataViewEditorProvider
     this.disposables.push(
       vscode.workspace.onDidChangeTextDocument((event) => refresh(event.document.uri)),
       vscode.workspace.onDidSaveTextDocument((document) => refresh(document.uri)),
-      services.onConnectionsChanged((serverIds) => {
+      services.onConnectionsChanged((connectionIds) => {
         for (const document of this.documents.values()) {
-          if (serverIds.length === 0 || serverIds.includes(document.source.serverId)) {
+          if (connectionIds.length === 0 || connectionIds.includes(document.source.connectionId)) {
             document.refreshQueryState();
           }
         }

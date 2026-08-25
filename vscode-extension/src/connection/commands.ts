@@ -1,17 +1,17 @@
 import * as vscode from "vscode";
 import {
+  type ConnectionConfig,
   getConnectionName,
   getCustomConnectionName,
-  type ServerConfig,
   sameConnectionIdentity,
 } from "../../../packages/catalog/src/savedConnection.js";
 import type { ConnectionManager } from "./openConnections.js";
-import { ServerStore } from "./savedConnections.js";
+import { ConnectionStore } from "./savedConnections.js";
 
 export class ConnectionCommands {
   constructor(private readonly connections: ConnectionManager) {}
 
-  async addServer(): Promise<ServerConfig | undefined> {
+  async addConnection(): Promise<ConnectionConfig | undefined> {
     const input = await vscode.window.showInputBox({
       prompt: "Connection string or Host:Port",
       placeHolder: "postgresql://user:pass@localhost:5432/db  or  localhost:5432",
@@ -20,42 +20,37 @@ export class ConnectionCommands {
     });
     if (!input) return undefined;
 
-    const connection = await promptConnection(input);
-    if (!connection) return undefined;
-    const id = ServerStore.makeId(
-      connection.host,
-      connection.port,
-      connection.database,
-      connection.user,
-    );
+    const parsed = await promptConnection(input);
+    if (!parsed) return undefined;
+    const id = ConnectionStore.makeId(parsed.host, parsed.port, parsed.database, parsed.user);
     if (this.connections.store.has(id)) {
       const action = await vscode.window.showInformationMessage(
-        "This server already exists.",
+        "This connection already exists.",
         "Connect",
       );
-      if (action === "Connect") await this.connections.connectServer(id);
+      if (action === "Connect") await this.connections.connectConnection(id);
       return this.connections.store.get(id);
     }
 
-    const server: ServerConfig = {
+    const connection: ConnectionConfig = {
       id,
-      host: connection.host,
-      port: connection.port,
-      database: connection.database,
-      user: connection.user,
-      ssl: connection.ssl,
+      host: parsed.host,
+      port: parsed.port,
+      database: parsed.database,
+      user: parsed.user,
+      ssl: parsed.ssl,
     };
-    await this.connections.store.add(server, connection.password);
+    await this.connections.store.add(connection, parsed.password);
     this.connections.notifyConfigurationChanged();
-    await this.connections.connectServer(id);
-    return server;
+    await this.connections.connectConnection(id);
+    return connection;
   }
 
-  async removeServer(id: string): Promise<void> {
-    const server = this.connections.store.get(id);
-    if (!server) return;
+  async removeConnection(id: string): Promise<void> {
+    const connection = this.connections.store.get(id);
+    if (!connection) return;
     const confirm = await vscode.window.showWarningMessage(
-      `Remove server "${getConnectionName(server)}"? Its saved password will be deleted.`,
+      `Remove connection "${getConnectionName(connection)}"? Its saved password will be deleted.`,
       { modal: true },
       "Remove",
     );
@@ -63,19 +58,19 @@ export class ConnectionCommands {
     await this.connections.removeConnectionConfiguration(id);
   }
 
-  /** Picks, imports, or creates a Connexion and returns the connected server id. */
+  /** Picks, imports, or creates a Connection and returns the connected connection id. */
   async pickConnection(): Promise<string | undefined> {
     const external = [...loadSqlToolsConnections(), ...loadPgsqlConnections()];
     const newExternal = external.filter((connection) => !this.connections.store.has(connection.id));
     const items = connectionQuickPickItems(this.connections, newExternal);
     const picked = await vscode.window.showQuickPick(items, {
-      placeHolder: "Select a PostgreSQL server",
+      placeHolder: "Select a PostgreSQL connection",
     });
     if (!picked?.target) return undefined;
     switch (picked.target.kind) {
       case "add": {
-        const added = await this.addServer();
-        return added && this.connections.isServerConnected(added.id) ? added.id : undefined;
+        const added = await this.addConnection();
+        return added && this.connections.isConnectionConnected(added.id) ? added.id : undefined;
       }
       case "docker":
         return (
@@ -85,24 +80,32 @@ export class ConnectionCommands {
         );
       case "external":
         return this.importExternalConnection(picked.target.id, newExternal);
-      case "server":
-        return (await this.connections.connectServer(picked.target.id))
+      case "connection":
+        return (await this.connections.connectConnection(picked.target.id))
           ? picked.target.id
           : undefined;
     }
   }
 
-  async editServer(id: string): Promise<void> {
-    const server = this.connections.store.get(id);
-    if (!server) return;
-    const edit = await promptServerEdit(server);
+  async editConnection(id: string, options: { connect?: boolean } = {}): Promise<void> {
+    const connection = this.connections.store.get(id);
+    if (!connection) return;
+    const wasConnected = this.connections.isConnectionConnected(id);
+    const edit = await promptConnectionEdit(connection);
     if (!edit) return;
-    const updated = editedServer(server, edit);
+    const updated = editedConnection(connection, edit);
     if (!updated) return;
 
-    const changesDatabaseIdentity = !sameConnectionIdentity(server, updated);
+    const changesDatabaseIdentity = !sameConnectionIdentity(connection, updated);
     if (changesDatabaseIdentity) {
-      await this.replaceConnexion(server, updated);
+      if (
+        (wasConnected || options.connect) &&
+        (await this.replaceConnection(connection, updated))
+      ) {
+        await this.connections.connectConnection(updated.id);
+      } else if (!wasConnected && !options.connect) {
+        await this.replaceConnection(connection, updated);
+      }
       return;
     }
 
@@ -111,54 +114,56 @@ export class ConnectionCommands {
       updated,
       edit.key === "password" ? edit.value : undefined,
     );
-    if (this.connections.isServerConnected(id)) {
+    if (this.connections.isConnectionConnected(id)) {
       if (!(await this.connections.disconnect(id))) return;
-      await this.connections.connectServer(updated.id);
+      await this.connections.connectConnection(updated.id);
     } else {
       this.connections.notifyConfigurationChanged(id);
     }
   }
 
   async changePassword(id: string): Promise<void> {
-    const server = this.connections.store.get(id);
-    if (!server) return;
+    const connection = this.connections.store.get(id);
+    if (!connection) return;
     const password = await vscode.window.showInputBox({
-      prompt: `New password for ${getConnectionName(server)}`,
+      prompt: `New password for ${getConnectionName(connection)}`,
       password: true,
       ignoreFocusOut: true,
     });
     if (password === undefined) return;
     await this.connections.store.setPassword(id, password);
-    void vscode.window.showInformationMessage(`Password updated for ${getConnectionName(server)}.`);
-    if (this.connections.isServerConnected(id)) {
+    void vscode.window.showInformationMessage(
+      `Password updated for ${getConnectionName(connection)}.`,
+    );
+    if (this.connections.isConnectionConnected(id)) {
       const action = await vscode.window.showInformationMessage(
         "Reconnect with new password?",
         "Reconnect",
         "Later",
       );
       if (action === "Reconnect") {
-        await this.connections.connectServer(id, { force: true });
+        await this.connections.connectConnection(id, { force: true });
       }
     }
   }
 
-  async renameServer(id: string): Promise<void> {
-    const server = this.connections.store.get(id);
-    if (!server) return;
+  async renameConnection(id: string): Promise<void> {
+    const connection = this.connections.store.get(id);
+    if (!connection) return;
     const name = await vscode.window.showInputBox({
-      prompt: "Connexion name — leave empty to use its URL",
-      placeHolder: getConnectionName({ ...server, name: undefined }),
-      value: getCustomConnectionName(server) ?? "",
+      prompt: "Connection name — leave empty to use its URL",
+      placeHolder: getConnectionName({ ...connection, name: undefined }),
+      value: getCustomConnectionName(connection) ?? "",
       ignoreFocusOut: true,
       validateInput: (candidate) => {
         const trimmed = candidate.trim();
         return !trimmed || this.connections.store.isConnectionNameAvailable(trimmed, id)
           ? undefined
-          : `A Connexion named "${trimmed}" already exists.`;
+          : `A Connection named "${trimmed}" already exists.`;
       },
     });
     if (name === undefined) return;
-    await this.connections.store.update(id, { ...server, name: name.trim() || undefined });
+    await this.connections.store.update(id, { ...connection, name: name.trim() || undefined });
     this.connections.notifyConfigurationChanged(id);
   }
 
@@ -168,7 +173,7 @@ export class ConnectionCommands {
   ): Promise<string | undefined> {
     const external = connections.find((connection) => connection.id === id);
     if (!external) return undefined;
-    const server: ServerConfig = {
+    const connection: ConnectionConfig = {
       id: external.id,
       name: external.name,
       host: external.host,
@@ -176,36 +181,42 @@ export class ConnectionCommands {
       database: external.database,
       user: external.user,
     };
-    await this.connections.store.add(server, external.password);
+    await this.connections.store.add(connection, external.password);
     this.connections.notifyConfigurationChanged();
-    return (await this.connections.connectServer(external.id)) ? external.id : undefined;
+    return (await this.connections.connectConnection(external.id)) ? external.id : undefined;
   }
 
-  private async replaceConnexion(server: ServerConfig, updated: ServerConfig): Promise<void> {
+  private async replaceConnection(
+    connection: ConnectionConfig,
+    updated: ConnectionConfig,
+  ): Promise<boolean> {
     if (this.connections.store.has(updated.id)) {
       void vscode.window.showWarningMessage(
         `${getConnectionName(updated)} already exists. Change each Scratchpad Association explicitly instead of replacing it.`,
       );
-      return;
+      return false;
     }
-    if (!this.connections.store.isConnectionNameAvailable(getConnectionName(updated), server.id)) {
+    if (
+      !this.connections.store.isConnectionNameAvailable(getConnectionName(updated), connection.id)
+    ) {
       void vscode.window.showWarningMessage(
-        `A Connexion named "${getConnectionName(updated)}" already exists. Rename it first.`,
+        `A Connection named "${getConnectionName(updated)}" already exists. Rename it first.`,
       );
-      return;
+      return false;
     }
     if (
       !(await this.connections.replaceConnectionConfiguration(
-        server.id,
+        connection.id,
         updated,
-        await this.connections.getPassword(server.id),
+        await this.connections.getPassword(connection.id),
       ))
     ) {
-      return;
+      return false;
     }
     void vscode.window.showInformationMessage(
-      `Created ${getConnectionName(updated)} as a new Connexion. Scratchpad Associations to ${getConnectionName(server)} are now unavailable until explicitly changed.`,
+      `Created ${getConnectionName(updated)} as a new Connection. Scratchpad Associations to ${getConnectionName(connection)} are now unavailable until explicitly changed.`,
     );
+    return true;
   }
 }
 
@@ -218,10 +229,10 @@ interface ConnectionInput {
   ssl?: import("../../../packages/catalog/src/savedConnection.js").SslMode;
 }
 
-type ServerEditKey = "host" | "port" | "database" | "user" | "password" | "ssl";
+type ConnectionEditKey = "host" | "port" | "database" | "user" | "password" | "ssl";
 
-interface ServerEdit {
-  key: ServerEditKey;
+interface ConnectionEdit {
+  key: ConnectionEditKey;
   value: string;
 }
 
@@ -274,14 +285,16 @@ async function requiredInput(prompt: string, value: string): Promise<string | un
   return input?.trim();
 }
 
-async function promptServerEdit(server: ServerConfig): Promise<ServerEdit | undefined> {
-  const fields: Array<{ label: string; key: ServerEditKey; value: string }> = [
-    { label: "Host", key: "host", value: server.host },
-    { label: "Port", key: "port", value: String(server.port) },
-    { label: "Database", key: "database", value: server.database },
-    { label: "User", key: "user", value: server.user },
+async function promptConnectionEdit(
+  connection: ConnectionConfig,
+): Promise<ConnectionEdit | undefined> {
+  const fields: Array<{ label: string; key: ConnectionEditKey; value: string }> = [
+    { label: "Host", key: "host", value: connection.host },
+    { label: "Port", key: "port", value: String(connection.port) },
+    { label: "Database", key: "database", value: connection.database },
+    { label: "User", key: "user", value: connection.user },
     { label: "Password", key: "password", value: "••••••••" },
-    { label: "SSL", key: "ssl", value: server.ssl ?? "disable" },
+    { label: "SSL", key: "ssl", value: connection.ssl ?? "disable" },
   ];
   const picked = await vscode.window.showQuickPick(
     fields.map((field) => ({
@@ -289,10 +302,10 @@ async function promptServerEdit(server: ServerConfig): Promise<ServerEdit | unde
       description: field.value,
       detail: field.key,
     })),
-    { placeHolder: `Edit ${getConnectionName(server)} — pick a field to change` },
+    { placeHolder: `Edit ${getConnectionName(connection)} — pick a field to change` },
   );
   if (!picked?.detail) return undefined;
-  const key = picked.detail as ServerEditKey;
+  const key = picked.detail as ConnectionEditKey;
   const value =
     key === "ssl"
       ? await pickSslMode()
@@ -305,36 +318,39 @@ async function promptServerEdit(server: ServerConfig): Promise<ServerEdit | unde
   return value === undefined ? undefined : { key, value };
 }
 
-function editedServer(server: ServerConfig, edit: ServerEdit): ServerConfig | undefined {
-  const host = edit.key === "host" ? edit.value : server.host;
-  let port = server.port;
+function editedConnection(
+  connection: ConnectionConfig,
+  edit: ConnectionEdit,
+): ConnectionConfig | undefined {
+  const host = edit.key === "host" ? edit.value : connection.host;
+  let port = connection.port;
   if (edit.key === "port") {
     const parsedPort = parsePort(edit.value);
     if (parsedPort === undefined) {
       void vscode.window.showWarningMessage(
-        `Invalid port "${edit.value}" — keeping ${server.port}.`,
+        `Invalid port "${edit.value}" — keeping ${connection.port}.`,
       );
-      return server;
+      return connection;
     }
     port = parsedPort;
   }
-  const database = edit.key === "database" ? edit.value : server.database;
-  const user = edit.key === "user" ? edit.value : server.user;
+  const database = edit.key === "database" ? edit.value : connection.database;
+  const user = edit.key === "user" ? edit.value : connection.user;
   const ssl =
     edit.key === "ssl"
       ? edit.value === "disable"
         ? undefined
         : (edit.value as import("../../../packages/catalog/src/savedConnection.js").SslMode)
-      : server.ssl;
+      : connection.ssl;
   return {
-    id: ServerStore.makeId(host, port, database, user),
-    name: getCustomConnectionName(server),
+    id: ConnectionStore.makeId(host, port, database, user),
+    name: getCustomConnectionName(connection),
     host,
     port,
     database,
     user,
     ssl,
-    schemaSync: server.schemaSync,
+    schemaSync: connection.schemaSync,
   };
 }
 
@@ -384,7 +400,7 @@ interface ExternalConnection extends ConnectionInput {
 }
 
 type ConnectionQuickPickTarget =
-  | { kind: "server"; id: string }
+  | { kind: "connection"; id: string }
   | { kind: "external"; id: string }
   | { kind: "docker" }
   | { kind: "add" };
@@ -397,12 +413,12 @@ function connectionQuickPickItems(
   connections: ConnectionManager,
   external: readonly ExternalConnection[],
 ): ConnectionQuickPickItem[] {
-  const items: ConnectionQuickPickItem[] = connections.servers.map((server) => {
-    const connected = connections.isServerConnected(server.id);
+  const items: ConnectionQuickPickItem[] = connections.connections.map((connection) => {
+    const connected = connections.isConnectionConnected(connection.id);
     return {
-      label: `${connected ? "$(pass-filled) " : "$(circle-outline) "}${getConnectionName(server)}`,
+      label: `${connected ? "$(pass-filled) " : "$(circle-outline) "}${getConnectionName(connection)}`,
       description: connected ? "Connected" : "",
-      target: { kind: "server", id: server.id },
+      target: { kind: "connection", id: connection.id },
     };
   });
   if (external.length > 0) {
@@ -422,7 +438,7 @@ function connectionQuickPickItems(
       description: "PostgreSQL 13–18 with pldebugger",
       target: { kind: "docker" },
     },
-    { label: "$(add) Add server...", target: { kind: "add" } },
+    { label: "$(add) Add connection...", target: { kind: "add" } },
   );
   return items;
 }
@@ -446,7 +462,7 @@ function loadSqlToolsConnections(): ExternalConnection[] {
       const database = connection.database ?? "postgres";
       const user = connection.username ?? "postgres";
       return {
-        id: ServerStore.makeId(host, port, database, user),
+        id: ConnectionStore.makeId(host, port, database, user),
         name: `${connection.name ?? host} (SQLTools)`,
         host,
         port,
@@ -480,7 +496,7 @@ function loadPgsqlConnections(): ExternalConnection[] {
     const database = connection.database ?? connection.dbname ?? "postgres";
     const user = connection.user ?? "postgres";
     return {
-      id: ServerStore.makeId(host, port, database, user),
+      id: ConnectionStore.makeId(host, port, database, user),
       name: `${connection.displayName ?? connection.profileName ?? host} (pgsql)`,
       host,
       port,

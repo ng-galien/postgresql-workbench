@@ -30,9 +30,9 @@ export async function startCodeMonikerTestRuntime(): Promise<CodeMonikerTestRunt
       const client = new Client(connection);
       await client.connect();
       try {
-        const serverId = `${connection.host}:${connection.port}/${connection.database}:${connection.user}`;
+        const connectionId = `${connection.host}:${connection.port}/${connection.database}:${connection.user}`;
         const catalog = await readPostgresCatalog(client, {
-          serverId,
+          connectionId,
           database: String(connection.database),
         });
         await waitForReady(session);
@@ -57,7 +57,7 @@ export async function startCodeMonikerTestRuntime(): Promise<CodeMonikerTestRunt
               language: ["sql"],
               kind: ["function", "procedure"],
               path: [
-                `postgresql://${encodeURIComponent(serverId)}/${encodeURIComponent(String(connection.database))}/**`,
+                `postgresql://${encodeURIComponent(connectionId)}/${encodeURIComponent(String(connection.database))}/**`,
               ],
             },
             { consistency: "stale_ok", limit: 500, cursor },

@@ -11,7 +11,7 @@ function object(
   options: { plpgsql?: boolean } = {},
 ): WorkbenchObjectModel {
   return {
-    serverId: "localhost:5433/testdb:postgres",
+    connectionId: "localhost:5433/testdb:postgres",
     database: "testdb",
     schema: "public",
     kind,
@@ -20,7 +20,7 @@ function object(
     signature: "",
     params: [],
     plpgsql: options.plpgsql ?? false,
-    sourceUri: `postgresql://server/testdb/public/${kind}/30.sql`,
+    sourceUri: `postgresql://connection/testdb/public/${kind}/30.sql`,
     symbolUri: `code+moniker://./lang:sql/${kind}:public.object`,
   };
 }

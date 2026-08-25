@@ -39,7 +39,7 @@ const PG_CONFIG = {
   password: "postgres",
 };
 const DATABASE = "plpgsql_workbench_ddl_sync_e2e";
-const IDENTITY = { serverId: "ddl-sync-e2e", database: DATABASE };
+const IDENTITY = { connectionId: "ddl-sync-e2e", database: DATABASE };
 const RUNTIME = resolve(
   process.env.CODE_MONIKER_RUNTIME ?? join(process.cwd(), "vscode-extension/runtime/code-moniker"),
 );

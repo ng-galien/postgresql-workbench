@@ -12,11 +12,16 @@ describe("what a cell holds, once it is worth more than one line", () => {
     });
   });
 
-  it("says why a document would not parse, and shows it as it stands", () => {
+  it("shows an unparseable document as plain text without a parser error", () => {
     const detail = cellDetail({ kind: "json", value: "{oops" });
 
-    expect(detail).toMatchObject({ shape: "json", text: "{oops" });
-    expect((detail as { invalid?: string }).invalid).toBeTruthy();
+    expect(detail).toEqual({ shape: "text", text: "{oops" });
+  });
+
+  it("does not parse a non-JSON PostgreSQL type even if an old payload labelled it JSON", () => {
+    expect(
+      cellDetail({ kind: "json", value: "2026-08-21T14:00:08.399Z" }, "timestamp with time zone"),
+    ).toEqual({ shape: "text", text: "2026-08-21T14:00:08.399Z" });
   });
 
   it("takes a list apart", () => {

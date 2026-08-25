@@ -58,14 +58,6 @@ export function formattedCellValue(cell: DebugResultCell): string {
   }
 }
 
-export function resultAsTsv(payload: ResultTable): string {
-  const lines = [payload.columns.map((column) => escapeTsv(column.name)).join("\t")];
-  for (const row of payload.rows) {
-    lines.push(row.map((cell) => escapeTsv(cell.value ?? "\\N")).join("\t"));
-  }
-  return lines.join("\n");
-}
-
 export function nextResultSort(
   current: ResultSort | undefined,
   columnIndex: number,
@@ -83,7 +75,15 @@ export function sortedResultRows(
   rows: DebugResultCell[][],
   sort: ResultSort | undefined,
 ): DebugResultCell[][] {
-  if (!sort) return rows;
+  return sortedResultRowOrder(rows, sort).map((index) => rows[index] ?? []);
+}
+
+/** Original row indices in the order the loaded grid presents them. */
+export function sortedResultRowOrder(
+  rows: readonly DebugResultCell[][],
+  sort: ResultSort | undefined,
+): number[] {
+  if (!sort) return rows.map((_row, index) => index);
   const direction = sort.direction === "ascending" ? 1 : -1;
   return rows
     .map((row, originalIndex) => ({ originalIndex, row }))
@@ -91,7 +91,7 @@ export function sortedResultRows(
       const compared = compareCells(left.row[sort.columnIndex], right.row[sort.columnIndex]);
       return compared === 0 ? left.originalIndex - right.originalIndex : compared * direction;
     })
-    .map(({ row }) => row);
+    .map(({ originalIndex }) => originalIndex);
 }
 
 export type ResultTruncationReason = ResultTable["truncationReasons"][number];
@@ -110,7 +110,14 @@ export function truncationNotices(result: ResultTable): string[] {
       return `${result.capturedRowCount} of ${result.rowCount} rows captured. Additional rows are not displayed or exported.`;
     }
     if (reason === "cell") {
-      return "One or more cells reached the 64 KiB value limit. Truncated cells have an amber edge.";
+      const hardLimitReached = result.rows.some((row) =>
+        row.some((cell) => cell.retainedTruncated),
+      );
+      return "resultId" in result
+        ? hardLimitReached
+          ? "One or more cells reached the configured retained-value limit. Change Results: Max Cell Bytes in Settings."
+          : "One or more cells were shortened in the grid. Inspect a cell to read its full retained value."
+        : "One or more cells reached the 64 KiB captured-result limit. Truncated cells have an amber edge.";
     }
     return `The 1 MiB result payload limit was reached. Only ${result.capturedRowCount} rows are available.`;
   });
@@ -133,12 +140,12 @@ export function resultRowSummary(payload: ResultTable): string {
     }
     return `Rows ${navigation.pageStart}–${navigation.pageEnd} of ${payload.rowCount}`;
   }
-  return `Rows ${navigation.pageStart}–${navigation.pageEnd} · more available`;
+  return `Rows ${navigation.pageStart}–${navigation.pageEnd}`;
 }
 
 /**
  * Where the reader is in the result, in as few characters as it can be said: the rows on screen
- * over the rows there are. It goes between the two arrows that page through them, and those arrows
+ * and, when known, the rows there are. It goes between the two arrows that page through them, and those arrows
  * must not move as a reader uses them — so the shape is always the same, whichever page they are
  * on, and the sentence explaining it is left to `resultRowSummary` and a title.
  */
@@ -156,8 +163,8 @@ export function resultRowRange(payload: ResultTable): string {
   if (total !== undefined && navigation.pageStart === 1 && navigation.pageEnd === total) {
     return `${total}`;
   }
-  // A question mark rather than an ellipsis: the total is not yet known, not cut off.
-  return `${navigation.pageStart}–${navigation.pageEnd} / ${total ?? "?"}`;
+  const range = `${navigation.pageStart}–${navigation.pageEnd}`;
+  return total === undefined ? range : `${range} / ${total}`;
 }
 
 export function resultSortNotice(payload: ResultTable): string | undefined {
@@ -255,9 +262,4 @@ function compareDecimalMagnitude(left: ExactDecimal, right: ExactDecimal): numbe
   const leftDigits = left.digits.padEnd(width, "0");
   const rightDigits = right.digits.padEnd(width, "0");
   return leftDigits < rightDigits ? -1 : leftDigits > rightDigits ? 1 : 0;
-}
-
-function escapeTsv(value: string): string {
-  const safe = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
-  return /["\t\r\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
 }

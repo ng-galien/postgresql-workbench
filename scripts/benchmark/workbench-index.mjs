@@ -8,7 +8,7 @@ import { Client } from "pg";
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const COMPOSE_FILE = join(ROOT, "benchmarks/workbench-index/compose.yml");
 const DATABASE = "pgwb_index_benchmark";
-const SERVER_ID = "workbench-index-benchmark";
+const CONNECTION_ID = "workbench-index-benchmark";
 
 export const BENCHMARK_PROFILES = Object.freeze({
   "erp-medium": Object.freeze({
@@ -149,7 +149,7 @@ async function benchmark(options) {
 
     const indexingStarted = performance.now();
     const catalog = await readPostgresCatalog(catalogClient(postgres), {
-      serverId: SERVER_ID,
+      connectionId: CONNECTION_ID,
       database: DATABASE,
     });
     workspaceRoot = await mkdtemp(join(tmpdir(), "pgwb-index-benchmark-"));
@@ -194,7 +194,7 @@ async function benchmark(options) {
     const singleDocumentPublicationMs = performance.now() - singleDocumentPublicationStarted;
 
     const symbolScanStarted = performance.now();
-    const indexed = await readDatabaseSymbols(session, SERVER_ID, DATABASE);
+    const indexed = await readDatabaseSymbols(session, CONNECTION_ID, DATABASE);
     const symbolScanMs = performance.now() - symbolScanStarted;
     const sampleView = indexed.rows.find((symbol) => symbol.kind === "view");
     const graphStarted = performance.now();
@@ -421,7 +421,7 @@ async function readCatalogCounts(client) {
   return rows[0];
 }
 
-async function readDatabaseSymbols(session, serverId, database) {
+async function readDatabaseSymbols(session, connectionId, database) {
   const rows = [];
   let generation = null;
   let cursor = null;
@@ -439,7 +439,9 @@ async function readDatabaseSymbols(session, serverId, database) {
           "procedure",
           "trigger",
         ],
-        path: [`postgresql://${encodeURIComponent(serverId)}/${encodeURIComponent(database)}/**`],
+        path: [
+          `postgresql://${encodeURIComponent(connectionId)}/${encodeURIComponent(database)}/**`,
+        ],
         includeCode: true,
         contextLines: 16,
       },
@@ -480,6 +482,9 @@ function generationValue(value) {
   return null;
 }
 
+// This benchmark compares one publication scenario whose seven snapshots form a single record;
+// destructuring that record does not create seven positional parameters.
+// code-moniker: ignore[code-single-responsibility-flags-long-parameter-lists]
 export function validateMemorySourceSetContract({
   documentCount,
   initialStatus,

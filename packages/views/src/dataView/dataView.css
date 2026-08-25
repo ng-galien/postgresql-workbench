@@ -295,6 +295,11 @@ body,
   max-height: none;
 }
 
+/* Data View gives the grid the remaining pane height, so its paired scrollbar must fill it too. */
+.data-view-grid .result-scroller-frame:has(.cell-inspector) .result-scrollbar {
+  max-height: none;
+}
+
 .data-view-grid .result-detail {
   flex: 0 0 auto;
   max-height: 30%;
@@ -777,19 +782,51 @@ body,
 }
 
 /*
- * The provisioned changes, read before they are written: what table and row each lands on, and
- * the value it replaces.
+ * What is waiting to be written, as a list to read before committing to it. Each change wears the
+ * mark of what it is — a row going, a row arriving, a cell changing — so the three are told apart
+ * before a word is read. Several cells of one row say the row once and sit under it as a block.
  */
 .pending-edit {
   display: flex;
-  max-width: 440px;
-  flex-direction: column;
-  padding: 4px 10px;
-  gap: 1px;
+  flex: 1;
+  min-width: 0;
+  max-width: 460px;
+  align-items: flex-start;
+  padding: 5px 10px;
+  gap: 8px;
 }
 
-.pending-edit + .pending-edit {
+.pending-edit + .pending-edit:not(.continues) {
   border-top: 1px solid color-mix(in srgb, var(--vscode-foreground) 12%, transparent);
+}
+
+.pending-edit.continues {
+  padding-top: 0;
+}
+
+.pending-edit-mark {
+  flex: 0 0 auto;
+  margin-top: 0.15em;
+  font-size: 12px;
+  color: var(--vscode-descriptionForeground);
+  opacity: 0.7;
+}
+
+/* A row leaving is the one change that cannot be read back afterwards, so it is the one in colour. */
+.pending-edit.delete .pending-edit-mark {
+  color: var(--vscode-errorForeground, var(--vscode-descriptionForeground));
+  opacity: 1;
+}
+
+.pending-edit.continues .pending-edit-mark {
+  visibility: hidden;
+}
+
+.pending-edit-body {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
 }
 
 .pending-edit-target {
@@ -803,22 +840,36 @@ body,
 .pending-edit-change {
   display: flex;
   overflow: hidden;
-  align-items: center;
+  align-items: baseline;
   gap: 6px;
 }
 
 .pending-edit-column {
+  flex: 0 0 auto;
   font-weight: 600;
 }
 
 .pending-edit-original {
+  overflow: hidden;
   color: var(--vscode-descriptionForeground);
   text-decoration: line-through;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
+.pending-edit-change .codicon-arrow-right {
+  flex: 0 0 auto;
+  align-self: center;
+  font-size: 12px;
+  color: var(--vscode-descriptionForeground);
+  opacity: 0.7;
+}
+
+/* The value that will be written carries the weight; the one it replaces is struck through. */
 .pending-edit-value {
   overflow: hidden;
-  color: var(--vscode-charts-green, var(--vscode-foreground));
+  color: var(--vscode-foreground);
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -827,8 +878,17 @@ body,
   color: var(--vscode-errorForeground, var(--vscode-foreground));
 }
 
+/* The mark already says a row is arriving; saying it again in colour says nothing more. */
 .pending-edit-insertion {
-  color: var(--vscode-charts-green, var(--vscode-foreground));
+  color: var(--vscode-foreground);
+}
+
+/* What the table will answer for, said beside what the reader filled in rather than left unsaid. */
+.pending-edit-left {
+  overflow: hidden;
+  color: var(--vscode-descriptionForeground);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /*
@@ -897,27 +957,52 @@ body,
   opacity: 1;
 }
 
+/* Between what moves through the rows and what is done to them, and between groups of the bar. */
+.data-view-rows-divider,
 .edit-bar-divider {
   width: 1px;
   height: 1.2em;
   background: color-mix(in srgb, var(--vscode-foreground) 20%, transparent);
 }
 
+.data-view-rows-divider {
+  flex: 0 0 auto;
+  margin: 0 2px;
+}
+
+/*
+ * A row of actions, not a row of boxes. At rest every control here is text and an icon on the bar's
+ * own background: the outline arrives under the pointer and with the focus, where it says something.
+ * One control is emphasised — Apply, the only one that writes — and it is emphasised only once
+ * there is something to write. Four colours competing for the eye tell a reader nothing about which
+ * of them to press.
+ */
 .edit-bar-button {
   display: flex;
   align-items: center;
   padding: 1px 8px;
-  border: 1px solid var(--vscode-panel-border);
-  border-radius: 2px;
+  border: 1px solid transparent;
+  border-radius: 3px;
   background: none;
   color: var(--vscode-foreground);
   cursor: pointer;
   font: inherit;
-  gap: 4px;
+  gap: 5px;
+}
+
+.edit-bar-button .codicon {
+  font-size: 14px;
+  opacity: 0.75;
 }
 
 .edit-bar-button:hover:not(:disabled) {
-  border-color: var(--vscode-focusBorder);
+  border-color: var(--vscode-panel-border);
+  background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
+}
+
+.edit-bar-button:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
 }
 
 .edit-bar-button:disabled {
@@ -926,185 +1011,35 @@ body,
   opacity: 0.6;
 }
 
-.edit-bar-button.add:not(:disabled) {
-  color: var(--vscode-charts-green, var(--vscode-foreground));
-}
-
-.edit-bar-button.remove:not(:disabled) {
+/* What a press cannot be taken back from says so on approach, not at rest. */
+.edit-bar-button.remove:hover:not(:disabled) {
   border-color: var(--vscode-errorForeground);
   color: var(--vscode-errorForeground);
 }
 
+/* Changes waiting to be written are worth reading, so the count carries the weight, not a colour. */
 .edit-bar-button.count.pending {
-  border-color: var(--vscode-charts-green, var(--vscode-focusBorder));
-  color: var(--vscode-charts-green, var(--vscode-foreground));
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
 }
 
 .edit-bar-button.apply.ready {
-  border-color: var(--vscode-focusBorder);
+  border-color: transparent;
   background: var(--vscode-button-background);
   color: var(--vscode-button-foreground);
 }
 
+.edit-bar-button.apply.ready .codicon {
+  opacity: 1;
+}
+
+.edit-bar-button.apply.ready:hover:not(:disabled) {
+  background: var(--vscode-button-hoverBackground, var(--vscode-button-background));
+  border-color: transparent;
+}
+
 .edit-bar-changes {
   position: relative;
-}
-
-/*
- * Choosing an export. Three questions down the panel — which rows, which shape, how it is written
- * — and under them what the answer gives, written by the module that will write the file. A reader
- * who can read the first lines does not have to open the file to find out what they asked for.
- */
-.export-dialog {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  width: 100%;
-}
-
-/*
- * This one asks three questions and shows the answer, so it is given more room than a plain panel
- * — and a width of its own rather than one taken from its contents, which would have it widen and
- * narrow as the reader tries the shapes.
- */
-.modal-panel:has(.export-dialog) {
-  width: min(680px, 92vw);
-  max-width: min(680px, 92vw);
-}
-
-.export-group {
-  margin: 0;
-  padding: 0;
-  border: 0;
-}
-
-.export-legend {
-  padding: 0 0 4px;
-  color: var(--vscode-descriptionForeground);
-  font-size: 0.85em;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
-
-.export-option {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  padding: 3px 2px;
-  cursor: pointer;
-}
-
-.export-option:has(input:disabled) {
-  cursor: default;
-  opacity: 0.55;
-}
-
-.export-option input {
-  flex: none;
-  margin: 0;
-  accent-color: var(--vscode-focusBorder);
-}
-
-.export-option-label {
-  flex: none;
-  min-width: 12ch;
-}
-
-.export-option-hint {
-  color: var(--vscode-descriptionForeground);
-  font-size: 0.92em;
-}
-
-.export-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 2px 1px;
-}
-
-.export-row-label {
-  margin-right: 2px;
-  color: var(--vscode-descriptionForeground);
-  font-size: 0.92em;
-}
-
-.export-pill {
-  padding: 2px 9px;
-  border: 1px solid color-mix(in srgb, var(--vscode-foreground) 25%, transparent);
-  border-radius: 10px;
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-  font: inherit;
-  font-size: 0.92em;
-}
-
-.export-pill.chosen {
-  border-color: var(--vscode-focusBorder);
-  background: color-mix(in srgb, var(--vscode-focusBorder) 26%, transparent);
-}
-
-.export-preview-frame {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.export-preview-heading {
-  color: var(--vscode-descriptionForeground);
-  font-size: 0.85em;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
-
-/*
- * The block of options keeps its room whichever shape is chosen, and so does the preview. A panel
- * that shrank and grew as the reader tried the shapes would move the Export button out from under
- * their pointer between the choice and the press.
- */
-.export-written {
-  /* Room for the tallest of them — a CSV, which alone has a delimiter to choose. */
-  min-height: 7em;
-}
-
-.export-nothing-to-choose {
-  margin: 4px 2px 0;
-  color: var(--vscode-descriptionForeground);
-  font-size: 0.92em;
-}
-
-.export-preview {
-  height: 220px;
-  min-width: 0;
-  margin: 0;
-  padding: 8px 10px;
-  overflow: auto;
-  border: 1px solid var(--vscode-panel-border);
-  background: var(--vscode-textCodeBlock-background, var(--vscode-editorWidget-background));
-  font-family: var(--vscode-editor-font-family, monospace);
-  font-size: 0.9em;
-  line-height: 1.5;
-  /* Long lines are what a wide result looks like; they scroll rather than wrap into a puzzle. */
-  white-space: pre;
-  tab-size: 8;
-  user-select: text;
-}
-
-.export-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.export-target {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  color: var(--vscode-descriptionForeground);
-  font-size: 0.92em;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /*

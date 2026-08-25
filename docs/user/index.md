@@ -12,13 +12,13 @@ PL/pgSQL debugging, and the standalone DAP server.
 
 ## Start with a development database
 
-1. Run **PostgreSQL Workbench: Add Server**. Several Connexions can stay open
+1. Run **PostgreSQL Workbench: Add Connection**. Several Connections can stay open
    at once; each one keeps its own index, Cockpit scope, and Scratchpads.
-2. Expand the Connexion, then its database: **Schemas** indexes PostgreSQL
+2. Expand the Connection, then its database: **Schemas** indexes PostgreSQL
    structure automatically on connect. Run **Reindex Database** on that
-   Connexion whenever you need a fresh snapshot.
+   Connection whenever you need a fresh snapshot.
 
-For a disposable local environment, run **PL/pgSQL: Start Local Debug Database
+For a disposable local environment, run **PostgreSQL Workbench: Start Local Debug Database
 (Docker)**. PostgreSQL 17 and `127.0.0.1:5432` are the defaults; database, user,
 and password are all `postgres`.
 

@@ -18,7 +18,7 @@ interface VisibleTreeRow {
 export class WorkbenchTree {
   constructor(
     private readonly pageProvider: PageProvider,
-    private readonly accessibleName = "Workbench",
+    private readonly accessibleName = "Connections",
   ) {}
 
   private get page() {
@@ -105,7 +105,7 @@ export class WorkbenchTree {
     await expect(item).toHaveAttribute("aria-expanded", "true", { timeout: 5_000 });
     if (await this.waitForChildrenRendered(item)) return;
     // A branch expanded while its provider was still transitioning (for
-    // example a Connexion row that just switched to connected) can publish an
+    // example a Connection row that just switched to connected) can publish an
     // empty child list once. Collapse and expand again to request it anew.
     await twistie.click({ timeout: 2_000 });
     await expect(item).toHaveAttribute("aria-expanded", "false", { timeout: 5_000 });

@@ -19,6 +19,9 @@ const START_DEBUG_CONFIGURATION_COMMAND = "postgresql-workbench.acceptance.start
 const DEBUG_STEP_INTO_COMMAND = "workbench.action.debug.stepInto";
 const DEBUG_STEP_OVER_COMMAND = "workbench.action.debug.stepOver";
 const FOCUS_WORKBENCH_COMMAND = "postgresql-workbench-connections.focus";
+const EDIT_CONNECTION_COMMAND = "postgresql-workbench.editConnection";
+const REMOVE_SAVED_CONNECTION_COMMAND = "postgresql-workbench.removeConnection";
+const RENAME_CONNECTION_COMMAND = "postgresql-workbench.renameConnection";
 const INSPECT_TESTING_STATE_COMMAND = "postgresql-workbench.acceptance.inspectTestingState";
 const INSPECT_ACTIVE_NOTEBOOK_COMMAND = "postgresql-workbench.acceptance.inspectActiveNotebook";
 const INSPECT_ACTIVE_TEXT_EDITOR_COMMAND =
@@ -29,7 +32,7 @@ const INSPECT_DEBUG_CONFIGURATIONS_COMMAND =
 const INSPECT_WORKBENCH_STATE_COMMAND = "postgresql-workbench.acceptance.inspectWorkbenchState";
 const ARM_INDEX_PHASE_GATE_COMMAND = "postgresql-workbench.acceptance.armIndexPhaseGate";
 const RELEASE_INDEX_PHASE_GATE_COMMAND = "postgresql-workbench.acceptance.releaseIndexPhaseGate";
-const REMOVE_SERVER_COMMAND = "postgresql-workbench.acceptance.removeServer";
+const REMOVE_CONNECTION_COMMAND = "postgresql-workbench.acceptance.removeConnection";
 const RESET_WORKBENCH_COMMAND = "postgresql-workbench.acceptance.resetWorkbench";
 const OPEN_WORKSPACE_FILE_COMMAND = "postgresql-workbench.acceptance.openWorkspaceFile";
 const OPEN_SQL_DOCUMENT_COMMAND = "postgresql-workbench.acceptance.openSqlDocument";
@@ -52,6 +55,9 @@ const ACCEPTANCE_COMMANDS = new Set([
   DEBUG_STEP_INTO_COMMAND,
   DEBUG_STEP_OVER_COMMAND,
   FOCUS_WORKBENCH_COMMAND,
+  EDIT_CONNECTION_COMMAND,
+  REMOVE_SAVED_CONNECTION_COMMAND,
+  RENAME_CONNECTION_COMMAND,
   INSPECT_TESTING_STATE_COMMAND,
   INSPECT_ACTIVE_NOTEBOOK_COMMAND,
   INSPECT_ACTIVE_TEXT_EDITOR_COMMAND,
@@ -60,7 +66,7 @@ const ACCEPTANCE_COMMANDS = new Set([
   INSPECT_WORKBENCH_STATE_COMMAND,
   ARM_INDEX_PHASE_GATE_COMMAND,
   RELEASE_INDEX_PHASE_GATE_COMMAND,
-  REMOVE_SERVER_COMMAND,
+  REMOVE_CONNECTION_COMMAND,
   RESET_WORKBENCH_COMMAND,
   OPEN_WORKSPACE_FILE_COMMAND,
   OPEN_SQL_DOCUMENT_COMMAND,
@@ -78,7 +84,7 @@ export interface AcceptanceControlOptions {
   inspectTestingState(): unknown;
   inspectWorkbenchState(): unknown;
   releaseIndexPhaseGate(runId: number, phase: WorkbenchIndexPhase): Promise<void> | void;
-  removeServer(id: string): Promise<void> | void;
+  removeConnection(id: string): Promise<void> | void;
   resetWorkbench(): Promise<void> | void;
 }
 
@@ -96,7 +102,7 @@ export function createAcceptanceProbes(): AcceptanceControlOptions {
     inspectTestingState: () => ({}),
     inspectWorkbenchState: () => ({}),
     releaseIndexPhaseGate: () => {},
-    removeServer: () => {},
+    removeConnection: () => {},
     resetWorkbench: () => {},
   };
 }
@@ -229,14 +235,14 @@ export function registerAcceptanceControl(
           markReady(instruction.nonce, options.inspectTestingState());
           return;
         }
-        if (instruction.command === REMOVE_SERVER_COMMAND) {
-          const serverId = Array.isArray(instruction.arguments)
+        if (instruction.command === REMOVE_CONNECTION_COMMAND) {
+          const connectionId = Array.isArray(instruction.arguments)
             ? instruction.arguments[0]
             : undefined;
-          if (typeof serverId !== "string" || serverId.length === 0) {
-            throw new Error("Remove server requires a non-empty server id");
+          if (typeof connectionId !== "string" || connectionId.length === 0) {
+            throw new Error("Remove Connection requires a non-empty Connection id");
           }
-          await options.removeServer(serverId);
+          await options.removeConnection(connectionId);
           markReady(instruction.nonce);
           return;
         }

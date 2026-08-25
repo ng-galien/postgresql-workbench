@@ -108,6 +108,11 @@ export function isRange(selection: GridSelection, visibleOrdinals: readonly numb
 /**
  * The selection after a move by so many rows and columns. Shift extends it; otherwise it collapses
  * onto the cell moved to, which is what every grid a reader has used already does.
+ *
+ * The gutter is a place the cursor can stand, one step left of the first column, and standing there
+ * is what selecting a whole row means — the same selection a click in the gutter leaves behind. One
+ * step right comes back to the first column. Moving up and down from the gutter stays on it, so the
+ * reader walks whole rows, and a held shift extends the run of them.
  */
 export function movedSelection(
   selection: GridSelection,
@@ -118,14 +123,17 @@ export function movedSelection(
 ): GridSelection {
   const { visibleOrdinals } = bounds;
   const from = extend ? selection.head : selection.anchor;
-  const column = visibleOrdinals.indexOf(from.ordinal);
-  const nextColumn = clampIndex(column < 0 ? 0 : column + columnDelta, visibleOrdinals.length);
+  // Where the cursor stands along the row, counting the gutter as the column before the first.
+  const column =
+    selection.kind === "rows" ? -1 : Math.max(0, visibleOrdinals.indexOf(from.ordinal));
+  const next = Math.max(-1, Math.min(column + columnDelta, visibleOrdinals.length - 1));
+  const kind: GridSelection["kind"] = next < 0 ? "rows" : "cells";
   const head = {
     row: clampIndex(from.row + rowDelta, bounds.rows),
-    ordinal: visibleOrdinals[nextColumn] ?? from.ordinal,
+    ordinal: visibleOrdinals[Math.max(0, next)] ?? from.ordinal,
   };
-  if (extend) return extendedTo(selection, head);
-  return { kind: selection.kind, anchor: head, head };
+  if (extend) return extendedTo(selection, head, kind);
+  return { kind, anchor: head, head };
 }
 
 function clampIndex(value: number, length: number): number {

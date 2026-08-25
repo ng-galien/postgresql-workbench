@@ -7,14 +7,14 @@ import {
 
 const snapshot = {
   status: "available" as const,
-  serverId: "demo",
+  connectionId: "demo",
   database: "demo",
   revision: "one",
   generation: 1,
   foreignKeys: [],
   objects: [
     {
-      serverId: "demo",
+      connectionId: "demo",
       database: "demo",
       schema: "playground",
       oid: 1,
@@ -26,7 +26,7 @@ const snapshot = {
       columns: [],
     },
     {
-      serverId: "demo",
+      connectionId: "demo",
       database: "demo",
       schema: "pg_catalog",
       oid: 2,
@@ -38,7 +38,7 @@ const snapshot = {
       columns: [],
     },
     {
-      serverId: "demo",
+      connectionId: "demo",
       database: "demo",
       schema: "playground",
       oid: 3,
@@ -50,7 +50,7 @@ const snapshot = {
       columns: [],
     },
     {
-      serverId: "demo",
+      connectionId: "demo",
       database: "demo",
       schema: "playground",
       oid: 4,

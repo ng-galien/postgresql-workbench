@@ -74,9 +74,9 @@ vi.mock("vscode", () => {
   };
 });
 
-import type { ServerConfig } from "../../../packages/catalog/src/savedConnection.js";
+import type { ConnectionConfig } from "../../../packages/catalog/src/savedConnection.js";
 import { ConnectionManager } from "./openConnections.js";
-import { ServerStore } from "./savedConnections.js";
+import { ConnectionStore } from "./savedConnections.js";
 
 function stateStore() {
   const values = new Map<string, unknown>();
@@ -123,15 +123,16 @@ function postgresClient(): Client {
 
 async function connect(
   manager: ConnectionManager,
-  server: ServerConfig,
+  connection: ConnectionConfig,
   client: Client,
 ): Promise<void> {
-  if (!manager.store.has(server.id)) await manager.store.add(server, `${server.name}-password`);
+  if (!manager.store.has(connection.id))
+    await manager.store.add(connection, `${connection.name}-password`);
   service.connect.mockResolvedValueOnce(client);
-  await expect(manager.connectServer(server.id)).resolves.toBe(true);
+  await expect(manager.connectConnection(connection.id)).resolves.toBe(true);
 }
 
-const OLD_SERVER: ServerConfig = {
+const OLD_CONNECTION: ConnectionConfig = {
   id: "old:5432/old:postgres",
   name: "old",
   host: "old",
@@ -140,7 +141,7 @@ const OLD_SERVER: ServerConfig = {
   user: "postgres",
 };
 
-const NEXT_SERVER: ServerConfig = {
+const NEXT_CONNECTION: ConnectionConfig = {
   id: "next:5432/next:postgres",
   name: "next",
   host: "next",
@@ -163,10 +164,10 @@ beforeEach(() => {
   );
 });
 
-describe("ConnectionManager independent Connexion transitions", () => {
+describe("ConnectionManager independent Connection transitions", () => {
   it("keeps connection controls independent from debugger capability detection", async () => {
     const { manager } = fixture();
-    await manager.store.add(NEXT_SERVER, "next-password");
+    await manager.store.add(NEXT_CONNECTION, "next-password");
     const client = postgresClient();
     service.connect.mockResolvedValue(client);
     service.checkRequirements.mockReturnValue(new Promise(() => undefined));
@@ -176,19 +177,19 @@ describe("ConnectionManager independent Connexion transitions", () => {
         onCancellationRequested: () => ({ dispose: () => undefined }),
       } as never),
     );
-    await expect(manager.connectServer(NEXT_SERVER.id)).resolves.toBe(true);
-    expect(manager.isServerConnected(NEXT_SERVER.id)).toBe(true);
-    expect(manager.debugCapabilityFor(NEXT_SERVER.id).status).toBe("checking");
-    await expect(manager.disconnect(NEXT_SERVER.id)).resolves.toBe(true);
+    await expect(manager.connectConnection(NEXT_CONNECTION.id)).resolves.toBe(true);
+    expect(manager.isConnectionConnected(NEXT_CONNECTION.id)).toBe(true);
+    expect(manager.debugCapabilityFor(NEXT_CONNECTION.id).status).toBe("checking");
+    await expect(manager.disconnect(NEXT_CONNECTION.id)).resolves.toBe(true);
     expect(service.disconnect).toHaveBeenCalledWith(client);
     expect(vscode.window.showWarningMessage).not.toHaveBeenCalled();
     manager.dispose();
   });
 
-  it("owns debugger capability independently for every saved Connexion", async () => {
+  it("owns debugger capability independently for every saved Connection", async () => {
     const { manager } = fixture();
-    await manager.store.add(OLD_SERVER, "old-password");
-    await manager.store.add(NEXT_SERVER, "next-password");
+    await manager.store.add(OLD_CONNECTION, "old-password");
+    await manager.store.add(NEXT_CONNECTION, "next-password");
     const oldClient = {} as Client;
     const nextClient = {} as Client;
     service.connect.mockResolvedValueOnce(oldClient).mockResolvedValueOnce(nextClient);
@@ -196,21 +197,21 @@ describe("ConnectionManager independent Connexion transitions", () => {
       .mockResolvedValueOnce({ available: true, error: "" })
       .mockResolvedValueOnce({ available: false, error: "pldbgapi is not installed" });
 
-    await expect(manager.refreshDebugCapability(OLD_SERVER.id)).resolves.toEqual({
+    await expect(manager.refreshDebugCapability(OLD_CONNECTION.id)).resolves.toEqual({
       available: true,
       error: "",
     });
-    await expect(manager.refreshDebugCapability(NEXT_SERVER.id)).resolves.toEqual({
+    await expect(manager.refreshDebugCapability(NEXT_CONNECTION.id)).resolves.toEqual({
       available: false,
       error: "pldbgapi is not installed",
     });
 
-    expect(manager.debugCapabilityFor(OLD_SERVER.id)).toMatchObject({
-      serverId: OLD_SERVER.id,
+    expect(manager.debugCapabilityFor(OLD_CONNECTION.id)).toMatchObject({
+      connectionId: OLD_CONNECTION.id,
       status: "available",
     });
-    expect(manager.debugCapabilityFor(NEXT_SERVER.id)).toMatchObject({
-      serverId: NEXT_SERVER.id,
+    expect(manager.debugCapabilityFor(NEXT_CONNECTION.id)).toMatchObject({
+      connectionId: NEXT_CONNECTION.id,
       status: "unavailable",
       message: "pldbgapi is not installed",
     });
@@ -219,51 +220,51 @@ describe("ConnectionManager independent Connexion transitions", () => {
     manager.dispose();
   });
 
-  it("keeps two Connexions alive and disconnects only the selected one", async () => {
+  it("keeps two Connections alive and disconnects only the selected one", async () => {
     const { manager } = fixture();
-    await manager.store.add(OLD_SERVER, "old-password");
-    await manager.store.add(NEXT_SERVER, "next-password");
+    await manager.store.add(OLD_CONNECTION, "old-password");
+    await manager.store.add(NEXT_CONNECTION, "next-password");
     const oldClient = postgresClient();
     const nextClient = postgresClient();
-    await connect(manager, OLD_SERVER, oldClient);
-    await connect(manager, NEXT_SERVER, nextClient);
+    await connect(manager, OLD_CONNECTION, oldClient);
+    await connect(manager, NEXT_CONNECTION, nextClient);
 
     expect(service.disconnect).not.toHaveBeenCalled();
-    expect(manager.isServerConnected(OLD_SERVER.id)).toBe(true);
-    expect(manager.isServerConnected(NEXT_SERVER.id)).toBe(true);
-    expect(manager.isServerConnected(NEXT_SERVER.id)).toBe(true);
+    expect(manager.isConnectionConnected(OLD_CONNECTION.id)).toBe(true);
+    expect(manager.isConnectionConnected(NEXT_CONNECTION.id)).toBe(true);
+    expect(manager.isConnectionConnected(NEXT_CONNECTION.id)).toBe(true);
 
-    await expect(manager.disconnect(OLD_SERVER.id)).resolves.toBe(true);
+    await expect(manager.disconnect(OLD_CONNECTION.id)).resolves.toBe(true);
     expect(service.disconnect).toHaveBeenCalledExactlyOnceWith(oldClient);
-    expect(manager.isServerConnected(OLD_SERVER.id)).toBe(false);
-    expect(manager.isServerConnected(NEXT_SERVER.id)).toBe(true);
-    expect(manager.isServerConnected(NEXT_SERVER.id)).toBe(true);
-    expect(manager.getClient(NEXT_SERVER.id)).toBe(nextClient);
+    expect(manager.isConnectionConnected(OLD_CONNECTION.id)).toBe(false);
+    expect(manager.isConnectionConnected(NEXT_CONNECTION.id)).toBe(true);
+    expect(manager.isConnectionConnected(NEXT_CONNECTION.id)).toBe(true);
+    expect(manager.getClient(NEXT_CONNECTION.id)).toBe(nextClient);
     manager.dispose();
   });
 
-  it("keeps the guarded Connexion open when a Scratchpad Transaction cancels disconnect", async () => {
+  it("keeps the guarded Connection open when a Scratchpad Transaction cancels disconnect", async () => {
     const { manager } = fixture();
-    await manager.store.add(OLD_SERVER, "old-password");
+    await manager.store.add(OLD_CONNECTION, "old-password");
     const oldClient = postgresClient();
-    await connect(manager, OLD_SERVER, oldClient);
+    await connect(manager, OLD_CONNECTION, oldClient);
     const guard = vi.fn().mockResolvedValue(undefined);
     manager.registerBeforeConnectionChange(guard);
 
     await expect(manager.disconnect()).resolves.toBe(false);
 
-    expect(guard).toHaveBeenCalledWith(OLD_SERVER.id, "disconnecting the Connexion");
+    expect(guard).toHaveBeenCalledWith(OLD_CONNECTION.id, "disconnecting the Connection");
     expect(service.disconnect).not.toHaveBeenCalled();
-    expect(manager.store.get(OLD_SERVER.id)).toEqual(OLD_SERVER);
-    expect(manager.isServerConnected(OLD_SERVER.id)).toBe(true);
+    expect(manager.store.get(OLD_CONNECTION.id)).toEqual(OLD_CONNECTION);
+    expect(manager.isConnectionConnected(OLD_CONNECTION.id)).toBe(true);
     manager.dispose();
   });
 
-  it("holds the Connexion guard lease until the disconnect mutation finishes", async () => {
+  it("holds the Connection guard lease until the disconnect mutation finishes", async () => {
     const { manager } = fixture();
-    await manager.store.add(OLD_SERVER, "old-password");
+    await manager.store.add(OLD_CONNECTION, "old-password");
     const oldClient = postgresClient();
-    await connect(manager, OLD_SERVER, oldClient);
+    await connect(manager, OLD_CONNECTION, oldClient);
     let finishDisconnect = () => {};
     service.disconnect.mockReturnValue(
       new Promise<void>((resolve) => {
@@ -283,11 +284,11 @@ describe("ConnectionManager independent Connexion transitions", () => {
     manager.dispose();
   });
 
-  it("serializes concurrent Connexion transitions", async () => {
+  it("serializes concurrent Connection transitions", async () => {
     const { manager } = fixture();
-    await manager.store.add(OLD_SERVER, "old-password");
+    await manager.store.add(OLD_CONNECTION, "old-password");
     const oldClient = postgresClient();
-    await connect(manager, OLD_SERVER, oldClient);
+    await connect(manager, OLD_CONNECTION, oldClient);
     let finishFirst = () => {};
     service.disconnect.mockReturnValue(
       new Promise<void>((resolve) => {
@@ -299,43 +300,45 @@ describe("ConnectionManager independent Connexion transitions", () => {
     const first = manager.disconnect();
     const second = manager.disconnect();
     await vi.waitFor(() => expect(service.disconnect).toHaveBeenCalledTimes(1));
-    expect(manager.isServerConnected(OLD_SERVER.id)).toBe(false);
+    expect(manager.isConnectionConnected(OLD_CONNECTION.id)).toBe(false);
 
     finishFirst();
     await expect(Promise.all([first, second])).resolves.toEqual([true, false]);
     expect(service.disconnect).toHaveBeenCalledTimes(1);
-    expect(manager.isServerConnected(OLD_SERVER.id)).toBe(false);
+    expect(manager.isConnectionConnected(OLD_CONNECTION.id)).toBe(false);
     manager.dispose();
   });
 
-  it("does not create a replacement Connexion when the Transaction guard cancels", async () => {
+  it("does not create a replacement Connection when the Transaction guard cancels", async () => {
     const { manager } = fixture();
-    await manager.store.add(OLD_SERVER, "old-password");
+    await manager.store.add(OLD_CONNECTION, "old-password");
     const guard = vi.fn().mockResolvedValue(undefined);
     manager.registerBeforeConnectionChange(guard);
 
     await expect(
-      manager.replaceConnectionConfiguration(OLD_SERVER.id, NEXT_SERVER, "old-password"),
+      manager.replaceConnectionConfiguration(OLD_CONNECTION.id, NEXT_CONNECTION, "old-password"),
     ).resolves.toBe(false);
 
-    expect(guard).toHaveBeenCalledWith(OLD_SERVER.id, "replacing the Connexion");
-    expect(manager.store.get(OLD_SERVER.id)).toEqual(OLD_SERVER);
-    expect(manager.store.get(NEXT_SERVER.id)).toBeUndefined();
+    expect(guard).toHaveBeenCalledWith(OLD_CONNECTION.id, "replacing the Connection");
+    expect(manager.store.get(OLD_CONNECTION.id)).toEqual(OLD_CONNECTION);
+    expect(manager.store.get(NEXT_CONNECTION.id)).toBeUndefined();
     manager.dispose();
   });
 
   it("forces a real reconnect after a saved password changes", async () => {
     const { manager } = fixture();
-    await manager.store.add(OLD_SERVER, "new-password");
+    await manager.store.add(OLD_CONNECTION, "new-password");
     const oldClient = postgresClient();
-    await connect(manager, OLD_SERVER, oldClient);
+    await connect(manager, OLD_CONNECTION, oldClient);
     service.connect.mockRejectedValueOnce(new Error("network"));
     const guard = vi.fn().mockResolvedValue(new vscode.Disposable(() => {}));
     manager.registerBeforeConnectionChange(guard);
 
-    await expect(manager.connectServer(OLD_SERVER.id, { force: true })).resolves.toBe(false);
+    await expect(manager.connectConnection(OLD_CONNECTION.id, { force: true })).resolves.toBe(
+      false,
+    );
 
-    expect(guard).toHaveBeenCalledWith(OLD_SERVER.id, "reconnecting the Connexion");
+    expect(guard).toHaveBeenCalledWith(OLD_CONNECTION.id, "reconnecting the Connection");
     expect(service.disconnect).toHaveBeenCalledWith(oldClient);
     expect(service.connect).toHaveBeenCalledWith(
       expect.objectContaining({ password: "new-password" }),
@@ -343,13 +346,13 @@ describe("ConnectionManager independent Connexion transitions", () => {
     manager.dispose();
   });
 
-  it("keeps an existing Connexion open when another connection is cancelled", async () => {
+  it("keeps an existing Connection open when another connection is cancelled", async () => {
     const { manager, workspaceState } = fixture();
-    await manager.store.add(OLD_SERVER, "old-password");
-    await manager.store.add(NEXT_SERVER, "next-password");
-    await manager.store.setConnectionOpen(OLD_SERVER.id, true);
+    await manager.store.add(OLD_CONNECTION, "old-password");
+    await manager.store.add(NEXT_CONNECTION, "next-password");
+    await manager.store.setConnectionOpen(OLD_CONNECTION.id, true);
     const oldClient = postgresClient();
-    await connect(manager, OLD_SERVER, oldClient);
+    await connect(manager, OLD_CONNECTION, oldClient);
     vi.mocked(vscode.window.withProgress).mockImplementationOnce(async (_options, task) =>
       task({ report: () => undefined }, {
         isCancellationRequested: true,
@@ -360,23 +363,50 @@ describe("ConnectionManager independent Connexion transitions", () => {
       } as never),
     );
     let activeChanges = 0;
-    manager.onServerChanged(() => {
+    manager.onConnectionChanged(() => {
       activeChanges += 1;
     });
 
-    await expect(manager.connectServer(NEXT_SERVER.id)).resolves.toBe(false);
+    await expect(manager.connectConnection(NEXT_CONNECTION.id)).resolves.toBe(false);
 
     expect(service.disconnect).not.toHaveBeenCalled();
-    expect(manager.isServerConnected(OLD_SERVER.id)).toBe(true);
-    expect(manager.getClient(OLD_SERVER.id)).toBe(oldClient);
-    expect(workspaceState.get("postgresql-workbench.openServers")).toEqual([OLD_SERVER.id]);
+    expect(manager.isConnectionConnected(OLD_CONNECTION.id)).toBe(true);
+    expect(manager.getClient(OLD_CONNECTION.id)).toBe(oldClient);
+    expect(workspaceState.get("postgresql-workbench.openServers")).toEqual([OLD_CONNECTION.id]);
     expect(activeChanges).toBeGreaterThanOrEqual(0);
+    manager.dispose();
+  });
+
+  it("releases a failed Connection transition before waiting for a recovery action", async () => {
+    const { manager } = fixture();
+    await manager.store.add(OLD_CONNECTION, "old-password");
+    service.connect.mockRejectedValueOnce(new Error("network"));
+    let progressSettled = false;
+    vi.mocked(vscode.window.withProgress).mockImplementationOnce(async (_options, task) => {
+      const result = await task({ report: () => undefined }, {
+        isCancellationRequested: false,
+        onCancellationRequested: () => ({ dispose: () => undefined }),
+      } as never);
+      progressSettled = true;
+      return result;
+    });
+    vi.mocked(vscode.window.showErrorMessage).mockImplementationOnce(() => {
+      expect(progressSettled).toBe(true);
+      return new Promise(() => undefined);
+    });
+
+    await expect(manager.connectConnection(OLD_CONNECTION.id)).resolves.toBe(false);
+
+    vi.mocked(vscode.window.showWarningMessage).mockResolvedValueOnce("Remove" as never);
+    await expect(manager.commands.removeConnection(OLD_CONNECTION.id)).resolves.toBeUndefined();
+    expect(manager.store.get(OLD_CONNECTION.id)).toBeUndefined();
+    expect(vscode.commands.executeCommand).toHaveBeenCalledWith("notifications.hideToasts");
     manager.dispose();
   });
 
   it("keeps the previous port when an invalid edit is submitted", async () => {
     const { manager } = fixture();
-    await manager.store.add(OLD_SERVER, "old-password");
+    await manager.store.add(OLD_CONNECTION, "old-password");
     vi.mocked(vscode.window.showQuickPick).mockResolvedValue({
       label: "Port",
       description: "5432",
@@ -388,78 +418,99 @@ describe("ConnectionManager independent Connexion transitions", () => {
       changes += 1;
     });
 
-    await manager.editServer(OLD_SERVER.id);
+    await manager.commands.editConnection(OLD_CONNECTION.id);
 
     expect(vscode.window.showWarningMessage).toHaveBeenCalledWith(
       'Invalid port "invalid" — keeping 5432.',
     );
-    expect(manager.store.get(OLD_SERVER.id)).toEqual(OLD_SERVER);
+    expect(manager.store.get(OLD_CONNECTION.id)).toEqual(OLD_CONNECTION);
     expect(changes).toBe(1);
     manager.dispose();
   });
 
-  it("publishes one change when removing an open Connexion", async () => {
+  it("publishes one change when removing an open Connection", async () => {
     const { manager, workspaceState } = fixture();
-    await manager.store.add(OLD_SERVER, "old-password");
-    await manager.store.setConnectionOpen(OLD_SERVER.id, true);
-    await connect(manager, OLD_SERVER, postgresClient());
+    await manager.store.add(OLD_CONNECTION, "old-password");
+    await manager.store.setConnectionOpen(OLD_CONNECTION.id, true);
+    await connect(manager, OLD_CONNECTION, postgresClient());
     let changes = 0;
     let activeChanges = 0;
     manager.onChanged(() => {
       changes += 1;
     });
-    manager.onServerChanged(() => {
+    manager.onConnectionChanged(() => {
       activeChanges += 1;
     });
     vi.mocked(vscode.window.showWarningMessage).mockResolvedValue("Remove" as never);
 
-    await manager.removeServer(OLD_SERVER.id);
+    await manager.commands.removeConnection(OLD_CONNECTION.id);
 
-    expect(manager.store.get(OLD_SERVER.id)).toBeUndefined();
+    expect(manager.store.get(OLD_CONNECTION.id)).toBeUndefined();
     expect(workspaceState.get("postgresql-workbench.openServers")).toEqual([]);
     expect(changes).toBe(1);
     expect(activeChanges).toBe(1);
     manager.dispose();
   });
 
-  it("publishes one change when replacing an open Connexion", async () => {
+  it("connects the replacement after editing a Connection identity", async () => {
     const { manager } = fixture();
-    await manager.store.add(OLD_SERVER, "old-password");
-    await manager.store.setConnectionOpen(OLD_SERVER.id, true);
-    await connect(manager, OLD_SERVER, postgresClient());
-    let changes = 0;
-    let activeChanges = 0;
-    manager.onChanged(() => {
-      changes += 1;
-    });
-    manager.onServerChanged(() => {
-      activeChanges += 1;
-    });
+    await manager.store.add(OLD_CONNECTION, "old-password");
+    await manager.store.setConnectionOpen(OLD_CONNECTION.id, true);
+    const oldClient = postgresClient();
+    await connect(manager, OLD_CONNECTION, oldClient);
+    const replacementClient = postgresClient();
+    service.connect.mockResolvedValueOnce(replacementClient);
     vi.mocked(vscode.window.showQuickPick).mockResolvedValue({
       label: "Host",
-      description: OLD_SERVER.host,
+      description: OLD_CONNECTION.host,
       detail: "host",
     });
-    vi.mocked(vscode.window.showInputBox).mockResolvedValue(NEXT_SERVER.host);
+    vi.mocked(vscode.window.showInputBox).mockResolvedValue(NEXT_CONNECTION.host);
 
-    await manager.editServer(OLD_SERVER.id);
+    await manager.commands.editConnection(OLD_CONNECTION.id);
 
-    const replacementId = ServerStore.makeId(
-      NEXT_SERVER.host,
-      OLD_SERVER.port,
-      OLD_SERVER.database,
-      OLD_SERVER.user,
+    const replacementId = ConnectionStore.makeId(
+      NEXT_CONNECTION.host,
+      OLD_CONNECTION.port,
+      OLD_CONNECTION.database,
+      OLD_CONNECTION.user,
     );
-    expect(manager.store.get(OLD_SERVER.id)).toBeUndefined();
+    expect(manager.store.get(OLD_CONNECTION.id)).toBeUndefined();
     expect(manager.store.get(replacementId)).toMatchObject({
       id: replacementId,
-      host: NEXT_SERVER.host,
-      port: OLD_SERVER.port,
-      database: OLD_SERVER.database,
-      user: OLD_SERVER.user,
+      host: NEXT_CONNECTION.host,
+      port: OLD_CONNECTION.port,
+      database: OLD_CONNECTION.database,
+      user: OLD_CONNECTION.user,
     });
-    expect(changes).toBe(1);
-    expect(activeChanges).toBe(1);
+    expect(service.disconnect).toHaveBeenCalledWith(oldClient);
+    expect(manager.isConnectionConnected(OLD_CONNECTION.id)).toBe(false);
+    expect(manager.isConnectionConnected(replacementId)).toBe(true);
+    expect(manager.getClient(replacementId)).toBe(replacementClient);
+    manager.dispose();
+  });
+
+  it("keeps a disconnected Connection closed after editing its identity", async () => {
+    const { manager } = fixture();
+    await manager.store.add(OLD_CONNECTION, "old-password");
+    vi.mocked(vscode.window.showQuickPick).mockResolvedValue({
+      label: "Host",
+      description: OLD_CONNECTION.host,
+      detail: "host",
+    });
+    vi.mocked(vscode.window.showInputBox).mockResolvedValue(NEXT_CONNECTION.host);
+
+    await manager.commands.editConnection(OLD_CONNECTION.id);
+
+    const replacementId = ConnectionStore.makeId(
+      NEXT_CONNECTION.host,
+      OLD_CONNECTION.port,
+      OLD_CONNECTION.database,
+      OLD_CONNECTION.user,
+    );
+    expect(manager.store.get(replacementId)).toBeDefined();
+    expect(manager.isConnectionConnected(replacementId)).toBe(false);
+    expect(service.connect).not.toHaveBeenCalled();
     manager.dispose();
   });
 });

@@ -18,7 +18,7 @@ import {
 import { configuredScratchpadStatementTimeoutMs } from "./scratchpadSettings.js";
 
 /**
- * What a Scratchpad cell says about itself under its own last line: which Connexion it will run
+ * What a Scratchpad cell says about itself under its own last line: which Connection it will run
  * on, how long a statement may take, and whether the routine it names can be debugged. Recomputed
  * when the notebook changes, and after a pause when the cell's own text does — analysing a routine
  * on every keystroke would ask PostgreSQL a question the reader has not finished writing.
@@ -121,28 +121,28 @@ export class SqlNotebookStatusProvider
     intentItem.priority = 101;
     const association = resolveScratchpadAssociation(
       normalizeMetadata(cell.notebook.metadata),
-      this.connections.servers,
+      this.connections.connections,
     );
     const connected =
       association.status === "associated" &&
-      this.connections.isServerConnected(association.connection.id);
+      this.connections.isConnectionConnected(association.connection.id);
     const label =
       association.status === "unassociated"
-        ? "Choose a Connexion"
-        : association.snapshot.serverName;
+        ? "Choose a Connection"
+        : association.snapshot.connectionName;
     const associationItem = new vscode.NotebookCellStatusBarItem(
       `${association.status === "associated" ? (connected ? "$(pass-filled)" : "$(circle-outline)") : "$(warning)"} ${label}`,
       vscode.NotebookCellStatusBarAlignment.Right,
     );
     associationItem.command = {
-      title: "Change Scratchpad Connexion",
+      title: "Change Scratchpad Connection",
       command: CHANGE_SQL_NOTEBOOK_CONNECTION_COMMAND,
       arguments: [cell.notebook],
     };
     associationItem.tooltip =
       association.status === "associated"
-        ? `Scratchpad Connexion ${connected ? "connected" : "disconnected"} — click to change it`
-        : "Scratchpad Association unavailable — click to change its Connexion";
+        ? `Scratchpad Connection ${connected ? "connected" : "disconnected"} — click to change it`
+        : "Scratchpad Association unavailable — click to change its Connection";
     associationItem.priority = 100;
     const metadata = normalizeMetadata(cell.notebook.metadata);
     const globalTimeoutMs = configuredScratchpadStatementTimeoutMs();

@@ -13,7 +13,7 @@ interface BootstrapWorkerFixtures {
 }
 
 /**
- * The lane that starts from nothing: a fresh VS Code profile, no configured Connexion, no index.
+ * The lane that starts from nothing: a fresh VS Code profile, no configured Connection, no index.
  * Nothing here is prepared for the scenarios, because what they verify is the preparation itself.
  */
 export const test = base.extend<BootstrapFixtures, BootstrapWorkerFixtures>({
@@ -29,7 +29,7 @@ export const test = base.extend<BootstrapFixtures, BootstrapWorkerFixtures>({
     },
     { scope: "worker" },
   ],
-  // VS Code is launched behind the database, so the first Connexion this lane adds has something
+  // VS Code is launched behind the database, so the first Connection this lane adds has something
   // to connect to. Playwright only builds a fixture a test reaches, and no bootstrap scenario
   // names the database directly — what it verifies is the Workbench arriving at it.
   vscode: async ({ demoDatabase: _demoDatabase }, use) => {

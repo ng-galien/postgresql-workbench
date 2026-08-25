@@ -5,7 +5,7 @@ import {
   type DockerDebuggerVersion,
 } from "../../../packages/dap/src/dockerDatabase.js";
 import type { ConnectionManager } from "../connection/index.js";
-import { ServerStore } from "../connection/index.js";
+import { ConnectionStore } from "../connection/index.js";
 
 interface VersionItem extends vscode.QuickPickItem {
   version: DockerDebuggerVersion;
@@ -49,7 +49,7 @@ export async function startDockerDebugDatabase(
 
   try {
     const provisioner = new DockerDebuggerProvisioner();
-    const connection = await vscode.window.withProgress(
+    const provisioned = await vscode.window.withProgress(
       {
         location: vscode.ProgressLocation.Notification,
         title: `PostgreSQL Workbench: PostgreSQL ${version.version}`,
@@ -62,26 +62,26 @@ export async function startDockerDebugDatabase(
         }),
     );
 
-    const server = {
-      id: ServerStore.makeId(
-        connection.host,
-        connection.port,
-        connection.database,
-        connection.user,
+    const connection = {
+      id: ConnectionStore.makeId(
+        provisioned.host,
+        provisioned.port,
+        provisioned.database,
+        provisioned.user,
       ),
-      host: connection.host,
-      port: connection.port,
-      database: connection.database,
-      user: connection.user,
+      host: provisioned.host,
+      port: provisioned.port,
+      database: provisioned.database,
+      user: provisioned.user,
     };
-    await cm.store.add(server, connection.password);
-    const connected = await cm.connectServer(server.id);
+    await cm.store.add(connection, provisioned.password);
+    const connected = await cm.connectConnection(connection.id);
     if (!connected) return undefined;
 
     vscode.window.showInformationMessage(
       `PostgreSQL ${version.version} is ready and connected on 127.0.0.1:${port}.`,
     );
-    return server.id;
+    return connection.id;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     out.appendLine(`Docker setup failed: ${message}`);

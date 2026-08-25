@@ -60,10 +60,9 @@ test.describe("Scratchpads", () => {
       await notebook.executeCode(code);
 
       const result = await notebook.resultFrame("1");
-      // The value, not the row number beside it: every grid carries a gutter now.
-      await expect(result.locator("tbody td").getByText("1", { exact: true })).toBeVisible({
-        timeout: 10_000,
-      });
+      const queryResult = result.getByRole("region", { name: "PostgreSQL query result" });
+      // The SELECT value, not the row number or the INSERT report beside it.
+      await expect(new ResultTable(queryResult).cell(0, 0)).toHaveText("1", { timeout: 10_000 });
       await workbench.scratchpads.expand(scratchpad);
       const transaction = await workbench.scratchpads.transaction(scratchpad, "in progress");
       await expect(transaction).toContainText("3 Statements", { timeout: 5_000 });
@@ -167,7 +166,7 @@ test.describe("Scratchpads", () => {
     workbench,
     notebook,
   }) => {
-    await test.step("create a scratchpad from its Connexion", async () => {
+    await test.step("create a scratchpad from its Connection", async () => {
       await createScratchpad(workbench, notebook, demoAssociationText);
     });
 
@@ -230,7 +229,7 @@ test.describe("Scratchpads", () => {
     });
   });
 
-  test("stacks only row-producing results from a multi-statement cell", async ({
+  test("stacks rowsets and INSERT, UPDATE and DELETE reports from a multi-statement cell", async ({
     workbench,
     notebook,
   }) => {
@@ -241,7 +240,9 @@ test.describe("Scratchpads", () => {
       [
         "SELECT 1::integer AS sequence, 'first'::text AS state;",
         "CREATE TEMP TABLE acceptance_silent(id integer);",
-        "INSERT INTO acceptance_silent VALUES (2);",
+        "INSERT INTO acceptance_silent VALUES (2), (4);",
+        "UPDATE acceptance_silent SET id = 3 WHERE id = 2;",
+        "DELETE FROM acceptance_silent WHERE id = 4;",
         "SELECT id AS sequence, 'second'::text AS state FROM acceptance_silent;",
         "SET application_name = 'postgresql-workbench-acceptance';",
       ].join("\n"),
@@ -251,17 +252,53 @@ test.describe("Scratchpads", () => {
     await expect
       .poll(async () => (await notebook.snapshot())?.cells[0]?.outputGroups.length, {
         timeout: 10_000,
-        message: "The multi-statement cell must expose exactly its two row-producing results",
+        message: "The cell must expose its two rowsets and three DML command reports",
       })
-      .toBe(2);
+      .toBe(5);
     const snapshot = await notebook.snapshot();
-    expect(snapshot?.cells[0]?.outputGroups).toHaveLength(2);
+    expect(snapshot?.cells[0]?.outputGroups).toHaveLength(5);
     for (const group of snapshot?.cells[0]?.outputGroups ?? []) expect(group).toContain(resultMime);
 
     const first = await notebook.frameContainingText("first");
     const second = await notebook.frameContainingText("second");
     await expect(first.getByText("first", { exact: true })).toBeVisible();
     await expect(second.getByText("second", { exact: true })).toBeVisible();
+
+    for (const [operation, affectedRows] of [
+      ["INSERT", "2"],
+      ["UPDATE", "1"],
+      ["DELETE", "1"],
+    ] as const) {
+      const frame = await notebook.resultFrame(operation);
+      const reportRegion = frame.getByRole("region", {
+        name: `PostgreSQL ${operation} command report`,
+      });
+      const report = new ResultTable(reportRegion);
+      await expect(report.cellsWithText(operation)).toBeVisible();
+      await expect(report.cellsWithText(affectedRows)).toBeVisible();
+      await expect(
+        reportRegion
+          .locator(".result-summary")
+          .getByText(`${affectedRows} ${affectedRows === "1" ? "row" : "rows"} affected`, {
+            exact: true,
+          }),
+      ).toBeVisible();
+      await expect(
+        reportRegion.getByRole("button", { name: "Show the value under the cursor, whole" }),
+      ).toHaveCount(0);
+      await expect(
+        reportRegion.getByRole("button", { name: "Export rows to a file…" }),
+      ).toHaveCount(0);
+      await expect(reportRegion.getByRole("button", { name: "Next page" })).toHaveCount(0);
+      if (operation === "INSERT") {
+        await report.cell(0, 0).click();
+        await expect(report.cell(0, 0)).toHaveClass(/selected/u);
+
+        const sort = reportRegion.getByTitle("Sort displayed rows by operation");
+        await sort.click();
+        await expect(sort.locator("xpath=..")).toHaveAttribute("aria-sort", "ascending");
+      }
+    }
     expect(await notebook.renderedTextCount(/completed without a row set/i)).toBe(0);
   });
 
@@ -274,9 +311,9 @@ test.describe("Scratchpads", () => {
     await notebook.typeInCell(
       code,
       [
-        "CREATE TEMP TABLE notebook_cursor_safety(id integer);",
+        "CREATE TEMP TABLE notebook_paging_safety(id integer);",
         "WITH inserted AS (",
-        "  INSERT INTO notebook_cursor_safety (id)",
+        "  INSERT INTO notebook_paging_safety (id)",
         "  SELECT value FROM generate_series(1, 3) AS value",
         "  RETURNING id",
         ")",
@@ -288,7 +325,7 @@ test.describe("Scratchpads", () => {
     await expect
       .poll(async () => (await notebook.snapshot())?.cells[0]?.outputGroups.length, {
         timeout: 10_000,
-        message: "The data-modifying CTE must expose its returned rows without opening a cursor",
+        message: "The data-modifying CTE must expose its returned rows without paginating it",
       })
       .toBe(1);
     const result = await notebook.resultFrame("3");
@@ -297,6 +334,8 @@ test.describe("Scratchpads", () => {
     for (const id of ["1", "2", "3"]) {
       await expect(result.locator("tbody td").getByText(id, { exact: true })).toBeVisible();
     }
+    const exportPanel = await new ResultTable(result).openExport();
+    await expect(exportPanel.getByRole("radio", { name: /Entire query/u })).toHaveCount(0);
   });
 
   test("executes a wide SQL projection beyond the former parser budget", async ({
@@ -329,10 +368,13 @@ test.describe("Scratchpads", () => {
   }) => {
     await createScratchpad(workbench, notebook, demoAssociationText);
     const code = notebook.cell(0);
-    await notebook.typeInCell(code, "SELECT value FROM generate_series(1, 1000) AS value");
+    await notebook.typeInCell(
+      code,
+      "SELECT value, pg_sleep(0.002) FROM generate_series(1, 1000) AS value",
+    );
     await notebook.executeCode(code);
 
-    const frame = await notebook.resultFrame("Rows 1–200 · more available");
+    const frame = await notebook.resultFrame("1–200");
     /*
      * The paging controls say what they do with an icon and nothing else, so the font has to be
      * there: a result draws in a shadow root, and a font declared inside one is parsed and then
@@ -350,13 +392,106 @@ test.describe("Scratchpads", () => {
       .toBe(true);
 
     const result = new ResultTable(frame);
-    await expect(result.summary("Rows 1–200 · more available")).toBeVisible({ timeout: 10_000 });
+    await expect(result.summary("1–200")).toBeVisible({ timeout: 10_000 });
+    const navigation = frame.locator(".result-navigation");
+    const navigationGeometry = () =>
+      navigation.evaluate((element) => {
+        const bounds = element.getBoundingClientRect();
+        return {
+          x: Math.round(bounds.x),
+          y: Math.round(bounds.y),
+          width: Math.round(bounds.width),
+        };
+      });
+    const geometryBeforePaging = await navigationGeometry();
+    const scrollbarContract = await frame.locator(".result-scroller").evaluate((element) => ({
+      vertical: getComputedStyle(element).overflowY,
+      horizontal: getComputedStyle(element).overflowX,
+    }));
+    expect(scrollbarContract).toEqual({ vertical: "hidden", horizontal: "auto" });
+    await expect(frame.getByRole("scrollbar", { name: "Vertical result scroll" })).toHaveCount(1);
+    const scroller = frame.locator(".result-scroller");
+    await scroller.hover();
+    await frame.page().mouse.wheel(0, 120);
+    await expect.poll(() => scroller.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
     await result.next();
-    await expect(result.summary("Rows 201–400 · more available")).toBeVisible({ timeout: 5_000 });
+    await expect(frame.getByRole("button", { name: "Cancel loading" })).toBeVisible();
+    expect(await navigationGeometry()).toEqual(geometryBeforePaging);
+    await expect(result.summary("201–400")).toBeVisible({ timeout: 5_000 });
+    expect(await navigationGeometry()).toEqual(geometryBeforePaging);
     await result.previous();
-    await expect(result.summary("Rows 1–200 · more available")).toBeVisible({ timeout: 5_000 });
+    await expect(result.summary("1–200")).toBeVisible({ timeout: 5_000 });
+    expect(await navigationGeometry()).toEqual(geometryBeforePaging);
     await result.loadAll();
+    await expect(frame.getByRole("button", { name: "Cancel loading" })).toBeVisible();
+    expect(await navigationGeometry()).toEqual(geometryBeforePaging);
     await expect(result.summary("1000 rows")).toBeVisible({ timeout: 10_000 });
+    // Once every row is loaded there is no paging action left, so the host removes the control.
+    await expect(navigation).toHaveCount(0);
+  });
+
+  test("inspects a full retained Scratchpad value and prepares each export scope", async ({
+    workbench,
+    notebook,
+  }) => {
+    await createScratchpad(workbench, notebook, demoAssociationText);
+    const code = notebook.cell(0);
+    await notebook.typeInCell(code, `SELECT 7 AS id, repeat('x', 70000) AS details`);
+    await notebook.executeCode(code);
+
+    const frame = await notebook.resultFrame("7");
+    const result = new ResultTable(frame);
+    await expect(frame.getByRole("button", { name: "Copy TSV" })).toHaveCount(0);
+    await result.cell(0, 1).click();
+    await result.inspect();
+    const inspector = frame.getByRole("complementary", { name: "Value of details" });
+    await expect
+      .poll(() =>
+        inspector
+          .locator(".cell-inspector-text")
+          .textContent()
+          .then((text) => text?.length),
+      )
+      .toBe(70_000);
+    const initialInspector = await inspector.boundingBox();
+    expect(initialInspector?.height).toBeGreaterThan(100);
+    if (!initialInspector) throw new Error("The value inspector has no visible bounds");
+    const grip = inspector.getByRole("button", {
+      name: "Resize the value panel (arrow keys)",
+    });
+    await grip.focus();
+    for (let step = 0; step < 6; step += 1) await grip.press("ArrowDown");
+    expect((await inspector.boundingBox())?.height).toBeGreaterThan(initialInspector.height + 80);
+
+    const panel = await result.openExport();
+    await expect
+      .poll(() =>
+        panel.evaluate(
+          (element) => (element.getRootNode() as ShadowRoot).activeElement === element,
+        ),
+      )
+      .toBe(true);
+    await expect(frame.getByRole("dialog", { name: "Export rows" })).toHaveCount(0);
+    await expect(panel.getByRole("radio", { name: /The selection/u })).toBeVisible();
+    await expect(panel.getByRole("radio", { name: /The rows loaded/u })).toBeVisible();
+    await expect(panel.getByRole("radio", { name: /Entire query/u })).toBeVisible();
+    await expect(panel.getByRole("radio", { name: /^CSV\b/u })).toBeVisible();
+    await panel.getByRole("radio", { name: /^JSON\b/u }).click();
+    await expect(panel.getByRole("radio", { name: "SQL" })).toHaveCount(0);
+    await expect(panel.locator(".export-preview")).toContainText('"details":"xxx');
+    await panel.getByRole("radio", { name: /Entire query/u }).click();
+    await expect(panel.getByRole("note")).toContainText("side effects will execute again");
+    expect((await panel.boundingBox())?.height).toBeGreaterThan(300);
+    await panel.press("Escape");
+    await expect(panel).toHaveCount(0);
+    const exportButton = frame.getByRole("button", { name: "Export rows to a file…" });
+    await expect
+      .poll(() =>
+        exportButton.evaluate(
+          (element) => (element.getRootNode() as ShadowRoot).activeElement === element,
+        ),
+      )
+      .toBe(true);
   });
 
   test("renders syntax and PostgreSQL failures without internal stack traces", async ({

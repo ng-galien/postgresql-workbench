@@ -27,7 +27,7 @@ export interface SqlAuthoringStatusInput {
   context: SqlAuthoringDocumentContext;
   documentUri: string;
   scope: SqlAuthoringScope;
-  connexionName?: string;
+  connectionName?: string;
 }
 
 export function changeAssociationCommand(
@@ -63,7 +63,7 @@ export function sqlAuthoringLanguageStatus(
   input: SqlAuthoringStatusInput,
 ): SqlAuthoringLanguageStatus {
   const { context, documentUri, scope } = input;
-  const name = input.connexionName ?? "Connexion";
+  const name = input.connectionName ?? "Connection";
   const change = changeAssociationCommand(documentUri, scope);
   if (context.status === "available") {
     if (context.snapshot.status === "stale") {

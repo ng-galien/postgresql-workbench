@@ -16,8 +16,7 @@ import {
 
 export interface SqlResultSettings {
   pageSize: number;
-  maxCachedRows: number;
-  cursorIdleTimeoutSeconds: number;
+  maxCellBytes: number;
   nonPagedMaxRows: number;
 }
 
@@ -34,13 +33,9 @@ export function sqlResultSettings(): SqlResultSettings {
   );
   return {
     pageSize,
-    maxCachedRows: Math.max(
-      pageSize,
-      Math.min(100_000, Math.trunc(configuration.get<number>("maxCachedRows", 1_000))),
-    ),
-    cursorIdleTimeoutSeconds: Math.max(
-      30,
-      Math.min(3_600, Math.trunc(configuration.get<number>("cursorIdleTimeoutSeconds", 300))),
+    maxCellBytes: Math.max(
+      64 * 1024,
+      Math.min(8 * 1024 * 1024, Math.trunc(configuration.get<number>("maxCellBytes", 256 * 1024))),
     ),
     nonPagedMaxRows: clampDebugResultRows(
       configuration.get<number>("nonPagedMaxRows", DEBUG_RESULT_LIMITS.DEFAULT_ROWS),

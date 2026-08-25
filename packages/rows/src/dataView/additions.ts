@@ -35,7 +35,7 @@ export function dataViewAdditions(
       if (projectedColumns.has(column.name)) continue;
       const payload: SqlAuthoringDragPayload = {
         kind: "column",
-        serverId: object.serverId,
+        connectionId: object.connectionId,
         database: object.database,
         tableOid: object.oid,
         tableSchema: object.schema,
@@ -98,7 +98,7 @@ export function dataViewAdditions(
 function relationPayload(object: SqlAuthoringSnapshot["objects"][number]): SqlAuthoringDragPayload {
   return {
     kind: object.kind === "view" ? "view" : "table",
-    serverId: object.serverId,
+    connectionId: object.connectionId,
     database: object.database,
     oid: object.oid,
     schema: object.schema,

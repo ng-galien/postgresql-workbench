@@ -96,7 +96,7 @@ export function databaseLandingIdentity(
 ): string | undefined {
   return symbols.find(
     (symbol) =>
-      symbol.postgres?.serverId === database.serverId &&
+      symbol.postgres?.connectionId === database.connectionId &&
       symbol.postgres.database === database.database &&
       symbol.postgres.documentKind === "schema",
   )?.uri;
@@ -109,7 +109,7 @@ export function schemaLandingIdentity(
 ): string | undefined {
   return symbols.find(
     (symbol) =>
-      symbol.postgres?.serverId === database.serverId &&
+      symbol.postgres?.connectionId === database.connectionId &&
       symbol.postgres.database === database.database &&
       symbol.postgres.schema === schema &&
       symbol.postgres.documentKind === "schema",

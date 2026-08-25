@@ -1,13 +1,13 @@
 import {
-  demoConnexionTreeItem as connexion,
+  demoConnectionTreeItem as connection,
   demoDatabaseTreeItem as database,
 } from "../../fixtures/demoDatabase";
 import { expect, test } from "../../fixtures/test";
 import { SCHEMAS_TREE_ITEM } from "../../pages/WorkbenchTreeLabels";
 
 test.describe("Acceptance cinematics", () => {
-  test("navigates both TreeViews through an exact Connexion branch", async ({ workbench }) => {
-    const databaseTree = workbench.page.getByRole("tree", { name: "Workbench" });
+  test("navigates both TreeViews through an exact Connection branch", async ({ workbench }) => {
+    const databaseTree = workbench.page.getByRole("tree", { name: "Connections" });
     const scratchpadsTree = workbench.page.getByRole("tree", { name: "Scratchpads" });
 
     await test.step("keep the database tree above the dedicated Scratchpads tree", async () => {
@@ -23,7 +23,7 @@ test.describe("Acceptance cinematics", () => {
 
     await test.step("navigate deep rows, virtualized siblings, sticky ancestors, and back to root", async () => {
       const schema = await workbench.tree.expandPath([
-        connexion,
+        connection,
         database,
         SCHEMAS_TREE_ITEM,
         /^shop$/,
@@ -32,7 +32,7 @@ test.describe("Acceptance cinematics", () => {
       await workbench.tree.expandItem(address, /^address$/);
       await expect(await workbench.tree.findChild(address, /^id/)).toBeVisible();
       await expect(await workbench.tree.findChild(schema, /^product$/)).toBeVisible();
-      await expect(await workbench.tree.findItem(connexion)).toContainText(/(?<!dis)connected/u);
+      await expect(await workbench.tree.findItem(connection)).toContainText(/(?<!dis)connected/u);
     });
   });
 });

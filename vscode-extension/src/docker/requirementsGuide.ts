@@ -1,11 +1,11 @@
 import * as vscode from "vscode";
 
 /**
- * Setup guide shown when a server lacks the pldebugger extension.
+ * Setup guide shown when a Connection target lacks the pldebugger extension.
  * Three paths: Docker (fastest), self-hosted, and an honest note about
  * managed cloud services where pldbgapi is simply not available.
  */
-export const REQUIREMENTS_GUIDE = `# PostgreSQL Workbench — Server Requirements
+export const REQUIREMENTS_GUIDE = `# PostgreSQL Workbench — Connection Requirements
 
 Debugging PL/pgSQL requires the **pldebugger** extension on the PostgreSQL server:
 
@@ -16,7 +16,7 @@ Debugging PL/pgSQL requires the **pldebugger** extension on the PostgreSQL serve
 
 A ready-to-use PostgreSQL image with the debugger preinstalled (PostgreSQL 13–18, amd64/arm64):
 
-Run **PL/pgSQL: Start Local Debug Database (Docker)** from the Command Palette.
+Run **PostgreSQL Workbench: Start Local Debug Database (Docker)** from the Command Palette.
 The extension pulls the image, starts PostgreSQL on localhost, creates
 \`pldbgapi\`, saves the connection, and connects it automatically.
 

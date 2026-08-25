@@ -4,7 +4,7 @@ import {
   getConnectionUrl,
   sameConnectionIdentity,
 } from "../../../packages/catalog/src/savedConnection.js";
-import { ServerStore } from "./savedConnections.js";
+import { ConnectionStore } from "./savedConnections.js";
 
 const CONTEXT = {
   host: "localhost",
@@ -13,7 +13,7 @@ const CONTEXT = {
   user: "postgres",
 };
 
-describe("Connexion identity", () => {
+describe("Connection identity", () => {
   it.each(["host", "port", "database", "user"] as const)(
     "treats %s changes as a different context",
     (field) => {
@@ -27,28 +27,28 @@ describe("Connexion identity", () => {
   });
 });
 
-describe("ServerStore schema synchronization overrides", () => {
-  it("persists explicit Connexion settings without storing them as secrets", async () => {
+describe("ConnectionStore schema synchronization overrides", () => {
+  it("persists explicit Connection settings without storing them as secrets", async () => {
     const { state, store } = storeFixture();
-    const server = {
+    const connection = {
       id: "localhost:5432/app:postgres",
       name: "postgres@localhost:5432/app",
       ...CONTEXT,
       schemaSync: { enabled: true, supportSchema: "project_workbench" },
     };
 
-    await store.add(server, "secret");
+    await store.add(connection, "secret");
 
-    expect(store.get(server.id)?.schemaSync).toEqual({
+    expect(store.get(connection.id)?.schemaSync).toEqual({
       enabled: true,
       supportSchema: "project_workbench",
     });
-    expect(await store.getPassword(server.id)).toBe("secret");
+    expect(await store.getPassword(connection.id)).toBe("secret");
     expect(JSON.stringify(state.get("postgresql-workbench.servers"))).not.toContain("secret");
   });
 });
 
-describe("Connexion display identity", () => {
+describe("Connection display identity", () => {
   const first = {
     id: "localhost:5432/app:postgres",
     host: "localhost",
@@ -63,12 +63,12 @@ describe("Connexion display identity", () => {
     expect(getConnectionName({ ...first, name: "  Local ERP  " })).toBe("Local ERP");
   });
 
-  it("rejects a duplicate URL instead of silently replacing the saved Connexion", async () => {
+  it("rejects a duplicate URL instead of silently replacing the saved Connection", async () => {
     const { store } = storeFixture();
     await store.add(first, "first-secret");
 
     await expect(store.add({ ...first, name: "Duplicate" }, "second-secret")).rejects.toThrow(
-      "Connexion URL postgres@localhost:5432/app is already saved.",
+      "Connection URL postgres@localhost:5432/app is already saved.",
     );
     expect(await store.getPassword(first.id)).toBe("first-secret");
   });
@@ -87,7 +87,7 @@ describe("Connexion display identity", () => {
     expect(store.isConnectionNameAvailable("ERP")).toBe(false);
     expect(store.isConnectionNameAvailable("ERP", first.id)).toBe(true);
     await expect(store.add(second, "second-secret")).rejects.toThrow(
-      "Connexion name erp is already used.",
+      "Connection name erp is already used.",
     );
   });
 
@@ -108,11 +108,11 @@ describe("Connexion display identity", () => {
 function storeFixture(): {
   state: Map<string, unknown>;
   secrets: Map<string, string>;
-  store: ServerStore;
+  store: ConnectionStore;
 } {
   const state = new Map<string, unknown>();
   const secrets = new Map<string, string>();
-  const store = new ServerStore({
+  const store = new ConnectionStore({
     globalState: {
       get: <T>(key: string) => state.get(key) as T | undefined,
       update: async (key: string, value: unknown) => {

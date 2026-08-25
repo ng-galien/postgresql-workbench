@@ -1,11 +1,13 @@
 import type { Client, FieldDef } from "pg";
 import { types as pgTypes } from "pg";
 import {
-  PostgresCursorReader,
-  postgresCursorSafetyTimeoutMs,
-  type SqlCursorTypes,
-  SqlResultSession,
-} from "../cursor.js";
+  type OffsetQueryOrder,
+  type OffsetQueryTypes,
+  OffsetResultSession,
+  offsetPageSql,
+  PostgresOffsetQuerySource,
+  sameResultShape,
+} from "../offsetQuery.js";
 import type { ScratchpadAssociationSnapshot } from "../resultPayload.js";
 import { loadDataViewCatalog } from "./catalogFacts.js";
 import {
@@ -14,13 +16,13 @@ import {
   dataViewColumnKeys,
   dataViewKeysAt,
 } from "./dataView.js";
-import { resolveDataViewEditability } from "./editability.js";
+import { type CatalogTable, resolveDataViewEditability } from "./editability.js";
 
 /**
- * Data View cursors keep every value as PostgreSQL text except booleans and binary values, so
+ * Data View pages keep every value as PostgreSQL text except booleans and binary values, so
  * edits and stale-row guards compare exactly what PostgreSQL stores.
  */
-export const TEXT_PASSTHROUGH_TYPES: SqlCursorTypes = {
+export const TEXT_PASSTHROUGH_TYPES: OffsetQueryTypes = {
   getTypeParser(oid, format) {
     if (format === "binary" || oid === 16 || oid === 17) {
       return pgTypes.getTypeParser(oid, format as never) as (value: string) => unknown;
@@ -46,83 +48,168 @@ export class TableAccents {
 }
 
 export interface OpenedDataViewResult {
-  session: SqlResultSession;
+  session: OffsetResultSession;
   editability: DataViewEditability;
   projection: DataViewProjection;
   /** Column keys of the projection, in ordinal order. */
   columnKeys: string[];
   /** Keys of identity and relationship columns: hidden by default the first time they appear. */
   technicalKeys: string[];
-  idleTimeoutMs: number;
 }
 
-/** How much of a relation a Data View reads at a time, and how long its cursor may idle. */
+/** Settings shared by every LIMIT/OFFSET result. */
 export interface DataViewResultSettings {
   pageSize: number;
-  maxCachedRows: number;
-  cursorIdleTimeoutSeconds: number;
+  maxCellBytes: number;
+}
+
+export interface DataViewResultSort {
+  direction: "ascending" | "descending";
+  nulls?: "first" | "last";
+  /** Projected output column resolved by the SQL query model. */
+  column?: string;
 }
 
 /**
- * Opens a bounded cursor over one statement: the connection is given an idle timeout so
- * PostgreSQL closes an abandoned cursor, then the reader and its paging session are created.
- * Every surface that streams rows — the Scratchpad and the Data View — opens them this way.
- * On failure the reader, or the client when there is none yet, is closed here.
+ * Keeps the reader's requested sort first, then completes it with every relation key. An empty
+ * result means the projection does not prove a stable order and the original query is left alone.
  */
-export async function openBoundedCursor(options: {
-  client: Client;
+export function dataViewPageOrder(
+  fields: readonly Pick<FieldDef, "name">[],
+  editability: DataViewEditability,
+  sourcesAreNamedRelations: boolean | undefined,
+  relationCount: number | undefined,
+  requested: readonly DataViewResultSort[],
+): OffsetQueryOrder[] {
+  if (
+    sourcesAreNamedRelations !== true ||
+    relationCount === undefined ||
+    relationCount === 0 ||
+    relationCount !== editability.tables.length
+  ) {
+    return [];
+  }
+  const order: OffsetQueryOrder[] = [];
+  const orderedColumns = new Set<number>();
+  for (const item of requested) {
+    if (!item.column) return [];
+    const matches = fields.flatMap((field, index) => (field.name === item.column ? [index] : []));
+    if (matches.length !== 1) return [];
+    const columnIndex = matches[0];
+    if (columnIndex === undefined) return [];
+    order.push({
+      columnIndex,
+      direction: item.direction,
+      ...(item.nulls ? { nulls: item.nulls } : {}),
+    });
+    orderedColumns.add(columnIndex);
+  }
+  for (const table of editability.tables) {
+    for (const columnIndex of table.keyOrdinals) {
+      if (orderedColumns.has(columnIndex)) continue;
+      order.push({ columnIndex, direction: "ascending" });
+      orderedColumns.add(columnIndex);
+    }
+  }
+  return order;
+}
+
+/** Whether each projected key belongs to a table whose own constraint covers every returned row. */
+export function dataViewCatalogKeysCoverRows(
+  editability: DataViewEditability,
+  catalog: readonly Pick<CatalogTable, "tableOid" | "hasSubclasses">[],
+): boolean {
+  return editability.tables.every(
+    (table) =>
+      catalog.find((candidate) => candidate.tableOid === table.tableOid)?.hasSubclasses === false,
+  );
+}
+
+/** Opens the shared LIMIT/OFFSET result; every page owns and releases its connection. */
+export async function openOffsetResult(options: {
+  openClient(): Promise<Client>;
   sql: string;
   settings: DataViewResultSettings;
   binding: ScratchpadAssociationSnapshot;
-  /** Value decoding of the cursor; the Data View keeps everything as PostgreSQL text. */
-  types?: SqlCursorTypes;
-}): Promise<{ session: SqlResultSession; reader: PostgresCursorReader; idleTimeoutMs: number }> {
-  const { client, sql, settings, binding, types } = options;
-  const idleTimeoutMs = settings.cursorIdleTimeoutSeconds * 1_000;
-  await client.query("SELECT set_config('idle_in_transaction_session_timeout', $1, false)", [
-    `${postgresCursorSafetyTimeoutMs(idleTimeoutMs)}ms`,
-  ]);
-  const reader = new PostgresCursorReader(client, sql, types ? { types } : undefined);
-  try {
-    const session = await SqlResultSession.open(reader, {
-      pageSize: settings.pageSize,
-      maxCachedRows: settings.maxCachedRows,
-      binding,
-      statement: sql,
-    });
-    return { session, reader, idleTimeoutMs };
-  } catch (error) {
-    await reader.close().catch(() => {});
-    throw error;
-  }
+  types?: OffsetQueryTypes;
+  configure?: (client: Client) => Promise<void>;
+}): Promise<OffsetResultSession> {
+  const { openClient, sql, settings, binding, types, configure } = options;
+  const source = new PostgresOffsetQuerySource(openClient, sql, {
+    ...(types ? { types } : {}),
+    ...(configure ? { configure } : {}),
+  });
+  return OffsetResultSession.open(source, {
+    pageSize: settings.pageSize,
+    maxRetainedCellBytes: settings.maxCellBytes,
+    binding,
+    statement: sql,
+  });
 }
 
 /**
  * Probes the projection (RowDescription: table and column of every output), loads the catalog
- * facts of those tables, decides editability, then opens the bounded cursor. The client is
- * owned by the returned session and closed with it; on failure it is closed here.
+ * facts of those tables, decides editability, then opens the shared LIMIT/OFFSET result.
  */
 export async function openDataViewResult(options: {
-  client: Client;
+  openClient(): Promise<Client>;
   sql: string;
   settings: DataViewResultSettings;
   binding: ScratchpadAssociationSnapshot;
   accents: TableAccents;
+  orderBy?: readonly DataViewResultSort[];
+  /** Direct relations in the analyzed FROM clause; repeated relations count separately. */
+  relationCount?: number;
+  /** True only when the AST proves every FROM source is a named catalog relation. */
+  sourcesAreNamedRelations?: boolean;
   /** Throws when the caller no longer wants this load; the client is then released. */
   checkpoint(): void;
+  /** Gives the host an abort handle before opening either the probe or first-page connection. */
+  registerCancellation(cancel: () => Promise<void>): void;
 }): Promise<OpenedDataViewResult> {
-  const { client, sql, settings, binding, accents, checkpoint } = options;
-  let reader: PostgresCursorReader | undefined;
+  const {
+    openClient,
+    sql,
+    settings,
+    binding,
+    accents,
+    orderBy = [],
+    relationCount,
+    sourcesAreNamedRelations,
+    checkpoint,
+    registerCancellation,
+  } = options;
+  let cancelled = false;
+  let client: Client | undefined;
+  let source: PostgresOffsetQuerySource | undefined;
+  let session: OffsetResultSession | undefined;
+  registerCancellation(async () => {
+    cancelled = true;
+    const probeClient = client;
+    client = undefined;
+    await Promise.all([probeClient?.end().catch(() => {}), source?.cancel().catch(() => {})]);
+  });
+  const assertNotCancelled = () => {
+    if (cancelled) throw new Error("Result loading cancelled.");
+  };
   try {
+    client = await openClient();
+    if (cancelled) {
+      await client.end().catch(() => {});
+      client = undefined;
+      throw new Error("Result loading cancelled.");
+    }
     const probe = await client.query({
-      text: `SELECT * FROM (\n${sql}\n) AS "data_view_probe" LIMIT 0`,
+      text: offsetPageSql(sql, 0, 0),
       rowMode: "array",
     });
+    assertNotCancelled();
     checkpoint();
     const catalog = await loadDataViewCatalog(
       client,
       probe.fields.map((field) => field.tableID),
     );
+    assertNotCancelled();
     checkpoint();
     const editability = resolveDataViewEditability(probeFields(probe.fields), catalog);
     // Tables in order of first appearance in the projection, so badges follow the column order.
@@ -152,27 +239,43 @@ export async function openDataViewResult(options: {
     // One derivation of the column keys, so hiding technical columns matches what the grid shows.
     const columnKeys = dataViewColumnKeys(projection, columnNames);
     const technicalKeys = dataViewKeysAt(columnKeys, editability.technicalOrdinals);
-    const cursor = await openBoundedCursor({
-      client,
-      sql,
-      settings,
-      binding,
-      types: TEXT_PASSTHROUGH_TYPES,
-    });
-    reader = cursor.reader;
-    const { session, idleTimeoutMs } = cursor;
+    const catalogKeysCoverRows = dataViewCatalogKeysCoverRows(editability, catalog);
+    const pageOrder = dataViewPageOrder(
+      probe.fields,
+      editability,
+      sourcesAreNamedRelations === true && catalogKeysCoverRows,
+      relationCount,
+      orderBy,
+    );
+    await client.end().catch(() => {});
+    client = undefined;
+    assertNotCancelled();
     checkpoint();
+    source = new PostgresOffsetQuerySource(openClient, sql, {
+      types: TEXT_PASSTHROUGH_TYPES,
+      ...(pageOrder.length > 0 ? { orderBy: pageOrder } : {}),
+    });
+    session = await OffsetResultSession.open(source, {
+      pageSize: settings.pageSize,
+      maxRetainedCellBytes: settings.maxCellBytes,
+      binding,
+      statement: sql,
+    });
+    checkpoint();
+    if (!sameResultShape(probe.fields, session.fieldDefinitions)) {
+      throw new Error("The result shape changed while loading pages. Run the query again.");
+    }
     return {
       session,
       editability,
       projection,
       columnKeys,
       technicalKeys,
-      idleTimeoutMs,
     };
   } catch (error) {
-    if (reader) await reader.close().catch(() => {});
-    else await client.end().catch(() => {});
+    await client?.end().catch(() => {});
+    await session?.close().catch(() => {});
+    if (!session) await source?.cancel().catch(() => {});
     throw error;
   }
 }

@@ -3,9 +3,9 @@ import {
   classifyWorkbenchDdlSyncFailure,
   resolveWorkbenchDdlSyncConfiguration,
 } from "./ddlSyncSettings.js";
-import type { ServerConfig } from "./savedConnection.js";
+import type { ConnectionConfig } from "./savedConnection.js";
 
-const SERVER: ServerConfig = {
+const CONNECTION: ConnectionConfig = {
   id: "local:5432/app:postgres",
   name: "postgres@local:5432/app",
   host: "local",
@@ -17,7 +17,7 @@ const SERVER: ServerConfig = {
 describe("Workbench DDL synchronization configuration", () => {
   it("uses Settings defaults when the connection has no override", () => {
     expect(
-      resolveWorkbenchDdlSyncConfiguration(SERVER, {
+      resolveWorkbenchDdlSyncConfiguration(CONNECTION, {
         enabled: false,
         supportSchema: "workbench",
       }),
@@ -29,10 +29,10 @@ describe("Workbench DDL synchronization configuration", () => {
     });
   });
 
-  it("gives explicit Connexion overrides precedence over Settings", () => {
+  it("gives explicit Connection overrides precedence over Settings", () => {
     expect(
       resolveWorkbenchDdlSyncConfiguration(
-        { ...SERVER, schemaSync: { enabled: true, supportSchema: "project_workbench" } },
+        { ...CONNECTION, schemaSync: { enabled: true, supportSchema: "project_workbench" } },
         { enabled: false, supportSchema: "workbench" },
       ),
     ).toMatchObject({
@@ -46,7 +46,7 @@ describe("Workbench DDL synchronization configuration", () => {
   it("rejects an unsafe support schema from a persisted connection override", () => {
     expect(() =>
       resolveWorkbenchDdlSyncConfiguration(
-        { ...SERVER, schemaSync: { supportSchema: "Workbench; DROP SCHEMA public" } },
+        { ...CONNECTION, schemaSync: { supportSchema: "Workbench; DROP SCHEMA public" } },
         { enabled: false, supportSchema: "workbench" },
       ),
     ).toThrow("lower-case, unquoted PostgreSQL identifier");

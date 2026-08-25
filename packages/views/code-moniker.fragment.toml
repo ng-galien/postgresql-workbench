@@ -2,12 +2,12 @@ fragment = "views"
 enabled = true
 
 [aliases]
-views_package_source = "source ~ '**/dir:packages/dir:views/**'"
-views_package_allowed = "target ~ '**/dir:packages/dir:views/**' OR target ~ '**/dir:packages/dir:catalog/**' OR target ~ '**/dir:packages/dir:dap/**' OR target ~ '**/dir:packages/dir:rows/**'"
+webview_source = "source ~ '**/dir:packages/dir:views/**'"
+webview_catalog_debugger_result_target = "target ~ '**/dir:packages/dir:views/**' OR target ~ '**/dir:packages/dir:catalog/**' OR target ~ '**/dir:packages/dir:dap/**' OR target ~ '**/dir:packages/dir:rows/**'"
 
 [[ts.refs.where]]
-id = "package-depends-only-on-what-it-reads"
+id = "webview-dependency-is-limited-to-catalog-debugger-and-result"
 severity = "error"
-expr = "$views_package_source AND $architectural_dependency AND ($workbench_package_target OR $extension_local_target) => $views_package_allowed"
+expr = "$webview_source AND $structural_edge AND ($engine_package_target OR $host_local_target) => $webview_catalog_debugger_result_target"
 message = "packages/views renders what the other packages produce; it must never be depended on by them, and never depend on the Extension Host."
 rationale = "The React views run in a webview, a separate runtime from the Extension Host. They read the catalog, the captured debug results and the rows, and reach VS Code only through the typed protocol each view publishes."

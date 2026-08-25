@@ -7,7 +7,7 @@ import {
 } from "./relations.js";
 
 const DATABASE = {
-  serverId: "localhost:5433/testdb:postgres",
+  connectionId: "localhost:5433/testdb:postgres",
   database: "testdb",
 };
 
@@ -22,7 +22,7 @@ const EMPTY_GRAPH_METADATA = {
 };
 
 // This fixture builder mirrors CodeMonikerSymbol fields directly to keep scenario call sites clear.
-// code-moniker: ignore[smell-long-parameter-list]
+// code-moniker: ignore[code-single-responsibility-flags-long-parameter-lists]
 function symbol(
   name: string,
   kind: string,
@@ -40,7 +40,7 @@ function symbol(
     name,
     kind,
     file:
-      `postgresql://${encodeURIComponent(DATABASE.serverId)}/${database}/` +
+      `postgresql://${encodeURIComponent(DATABASE.connectionId)}/${database}/` +
       `${schema}/${documentKind}/${encodeURIComponent(sourceName)}.sql`,
     signature: "",
     postgres: {

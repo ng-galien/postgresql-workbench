@@ -1,8 +1,8 @@
 import { DEBUG_PLAYWRIGHT_TEST_TIMEOUT_MS } from "../../../../../e2e/debugTestTiming.js";
 import {
-  demoConnexionQuickPickItem as connectionChoice,
+  demoConnectionTreeItem as connection,
+  demoConnectionQuickPickItem as connectionChoice,
   demoDatabaseTreeItem as database,
-  demoConnexionTreeItem as server,
 } from "../../fixtures/demoDatabase";
 import { test } from "../../fixtures/test";
 
@@ -24,7 +24,7 @@ test.describe("PL/pgSQL debugger call sites", () => {
     const callerResume = "result := result + 1;";
 
     await test.step("open the caller and its call site", async () => {
-      await workbench.openRoutineSource(server, database, /^playground/, /^call_double\(/);
+      await workbench.openRoutineSource(connection, database, /^playground/, /^call_double\(/);
       await debuggerPage.openCallSite("debug-call-chain.sql");
       await debuggerPage.assignConnection(sql, connectionChoice);
     });
@@ -85,7 +85,12 @@ test.describe("PL/pgSQL debugger call sites", () => {
     workbench,
     debuggerPage,
   }) => {
-    await workbench.debugRoutineFromTree(server, database, /^playground/, /^debug_tree_entry\(\)/);
+    await workbench.debugRoutineFromTree(
+      connection,
+      database,
+      /^playground/,
+      /^debug_tree_entry\(\)/,
+    );
     await debuggerPage.expectRoutineEditor(/^debug_tree_entry$/, /playground\.debug_tree_entry/);
     await debuggerPage.continueToCompletion("42");
     await debuggerPage.expectNoErrorNotification();

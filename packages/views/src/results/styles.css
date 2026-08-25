@@ -47,6 +47,12 @@
   color: var(--vscode-descriptionForeground);
 }
 
+.result-duration {
+  color: var(--vscode-descriptionForeground);
+  font-size: 10px;
+  opacity: 0.75;
+}
+
 .result-warning-badge {
   color: var(--vscode-editorWarning-foreground);
   background: var(--vscode-editorWarning-background);
@@ -83,25 +89,6 @@
   color: var(--vscode-descriptionForeground);
 }
 
-.copy-button {
-  padding: 3px 8px;
-  color: var(--vscode-button-secondaryForeground);
-  background: var(--vscode-button-secondaryBackground);
-  border: 0;
-  border-radius: 2px;
-  cursor: pointer;
-  font: inherit;
-}
-
-.copy-button:hover {
-  background: var(--vscode-button-secondaryHoverBackground);
-}
-
-.copy-action {
-  flex: 0 0 auto;
-}
-
-.copy-button:focus-visible,
 .result-button:focus-visible,
 .column-sort:focus-visible,
 .cell-value:focus-visible {
@@ -165,6 +152,15 @@
 }
 
 /*
+ * One row must not make the value panel one row tall. The extra room only exists while inspection
+ * is active; a compact result stays compact until the reader asks to see a value whole.
+ */
+.result-scroller-frame:has(.cell-inspector) {
+  min-height: max(260px, var(--cell-inspector-room, 0px));
+  max-height: none;
+}
+
+/*
  * What the cursor is on, whole. It floats in the corner over the rows rather than taking a column
  * beside them: a table is read across, and a panel that narrowed it would cost a reader the very
  * columns they are moving between. The corner it sits in is the one furthest from where a reader
@@ -178,6 +174,7 @@
   bottom: 12px;
   display: flex;
   width: min(26em, calc(100% - 36px));
+  height: min(15em, calc(100% - 24px));
   max-height: min(15em, calc(100% - 24px));
   flex-direction: column;
   border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
@@ -195,8 +192,12 @@
   z-index: 1;
   top: -1px;
   left: -1px;
-  width: 14px;
-  height: 14px;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
   border-top: 2px solid color-mix(in srgb, var(--vscode-foreground) 35%, transparent);
   border-left: 2px solid color-mix(in srgb, var(--vscode-foreground) 35%, transparent);
   border-top-left-radius: 5px;
@@ -206,6 +207,13 @@
 
 .cell-inspector-grip:hover {
   border-color: var(--vscode-focusBorder);
+}
+
+.cell-inspector-grip:focus-visible,
+.cell-inspector-move:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: 1px;
+  opacity: 1;
 }
 
 .cell-inspector-image {
@@ -239,6 +247,32 @@
 
 .cell-inspector-spacer {
   flex: 1;
+}
+
+.cell-inspector-move {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  border-radius: 4px;
+  cursor: grab;
+  opacity: 0.55;
+  touch-action: none;
+}
+
+.cell-inspector-move:hover {
+  background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
+  opacity: 1;
+}
+
+.cell-inspector-move:active {
+  cursor: grabbing;
 }
 
 .cell-inspector-action {
@@ -325,12 +359,6 @@
   font-style: italic;
 }
 
-.cell-inspector-invalid {
-  margin: 0 0 8px;
-  color: var(--vscode-errorForeground);
-  font-size: 0.9em;
-}
-
 .cell-inspector-link {
   color: var(--vscode-textLink-foreground);
   overflow-wrap: anywhere;
@@ -349,14 +377,15 @@
  * counting. Columns are all there, so the browser's own bar is the right one — hiding it left a
  * result wider than the pane with nothing to say so.
  *
- * Which is why only the vertical bar is taken away, by width, and not by `scrollbar-width: none` —
- * that one hides both, and it hid this one.
+ * The vertical axis is hidden from native interaction and driven by the adjacent result scrollbar;
+ * wheel, keyboard and pointer input still update this element's scrollTop. The horizontal axis stays
+ * native because every column is already present and the browser can describe its true width.
  */
 .result-scroller {
   min-width: 0;
   max-height: 360px;
   overflow-x: auto;
-  overflow-y: scroll;
+  overflow-y: hidden;
 }
 
 .result-scroller::-webkit-scrollbar {
@@ -404,6 +433,11 @@
   border-left: 1px solid var(--vscode-panel-border);
   border-right: 1px solid var(--vscode-panel-border);
   cursor: pointer;
+}
+
+/* The table viewport and its hand-drawn scrollbar stay a pair when the inspector claims more room. */
+.result-scroller-frame:has(.cell-inspector) .result-scrollbar {
+  max-height: 360px;
 }
 
 .result-scrollbar:focus-visible,
@@ -577,36 +611,6 @@ td.null {
   text-decoration: underline;
 }
 
-/*
- * The mark that says there is somewhere to go, and takes a plain click there. A tooltip a reader
- * must hover a second to see is not how anyone finds out about a chord, so the cell carries a
- * target of its own — the way every data grid that offers this at all does it.
- */
-.cell-link-open {
-  display: inline-flex;
-  visibility: hidden;
-  align-items: center;
-  padding: 0 2px;
-  color: var(--vscode-textLink-foreground, var(--vscode-charts-blue));
-  background: transparent;
-  border: 0;
-  cursor: pointer;
-  vertical-align: text-bottom;
-}
-
-td:hover > .cell-link-open,
-td.anchor > .cell-link-open {
-  visibility: visible;
-}
-
-.cell-link-open:hover {
-  color: var(--vscode-textLink-activeForeground, var(--vscode-textLink-foreground));
-}
-
-.cell-link-open .codicon {
-  font-size: 12px;
-}
-
 td.truncated {
   box-shadow: inset -3px 0 var(--vscode-editorWarning-foreground);
 }
@@ -698,10 +702,18 @@ td.editing {
   overflow: visible;
 }
 
+/*
+ * An open editor is wider than its column when the column is narrow: the field, and the controls
+ * that say what having no value means, have to be reachable whatever width the reader gave it. It
+ * paints over its neighbours rather than under them, or the press lands on the cell beside it.
+ */
 .cell-editor {
+  position: relative;
+  z-index: 2;
   display: flex;
   align-items: stretch;
   height: 27px;
+  min-width: max-content;
   outline: 1px solid var(--vscode-focusBorder);
   outline-offset: -1px;
   background: var(--vscode-input-background);
@@ -727,20 +739,44 @@ td.editing {
   outline: none;
 }
 
-.cell-editor-null {
+/*
+ * What a cell can hold besides a value, stacked rather than laid side by side: two words across a
+ * narrow column would take the whole of it, and the field would have nowhere left to be typed in.
+ */
+.cell-editor-empties {
   flex: 0 0 auto;
-  padding: 0 6px;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--vscode-panel-border);
+}
+
+.cell-editor-empty {
+  flex: 1 1 0;
+  min-height: 0;
+  padding: 0 5px;
   color: var(--vscode-descriptionForeground);
   background: transparent;
   border: 0;
-  border-left: 1px solid var(--vscode-panel-border);
   cursor: pointer;
   font: inherit;
+  font-size: 9px;
+  line-height: 1;
+  letter-spacing: 0.04em;
 }
 
-.cell-editor-null:hover {
+.cell-editor-empties > .cell-editor-empty + .cell-editor-empty {
+  border-top: 1px solid var(--vscode-panel-border);
+}
+
+.cell-editor-empty:hover {
   color: var(--vscode-foreground);
   background: var(--vscode-list-hoverBackground);
+}
+
+/* The state the cell is in right now, so the reader can read it off the editor and not guess. */
+.cell-editor-empty[aria-pressed="true"] {
+  color: var(--vscode-foreground);
+  background: var(--vscode-list-activeSelectionBackground);
 }
 
 /* Column layout controls (Data View) */
@@ -931,16 +967,35 @@ th.row-gutter.selected .row-gutter-number {
   opacity: 1;
 }
 
+/*
+ * What a row is waiting to become is said by the row, not by a mark in the gutter a reader has to
+ * go looking for. The gutter only stands in for the number the row has not got: quiet, and the same
+ * weight as the numbers above and below it.
+ */
 .row-gutter-state {
   line-height: 1;
+  /* Smaller than the body text, and as faint as the numbers it stands in for: a mark, not a badge. */
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  opacity: 0.6;
 }
 
-.row-gutter-state.removed {
-  color: var(--vscode-errorForeground);
+th.row-gutter.selected .row-gutter-state,
+th.row-gutter.in-selection .row-gutter-state {
+  opacity: 1;
 }
 
-.row-gutter-state.added {
-  color: var(--vscode-charts-green, var(--vscode-foreground));
+/* A row waiting to go is struck through until the change is applied, which is what it is. */
+tr.removed td,
+tr.removed th {
+  color: var(--vscode-descriptionForeground);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+/* A row waiting to be written is tinted, not coloured: it is neither an error nor a selection. */
+tr.added td {
+  background: color-mix(in srgb, var(--vscode-foreground) 6%, transparent);
 }
 
 /*
@@ -1168,6 +1223,43 @@ tr.row-selected td:first-of-type {
 .menu-group + .menu-group {
   margin-top: 4px;
   border-top: 1px solid var(--vscode-panel-border);
+}
+
+/*
+ * Something to read, and — where what it describes can be taken back — one control to take it,
+ * at the end of the line. Faint at rest so it does not compete with what the note says, and plain
+ * once the reader is on it, by pointer or by arrow.
+ */
+.menu-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.menu-note-dismiss {
+  flex: 0 0 auto;
+  align-self: center;
+  margin-right: 8px;
+  padding: 3px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--vscode-descriptionForeground);
+  cursor: pointer;
+  font-size: 13px;
+  opacity: 0.45;
+}
+
+.menu-note:hover .menu-note-dismiss,
+.menu-note-dismiss:hover,
+.menu-note-dismiss:focus-visible {
+  opacity: 1;
+}
+
+.menu-note-dismiss:hover,
+.menu-note-dismiss:focus-visible {
+  color: var(--vscode-foreground);
+  background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
 }
 
 .menu-heading {

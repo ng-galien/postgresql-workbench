@@ -5,8 +5,8 @@ import type {
 } from "../../dap/src/debugger/launch/index.js";
 
 /**
- * What a SQL result is: the rows PostgreSQL returned or the error it raised, the Connexion they
- * came from, and where the reader stands in a cursor. Produced by the Extension Host, rendered by
+ * What a SQL result is: the rows PostgreSQL returned or the error it raised, the Connection they
+ * came from, and where the reader stands in a paged result. Produced by the Extension Host, rendered by
  * the result views.
  */
 
@@ -15,8 +15,8 @@ import type {
  * Connection they came from. This is the contract the Extension Host must satisfy.
  */
 export interface ScratchpadAssociationSnapshot {
-  serverId: string;
-  serverName: string;
+  connectionId: string;
+  connectionName: string;
   database: string;
 }
 
@@ -27,7 +27,7 @@ export interface ScratchpadAssociationSnapshot {
 export interface ResultTable {
   columns: DebugResult["columns"];
   rows: DebugResult["rows"];
-  /** Exact total when known. Cursor-backed results leave it undefined until exhausted. */
+  /** Exact total when known. Paged results leave it undefined until the final page. */
   rowCount?: number;
   capturedRowCount: number;
   truncated: boolean;
@@ -35,14 +35,37 @@ export interface ResultTable {
   navigation?: SqlNotebookResultNavigation;
 }
 
-export interface SqlNotebookResultPayload extends ResultTable {
-  version: 2;
+interface SqlStatementResultBase {
+  version: 3;
   binding: ScratchpadAssociationSnapshot;
+  durationMs: number;
+}
+
+/** A genuine row set returned by PostgreSQL. */
+export interface SqlNotebookResultPayload extends SqlStatementResultBase, ResultTable {
+  kind: "rowset";
+  /** Stable identity of a paged result. */
+  resultId?: string;
   /** SQL Statement that produced the result, when the producer knows it. */
   statement?: string;
   command: string;
-  durationMs: number;
 }
+
+export type SqlCommandReportOperation = "INSERT" | "UPDATE" | "DELETE";
+
+export interface SqlCommandReportEntry {
+  operation: SqlCommandReportOperation;
+  affectedRows: number;
+}
+
+/** Successful DML that produced a command tag rather than a PostgreSQL row set. */
+export interface SqlCommandReportPayload extends SqlStatementResultBase {
+  kind: "command-report";
+  entries: readonly SqlCommandReportEntry[];
+}
+
+/** The closed set of successful statement results a Scratchpad can render. */
+export type SqlStatementResultPayload = SqlNotebookResultPayload | SqlCommandReportPayload;
 
 export interface SqlNotebookErrorPayload {
   version: 1;
@@ -71,13 +94,12 @@ export interface SqlNotebookResultNavigation {
   pageStart: number;
   pageEnd: number;
   loadedRowCount: number;
-  cacheStart: number;
   hasPrevious: boolean;
   hasNext: boolean;
   canLoadAll: boolean;
 }
 
-export type SqlNotebookOutputPayload = SqlNotebookResultPayload | SqlNotebookErrorPayload;
+export type SqlNotebookOutputPayload = SqlStatementResultPayload | SqlNotebookErrorPayload;
 
 /** One captured debug result as a history lists it: enough to name it and to say how it ended. */
 export interface DebugResultSummary {

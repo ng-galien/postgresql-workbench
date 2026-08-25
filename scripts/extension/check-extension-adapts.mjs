@@ -26,8 +26,8 @@ const DECLARED = new Map([
   // Debt: engine code still living in the extension. Each needs a package that can hold it.
   ["cockpit/navigation.ts", "debt: where the graph has been and can go back to"],
   ["codeLens/policy.ts", "debt: what makes a call or a definition debuggable, read from the SQL"],
-  ["connection/associations.ts", "debt: which Connexion each call site runs on"],
-  ["connection/registry.ts", "debt: the open PostgreSQL clients of a Connexion"],
+  ["connection/associations.ts", "debt: which Connection each call site runs on"],
+  ["connection/registry.ts", "debt: the open PostgreSQL clients of a Connection"],
   ["coverage/client.ts", "debt: the connection pgTAP coverage is measured through"],
   ["coverage/coverageReport.ts", "debt: the shape a coverage report takes on its way to a file"],
   ["coverage/delta.ts", "debt: what changed between two coverage runs"],

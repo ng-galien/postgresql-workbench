@@ -4,7 +4,7 @@ import { destroyClientSocket, withTimeout } from "./closingClient.js";
 const NOTEBOOK_CANCELLATION_TIMEOUT_MS = 2_000;
 
 export interface DedicatedNotebookClientProvider {
-  createDedicatedClient(serverId: string): Promise<Client>;
+  createDedicatedClient(connectionId: string): Promise<Client>;
 }
 
 export class DedicatedNotebookConnectionError extends Error {
@@ -23,7 +23,7 @@ export class NotebookExecutionCancelledError extends Error {
 
 interface NotebookCancellationBinding {
   readonly provider: DedicatedNotebookClientProvider;
-  readonly serverId: string;
+  readonly connectionId: string;
   readonly client: Client;
 }
 
@@ -51,8 +51,8 @@ export class NotebookClientCancellation {
     else this.handlers.push(handler);
   }
 
-  bind(provider: DedicatedNotebookClientProvider, serverId: string, client: Client): void {
-    this.binding = { provider, serverId, client };
+  bind(provider: DedicatedNotebookClientProvider, connectionId: string, client: Client): void {
+    this.binding = { provider, connectionId, client };
     this.startCancellation();
   }
 
@@ -66,21 +66,21 @@ export class NotebookClientCancellation {
 
   private startCancellation(): void {
     if (!this.requested || !this.binding || this.cancellation) return;
-    const { provider, serverId, client } = this.binding;
-    this.cancellation = cancelNotebookClient(provider, serverId, client);
+    const { provider, connectionId, client } = this.binding;
+    this.cancellation = cancelNotebookClient(provider, connectionId, client);
   }
 }
 
 export async function createDedicatedNotebookClient(
   provider: DedicatedNotebookClientProvider,
-  serverId: string,
+  connectionId: string,
 ): Promise<Client> {
   try {
-    return await provider.createDedicatedClient(serverId);
+    return await provider.createDedicatedClient(connectionId);
   } catch (cause) {
     const detail = cause instanceof Error ? cause.message : String(cause);
     throw new DedicatedNotebookConnectionError(
-      `The Scratchpad could not open its Connexion: ${detail}`,
+      `The Scratchpad could not open its Connection: ${detail}`,
       { cause },
     );
   }
@@ -88,10 +88,10 @@ export async function createDedicatedNotebookClient(
 
 export async function withDedicatedNotebookClient<T>(
   provider: DedicatedNotebookClientProvider,
-  serverId: string,
+  connectionId: string,
   action: (client: Client) => Promise<T>,
 ): Promise<T> {
-  const client = await createDedicatedNotebookClient(provider, serverId);
+  const client = await createDedicatedNotebookClient(provider, connectionId);
   try {
     return await action(client);
   } finally {
@@ -108,7 +108,7 @@ export async function configureNotebookStatementTimeout(
 
 export async function cancelNotebookClient(
   provider: DedicatedNotebookClientProvider,
-  serverId: string,
+  connectionId: string,
   target: Client,
 ): Promise<void> {
   const pid = notebookClientProcessId(target);
@@ -117,13 +117,13 @@ export async function cancelNotebookClient(
     return;
   }
 
-  const pendingControl = createDedicatedNotebookClient(provider, serverId);
+  const pendingControl = createDedicatedNotebookClient(provider, connectionId);
   let control: Client | undefined;
   try {
     control = await withTimeout(
       pendingControl,
       NOTEBOOK_CANCELLATION_TIMEOUT_MS,
-      "The PostgreSQL cancellation Connexion timed out.",
+      "The PostgreSQL cancellation Connection timed out.",
     );
     const result = await withTimeout(
       control.query<{ cancelled: boolean }>("SELECT pg_cancel_backend($1) AS cancelled", [pid]),
@@ -139,7 +139,7 @@ export async function cancelNotebookClient(
       await withTimeout(
         control.end(),
         NOTEBOOK_CANCELLATION_TIMEOUT_MS,
-        "The PostgreSQL cancellation Connexion did not close.",
+        "The PostgreSQL cancellation Connection did not close.",
       ).catch(() => destroyClientSocket(control as Client));
     }
   }

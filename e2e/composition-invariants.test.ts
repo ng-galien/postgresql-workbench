@@ -40,7 +40,7 @@ const foreignKey = (
 });
 
 const table = (oid: number, name: string, columns: string[]) => ({
-  serverId: "demo-server",
+  connectionId: "demo-connection",
   database: "demo",
   schema: "shop",
   oid,
@@ -59,7 +59,7 @@ const table = (oid: number, name: string, columns: string[]) => ({
  */
 const snapshot: SqlAuthoringSnapshot = {
   status: "available",
-  serverId: "demo-server",
+  connectionId: "demo-connection",
   database: "demo",
   revision: "r1",
   generation: 1,
@@ -147,7 +147,7 @@ describe("SQL composition invariants", () => {
         offset: text.length,
         payload: {
           kind: "table" as const,
-          serverId: "demo-server",
+          connectionId: "demo-connection",
           database: "demo",
           oid: relation.oid,
           schema: "shop",

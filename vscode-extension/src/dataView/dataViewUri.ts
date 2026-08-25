@@ -26,7 +26,7 @@ export function dataViewUri(source: DataViewSource): vscode.Uri {
   const encoded = Buffer.from(JSON.stringify(source), "utf8").toString("base64url");
   return vscode.Uri.from({
     scheme: DATA_VIEW_URI_SCHEME,
-    path: `/${pathSegment(source.serverId)}/${pathSegment(source.database)}/${pathSegment(title)}`,
+    path: `/${pathSegment(source.connectionId)}/${pathSegment(source.database)}/${pathSegment(title)}`,
     query: `source=${encoded}`,
   });
 }
@@ -36,7 +36,7 @@ export function dataViewQueryUri(source: DataViewSource): vscode.Uri {
   const title = source.kind === "relation" ? `${source.schema}.${source.name}` : source.label;
   return vscode.Uri.from({
     scheme: DATA_VIEW_QUERY_SCHEME,
-    path: `/${pathSegment(source.serverId)}/${pathSegment(source.database)}/${pathSegment(title)}.sql`,
+    path: `/${pathSegment(source.connectionId)}/${pathSegment(source.database)}/${pathSegment(title)}.sql`,
   });
 }
 
@@ -66,26 +66,49 @@ export function parseDataViewUri(uri: vscode.Uri): DataViewSource | undefined {
   if (!encoded) return undefined;
   try {
     const parsed = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8")) as unknown;
-    return isDataViewSource(parsed) ? parsed : undefined;
+    return normalizeDataViewSource(parsed);
   } catch {
     return undefined;
   }
 }
 
-function isDataViewSource(value: unknown): value is DataViewSource {
-  if (!value || typeof value !== "object") return false;
+function normalizeDataViewSource(value: unknown): DataViewSource | undefined {
+  if (!value || typeof value !== "object") return undefined;
   const source = value as Record<string, unknown>;
-  if (typeof source.serverId !== "string" || typeof source.database !== "string") return false;
+  const connectionId =
+    typeof source.connectionId === "string"
+      ? source.connectionId
+      : typeof source.serverId === "string"
+        ? source.serverId
+        : undefined;
+  if (!connectionId || typeof source.database !== "string") return undefined;
   if (source.kind === "relation") {
-    return (
-      typeof source.schema === "string" &&
-      typeof source.name === "string" &&
-      (source.relationKind === "table" ||
-        source.relationKind === "view" ||
-        source.relationKind === "materialized-view")
-    );
+    if (
+      typeof source.schema !== "string" ||
+      typeof source.name !== "string" ||
+      (source.relationKind !== "table" &&
+        source.relationKind !== "view" &&
+        source.relationKind !== "materialized-view")
+    ) {
+      return undefined;
+    }
+    return {
+      kind: "relation",
+      connectionId,
+      database: source.database,
+      schema: source.schema,
+      name: source.name,
+      relationKind: source.relationKind,
+    };
   }
-  return (
-    source.kind === "sql" && typeof source.sql === "string" && typeof source.label === "string"
-  );
+  if (source.kind !== "sql" || typeof source.sql !== "string" || typeof source.label !== "string") {
+    return undefined;
+  }
+  return {
+    kind: "sql",
+    connectionId,
+    database: source.database,
+    sql: source.sql,
+    label: source.label,
+  };
 }

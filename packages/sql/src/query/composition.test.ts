@@ -6,7 +6,7 @@ import type { TableReference } from "./relations.js";
 
 function relation(oid: number, name: string): SqlAuthoringObject {
   return {
-    serverId: "test",
+    connectionId: "test",
     database: "demo",
     schema: "shop",
     oid,

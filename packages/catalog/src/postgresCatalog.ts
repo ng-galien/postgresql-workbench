@@ -6,7 +6,7 @@ export interface CatalogQueryClient {
 }
 
 export interface PostgresCatalogIdentity {
-  serverId: string;
+  connectionId: string;
   database: string;
 }
 
@@ -385,7 +385,7 @@ ORDER BY namespace.nspname, trigger_row.tgname, trigger_row.oid
 
 // This static catalog assembler keeps the eight independently testable SQL fragments explicit;
 // wrapping its sole call site in an options object would add indirection without a domain concept.
-// code-moniker: ignore[smell-long-parameter-list]
+// code-moniker: ignore[code-single-responsibility-flags-long-parameter-lists]
 function catalogSql(
   schemasSql: string,
   tablesSql: string,
@@ -868,7 +868,7 @@ export function postgresDocumentUri(
 }
 
 export function postgresDatabaseDocumentRoot(identity: PostgresCatalogIdentity): string {
-  return `postgresql://${encodeURIComponent(identity.serverId)}/${encodeURIComponent(identity.database)}/`;
+  return `postgresql://${encodeURIComponent(identity.connectionId)}/${encodeURIComponent(identity.database)}/`;
 }
 
 export function postgresDatabaseDocumentGlob(identity: PostgresCatalogIdentity): string {

@@ -89,7 +89,7 @@ beforeEach(() => {
   graphConfiguration.listener = undefined;
 });
 
-describe("Workbench graph Connexion context invalidation", () => {
+describe("Workbench graph Connection context invalidation", () => {
   it("sends graph appearance settings on ready and when they change", async () => {
     const view = graphView();
 
@@ -133,7 +133,7 @@ describe("Workbench graph Connexion context invalidation", () => {
 
     expect(panel.post).toHaveBeenCalledWith({
       type: "cockpitContextInvalidated",
-      message: "The Cockpit Connexion changed. Open the graph again.",
+      message: "The Cockpit Connection changed. Open the graph again.",
     });
     expect(view.currentModel).toBeUndefined();
     expect(view.currentScope).toBeUndefined();
@@ -141,7 +141,7 @@ describe("Workbench graph Connexion context invalidation", () => {
   });
 
   it("refreshes the current neighborhood on a new DDL snapshot without reopening the focus", async () => {
-    const database = { serverId: "server", database: "demo" };
+    const database = { connectionId: "connection", database: "demo" };
     const symbol = postgresSymbol("orders", "table", 42);
     const added = postgresSymbol("invoice", "table", 43);
     const initial = { ...database, revision: "revision-1", generation: 1 };
@@ -183,7 +183,7 @@ describe("Workbench graph Connexion context invalidation", () => {
     panel.post.mockClear();
     await expect(
       view.refreshSnapshot({
-        serverId: "server-b",
+        connectionId: "connection-b",
         database: "other",
         revision: "other-revision",
         generation: 99,
@@ -227,7 +227,7 @@ describe("Workbench graph Connexion context invalidation", () => {
   });
 
   it("remaps a visible pin even when its neighborhood was never loaded", async () => {
-    const database = { serverId: "server", database: "demo" };
+    const database = { connectionId: "connection", database: "demo" };
     const focus = postgresSymbol("orders", "table", 42);
     const pinned = postgresSymbol("invoice", "table", 43);
     const renamed = postgresSymbol("archived_invoice", "table", 43);
@@ -286,7 +286,7 @@ describe("Workbench graph Connexion context invalidation", () => {
   });
 
   it("routes a TreeView drop through the same focus pipeline as a tree selection", async () => {
-    const database = { serverId: "server", database: "demo" };
+    const database = { connectionId: "connection", database: "demo" };
     const focus = postgresSymbol("orders", "table", 42);
     const dropped = postgresSymbol("invoice", "table", 43);
     const snapshot = { ...database, revision: "revision-1", generation: 1 };
@@ -368,7 +368,7 @@ describe("Workbench graph Connexion context invalidation", () => {
   });
 
   it("waits for an active TreeView drop before closing the graph", async () => {
-    const database = { serverId: "server", database: "demo" };
+    const database = { connectionId: "connection", database: "demo" };
     const dropped = postgresSymbol("invoice", "table", 43);
     const snapshot = { ...database, revision: "revision-1", generation: 1 };
     let resolveFocus: ((value: ReturnType<typeof graph>) => void) | undefined;
@@ -412,7 +412,7 @@ describe("Workbench graph Connexion context invalidation", () => {
     const payload = {
       version: 1 as const,
       availability: "accepted" as const,
-      serverId: database.serverId,
+      connectionId: database.connectionId,
       database: database.database,
       sourceUri: dropped.file,
       symbolUri: dropped.uri,
@@ -435,7 +435,7 @@ describe("Workbench graph Connexion context invalidation", () => {
   });
 
   it("finishes an engaged focus action before applying a newer DDL snapshot", async () => {
-    const database = { serverId: "server", database: "demo" };
+    const database = { connectionId: "connection", database: "demo" };
     const orders = postgresSymbol("orders", "table", 42);
     const invoice = postgresSymbol("invoice", "table", 43);
     const initial = { ...database, revision: "revision-1", generation: 1 };
@@ -498,7 +498,7 @@ describe("Workbench graph Connexion context invalidation", () => {
   });
 
   it("serializes Source with focus and replays a pinned Source across reload and landing", async () => {
-    const database = { serverId: "server", database: "demo" };
+    const database = { connectionId: "connection", database: "demo" };
     const orders = postgresSymbol("orders", "table", 42);
     const invoice = postgresSymbol("invoice", "table", 43);
     const schema = postgresSchemaSymbol("shop", 2_200);
@@ -597,15 +597,15 @@ describe("Workbench graph Connexion context invalidation", () => {
 
 function postgresSymbol(name: string, kind: "table", oid: number) {
   const databasePrefix =
-    "code+moniker://./srcset:postgres/lang:sql/dir:postgresql:/dir:server/dir:demo";
+    "code+moniker://./srcset:postgres/lang:sql/dir:postgresql:/dir:connection/dir:demo";
   return {
     uri: `${databasePrefix}/dir:shop/dir:${kind}/module:${name}/schema:shop/${kind}:${name}`,
     name,
     kind,
-    file: `postgresql://server/demo/shop/${kind}/${name}.sql`,
+    file: `postgresql://connection/demo/shop/${kind}/${name}.sql`,
     signature: "",
     postgres: {
-      serverId: "server",
+      connectionId: "connection",
       database: "demo",
       schema: "shop",
       documentKind: kind,
@@ -618,15 +618,15 @@ function postgresSymbol(name: string, kind: "table", oid: number) {
 
 function postgresSchemaSymbol(name: string, oid: number) {
   const databasePrefix =
-    "code+moniker://./srcset:postgres/lang:sql/dir:postgresql:/dir:server/dir:demo";
+    "code+moniker://./srcset:postgres/lang:sql/dir:postgresql:/dir:connection/dir:demo";
   return {
     uri: `${databasePrefix}/dir:${name}/schema:${name}`,
     name,
     kind: "schema",
-    file: `postgresql://server/demo/${name}/schema.sql`,
+    file: `postgresql://connection/demo/${name}/schema.sql`,
     signature: "",
     postgres: {
-      serverId: "server",
+      connectionId: "connection",
       database: "demo",
       schema: name,
       documentKind: "schema",

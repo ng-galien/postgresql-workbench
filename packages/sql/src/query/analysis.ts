@@ -91,6 +91,8 @@ export interface SqlQueryAnalysis {
   /** The single top-level statement, without terminator. */
   statement: TextRange;
   relations: SqlQueryRelation[];
+  /** The simple composable FROM contains only named catalog relations. */
+  fromSourcesAreNamedRelations: boolean;
   /** The `from_list` range: base relation and every JOIN segment. */
   fromList?: TextRange;
   targetList: TextRange;
@@ -326,6 +328,8 @@ export async function analyzeSqlQuery(
     analysis: {
       statement: { start: statementRange.start, end: statementRange.end - terminator },
       relations,
+      fromSourcesAreNamedRelations:
+        shape.supportsComposition && fromList ? namedRelationSourcesOnly(fromList) : false,
       ...(fromList ? { fromList: range(fromList) } : {}),
       targetList: range(targetListNode),
       targets,
@@ -346,6 +350,20 @@ export async function analyzeSqlQuery(
       hasStar: targets.some((target) => target.isStar),
     },
   };
+}
+
+/** Whether catalog relation keys can account for every row-producing leaf of the FROM clause. */
+export function namedRelationSourcesOnly(fromList: SyntaxNode): boolean {
+  const sources = findSyntaxNodes(fromList, "table_ref").filter(
+    (tableRef) => directSyntaxChild(tableRef, "joined_table") === undefined,
+  );
+  return (
+    sources.length > 0 &&
+    sources.every((tableRef) => {
+      const relation = directSyntaxChild(tableRef, "relation_expr");
+      return relation !== undefined && findSyntaxNode(relation, "qualified_name") !== undefined;
+    })
+  );
 }
 
 /**

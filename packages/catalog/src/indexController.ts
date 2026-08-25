@@ -47,13 +47,13 @@ import {
   mergeWorkbenchRelationGroups,
   type WorkbenchRelationGroup,
 } from "./relations.js";
-import type { ServerConfig } from "./savedConnection.js";
+import type { ConnectionConfig } from "./savedConnection.js";
 /** What indexing needs from the open Connections; `IndexConnections` satisfies it. */
 export interface IndexConnections {
-  readonly store: { get(serverId: string): ServerConfig | undefined };
-  isServerConnected(serverId: string): boolean;
-  getClient(serverId: string): Client | undefined;
-  onChanged(listener: (change: { serverIds: readonly string[] }) => void): { dispose(): void };
+  readonly store: { get(connectionId: string): ConnectionConfig | undefined };
+  isConnectionConnected(connectionId: string): boolean;
+  getClient(connectionId: string): Client | undefined;
+  onChanged(listener: (change: { connectionIds: readonly string[] }) => void): { dispose(): void };
 }
 
 export type WorkbenchIndexStatus =
@@ -81,7 +81,7 @@ export interface WorkbenchIndexProgress {
 
 export interface WorkbenchIndexState {
   status: WorkbenchIndexStatus;
-  serverId?: string;
+  connectionId?: string;
   message?: string;
   result?: WorkbenchIndexResult;
   progress?: WorkbenchIndexProgress;
@@ -100,7 +100,7 @@ export interface WorkbenchIndexAcceptanceEvent {
   generation?: number | null;
   changeKind?: "full" | "incremental";
   message?: string;
-  serverId?: string;
+  connectionId?: string;
 }
 
 export interface WorkbenchIndexAcceptanceActiveRun {
@@ -108,17 +108,17 @@ export interface WorkbenchIndexAcceptanceActiveRun {
   id: number;
   retainedGeneration?: number | null;
   scope: string;
-  serverId: string;
+  connectionId: string;
 }
 
 export interface WorkbenchIndexAcceptanceSnapshot {
-  /** First entry of `activeRuns`, retained for single-Connexion scenarios. */
+  /** First entry of `activeRuns`, retained for single-Connection scenarios. */
   activeRun?: WorkbenchIndexAcceptanceActiveRun;
   activeRuns: WorkbenchIndexAcceptanceActiveRun[];
   /** True while any scope still has a queued or executing operation. */
   currentRunPending: boolean;
   /** Scopes with a queued or executing operation. */
-  pendingRuns: Array<{ scope: string; serverId: string }>;
+  pendingRuns: Array<{ scope: string; connectionId: string }>;
   events: WorkbenchIndexAcceptanceEvent[];
   gate?: {
     nextPhase?: WorkbenchIndexPhase;
@@ -138,7 +138,7 @@ export interface WorkbenchIndexAcceptanceSnapshot {
 }
 
 export interface WorkbenchIndexResult {
-  serverId: string;
+  connectionId: string;
   database: string;
   revision: string;
   documents: number;
@@ -154,7 +154,7 @@ export interface WorkbenchIndexResult {
 
 export type WorkbenchIndexSnapshot = Pick<
   WorkbenchIndexResult,
-  "serverId" | "database" | "revision" | "generation"
+  "connectionId" | "database" | "revision" | "generation"
 >;
 
 export interface WorkbenchSyntaxRuntimeConfiguration {
@@ -179,7 +179,7 @@ export interface WorkbenchGraphSourcePreview {
 export interface WorkbenchSourceDescriptor {
   symbolUri: string;
   sourceUri: string;
-  serverId: string;
+  connectionId: string;
   database: string;
   schema: string;
   documentKind: "schema" | "table" | "view" | "routine" | "trigger";
@@ -195,7 +195,7 @@ export interface WorkbenchSourceDescriptor {
 
 interface PublishedSourceSet {
   scope: string;
-  serverId: string;
+  connectionId: string;
   srcset: string;
 }
 
@@ -215,7 +215,7 @@ interface ActiveIndexRun {
   id: number;
   retainedResult?: WorkbenchIndexResult;
   scope: string;
-  serverId: string;
+  connectionId: string;
 }
 
 interface AcceptanceIndexPhaseGate {
@@ -232,11 +232,6 @@ class WorkbenchIndexCancelledError extends Error {
     this.name = "WorkbenchIndexCancelledError";
   }
 }
-
-// Explicit debt exception: this snapshot owner still exposes registry lookup, Code Moniker
-// runtime/session access, graph queries, catalog publication, and DDL synchronization. These
-// capabilities must be split behind snapshot-bound ports before removing this exception.
-// code-moniker: ignore[smell-large-class,smell-method-size-disharmony]
 
 /**
  * What indexing needs from its host: where to log, where the Code Moniker runtime lives, which
@@ -256,10 +251,14 @@ interface Subscription {
   dispose(): void;
 }
 
+// Explicit debt exception: this snapshot owner still exposes registry lookup, Code Moniker
+// runtime/session access, graph queries, catalog publication, and DDL synchronization. These
+// capabilities must be split behind snapshot-bound ports before removing this exception.
+// code-moniker: ignore[code-single-responsibility-flags-large-classes,code-single-responsibility-flags-method-size-disharmony]
 export class WorkbenchIndexController {
   private readonly stateListeners = new Set<(state: WorkbenchIndexState) => void>();
 
-  /** Index lifecycle is owned per exact Connexion/database scope. */
+  /** Index lifecycle is owned per exact Connection/database scope. */
   private readonly states = new Map<string, WorkbenchIndexState>();
   /** Last event is diagnostic-only for acceptance telemetry; product code never reads it. */
   private lastEventState: WorkbenchIndexState = { status: "not-indexed" };
@@ -268,8 +267,8 @@ export class WorkbenchIndexController {
   private removeSessionCloseListener?: () => void;
   private sessionEpoch = 0;
   private syntaxParserPromise?: Promise<SyntaxParser>;
-  /** Serialized index/DDL operations, one queue per exact Connexion/database scope. */
-  private readonly scopeRuns = new Map<string, { serverId: string; tail: Promise<unknown> }>();
+  /** Serialized index/DDL operations, one queue per exact Connection/database scope. */
+  private readonly scopeRuns = new Map<string, { connectionId: string; tail: Promise<unknown> }>();
   /** Runs currently executing, one at most per scope. */
   private readonly activeIndexRuns = new Map<string, ActiveIndexRun>();
   private readonly published = new Map<string, PublishedSourceSet>();
@@ -288,7 +287,7 @@ export class WorkbenchIndexController {
   private acceptancePhaseGate?: AcceptanceIndexPhaseGate;
   private lastSettledRun?: { id: number; status: WorkbenchIndexStatus };
   private readonly connectionSubscription: Subscription;
-  private readonly observedConnectedServerIds = new Set<string>();
+  private readonly observedConnectedConnectionIds = new Set<string>();
   private disposed = false;
 
   constructor(
@@ -296,7 +295,7 @@ export class WorkbenchIndexController {
     private readonly connections: IndexConnections,
   ) {
     this.connectionSubscription = connections.onChanged((change) =>
-      this.observeConnections(change.serverIds),
+      this.observeConnections(change.connectionIds),
     );
   }
 
@@ -307,16 +306,16 @@ export class WorkbenchIndexController {
       id: run.id,
       retainedGeneration: run.retainedResult?.generation,
       scope: run.scope,
-      serverId: run.serverId,
+      connectionId: run.connectionId,
     }));
     const gate = this.acceptancePhaseGate;
     return {
       activeRun: activeRuns[0],
       activeRuns,
       currentRunPending: this.scopeRuns.size > 0,
-      pendingRuns: [...this.scopeRuns.entries()].map(([scope, { serverId }]) => ({
+      pendingRuns: [...this.scopeRuns.entries()].map(([scope, { connectionId }]) => ({
         scope,
-        serverId,
+        connectionId,
       })),
       events: this.acceptanceEvents.map((event) => ({ ...event })),
       gate: gate
@@ -377,49 +376,54 @@ export class WorkbenchIndexController {
   async settleAcceptanceOperations(): Promise<void> {
     this.requireAcceptanceControl();
     // Only a run held by the phase gate is abandoned; automatic refreshes of
-    // any Connexion settle normally so the next scenario finds a fresh index.
+    // any Connection settle normally so the next scenario finds a fresh index.
     const heldRunId = this.acceptancePhaseGate?.runId;
     this.clearAcceptancePhaseGate();
     if (heldRunId !== undefined) {
       for (const run of this.activeIndexRuns.values()) {
-        if (run.id === heldRunId) this.cancelDatabaseIndex(run.serverId);
+        if (run.id === heldRunId) this.cancelDatabaseIndex(run.connectionId);
       }
     }
     await Promise.all([...this.scopeRuns.values()].map(({ tail }) => tail.catch(() => undefined)));
     await this.sourceMutation;
   }
 
-  databaseState(identity: { serverId: string; database: string }): WorkbenchIndexState {
-    const scope = databaseScope(identity.serverId, identity.database);
+  databaseState(identity: { connectionId: string; database: string }): WorkbenchIndexState {
+    const scope = databaseScope(identity.connectionId, identity.database);
     const state = this.states.get(scope);
     if (state) return state;
     const registry = this.registries.get(scope);
-    if (!registry) return { status: "not-indexed", serverId: identity.serverId };
+    if (!registry) return { status: "not-indexed", connectionId: identity.connectionId };
     return {
       status: this.staleScopes.has(scope) ? "stale" : "available",
-      serverId: identity.serverId,
+      connectionId: identity.connectionId,
       result: registry.result,
     };
   }
 
-  databaseSymbols(identity: { serverId: string; database: string }): readonly CodeMonikerSymbol[] {
-    return this.registries.get(databaseScope(identity.serverId, identity.database))?.symbols ?? [];
+  databaseSymbols(identity: {
+    connectionId: string;
+    database: string;
+  }): readonly CodeMonikerSymbol[] {
+    return (
+      this.registries.get(databaseScope(identity.connectionId, identity.database))?.symbols ?? []
+    );
   }
 
   databaseObjectOrigin(
-    identity: { serverId: string; database: string },
+    identity: { connectionId: string; database: string },
     sourceUri: string,
   ): PostgresCatalogObjectOrigin | undefined {
     return this.registries
-      .get(databaseScope(identity.serverId, identity.database))
+      .get(databaseScope(identity.connectionId, identity.database))
       ?.origins.get(sourceUri);
   }
 
   sqlAuthoringSnapshot(identity: {
-    serverId: string;
+    connectionId: string;
     database: string;
   }): SqlAuthoringSnapshot | undefined {
-    const scope = databaseScope(identity.serverId, identity.database);
+    const scope = databaseScope(identity.connectionId, identity.database);
     const registry = this.registries.get(scope);
     if (!registry) {
       this.sqlAuthoringSnapshots.delete(scope);
@@ -456,11 +460,11 @@ export class WorkbenchIndexController {
     return undefined;
   }
 
-  routineSymbol(serverId: string, oid: number): CodeMonikerSymbol | undefined {
+  routineSymbol(connectionId: string, oid: number): CodeMonikerSymbol | undefined {
     for (const registry of this.registries.values()) {
       const symbol = registry.symbols.find(
         (candidate) =>
-          candidate.postgres?.serverId === serverId &&
+          candidate.postgres?.connectionId === connectionId &&
           candidate.postgres.oid === oid &&
           (candidate.kind === "function" || candidate.kind === "procedure"),
       );
@@ -469,12 +473,12 @@ export class WorkbenchIndexController {
     return undefined;
   }
 
-  routineSourceUris(serverId: string): Record<string, string> {
+  routineSourceUris(connectionId: string): Record<string, string> {
     return Object.fromEntries(
       [...this.registries.values()]
         .flatMap(({ symbols }) => symbols)
         .flatMap((symbol) =>
-          symbol.postgres?.serverId === serverId &&
+          symbol.postgres?.connectionId === connectionId &&
           (symbol.kind === "function" || symbol.kind === "procedure")
             ? [[String(symbol.postgres.oid), symbol.uri]]
             : [],
@@ -508,7 +512,7 @@ export class WorkbenchIndexController {
     return {
       symbolUri: symbol.uri,
       sourceUri: symbol.file,
-      serverId: postgres.serverId,
+      connectionId: postgres.connectionId,
       database: postgres.database,
       schema: postgres.schema,
       documentKind: postgres.documentKind,
@@ -575,16 +579,16 @@ export class WorkbenchIndexController {
 
   async routineDependencies(
     routineOid: number,
-    serverId: string,
+    connectionId: string,
   ): Promise<ReadonlySet<string> | undefined> {
-    const server = this.connections.store.get(serverId);
-    if (!server || !this.connections.isServerConnected(server.id)) return undefined;
-    const database = { serverId: server.id, database: server.database };
+    const connection = this.connections.store.get(connectionId);
+    if (!connection || !this.connections.isConnectionConnected(connection.id)) return undefined;
+    const database = { connectionId: connection.id, database: connection.database };
     let state = this.databaseState(database);
     let result = state.result;
     if (state.status === "indexing" || !result) {
       try {
-        result = await this.indexDatabase(server.id);
+        result = await this.indexDatabase(connection.id);
         state = this.databaseState(database);
       } catch {
         return undefined;
@@ -629,7 +633,7 @@ export class WorkbenchIndexController {
       const dependencies = new Set<string>();
       for (const callee of graph.callees) {
         if (!callee.kinds.includes("calls")) continue;
-        const registry = this.registries.get(databaseScope(server.id, server.database));
+        const registry = this.registries.get(databaseScope(connection.id, connection.database));
         const object = workbenchObjectFromSymbol(
           enrichSymbol(callee.symbol, registry?.documents ?? new Map()),
           database,
@@ -677,7 +681,7 @@ export class WorkbenchIndexController {
       {
         path: [
           postgresDatabaseDocumentGlob({
-            serverId: result.serverId,
+            connectionId: result.connectionId,
             database: result.database,
           }),
         ],
@@ -758,17 +762,17 @@ export class WorkbenchIndexController {
     object: WorkbenchObjectModel,
     snapshot: Pick<WorkbenchIndexResult, "revision" | "generation">,
   ): Promise<WorkbenchRelationsResult> {
-    const identity = { serverId: object.serverId, database: object.database };
+    const identity = { connectionId: object.connectionId, database: object.database };
     const exactSnapshot: WorkbenchIndexSnapshot = { ...identity, ...snapshot };
     const state = this.databaseState(identity);
     const result = state.result;
-    const registry = this.registries.get(databaseScope(object.serverId, object.database));
+    const registry = this.registries.get(databaseScope(object.connectionId, object.database));
     if (
       this.disposed ||
       state.status === "indexing" ||
       !result ||
       !registry ||
-      result.serverId !== object.serverId ||
+      result.connectionId !== object.connectionId ||
       result.database !== object.database ||
       result.revision !== snapshot.revision ||
       result.generation !== snapshot.generation
@@ -811,7 +815,7 @@ export class WorkbenchIndexController {
         { consistency: "stale_ok", limit: 20 },
       );
       // Currency is judged against this scope's own registry: the daemon
-      // workspace generation also moves whenever another Connexion publishes.
+      // workspace generation also moves whenever another Connection publishes.
       if (
         !isWorkbenchRelationSnapshotCurrent(
           result.generation,
@@ -869,41 +873,41 @@ export class WorkbenchIndexController {
     }
   }
 
-  indexDatabase(serverId: string): Promise<WorkbenchIndexResult> {
+  indexDatabase(connectionId: string): Promise<WorkbenchIndexResult> {
     if (this.disposed) {
       return Promise.reject(new Error("The PostgreSQL Workbench index is disposed"));
     }
-    const server = this.connections.store.get(serverId);
-    if (!server) {
+    const connection = this.connections.store.get(connectionId);
+    if (!connection) {
       return Promise.reject(new Error("Connect to a PostgreSQL database before indexing it"));
     }
-    const scope = databaseScope(serverId, server.database);
+    const scope = databaseScope(connectionId, connection.database);
     const epoch = this.sessionEpoch;
-    return this.enqueueScopeRun(scope, serverId, () =>
-      this.runIndex(serverId).catch((error) => {
+    return this.enqueueScopeRun(scope, connectionId, () =>
+      this.runIndex(connectionId).catch((error) => {
         if (error instanceof WorkbenchIndexCancelledError) throw error;
         if (this.sessionEpoch === epoch) throw error;
         this.host.log("Code Moniker connection closed during indexing; reconnecting once");
-        return this.runIndex(serverId);
+        return this.runIndex(connectionId);
       }),
     );
   }
 
   /**
-   * Cancels the executing run of `serverId`, or of every Connexion when omitted.
+   * Cancels the executing run of `connectionId`, or of every Connection when omitted.
    * Queued runs cannot be cancelled: they start only once their scope is idle.
    */
-  cancelDatabaseIndex(serverId?: string): boolean {
+  cancelDatabaseIndex(connectionId?: string): boolean {
     let cancelled = false;
     for (const run of this.activeIndexRuns.values()) {
       if (run.cancelled) continue;
-      if (serverId !== undefined && run.serverId !== serverId) continue;
+      if (connectionId !== undefined && run.connectionId !== connectionId) continue;
       run.cancelled = true;
       cancelled = true;
       this.clearAcceptancePhaseGate(run.id);
       this.setState(run.scope, {
         status: "indexing",
-        serverId: run.serverId,
+        connectionId: run.connectionId,
         result: run.retainedResult,
         message: run.retainedResult
           ? "Cancelling refresh; the previous snapshot remains available"
@@ -917,7 +921,7 @@ export class WorkbenchIndexController {
   /** Chains `operation` after the previous operation of the same scope only. */
   private enqueueScopeRun<T>(
     scope: string,
-    serverId: string,
+    connectionId: string,
     operation: () => Promise<T>,
   ): Promise<T> {
     const previous = this.scopeRuns.get(scope)?.tail;
@@ -933,59 +937,59 @@ export class WorkbenchIndexController {
       () => undefined,
       () => undefined,
     );
-    this.scopeRuns.set(scope, { serverId, tail });
+    this.scopeRuns.set(scope, { connectionId, tail });
     void tail.then(() => {
       if (this.scopeRuns.get(scope)?.tail === tail) this.scopeRuns.delete(scope);
     });
     return run;
   }
 
-  markDatabaseStale(serverId: string, database: string, message: string): void {
-    const scope = databaseScope(serverId, database);
+  markDatabaseStale(connectionId: string, database: string, message: string): void {
+    const scope = databaseScope(connectionId, database);
     this.staleScopes.add(scope);
     this.invalidateSqlAuthoringSnapshot(scope);
     const registry = this.registries.get(scope);
-    this.setState(scope, { status: "stale", serverId, message, result: registry?.result });
+    this.setState(scope, { status: "stale", connectionId, message, result: registry?.result });
   }
 
-  isDatabaseStale(serverId: string, database: string): boolean {
-    return this.staleScopes.has(databaseScope(serverId, database));
+  isDatabaseStale(connectionId: string, database: string): boolean {
+    return this.staleScopes.has(databaseScope(connectionId, database));
   }
 
   synchronizeDatabaseDdl(
     client: CatalogQueryClient,
-    identity: { serverId: string; database: string },
+    identity: { connectionId: string; database: string },
     objects: readonly PostgresDdlObject[],
     fallbackReason?: string,
   ): Promise<WorkbenchIndexResult> {
-    const scope = databaseScope(identity.serverId, identity.database);
-    return this.enqueueScopeRun(scope, identity.serverId, () =>
+    const scope = databaseScope(identity.connectionId, identity.database);
+    return this.enqueueScopeRun(scope, identity.connectionId, () =>
       this.runDdlSynchronization(client, identity, objects, fallbackReason),
     );
   }
 
   indexPostgresDatabase(
     client: CatalogQueryClient,
-    identity: { serverId: string; database: string },
+    identity: { connectionId: string; database: string },
   ): Promise<WorkbenchIndexResult> {
     if (this.disposed) {
       return Promise.reject(new Error("The PostgreSQL source registry is disposed"));
     }
-    const scope = databaseScope(identity.serverId, identity.database);
+    const scope = databaseScope(identity.connectionId, identity.database);
     const retainedResult = this.databaseState(identity).result;
     const refreshEpoch = this.advanceScopeRefreshEpoch(scope);
     this.markDatabaseStale(
-      identity.serverId,
+      identity.connectionId,
       identity.database,
       "Refreshing the PostgreSQL source snapshot",
     );
-    return this.enqueueScopeRun(scope, identity.serverId, () =>
+    return this.enqueueScopeRun(scope, identity.connectionId, () =>
       this.runPostgresDatabaseIndex(client, identity, scope, refreshEpoch).catch((error) => {
         if (error instanceof WorkbenchIndexCancelledError) throw error;
         const message = error instanceof Error ? error.message : String(error);
         this.setState(scope, {
           status: "error",
-          serverId: identity.serverId,
+          connectionId: identity.connectionId,
           message,
           result: retainedResult,
         });
@@ -996,13 +1000,13 @@ export class WorkbenchIndexController {
 
   private async runPostgresDatabaseIndex(
     client: CatalogQueryClient,
-    identity: { serverId: string; database: string },
+    identity: { connectionId: string; database: string },
     scope: string,
     refreshEpoch: number,
   ): Promise<WorkbenchIndexResult> {
     return this.executeIndexRun({
       scope,
-      serverId: identity.serverId,
+      connectionId: identity.connectionId,
       database: identity.database,
       readCatalog: () => readPostgresCatalog(client, identity),
       isCurrent: () => this.scopeRefreshEpoch(scope) === refreshEpoch,
@@ -1020,7 +1024,7 @@ export class WorkbenchIndexController {
     this.disposed = true;
     this.clearAcceptancePhaseGate();
     this.states.clear();
-    this.observedConnectedServerIds.clear();
+    this.observedConnectedConnectionIds.clear();
     this.registries.clear();
     this.sqlAuthoringSnapshots.clear();
     this.scopeRefreshEpochs.clear();
@@ -1051,22 +1055,22 @@ export class WorkbenchIndexController {
     }
   }
 
-  private async runIndex(serverId: string): Promise<WorkbenchIndexResult> {
-    const server = this.connections.store.get(serverId);
-    const postgres = this.connections.getClient(serverId);
-    if (!server || !postgres) {
+  private async runIndex(connectionId: string): Promise<WorkbenchIndexResult> {
+    const connection = this.connections.store.get(connectionId);
+    const postgres = this.connections.getClient(connectionId);
+    if (!connection || !postgres) {
       throw new Error("Connect to a PostgreSQL database before indexing it");
     }
-    const database = server.database;
-    const scope = databaseScope(serverId, database);
+    const database = connection.database;
+    const scope = databaseScope(connectionId, database);
     const refreshEpoch = this.scopeRefreshEpoch(scope);
     return this.executeIndexRun({
       scope,
-      serverId,
+      connectionId,
       database,
-      readCatalog: () => readPostgresCatalog(catalogClient(postgres), { serverId, database }),
+      readCatalog: () => readPostgresCatalog(catalogClient(postgres), { connectionId, database }),
       isCurrent: () =>
-        this.connections.isServerConnected(serverId) &&
+        this.connections.isConnectionConnected(connectionId) &&
         this.scopeRefreshEpoch(scope) === refreshEpoch,
       publish: () => true,
       reportFailureState: true,
@@ -1080,27 +1084,27 @@ export class WorkbenchIndexController {
    */
   private async executeIndexRun(options: {
     scope: string;
-    serverId: string;
+    connectionId: string;
     database: string;
     readCatalog: () => Promise<PostgresCatalogSnapshot>;
     isCurrent: () => boolean;
     publish: () => boolean;
     reportFailureState: boolean;
   }): Promise<WorkbenchIndexResult> {
-    const { scope, serverId, database } = options;
+    const { scope, connectionId, database } = options;
     const indexingStarted = performance.now();
-    const retainedResult = this.databaseState({ serverId, database }).result;
+    const retainedResult = this.databaseState({ connectionId, database }).result;
     const run: ActiveIndexRun = {
       cancelled: false,
       id: ++this.indexRunSequence,
       retainedResult,
       scope,
-      serverId,
+      connectionId,
     };
     this.activeIndexRuns.set(scope, run);
     this.setState(scope, {
       status: "indexing",
-      serverId,
+      connectionId,
       result: retainedResult,
       message: retainedResult ? "Refreshing the PostgreSQL source snapshot" : undefined,
       progress: { phase: "reading-catalog" },
@@ -1112,7 +1116,7 @@ export class WorkbenchIndexController {
       this.throwIfCancelled(run);
       const indexed = await this.publishAndReadCatalog(
         catalog,
-        serverId,
+        connectionId,
         database,
         indexingStarted,
         options.isCurrent,
@@ -1133,7 +1137,7 @@ export class WorkbenchIndexController {
       if (failure instanceof WorkbenchIndexCancelledError) {
         this.setState(scope, {
           status: "cancelled",
-          serverId,
+          connectionId,
           message: retainedResult
             ? "Refresh cancelled; showing the previous snapshot"
             : "Indexing cancelled",
@@ -1142,7 +1146,7 @@ export class WorkbenchIndexController {
       } else if (options.reportFailureState) {
         this.setState(scope, {
           status: "error",
-          serverId,
+          connectionId,
           message,
           ...(retainedResult ? { result: retainedResult } : {}),
         });
@@ -1162,15 +1166,15 @@ export class WorkbenchIndexController {
 
   private async runDdlSynchronization(
     client: CatalogQueryClient,
-    identity: { serverId: string; database: string },
+    identity: { connectionId: string; database: string },
     objects: readonly PostgresDdlObject[],
     fallbackReason?: string,
   ): Promise<WorkbenchIndexResult> {
-    const scope = databaseScope(identity.serverId, identity.database);
+    const scope = databaseScope(identity.connectionId, identity.database);
     const refreshEpoch = this.scopeRefreshEpoch(scope);
     const registry = this.registries.get(scope);
     this.markDatabaseStale(
-      identity.serverId,
+      identity.connectionId,
       identity.database,
       fallbackReason ? `Schema changed: ${fallbackReason}` : "Applying PostgreSQL schema changes",
     );
@@ -1200,7 +1204,7 @@ export class WorkbenchIndexController {
       const catalog = applyCatalogPatch(identity, registry, patch);
       const indexed = await this.publishAndReadCatalog(
         catalog,
-        identity.serverId,
+        identity.connectionId,
         identity.database,
         performance.now(),
         () => this.scopeRefreshEpoch(scope) === refreshEpoch,
@@ -1238,7 +1242,7 @@ export class WorkbenchIndexController {
 
   private async publishAndReadCatalog(
     catalog: PostgresCatalogSnapshot,
-    serverId: string,
+    connectionId: string,
     database: string,
     indexingStarted: number,
     isCurrent: () => boolean,
@@ -1249,7 +1253,7 @@ export class WorkbenchIndexController {
     registry: IndexedPostgresRegistry;
     session: LocalCodeMonikerSession;
   }> {
-    const scope = databaseScope(serverId, database);
+    const scope = databaseScope(connectionId, database);
     const previousRegistry = this.registries.get(scope);
     const previousPublished = this.published.get(scope);
     let sourceSetReplaced = false;
@@ -1269,7 +1273,7 @@ export class WorkbenchIndexController {
         session,
         catalog,
         scope,
-        serverId,
+        connectionId,
         isCurrent,
         () => {
           sourceSetReplaced = true;
@@ -1279,7 +1283,7 @@ export class WorkbenchIndexController {
       await reportProgress?.({ phase: "reading-symbols", completed: 0, unit: "symbols" });
       const indexed = await this.readDatabaseSymbols(
         session,
-        serverId,
+        connectionId,
         database,
         async (completed) =>
           reportProgress?.({ phase: "reading-symbols", completed, unit: "symbols" }),
@@ -1293,7 +1297,7 @@ export class WorkbenchIndexController {
       assertRunActive?.();
       if (!isCurrent()) throw new Error("The PostgreSQL source scope changed during indexing");
       const result: WorkbenchIndexResult = {
-        serverId,
+        connectionId,
         database,
         revision: catalog.sourceSet.revision,
         documents: catalog.metrics.documentCount,
@@ -1348,7 +1352,7 @@ export class WorkbenchIndexController {
     session: LocalCodeMonikerSession,
     catalog: PostgresCatalogSnapshot,
     scope: string,
-    serverId: string,
+    connectionId: string,
     isCurrent: () => boolean,
     onReplaced: () => void,
   ): Promise<number> {
@@ -1368,7 +1372,7 @@ export class WorkbenchIndexController {
       });
       this.published.set(scope, {
         scope,
-        serverId,
+        connectionId,
         srcset: catalog.sourceSet.srcset,
       });
       onReplaced();
@@ -1415,7 +1419,7 @@ export class WorkbenchIndexController {
 
   private async readDatabaseSymbols(
     session: LocalCodeMonikerSession,
-    serverId: string,
+    connectionId: string,
     database: string,
     reportProgress?: (completed: number) => Promise<void>,
   ): Promise<{
@@ -1441,7 +1445,7 @@ export class WorkbenchIndexController {
             "procedure",
             "trigger",
           ],
-          path: [postgresDatabaseDocumentGlob({ serverId, database })],
+          path: [postgresDatabaseDocumentGlob({ connectionId, database })],
           includeCode: true,
           contextLines: 16,
         },
@@ -1547,39 +1551,39 @@ export class WorkbenchIndexController {
     return this.host.workspaceRoots();
   }
 
-  private observeConnections(serverIds: readonly string[]): void {
-    for (const serverId of serverIds) {
-      if (!this.connections.isServerConnected(serverId)) {
-        this.observedConnectedServerIds.delete(serverId);
+  private observeConnections(connectionIds: readonly string[]): void {
+    for (const connectionId of connectionIds) {
+      if (!this.connections.isConnectionConnected(connectionId)) {
+        this.observedConnectedConnectionIds.delete(connectionId);
       }
     }
-    for (const serverId of serverIds) {
-      const server = this.connections.store.get(serverId);
-      const client = server ? this.connections.getClient(serverId) : undefined;
-      if (!server || !client) continue;
-      const scope = databaseScope(server.id, server.database);
-      const newlyConnected = !this.observedConnectedServerIds.has(serverId);
-      this.observedConnectedServerIds.add(serverId);
+    for (const connectionId of connectionIds) {
+      const connection = this.connections.store.get(connectionId);
+      const client = connection ? this.connections.getClient(connectionId) : undefined;
+      if (!connection || !client) continue;
+      const scope = databaseScope(connection.id, connection.database);
+      const newlyConnected = !this.observedConnectedConnectionIds.has(connectionId);
+      this.observedConnectedConnectionIds.add(connectionId);
       if (newlyConnected && !this.registries.has(scope)) {
         void this.indexPostgresDatabase(client, {
-          serverId: server.id,
-          database: server.database,
+          connectionId: connection.id,
+          database: connection.database,
         }).catch((error) => {
           this.host.log(
-            `Automatic Workbench indexing failed for ${server.id}: ${error instanceof Error ? error.message : String(error)}`,
+            `Automatic Workbench indexing failed for ${connection.id}: ${error instanceof Error ? error.message : String(error)}`,
           );
         });
       }
     }
-    for (const serverId of serverIds) {
-      if (this.connections.isServerConnected(serverId)) continue;
-      const server = this.connections.store.get(serverId);
-      if (!server) continue;
-      const scope = databaseScope(server.id, server.database);
+    for (const connectionId of connectionIds) {
+      if (this.connections.isConnectionConnected(connectionId)) continue;
+      const connection = this.connections.store.get(connectionId);
+      if (!connection) continue;
+      const scope = databaseScope(connection.id, connection.database);
       const registry = this.registries.get(scope);
       this.setState(scope, {
         status: registry ? (this.staleScopes.has(scope) ? "stale" : "available") : "not-indexed",
-        serverId,
+        connectionId,
         result: registry?.result,
       });
     }
@@ -1595,7 +1599,7 @@ export class WorkbenchIndexController {
     this.invalidateSqlAuthoringSnapshot(scope);
     this.setState(scope, {
       status: "available",
-      serverId: registry.result.serverId,
+      connectionId: registry.result.connectionId,
       result: registry.result,
       change,
     });
@@ -1617,7 +1621,7 @@ export class WorkbenchIndexController {
       !this.disposed &&
       state.status !== "indexing" &&
       state.result === result &&
-      result.serverId === snapshot.serverId &&
+      result.connectionId === snapshot.connectionId &&
       result.database === snapshot.database &&
       result.revision === snapshot.revision &&
       result.generation === snapshot.generation
@@ -1634,7 +1638,7 @@ export class WorkbenchIndexController {
 
   private requireGraphRegistry(snapshot: WorkbenchIndexSnapshot): IndexedPostgresRegistry {
     this.requireGraphSnapshot(snapshot);
-    const registry = this.registries.get(databaseScope(snapshot.serverId, snapshot.database));
+    const registry = this.registries.get(databaseScope(snapshot.connectionId, snapshot.database));
     if (!registry) {
       throw new Error("This graph belongs to an unavailable PostgreSQL Workbench snapshot.");
     }
@@ -1674,7 +1678,7 @@ export class WorkbenchIndexController {
         generation: state.result?.generation,
         changeKind: state.change?.kind,
         message: state.message,
-        serverId: state.serverId,
+        connectionId: state.connectionId,
       });
       if (this.acceptanceEvents.length > 100) this.acceptanceEvents.shift();
     }
@@ -1688,7 +1692,7 @@ export class WorkbenchIndexController {
     this.throwIfCancelled(run);
     this.setState(run.scope, {
       status: "indexing",
-      serverId: run.serverId,
+      connectionId: run.connectionId,
       result: run.retainedResult,
       message: run.retainedResult ? "Refreshing the PostgreSQL source snapshot" : undefined,
       progress,
@@ -1766,7 +1770,7 @@ function catalogClient(client: {
 }
 
 function applyCatalogPatch(
-  identity: { serverId: string; database: string },
+  identity: { connectionId: string; database: string },
   registry: IndexedPostgresRegistry,
   patch: PostgresCatalogPatch,
 ): PostgresCatalogSnapshot {
@@ -1838,7 +1842,7 @@ function duration(milliseconds: number): string {
 
 function buildSqlAuthoringSnapshot(
   registry: IndexedPostgresRegistry,
-  identity: { serverId: string; database: string },
+  identity: { connectionId: string; database: string },
   status: SqlAuthoringSnapshot["status"],
 ): SqlAuthoringSnapshot {
   const workbenchObjects = buildWorkbenchObjects(registry.symbols, identity);
@@ -1851,7 +1855,7 @@ function buildSqlAuthoringSnapshot(
         object.kind === "procedure",
     )
     .map((object) => ({
-      serverId: object.serverId,
+      connectionId: object.connectionId,
       database: object.database,
       schema: object.schema,
       oid: object.oid,
@@ -1881,7 +1885,7 @@ function buildSqlAuthoringSnapshot(
   });
   return {
     status,
-    serverId: identity.serverId,
+    connectionId: identity.connectionId,
     database: identity.database,
     revision: registry.result.revision,
     generation: registry.result.generation,
@@ -1891,8 +1895,8 @@ function buildSqlAuthoringSnapshot(
   };
 }
 
-function databaseScope(serverId: string, database: string): string {
-  return postgresDatabaseDocumentRoot({ serverId, database });
+function databaseScope(connectionId: string, database: string): string {
+  return postgresDatabaseDocumentRoot({ connectionId, database });
 }
 
 function routineReturnType(source: string | undefined): string | undefined {

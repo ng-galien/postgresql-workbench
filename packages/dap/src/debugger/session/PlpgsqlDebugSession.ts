@@ -236,7 +236,7 @@ type ExecutionStopPolicy = "first-suspension" | "skip-technical-entry";
 
 // The DAP framework requires one stateful session owner for protocol ordering and request handlers;
 // parsing, PostgreSQL access, source registration, and launch orchestration already live in helpers.
-// code-moniker: ignore[smell-large-class]
+// code-moniker: ignore[code-single-responsibility-flags-large-classes]
 export class PlpgsqlDebugSession extends LoggingDebugSession {
   private listenerExecutor!: PostgresDebugger;
   private targetClient!: Client;

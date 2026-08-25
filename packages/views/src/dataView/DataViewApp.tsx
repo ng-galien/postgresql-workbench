@@ -2,7 +2,9 @@ import {
   type CSSProperties,
   type KeyboardEvent,
   type MouseEvent as ReactMouseEvent,
+  useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -19,6 +21,7 @@ import {
   dataViewWritableTable,
   defaultNullsOrder,
   describeDataViewChanges,
+  sameDataViewChangeRow,
 } from "../../../rows/src/dataView/dataView.js";
 import type {
   DataViewRequest,
@@ -30,6 +33,7 @@ import { rowOrder } from "../../../rows/src/dataView/rowOrder.js";
 import { shownValues } from "../../../rows/src/dataView/shownValues.js";
 import { followLinkRequest } from "../../../rows/src/followLink.js";
 import { hasWorkbenchTreeDrag } from "../cockpit/dragAndDrop.js";
+import { ExportDialog, type ExportSource } from "../results/ExportDialog.js";
 import {
   type GridSelection,
   selectedOrdinals,
@@ -41,13 +45,15 @@ import { anchorUnder, Menu, type MenuEntry, type MenuPoint } from "../results/Me
 import { Modal } from "../results/Modal.js";
 import { type GridEditing, type GridLayout, ResultGrid } from "../results/ResultGrid.js";
 import { ResultNavigation } from "../results/ResultNavigation.js";
-import { nextResultSort, resultRowRange, resultRowSummary } from "../results/resultFormatting.js";
+import { nextResultSort, resultRowSummary } from "../results/resultFormatting.js";
 import type { WebviewMessaging } from "../webviewPage.js";
-import { ExportDialog, type ExportSource } from "./ExportDialog.js";
 import { FilterHighlight, useScrollFollower } from "./FilterHighlight.js";
 import { useReorderable } from "./reorder.js";
 import { nextRequestId } from "./requests.js";
 import { SqlPanel } from "./SqlPanel.js";
+
+/** What each kind of provisioned change is marked with, so the three are told apart at a glance. */
+const CHANGE_MARKS = { delete: "trash", insert: "add", update: "edit" } as const;
 
 export type DataViewMessaging = WebviewMessaging<DataViewRequest, DataViewResponse>;
 
@@ -74,7 +80,7 @@ function completionId(index: number): string {
 
 /**
  * WHERE editor: multi-line (Shift+Enter), Enter applies, completions come from the SQL authoring
- * server through the host (Ctrl+Space or while typing).
+ * connection through the host (Ctrl+Space or while typing).
  *
  * Running the filter does not take the caret away from the line it was typed on: while the rows
  * are being fetched the field refuses keys but keeps them, because a disabled field loses the
@@ -327,6 +333,7 @@ type ToolbarMenu = "columns" | "more" | "changes";
 
 export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
   const [state, setState] = useState<DataViewState>();
+  const pageStart = useRef<number | undefined>(undefined);
   const [progress, setProgress] = useState<number>();
   const [notice, setNotice] = useState<Notice>();
   /** The failure the reader has read and put away, so it is not shown again unchanged. */
@@ -336,6 +343,11 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
   const [editMode, setEditMode] = useState(false);
   /** Whether the value the cursor is on is shown whole, beside the grid. */
   const [inspecting, setInspecting] = useState(false);
+  const [inspectedCell, setInspectedCell] = useState<DebugResultCell>();
+  const inspectorButton = useRef<HTMLButtonElement>(null);
+  const inspectorId = useId();
+  const inspectionSequence = useRef(0);
+  const pendingInspection = useRef(0);
   /** What is selected in the grid, held here because the edit bar acts on it. */
   const [selection, setSelection] = useState<GridSelection>();
   /*
@@ -345,6 +357,9 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
   const [toolbar, setToolbar] = useState<{ at: MenuPoint; which: ToolbarMenu }>();
   /** Which dialog is open over the view: rows coming in from a file, or rows going out to one. */
   const [transfer, setTransfer] = useState<"import" | "export">();
+  const [exportPreview, setExportPreview] = useState<string>();
+  const exportPreviewSequence = useRef(0);
+  const pendingExportPreview = useRef(0);
   const [dropActive, setDropActive] = useState(false);
   const [additions, setAdditions] = useState<DataViewAddition[]>();
   /** Where the proposals were asked for, which is where the paths to choose between open too. */
@@ -355,16 +370,41 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
     title: string;
     choices: Array<{ index: number; label: string; description: string }>;
   }>();
+  const showInspector = useCallback((shown: boolean) => {
+    if (!shown) inspectorButton.current?.focus();
+    setInspecting(shown);
+  }, []);
 
   useEffect(() => {
     const unsubscribe = messaging.subscribe((message) => {
       if (message.type === "data-view/state") {
+        const nextPageStart = message.state.payload?.navigation?.pageStart;
+        if (pageStart.current !== undefined && pageStart.current !== nextPageStart) {
+          setSelection(undefined);
+          setInspectedCell(undefined);
+          setTransfer(undefined);
+        }
+        pageStart.current = nextPageStart;
         setState(message.state);
         setProgress(undefined);
         return;
       }
+      if (
+        message.type === "data-view/inspected" &&
+        message.requestId === pendingInspection.current
+      ) {
+        setInspectedCell(message.cell);
+        return;
+      }
       if (message.type === "data-view/progress") {
         setProgress(message.loadedRowCount);
+        return;
+      }
+      if (
+        message.type === "data-view/export-preview" &&
+        message.requestId === pendingExportPreview.current
+      ) {
+        setExportPreview(message.text);
         return;
       }
       if (message.type === "data-view/notice") {
@@ -391,6 +431,27 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
     const timer = window.setTimeout(() => setNotice(undefined), 4_000);
     return () => window.clearTimeout(timer);
   }, [notice]);
+
+  const inspectCell = useCallback(
+    (row: number, ordinal: number) => {
+      const payload = state?.payload;
+      if (!payload) return;
+      const requestId = ++inspectionSequence.current;
+      pendingInspection.current = requestId;
+      setInspectedCell(undefined);
+      messaging.post({
+        type: "data-view/inspect",
+        requestId,
+        page: {
+          start: payload.navigation?.pageStart ?? 1,
+          length: payload.rows.length,
+        },
+        row,
+        ordinal,
+      });
+    },
+    [messaging, state?.payload],
+  );
 
   const editing = useMemo<GridEditing | undefined>(() => {
     // Nothing is editable, and no gutter shows, until the reader asks for it.
@@ -429,13 +490,20 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
         if (!identity) return undefined;
         return editsByRow.get(`${ordinal}:${dataViewRowKey(identity)}`);
       },
-      onEdit(row, _rowIndex, ordinal, value, original) {
+      onEdit(row, _rowIndex, ordinal, value, original, toDefault) {
         const identity = rowIdentity(row, ordinal);
         const policy = state.editability.columns[ordinal];
         if (!identity || !policy?.editable) return;
         messaging.post({
           type: "data-view/edit",
-          edit: { ...identity, ordinal, column: policy.column, original, value },
+          edit: {
+            ...identity,
+            ordinal,
+            column: policy.column,
+            original,
+            value,
+            ...(toDefault ? { toDefault } : {}),
+          },
         });
       },
       /**
@@ -450,8 +518,13 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
                 removedKeys.size > 0 && removedKeys.has(dataViewRowKey(identityOf(onlyTable, row))),
               added: state.addedRows,
               drop: (localId) => messaging.post({ type: "data-view/drop-row", localId }),
-              fill: (localId, values) =>
-                messaging.post({ type: "data-view/fill-row", localId, values }),
+              fill: (localId, values, unset) =>
+                messaging.post({
+                  type: "data-view/fill-row",
+                  localId,
+                  values,
+                  ...(unset && unset.length > 0 ? { unset } : {}),
+                }),
               appendPasted: (values, above) =>
                 messaging.post({ type: "data-view/add-row", values, above }),
             },
@@ -578,6 +651,8 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
     navigation,
     // A result being written to is not navigable either: the rule states it, no caller overrides it.
     busy: state.busy || state.applying,
+    // Applying changes is busy but not a page read, so Cancel loading must never target it.
+    cancellable: state.cancellable,
     closed: state.status !== "ready" || Boolean(state.message),
   };
   const disabled = state.busy || state.applying;
@@ -656,7 +731,7 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
         }),
       counts: {
         selection: selectedOnly.to - selectedOnly.from + 1,
-        loaded: order.count,
+        loaded: (payload?.navigation?.loadedRowCount ?? order.count) + state.addedRows.length,
         all: payload?.rowCount,
       },
       table: exportTable,
@@ -690,8 +765,12 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
         ? notice.message
         : undefined;
   const alert = failure === dismissed ? undefined : failure;
-  const applySorts = (sorts: { column: string; direction: "ascending" | "descending" }[]) =>
+  const applySorts = (sorts: { column: string; direction: "ascending" | "descending" }[]) => {
+    setSelection(undefined);
+    setInspectedCell(undefined);
+    setTransfer(undefined);
     post({ type: "data-view/sort", sorts });
+  };
   /** Toggles one column: none → asc → desc → none; `additive` keeps the other criteria. */
   const requestSort = (ordinal: number, additive: boolean) => {
     const current = gridSorts.find((sort) => sort.columnIndex === ordinal);
@@ -873,34 +952,55 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
         state.removedRows,
         state.addedRows,
         state.editability,
-      ).map(
-        (change): MenuEntry => ({
+      ).map((change, index, all): MenuEntry => {
+        // Several cells of one row are one place, said once: the row above is where they all land.
+        const previous = all[index - 1];
+        const sameRow =
+          previous !== undefined && sameDataViewChangeRow(previous.handle, change.handle);
+        return {
           kind: "note",
+          dismiss: {
+            label: "Take this change out",
+            run: () => post({ type: "data-view/discard-change", change: change.handle }),
+          },
           content: (
-            <div className="pending-edit">
-              <span className="pending-edit-target">
-                {change.table} · {change.row}
-              </span>
-              {change.kind === "delete" ? (
-                <span className="pending-edit-change">
-                  <span className="pending-edit-removal">The whole row goes away</span>
-                </span>
-              ) : change.kind === "insert" ? (
-                <span className="pending-edit-change">
-                  <span className="pending-edit-insertion">A new row</span>
-                </span>
-              ) : (
-                <span className="pending-edit-change">
-                  <span className="pending-edit-column">{change.column}</span>
-                  <span className="pending-edit-original">{change.original ?? "NULL"}</span>
-                  <span className="codicon codicon-arrow-right" aria-hidden="true" />
-                  <span className="pending-edit-value">{change.value ?? "NULL"}</span>
-                </span>
-              )}
+            <div className={`pending-edit ${change.kind}${sameRow ? " continues" : ""}`}>
+              <span
+                className={`pending-edit-mark codicon codicon-${CHANGE_MARKS[change.kind]}`}
+                aria-hidden="true"
+              />
+              <div className="pending-edit-body">
+                {sameRow ? null : (
+                  <span className="pending-edit-target">
+                    {change.table} · {change.row}
+                  </span>
+                )}
+                {change.kind === "delete" ? (
+                  <span className="pending-edit-change">
+                    <span className="pending-edit-removal">The whole row goes away</span>
+                  </span>
+                ) : change.kind === "insert" ? (
+                  <span className="pending-edit-change">
+                    <span className="pending-edit-insertion">A new row</span>
+                    {change.left ? (
+                      <span className="pending-edit-left">DEFAULT for {change.left}</span>
+                    ) : null}
+                  </span>
+                ) : (
+                  <span className="pending-edit-change">
+                    <span className="pending-edit-column">{change.column}</span>
+                    <span className="pending-edit-original">{change.original ?? "NULL"}</span>
+                    <span className="codicon codicon-arrow-right" aria-hidden="true" />
+                    <span className="pending-edit-value">
+                      {change.toDefault ? "DEFAULT" : (change.value ?? "NULL")}
+                    </span>
+                  </span>
+                )}
+              </div>
             </div>
           ),
-        }),
-      ),
+        };
+      }),
     },
   ];
 
@@ -1034,10 +1134,10 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
           <div className="toolbar-group toolbar-identity">
             <span
               className="data-view-association"
-              title={`Connexion Association: ${state.serverName} · ${state.source.database}`}
+              title={`Connection Association: ${state.connectionName} · ${state.source.database}`}
             >
               <span className="codicon codicon-database" aria-hidden="true" />
-              {associationLabel(state.serverName, state.source.database)}
+              {associationLabel(state.connectionName, state.source.database)}
             </span>
           </div>
 
@@ -1152,6 +1252,27 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
         <ExportDialog
           source={exportSource}
           title={query.structured ? (state.projection.tables[0]?.name ?? "result") : "result"}
+          preview={exportPreview}
+          onPreview={(choice, scope) => {
+            const requestId = ++exportPreviewSequence.current;
+            pendingExportPreview.current = requestId;
+            setExportPreview(undefined);
+            post({
+              type: "data-view/export-preview",
+              requestId,
+              choice,
+              scope,
+              ...(scope === "selection" && selection
+                ? {
+                    selected: {
+                      from: selectedRows(selection).first,
+                      to: selectedRows(selection).last,
+                      ordinals: selectedOrdinals(selection, visibleOrdinals),
+                    },
+                  }
+                : {}),
+            });
+          }}
           onClose={() => setTransfer(undefined)}
           onExport={(choice, scope) => {
             setTransfer(undefined);
@@ -1420,27 +1541,22 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
         rows themselves — a control put beside the connection would say it acted on the connection.
       */}
       <div className="data-view-rows-line">
+        <span className="sr-only" role="status" aria-live="polite">
+          {state.busy && state.payload?.navigation
+            ? "Loading result page…"
+            : state.payload
+              ? resultRowSummary(state.payload)
+              : ""}
+        </span>
         <ResultNavigation
           state={navigationState}
+          payload={payload}
           onAction={(action) => post({ type: "data-view/navigate", action })}
-        >
-          <span
-            className="result-navigation-summary"
-            title={
-              payload
-                ? [
-                    resultRowSummary(payload),
-                    ...(payload.truncated ? payload.truncationReasons : []),
-                  ].join(" · ")
-                : undefined
-            }
-          >
-            {payload ? resultRowRange(payload) : ""}
-          </span>
-        </ResultNavigation>
+          focusFallback={inspectorButton}
+        />
         {/*
           What stands outside the count, so that nothing beside the arrows changes width as a
-          reader pages: a mark for a result cut short, and one for a cursor that has closed.
+          reader pages: a mark for a result cut short, and one for a result that cannot continue.
         */}
         {payload?.truncated ? (
           <span
@@ -1450,15 +1566,17 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
         ) : null}
         {navigationState.closed ? (
           <span
-            className="codicon codicon-debug-disconnect data-view-rows-mark"
-            title="Cursor closed; refresh to load again"
+            className="codicon codicon-warning data-view-rows-mark"
+            title="More pages unavailable; refresh to retry"
           />
         ) : null}
-        <span className="data-view-rows-spacer" />
         {/*
           The value panel shows what a cell holds, so it belongs with the rows and not with the
-          view — beside the control that decides whether those rows may be written.
+          view — beside the control that decides whether those rows may be written, and beside the
+          arrows that move through them. Sent to the far edge they would be a journey to reach for
+          something a reader uses constantly.
         */}
+        <span className="data-view-rows-divider" aria-hidden="true" />
         <IconButton
           icon="inspect"
           label={
@@ -1467,7 +1585,11 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
               : "Show the value under the cursor, whole"
           }
           primary={inspecting}
-          onClick={() => setInspecting((on) => !on)}
+          buttonRef={inspectorButton}
+          expanded={inspecting}
+          controls={inspectorId}
+          popup={false}
+          onClick={() => showInspector(!inspecting)}
         />
         {editable ? (
           <IconButton
@@ -1475,12 +1597,15 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
             label={editMode ? "Leave edit mode" : "Edit mode"}
             text="Edit"
             primary={editMode}
-            onClick={() => {
-              setEditMode((on) => !on);
-              setSelection(undefined);
-            }}
+            /*
+             * Turning writing on adds the bar and nothing else. What a reader had picked out is
+             * theirs — they chose those rows in order to do something to them, and that something
+             * is usually what they came to edit mode for.
+             */
+            onClick={() => setEditMode((on) => !on)}
           />
         ) : null}
+        <span className="data-view-rows-spacer" />
       </div>
       {/*
         The edit bar: what a reader has selected, what they can do to it, and what is waiting to be
@@ -1510,7 +1635,7 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
             disabled={addable !== undefined}
             onClick={() => post({ type: "data-view/add-row", above: addAbove })}
           >
-            ✚ Add row
+            <span className="codicon codicon-add" aria-hidden="true" /> Add row
           </button>
           <button
             type="button"
@@ -1530,7 +1655,7 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
                 post({ type: "data-view/remove-rows", rows: selected.rows });
             }}
           >
-            ✕ Delete
+            <span className="codicon codicon-trash" aria-hidden="true" /> Delete
           </button>
           <span className="edit-bar-divider" aria-hidden="true" />
           <div className="edit-bar-changes">
@@ -1554,7 +1679,7 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
             disabled={editCount === 0 || state.applying}
             onClick={() => post({ type: "data-view/discard" })}
           >
-            ↩ Discard
+            <span className="codicon codicon-discard" aria-hidden="true" /> Discard
           </button>
           <button
             type="button"
@@ -1580,7 +1705,10 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
             selection={selection}
             onSelect={setSelection}
             inspecting={inspecting}
-            onInspecting={setInspecting}
+            inspectorId={inspectorId}
+            onInspecting={showInspector}
+            inspectedCell={inspectedCell}
+            onInspectCell={inspectCell}
             serverSort={{ sorts: gridSorts, onSort: requestSort }}
             editing={editing}
             layout={layout}
@@ -1611,9 +1739,9 @@ function tableAccent(index: number): string {
   return TABLE_ACCENTS[index % TABLE_ACCENTS.length] ?? TABLE_ACCENTS[0] ?? "currentColor";
 }
 
-/** `server · database`, without repeating the database when the server name already ends with it. */
-function associationLabel(serverName: string, database: string): string {
-  return serverName.endsWith(`/${database}`) || serverName === database
-    ? serverName
-    : `${serverName} · ${database}`;
+/** `connection · database`, without repeating the database when the connection name already ends with it. */
+function associationLabel(connectionName: string, database: string): string {
+  return connectionName.endsWith(`/${database}`) || connectionName === database
+    ? connectionName
+    : `${connectionName} · ${database}`;
 }

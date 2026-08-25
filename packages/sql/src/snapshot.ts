@@ -23,7 +23,7 @@ export const DEFAULT_SQL_AUTHORING_SETTINGS: SqlAuthoringSettings = {
 };
 
 export interface SqlAuthoringDatabaseIdentity {
-  serverId: string;
+  connectionId: string;
   database: string;
 }
 
@@ -35,7 +35,7 @@ export interface SqlAuthoringColumn {
 export type SqlAuthoringObjectKind = "table" | "view" | "function" | "procedure";
 
 export interface SqlAuthoringObject {
-  serverId: string;
+  connectionId: string;
   database: string;
   schema: string;
   oid: number;
@@ -105,7 +105,7 @@ export function parseSqlAuthoringDrag(value: string): SqlAuthoringDragPayload | 
   try {
     const payload = JSON.parse(value) as Record<string, unknown>;
     if (
-      typeof payload.serverId !== "string" ||
+      typeof payload.connectionId !== "string" ||
       typeof payload.database !== "string" ||
       typeof payload.name !== "string"
     ) {
@@ -139,7 +139,7 @@ export function sqlAuthoringSnapshotToken(
   snapshot: SqlAuthoringSnapshot,
 ): SqlAuthoringSnapshotToken {
   return {
-    serverId: snapshot.serverId,
+    connectionId: snapshot.connectionId,
     database: snapshot.database,
     revision: snapshot.revision,
     generation: snapshot.generation,

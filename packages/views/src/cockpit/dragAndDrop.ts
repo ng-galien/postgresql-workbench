@@ -13,7 +13,7 @@ export function hasWorkbenchTreeDrag(dataTransfer: DataTransfer): boolean {
 export interface WorkbenchGraphObjectDragPayload {
   version: 1;
   availability: "accepted";
-  serverId: string;
+  connectionId: string;
   database: string;
   sourceUri: string;
   symbolUri: string;
@@ -49,7 +49,7 @@ export function parseWorkbenchGraphDrag(value: string): WorkbenchGraphDragPayloa
     }
     if (
       parsed.availability !== "accepted" ||
-      typeof parsed.serverId !== "string" ||
+      typeof parsed.connectionId !== "string" ||
       typeof parsed.database !== "string" ||
       typeof parsed.sourceUri !== "string" ||
       typeof parsed.symbolUri !== "string" ||

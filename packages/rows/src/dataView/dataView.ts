@@ -5,11 +5,11 @@ import type { DataViewDeleteRule } from "./editability.js";
  * and the Extension Host produces it; neither owns it.
  */
 
-/** Where the rows of a Data View come from. The Connexion Association never changes implicitly. */
+/** Where the rows of a Data View come from. The Connection Association never changes implicitly. */
 export type DataViewSource =
   | {
       kind: "relation";
-      serverId: string;
+      connectionId: string;
       database: string;
       schema: string;
       name: string;
@@ -17,7 +17,7 @@ export type DataViewSource =
     }
   | {
       kind: "sql";
-      serverId: string;
+      connectionId: string;
       database: string;
       sql: string;
       /** Short label for the tab title. */
@@ -60,6 +60,8 @@ export type DataViewColumnPolicy =
       column: string;
       dataType: string;
       editor: DataViewValueEditor;
+      /** Whether PostgreSQL has something of its own for it: a DEFAULT, a sequence, an identity. */
+      hasOwnValue: boolean;
     }
   | { editable: false; reason: string };
 
@@ -123,6 +125,12 @@ export interface DataViewEdit {
   column: string;
   original: string | null;
   value: string | null;
+  /**
+   * Writes `= DEFAULT` rather than a value, so the column takes what the table would have given
+   * it. It is not the same change as giving it NULL, and only a column that has a default of its
+   * own can be asked for it.
+   */
+  toDefault?: true;
 }
 
 /**
@@ -258,9 +266,30 @@ export function dataViewRelationOwning(
   };
 }
 
+/**
+ * Which change a summary stands for, so a reader who reads the list can take one out of it. A
+ * summary otherwise holds only what to show — `id = 12` is a sentence, not a row it can be found by.
+ */
+export type DataViewChangeHandle =
+  | { kind: "update"; tableOid: number; key: (string | null)[]; ordinal: number }
+  | { kind: "delete"; tableOid: number; key: (string | null)[] }
+  | { kind: "insert"; localId: string };
+
+/**
+ * Whether two changes land on the same row of the same table, in the same way. What a summary shows
+ * — `id = 12` — is a sentence written for a reader; the handle is what the two can be compared by.
+ */
+export function sameDataViewChangeRow(a: DataViewChangeHandle, b: DataViewChangeHandle): boolean {
+  if (a.kind !== b.kind) return false;
+  if (a.kind === "insert" || b.kind === "insert") return false;
+  return sameDataViewRow(a, b);
+}
+
 /** One provisioned change, told the way a reader needs to read it back. */
 export interface DataViewChangeSummary {
   kind: "update" | "delete" | "insert";
+  /** The change itself, to take it back out of what is waiting. */
+  handle: DataViewChangeHandle;
   /** `schema.name` of the table the change is written to, when the projection still holds it. */
   table: string;
   /** The row it lands on, by its key: `id = 12`, or `region = 'FR', year = '2026'`. */
@@ -269,6 +298,10 @@ export interface DataViewChangeSummary {
   column?: string;
   original?: string | null;
   value?: string | null;
+  /** On a new row: the columns left out of the INSERT, which the table will answer for. */
+  left?: string;
+  /** The column is given back to the table's own default, which is not the same as giving it NULL. */
+  toDefault?: true;
 }
 
 /**
@@ -296,24 +329,48 @@ export function describeDataViewChanges(
   };
   // In the order they are written: rows away, then cells, then rows added.
   return [
-    ...removals.map((removal) => ({ kind: "delete" as const, ...describe(removal) })),
+    ...removals.map((removal) => ({
+      kind: "delete" as const,
+      handle: {
+        kind: "delete" as const,
+        tableOid: removal.tableOid,
+        key: removal.key,
+      },
+      ...describe(removal),
+    })),
     ...edits.map((edit) => ({
       kind: "update" as const,
+      handle: {
+        kind: "update" as const,
+        tableOid: edit.tableOid,
+        key: edit.key,
+        ordinal: edit.ordinal,
+      },
       ...describe(edit),
       column: edit.column,
       original: edit.original,
       value: edit.value,
+      toDefault: edit.toDefault,
     })),
     ...insertions.map((insertion) => {
       const filled = Object.entries(insertion.values);
+      const table = editability.tables.find((one) => one.tableOid === insertion.tableOid);
+      const left = (table ? editability.columns : [])
+        .flatMap((policy) =>
+          policy.editable && policy.tableOid === insertion.tableOid ? [policy.column] : [],
+        )
+        .filter((column) => !(column in insertion.values));
       return {
         kind: "insert" as const,
+        handle: { kind: "insert" as const, localId: insertion.localId },
         table: describe({ tableOid: insertion.tableOid, key: [] }).table,
         // A row with nothing filled in is a row of defaults, which is worth saying out loud.
         row:
           filled.length === 0
             ? "every column left to PostgreSQL"
             : filled.map(([column, value]) => `${column} = ${value ?? "NULL"}`).join(", "),
+        /* Columns the reader left alone: named, because "not mentioned" is a choice they made. */
+        ...(left.length > 0 ? { left: left.join(", ") } : {}),
       };
     }),
   ];
@@ -385,12 +442,15 @@ export function dataViewTitle(source: DataViewSource, projection: DataViewProjec
   return rest.length === 0 ? first.name : `${first.name} +${rest.length}`;
 }
 
-/** Same stored row: same table and same identity values. */
 /** Identity of one row of one table: the key values of its projected unique index. */
 export function dataViewRowKey(row: { tableOid: number; key: readonly (string | null)[] }): string {
   return `${row.tableOid}:${JSON.stringify(row.key)}`;
 }
 
-export function sameDataViewRow(a: DataViewEdit, b: DataViewEdit): boolean {
+/** Same stored row: same table and same identity values. */
+export function sameDataViewRow(
+  a: { tableOid: number; key: readonly (string | null)[] },
+  b: { tableOid: number; key: readonly (string | null)[] },
+): boolean {
   return dataViewRowKey(a) === dataViewRowKey(b);
 }

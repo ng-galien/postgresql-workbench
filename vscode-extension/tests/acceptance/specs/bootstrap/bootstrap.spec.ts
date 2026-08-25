@@ -1,17 +1,75 @@
 import { expect, test } from "../../fixtures/bootstrapTest";
 import {
-  demoConnexionTreeItem as connexion,
+  demoConnectionTreeItem as connection,
+  connectionTreeItem,
   demoDatabaseTreeItem as database,
   demoConnectionId,
   demoConnectionUrl,
+  loopbackConnectionId,
+  loopbackConnectionTreeItem,
 } from "../../fixtures/demoDatabase";
+import type { VSCodeInstance } from "../../fixtures/vscode";
 import { startWorkbench } from "../../journeys/startup";
+import { CONNECTED_TEXT, type WorkbenchPage } from "../../pages/WorkbenchPage";
+
+const INVALID_CONNECTION_URL = "postgresql://postgres:postgres@127.0.0.1:59999/demo";
+const INVALID_CONNECTION_ID = "127.0.0.1:59999/demo:postgres";
+const INVALID_CONNECTION = connectionTreeItem("postgres@127.0.0.1:59999/demo");
+const RENAMED_CONNECTION = connectionTreeItem("Demo recovery");
+const CONNECTION_ERROR_NOTIFICATION =
+  /^Error: postgres@127\.0\.0\.1:59999\/demo: Connection refused\./u;
+const CONNECTION_PROGRESS_NOTIFICATION =
+  /^Info: Connecting to postgres@127\.0\.0\.1:59999\/demo\.\.\./u;
+
+function startConnectionAction(
+  vscode: VSCodeInstance,
+  connectionId: string,
+  action: "Edit Connection" | "Rename Connection" | "Remove Connection",
+): Promise<void> {
+  const commands = {
+    "Edit Connection": "postgresql-workbench.editConnection",
+    "Remove Connection": "postgresql-workbench.removeConnection",
+    "Rename Connection": "postgresql-workbench.renameConnection",
+  } as const;
+  return vscode.executeCommand(commands[action], 5_000, [{ connection: { id: connectionId } }]);
+}
+
+async function expectFailedConnection(workbench: WorkbenchPage) {
+  const failure = workbench.page
+    .getByRole("dialog", { name: CONNECTION_ERROR_NOTIFICATION })
+    .last();
+  await expect(failure).toBeVisible({ timeout: 5_000 });
+  await expect(
+    workbench.page.getByRole("dialog", { name: CONNECTION_PROGRESS_NOTIFICATION }),
+  ).toBeHidden();
+  return failure;
+}
+
+async function addInvalidConnection(workbench: WorkbenchPage) {
+  const addConnection = await workbench.tree.findItem(/^Add Connection\.\.\.$/);
+  await addConnection.click();
+  await workbench.quickInput.chooseThenInput(
+    /Add connection/i,
+    /postgresql:\/\/user:pass@localhost/i,
+  );
+  await workbench.quickInput.submit(INVALID_CONNECTION_URL, /postgresql:\/\/user:pass@localhost/i);
+  await expect(await workbench.tree.waitForItem(INVALID_CONNECTION)).toContainText(
+    /disconnected/u,
+    { timeout: 5_000 },
+  );
+}
+
+async function confirmConnectionRemoval(workbench: WorkbenchPage) {
+  const remove = workbench.confirmation("Remove");
+  await expect(remove).toBeVisible({ timeout: 5_000 });
+  await remove.click();
+}
 
 /**
  * The startup sequence, in the order a first-time workbench lives it. A VS Code instance that is
  * restarted keeps what this establishes, which is why every other lane may assume it.
  */
-test("starts, configures its first Connexion, and indexes the database behind it", async ({
+test("starts, configures its first Connection, and indexes the database behind it", async ({
   vscode,
   workbench,
 }) => {
@@ -21,14 +79,13 @@ test("starts, configures its first Connexion, and indexes the database behind it
     ).toBeVisible({ timeout: 5_000 });
   });
 
-  await test.step("start with no Connexion configured, and offer to add one", async () => {
+  await test.step("start with no Connection configured, and offer to add one", async () => {
     const state = await vscode.inspectWorkbenchState();
-    expect(state.connection.connectedServerIds).toEqual([]);
-    await expect(await workbench.tree.findItem(/^(Add an existing server|Add Server)/)).toBeVisible(
-      {
-        timeout: 5_000,
-      },
-    );
+    expect(state.connection.connectedConnectionIds).toEqual([]);
+    await expect(vscode.page.getByText("Start a local debug database with Docker")).toHaveCount(0);
+    await expect(await workbench.tree.findItem(/^Add Connection\.\.\.$/)).toBeVisible({
+      timeout: 5_000,
+    });
   });
 
   await test.step("live the startup sequence every other lane depends on", async () => {
@@ -36,18 +93,93 @@ test("starts, configures its first Connexion, and indexes the database behind it
     await startWorkbench(workbench, vscode.inspectWorkbenchState, {
       connectionUrl: demoConnectionUrl,
       connectionId: demoConnectionId,
-      server: connexion,
+      connection: connection,
       database,
     });
   });
 
-  await test.step("leave a connected Connexion and a published index behind", async () => {
+  await test.step("leave a connected Connection and a published index behind", async () => {
     const state = await vscode.inspectWorkbenchState();
-    expect(state.connection.connectedServerIds).toContain(demoConnectionId);
+    expect(state.connection.connectedConnectionIds).toContain(demoConnectionId);
     const runtime = await workbench.expectFreshIndexRuntime({
       database,
-      serverId: demoConnectionId,
+      connectionId: demoConnectionId,
     });
-    expect(runtime.serverId).toBe(demoConnectionId);
+    expect(runtime.connectionId).toBe(demoConnectionId);
+  });
+});
+
+test("recovers, renames, and removes a Connection after connection errors", async ({
+  vscode,
+  workbench,
+}) => {
+  await workbench.reset();
+
+  await test.step("remove an invalid Connection directly from its error state", async () => {
+    await addInvalidConnection(workbench);
+    const failure = await expectFailedConnection(workbench);
+    const removal = startConnectionAction(vscode, INVALID_CONNECTION_ID, "Remove Connection");
+    await confirmConnectionRemoval(workbench);
+    await removal;
+    await workbench.tree.expectItemAbsent(INVALID_CONNECTION);
+    await expect(failure).toBeHidden();
+  });
+
+  await test.step("recreate the invalid Connection and expose recovery", async () => {
+    await addInvalidConnection(workbench);
+    const failure = await expectFailedConnection(workbench);
+    await failure.getByRole("button", { name: "Edit Connection", exact: true }).click();
+  });
+
+  await test.step("correct the port and connect the edited Connection", async () => {
+    await workbench.quickInput.chooseThenInput(/^Port/u);
+    await expect(workbench.page.locator(".quick-input-widget:visible")).toContainText(/New Port/i);
+    await workbench.quickInput.submit("5434");
+    await expect(await workbench.tree.waitForItem(loopbackConnectionTreeItem)).toContainText(
+      CONNECTED_TEXT,
+      { timeout: 10_000 },
+    );
+    expect((await vscode.inspectWorkbenchState()).connection.connectedConnectionIds).toContain(
+      loopbackConnectionId,
+    );
+  });
+
+  await test.step("edit the working Connection back to an invalid port", async () => {
+    const editing = startConnectionAction(vscode, loopbackConnectionId, "Edit Connection");
+    await workbench.quickInput.chooseThenInput(/^Port/u);
+    await expect(workbench.page.locator(".quick-input-widget:visible")).toContainText(/New Port/i);
+    await workbench.quickInput.submit("59999");
+    await editing;
+
+    await expect(await workbench.tree.waitForItem(INVALID_CONNECTION)).toContainText(
+      /disconnected/u,
+      { timeout: 5_000 },
+    );
+    await expect(
+      workbench.page.getByRole("dialog", { name: CONNECTION_PROGRESS_NOTIFICATION }),
+    ).toBeHidden();
+    expect((await vscode.inspectWorkbenchState()).connection.connectedConnectionIds).not.toContain(
+      loopbackConnectionId,
+    );
+  });
+
+  await test.step("rename and remove the failed Connection", async () => {
+    const renaming = startConnectionAction(vscode, INVALID_CONNECTION_ID, "Rename Connection");
+    await expect(workbench.page.locator(".quick-input-widget:visible")).toContainText(
+      /Connection name/i,
+    );
+    await workbench.quickInput.submit("Demo recovery");
+    await renaming;
+    await expect(await workbench.tree.waitForItem(RENAMED_CONNECTION)).toContainText(
+      /disconnected/u,
+    );
+
+    const removal = startConnectionAction(vscode, INVALID_CONNECTION_ID, "Remove Connection");
+    await confirmConnectionRemoval(workbench);
+    await removal;
+    await workbench.tree.expectItemAbsent(RENAMED_CONNECTION);
+    await expect(
+      workbench.page.getByRole("dialog", { name: CONNECTION_ERROR_NOTIFICATION }),
+    ).toBeHidden();
   });
 });

@@ -63,6 +63,29 @@ describe("SQL result execution classification", () => {
     ).resolves.toBe("non-paged");
   });
 
+  it("keeps SELECT INTO on the non-paged schema-mutation path", async () => {
+    const parser = parserWith([node("SelectStmt", [node("IntoClause")])]);
+    await expect(
+      planSqlResultExecution("SELECT 1 INTO created_table", parser),
+    ).resolves.toMatchObject({
+      status: "ready",
+      statements: [
+        {
+          resultKind: "non-paged",
+          line: 1,
+          schemaMutation: true,
+        },
+      ],
+    });
+  });
+
+  it("keeps row-locking SELECT statements on the single-execution path", async () => {
+    const parser = parserWith([node("SelectStmt", [node("for_locking_clause")])]);
+    await expect(
+      classifySqlResultExecution("SELECT * FROM jobs FOR UPDATE SKIP LOCKED", parser),
+    ).resolves.toBe("non-paged");
+  });
+
   it("does not mistake a nested SELECT in DDL for the top-level statement", async () => {
     const parser = parserWith([node("CreateTableAsStmt", [node("SelectStmt")])]);
     await expect(

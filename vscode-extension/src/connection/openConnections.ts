@@ -1,56 +1,57 @@
 import type { Client } from "pg";
 import * as vscode from "vscode";
 import {
+  type ConnectionConfig,
   getConnectionName,
-  type ServerConfig,
 } from "../../../packages/catalog/src/savedConnection.js";
 import { ConnectionCommands } from "./commands.js";
-import { ConnectionService } from "./connectPostgres.js";
+import { type ConnectionError, ConnectionService } from "./connectPostgres.js";
 import { PostgresConnectionRegistry } from "./registry.js";
-import { ServerStore } from "./savedConnections.js";
+import { ConnectionStore } from "./savedConnections.js";
 
 export type DebugCapabilityStatus = "unknown" | "checking" | "available" | "unavailable" | "error";
 
 export interface DebugCapabilitySnapshot {
-  readonly serverId: string;
+  readonly connectionId: string;
   readonly status: DebugCapabilityStatus;
   readonly message?: string;
   readonly checkedAt?: number;
 }
 
 export interface ConnectionChange {
-  readonly serverIds: readonly string[];
+  readonly connectionIds: readonly string[];
   readonly rootsChanged: boolean;
-  /** Only the PL/pgSQL debug capability of `serverIds` changed; connectivity is unchanged. */
+  /** Only the PL/pgSQL debug capability of `connectionIds` changed; connectivity is unchanged. */
   readonly debugCapabilityOnly?: boolean;
 }
 
 /**
- * Orchestrates server management, connection lifecycle, status bar, and events.
+ * Orchestrates connection management, connection lifecycle, status bar, and events.
  * Consumers (TreeView, ContentProvider) listen to `onChanged`.
  */
 // This lifecycle facade deliberately combines tiny observable-state accessors with the atomic
 // connection transition; interactive CRUD/import responsibilities live in ConnectionCommands.
-// code-moniker: ignore[smell-method-size-disharmony]
+// code-moniker: ignore[code-single-responsibility-flags-method-size-disharmony]
 export class ConnectionManager implements vscode.Disposable {
   private readonly _onChanged = new vscode.EventEmitter<ConnectionChange>();
   readonly onChanged = this._onChanged.event;
-  private readonly _onServerChanged = new vscode.EventEmitter<ConnectionChange>();
-  /** Compatibility event carrying the exact Connexion identities that changed. */
-  readonly onServerChanged = this._onServerChanged.event;
+  private readonly _onConnectionChanged = new vscode.EventEmitter<ConnectionChange>();
+  /** Compatibility event carrying the exact Connection identities that changed. */
+  readonly onConnectionChanged = this._onConnectionChanged.event;
 
-  readonly store: ServerStore;
+  readonly store: ConnectionStore;
   readonly commands: ConnectionCommands;
   private readonly service: ConnectionService;
   private readonly statusBar: vscode.StatusBarItem;
   private readonly out: vscode.OutputChannel;
 
-  private readonly connections = new PostgresConnectionRegistry();
-  /** Unexpected losses belong to the exact Connexion that lost its session. */
+  private readonly connectionRegistry = new PostgresConnectionRegistry();
+  /** Unexpected losses belong to the exact Connection that lost its session. */
   private readonly connectionLosses = new Set<string>();
   private readonly debugCapabilities = new Map<string, DebugCapabilitySnapshot>();
   private readonly debugCapabilityEpochs = new Map<string, number>();
   private readonly connectionTransitionTails = new Map<string, Promise<void>>();
+  private readonly pendingRecoveryNotifications = new Set<string>();
   private beforeConnectionChange?: (
     connectionId: string,
     action: string,
@@ -58,7 +59,7 @@ export class ConnectionManager implements vscode.Disposable {
 
   constructor(context: vscode.ExtensionContext, out: vscode.OutputChannel) {
     this.out = out;
-    this.store = new ServerStore(context);
+    this.store = new ConnectionStore(context);
     this.commands = new ConnectionCommands(this);
     this.service = new ConnectionService(out);
     this.statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
@@ -67,47 +68,31 @@ export class ConnectionManager implements vscode.Disposable {
     this.updateStatusBar();
   }
 
-  /** @deprecated Use `commands.addServer()` in new Extension Host code. */
-  readonly addServer = (): Promise<ServerConfig | undefined> => this.commands.addServer();
-
-  /** @deprecated Use `commands.removeServer()` in new Extension Host code. */
-  readonly removeServer = (id: string): Promise<void> => this.commands.removeServer(id);
-
-  /** @deprecated Use `commands.pickConnection()` in new Extension Host code. */
-  readonly pickConnection = async (): Promise<boolean> =>
-    (await this.commands.pickConnection()) !== undefined;
-
-  /** @deprecated Use `commands.editServer()` in new Extension Host code. */
-  readonly editServer = (id: string): Promise<void> => this.commands.editServer(id);
-
-  /** @deprecated Use `commands.changePassword()` in new Extension Host code. */
-  readonly changePassword = (id: string): Promise<void> => this.commands.changePassword(id);
-
   // --- Read state ---
 
-  get servers(): readonly ServerConfig[] {
+  get connections(): readonly ConnectionConfig[] {
     return this.store.getAll();
   }
 
-  debugCapabilityFor(serverId: string): DebugCapabilitySnapshot {
+  debugCapabilityFor(connectionId: string): DebugCapabilitySnapshot {
     return (
-      this.debugCapabilities.get(serverId) ?? {
-        serverId,
+      this.debugCapabilities.get(connectionId) ?? {
+        connectionId,
         status: "unknown",
       }
     );
   }
 
-  isServerConnected(id: string): boolean {
-    return this.connections.isConnected(id);
+  isConnectionConnected(id: string): boolean {
+    return this.connectionRegistry.isConnected(id);
   }
 
   getClient(id: string): Client | undefined {
-    return this.connections.client(id);
+    return this.connectionRegistry.client(id);
   }
 
-  get connectedServerIds(): readonly string[] {
-    return this.connections.connectedIds;
+  get connectedConnectionIds(): readonly string[] {
+    return this.connectionRegistry.connectedIds;
   }
 
   async getPassword(id: string): Promise<string> {
@@ -115,27 +100,27 @@ export class ConnectionManager implements vscode.Disposable {
   }
 
   async createDedicatedClient(id: string): Promise<Client> {
-    const server = this.store.get(id);
-    if (!server) throw new Error("The PostgreSQL server no longer exists.");
+    const connection = this.store.get(id);
+    if (!connection) throw new Error("The PostgreSQL connection no longer exists.");
     return this.service.connectClient({
-      host: server.host,
-      port: server.port,
-      database: server.database,
-      user: server.user,
+      host: connection.host,
+      port: connection.port,
+      database: connection.database,
+      user: connection.user,
       password: await this.getPassword(id),
-      ssl: server.ssl,
+      ssl: connection.ssl,
     });
   }
 
-  async setSchemaSyncOverride(id: string, override: ServerConfig["schemaSync"]): Promise<void> {
+  async setSchemaSyncOverride(id: string, override: ConnectionConfig["schemaSync"]): Promise<void> {
     this.out.appendLine(
-      `Workbench schema synchronization store update requested: server=${id} override=${JSON.stringify(override)}`,
+      `Workbench schema synchronization store update requested: connection=${id} override=${JSON.stringify(override)}`,
     );
-    const server = this.store.get(id);
-    if (!server) throw new Error("The PostgreSQL server no longer exists.");
-    await this.store.update(id, { ...server, schemaSync: override });
+    const connection = this.store.get(id);
+    if (!connection) throw new Error("The PostgreSQL connection no longer exists.");
+    await this.store.update(id, { ...connection, schemaSync: override });
     this.out.appendLine(
-      `Workbench schema synchronization store update complete: server=${id} override=${JSON.stringify(this.store.get(id)?.schemaSync)}`,
+      `Workbench schema synchronization store update complete: connection=${id} override=${JSON.stringify(this.store.get(id)?.schemaSync)}`,
     );
     this.fire([id]);
   }
@@ -151,25 +136,25 @@ export class ConnectionManager implements vscode.Disposable {
     });
   }
 
-  async connectServer(id: string, options: { force?: boolean } = {}): Promise<boolean> {
-    return this.runConnectionTransition(id, () => this.connectServerTransition(id, options));
+  async connectConnection(id: string, options: { force?: boolean } = {}): Promise<boolean> {
+    return this.runConnectionTransition(id, () => this.connectConnectionTransition(id, options));
   }
 
-  private async connectServerTransition(
+  private async connectConnectionTransition(
     id: string,
     options: { force?: boolean } = {},
   ): Promise<boolean> {
-    const server = this.store.get(id);
-    if (!server) return false;
-    if (this.connections.isConnected(id) && !options.force) return true;
+    const connection = this.store.get(id);
+    if (!connection) return false;
+    if (this.connectionRegistry.isConnected(id) && !options.force) return true;
     return this.withConnectionChange(
-      options.force && this.connections.isConnected(id) ? id : undefined,
-      "reconnecting the Connexion",
+      options.force && this.connectionRegistry.isConnected(id) ? id : undefined,
+      "reconnecting the Connection",
       async () => {
         let password = await this.store.getPassword(id);
         if (!password) {
           const input = await vscode.window.showInputBox({
-            prompt: `Password for ${getConnectionName(server)}`,
+            prompt: `Password for ${getConnectionName(connection)}`,
             password: true,
             ignoreFocusOut: true,
           });
@@ -178,28 +163,29 @@ export class ConnectionManager implements vscode.Disposable {
           await this.store.setPassword(id, password);
         }
 
-        if (options.force && this.connections.isConnected(id)) {
-          await this.disconnectServerClient(id);
+        if (options.force && this.connectionRegistry.isConnected(id)) {
+          await this.disconnectConnectionClient(id);
           this.forgetDebugCapability(id);
           this.connectionLosses.delete(id);
           this.fire([id]);
         }
 
+        let failure: ConnectionError | undefined;
         const connected = await vscode.window.withProgress(
           {
             location: vscode.ProgressLocation.Notification,
-            title: `Connecting to ${getConnectionName(server)}...`,
+            title: `Connecting to ${getConnectionName(connection)}...`,
             cancellable: true,
           },
           async (_progress, token) => {
             let client: Client;
             const connectPromise = this.service.connectClient({
-              host: server.host,
-              port: server.port,
-              database: server.database,
-              user: server.user,
+              host: connection.host,
+              port: connection.port,
+              database: connection.database,
+              user: connection.user,
               password,
-              ssl: server.ssl,
+              ssl: connection.ssl,
             });
             let cancellation: vscode.Disposable | undefined;
             try {
@@ -216,49 +202,31 @@ export class ConnectionManager implements vscode.Disposable {
                 connectPromise
                   .then((connectedClient) => this.service.disconnect(connectedClient))
                   .catch(() => {});
-                this.out.appendLine(`Connection to ${getConnectionName(server)} cancelled.`);
+                this.out.appendLine(`Connection to ${getConnectionName(connection)} cancelled.`);
                 return false;
               }
-              const classified = this.service.classifyError(err);
-              const actions =
-                classified.kind === "auth"
-                  ? ["Change Password", "Edit Server"]
-                  : classified.kind === "network"
-                    ? ["Retry", "Edit Server"]
-                    : ["Retry", "Edit Server"];
-              const action = await vscode.window.showErrorMessage(
-                `${getConnectionName(server)}: ${classified.message}`,
-                ...actions,
-              );
-              if (action === "Retry") return this.connectServerTransition(id);
-              if (action === "Edit Server") {
-                this.deferConnectionAction("Editing the Connexion", () =>
-                  this.commands.editServer(id),
-                );
-              }
-              if (action === "Change Password") {
-                this.deferConnectionAction("Changing the Connexion password", () =>
-                  this.commands.changePassword(id),
-                );
-              }
+              failure = this.service.classifyError(err);
               return false;
             } finally {
               cancellation?.dispose();
             }
 
-            await this.connections.connect(id, async () => client);
+            await this.connectionRegistry.connect(id, async () => client);
             this.connectionLosses.delete(id);
 
             client.on("error", (err) => {
-              if (!this.connections.forget(id, client)) return;
+              if (!this.connectionRegistry.forget(id, client)) return;
               this.out.appendLine(`Connection lost: ${err.message}`);
               this.connectionLosses.add(id);
               this.forgetDebugCapability(id);
               this.fire([id]);
               vscode.window
-                .showWarningMessage(`${getConnectionName(server)}: connection lost.`, "Reconnect")
+                .showWarningMessage(
+                  `${getConnectionName(connection)}: connection lost.`,
+                  "Reconnect",
+                )
                 .then((a) => {
-                  if (a === "Reconnect") void this.connectServer(id);
+                  if (a === "Reconnect") void this.connectConnection(id);
                 });
             });
 
@@ -272,6 +240,31 @@ export class ConnectionManager implements vscode.Disposable {
           },
         );
 
+        const classifiedFailure = failure;
+        if (classifiedFailure) {
+          const actions =
+            classifiedFailure.kind === "auth"
+              ? ["Change Password", "Edit Connection"]
+              : ["Retry", "Edit Connection"];
+          this.pendingRecoveryNotifications.add(id);
+          this.deferConnectionAction("Handling the Connection error", async () => {
+            let action: string | undefined;
+            try {
+              action = await vscode.window.showErrorMessage(
+                `${getConnectionName(connection)}: ${classifiedFailure.message}`,
+                ...actions,
+              );
+            } finally {
+              this.pendingRecoveryNotifications.delete(id);
+            }
+            if (action === "Retry") await this.connectConnection(id);
+            if (action === "Edit Connection") {
+              await this.commands.editConnection(id, { connect: true });
+            }
+            if (action === "Change Password") await this.commands.changePassword(id);
+          });
+        }
+
         return connected;
       },
     );
@@ -280,85 +273,93 @@ export class ConnectionManager implements vscode.Disposable {
   async disconnect(requestedId?: string): Promise<boolean> {
     const connectionId =
       requestedId ??
-      (this.connections.connectedIds.length === 1 ? this.connections.connectedIds[0] : undefined);
+      (this.connectionRegistry.connectedIds.length === 1
+        ? this.connectionRegistry.connectedIds[0]
+        : undefined);
     if (!connectionId) return false;
     return this.runConnectionTransition(connectionId, () => {
       this.out.appendLine(`Disconnect requested: target=${connectionId}`);
-      return this.withConnectionChange(connectionId, "disconnecting the Connexion", async () => {
-        const disconnected = await this.disconnectServerClient(connectionId);
+      return this.withConnectionChange(connectionId, "disconnecting the Connection", async () => {
+        const disconnected = await this.disconnectConnectionClient(connectionId);
         this.forgetDebugCapability(connectionId);
         this.connectionLosses.delete(connectionId);
         await this.store.setConnectionOpen(connectionId, false);
         this.fire([connectionId]);
-        this.out.appendLine(`Disconnect complete: server=${connectionId}`);
+        this.out.appendLine(`Disconnect complete: connection=${connectionId}`);
         return disconnected;
       });
     });
   }
 
   async tryReconnectSaved(): Promise<boolean> {
-    const ids = this.store.getOpenServerIds().filter((id) => this.store.has(id));
+    const ids = this.store.getOpenConnectionIds().filter((id) => this.store.has(id));
     const results = await Promise.all(
       ids.map(async (id) => {
-        const server = this.store.get(id)!;
+        const connection = this.store.get(id)!;
         if (!(await this.store.getPassword(id))) {
           this.out.appendLine(
-            `Skipping auto-reconnect for ${getConnectionName(server)} (no saved password). Click to connect.`,
+            `Skipping auto-reconnect for ${getConnectionName(connection)} (no saved password). Click to connect.`,
           );
           this.fire([id]);
           return false;
         }
-        this.out.appendLine(`Restoring connection to ${getConnectionName(server)}...`);
-        return this.connectServer(id);
+        this.out.appendLine(`Restoring connection to ${getConnectionName(connection)}...`);
+        return this.connectConnection(id);
       }),
     );
     return results.some(Boolean);
   }
 
-  /** Re-run the server requirement checks for one exact Connexion (F-EXT-11). */
+  /** Re-run the connection requirement checks for one exact Connection (F-EXT-11). */
   async checkRequirements(
-    serverId: string,
+    connectionId: string,
   ): Promise<{ available: boolean; error: string } | undefined> {
-    return this.refreshDebugCapability(serverId);
+    return this.refreshDebugCapability(connectionId);
   }
 
   async refreshDebugCapability(
-    requestedServerId?: string,
+    requestedConnectionId?: string,
   ): Promise<{ available: boolean; error: string } | undefined> {
-    const serverId = requestedServerId;
-    const server = serverId ? this.store.get(serverId) : undefined;
-    if (!server) return undefined;
-    const epoch = (this.debugCapabilityEpochs.get(server.id) ?? 0) + 1;
-    this.debugCapabilityEpochs.set(server.id, epoch);
-    this.setDebugCapability({ serverId: server.id, status: "checking" });
-    const sharedClient = this.getClient(server.id);
+    const connectionId = requestedConnectionId;
+    const connection = connectionId ? this.store.get(connectionId) : undefined;
+    if (!connection) return undefined;
+    const epoch = (this.debugCapabilityEpochs.get(connection.id) ?? 0) + 1;
+    this.debugCapabilityEpochs.set(connection.id, epoch);
+    this.setDebugCapability({ connectionId: connection.id, status: "checking" });
+    const sharedClient = this.getClient(connection.id);
     let client: Client | undefined = sharedClient;
     try {
-      client ??= await this.createDedicatedClient(server.id);
-      const check = await this.service.checkRequirements(client, server.database);
-      if (this.debugCapabilityEpochs.get(server.id) !== epoch || !this.store.has(server.id)) {
+      client ??= await this.createDedicatedClient(connection.id);
+      const check = await this.service.checkRequirements(client, connection.database);
+      if (
+        this.debugCapabilityEpochs.get(connection.id) !== epoch ||
+        !this.store.has(connection.id)
+      ) {
         return undefined;
       }
       this.setDebugCapability({
-        serverId: server.id,
+        connectionId: connection.id,
         status: check.available ? "available" : "unavailable",
         ...(check.error ? { message: check.error } : {}),
         checkedAt: Date.now(),
       });
       return check;
     } catch (error) {
-      if (this.debugCapabilityEpochs.get(server.id) !== epoch || !this.store.has(server.id)) {
+      if (
+        this.debugCapabilityEpochs.get(connection.id) !== epoch ||
+        !this.store.has(connection.id)
+      ) {
         return undefined;
       }
       const message = error instanceof Error ? error.message : String(error);
       this.setDebugCapability({
-        serverId: server.id,
+        connectionId: connection.id,
         status: "error",
         message,
         checkedAt: Date.now(),
       });
       this.out.appendLine(
-        `Debugger capability detection failed for ${getConnectionName(server)}: ${message}`,
+        `Debugger capability detection failed for ${getConnectionName(connection)}: ${message}`,
       );
       return {
         available: false,
@@ -375,13 +376,18 @@ export class ConnectionManager implements vscode.Disposable {
 
   async removeConnectionConfiguration(id: string): Promise<boolean> {
     return this.runConnectionTransition(id, () =>
-      this.withConnectionChange(id, "removing the Connexion", async () => {
-        await this.disconnectServerClient(id);
+      this.withConnectionChange(id, "removing the Connection", async () => {
+        await this.disconnectConnectionClient(id);
         await this.store.setConnectionOpen(id, false);
         this.connectionLosses.delete(id);
         this.forgetDebugCapability(id);
         await this.store.remove(id);
         this.fire([id], true);
+        if (this.pendingRecoveryNotifications.delete(id)) {
+          // VS Code does not expose a disposable for one showErrorMessage notification. Hiding
+          // toasts closes its obsolete recovery actions without clearing notification history.
+          await vscode.commands.executeCommand("notifications.hideToasts");
+        }
         return true;
       }),
     );
@@ -389,12 +395,12 @@ export class ConnectionManager implements vscode.Disposable {
 
   async replaceConnectionConfiguration(
     id: string,
-    replacement: ServerConfig,
+    replacement: ConnectionConfig,
     password: string,
   ): Promise<boolean> {
     return this.runConnectionTransition(id, () =>
-      this.withConnectionChange(id, "replacing the Connexion", async () => {
-        await this.disconnectServerClient(id);
+      this.withConnectionChange(id, "replacing the Connection", async () => {
+        await this.disconnectConnectionClient(id);
         await this.store.setConnectionOpen(id, false);
         this.connectionLosses.delete(id);
         this.forgetDebugCapability(id);
@@ -408,14 +414,14 @@ export class ConnectionManager implements vscode.Disposable {
   dispose(): void {
     this.statusBar.dispose();
     this._onChanged.dispose();
-    this._onServerChanged.dispose();
-    void this.connections.dispose((client) => this.service.disconnect(client));
+    this._onConnectionChanged.dispose();
+    void this.connectionRegistry.dispose((client) => this.service.disconnect(client));
   }
 
   // --- Private ---
 
-  private disconnectServerClient(id: string): Promise<boolean> {
-    return this.connections.disconnect(id, (client) => this.service.disconnect(client));
+  private disconnectConnectionClient(id: string): Promise<boolean> {
+    return this.connectionRegistry.disconnect(id, (client) => this.service.disconnect(client));
   }
 
   private runConnectionTransition<T>(id: string, transition: () => Promise<T>): Promise<T> {
@@ -460,7 +466,7 @@ export class ConnectionManager implements vscode.Disposable {
   }
 
   private fire(
-    serverIds: readonly string[] = [],
+    connectionIds: readonly string[] = [],
     rootsChanged = false,
     debugCapabilityOnly = false,
   ): void {
@@ -468,33 +474,26 @@ export class ConnectionManager implements vscode.Disposable {
     vscode.commands.executeCommand(
       "setContext",
       "postgresql-workbench.connected",
-      this.connections.connectedIds.length > 0,
-    );
-    vscode.commands.executeCommand(
-      "setContext",
-      "postgresql-workbench.debugAvailable",
-      this.connections.connectedIds.some(
-        (id) => this.debugCapabilityFor(id).status === "available",
-      ),
+      this.connectionRegistry.connectedIds.length > 0,
     );
     const change: ConnectionChange = {
-      serverIds: [...new Set(serverIds)],
+      connectionIds: [...new Set(connectionIds)],
       rootsChanged,
       ...(debugCapabilityOnly ? { debugCapabilityOnly } : {}),
     };
-    this._onServerChanged.fire(change);
+    this._onConnectionChanged.fire(change);
     this._onChanged.fire(change);
   }
 
   private updateStatusBar(): void {
-    const connected = this.connections.connectedIds
+    const connected = this.connectionRegistry.connectedIds
       .map((id) => this.store.get(id))
-      .filter((server): server is ServerConfig => server !== undefined);
+      .filter((connection): connection is ConnectionConfig => connection !== undefined);
     if (connected.length === 1) {
-      const server = connected[0];
-      this.statusBar.text = `$(pass-filled) ${getConnectionName(server)}`;
+      const connection = connected[0];
+      this.statusBar.text = `$(pass-filled) ${getConnectionName(connection)}`;
       this.statusBar.backgroundColor = undefined;
-      const debug = this.debugCapabilityFor(server.id);
+      const debug = this.debugCapabilityFor(connection.id);
       this.statusBar.tooltip =
         debug.status === "available"
           ? "PL/pgSQL — Connected · debugging available"
@@ -502,23 +501,26 @@ export class ConnectionManager implements vscode.Disposable {
             ? "PL/pgSQL — Connected · checking debugger capability"
             : "PL/pgSQL — Connected · debugging unavailable";
     } else if (connected.length > 1) {
-      this.statusBar.text = `$(pass-filled) ${connected.length} Connexions`;
+      this.statusBar.text = `$(pass-filled) ${connected.length} Connections`;
       this.statusBar.backgroundColor = undefined;
       this.statusBar.tooltip = connected.map(getConnectionName).join("\n");
     } else {
-      this.statusBar.text = "$(database) No Connexion";
+      this.statusBar.text = "$(database) No Connection";
       this.statusBar.backgroundColor = undefined;
       this.statusBar.tooltip = "Click to connect";
     }
   }
 
   private setDebugCapability(snapshot: DebugCapabilitySnapshot): void {
-    this.debugCapabilities.set(snapshot.serverId, snapshot);
-    this.fire([snapshot.serverId], false, true);
+    this.debugCapabilities.set(snapshot.connectionId, snapshot);
+    this.fire([snapshot.connectionId], false, true);
   }
 
-  private forgetDebugCapability(serverId: string): void {
-    this.debugCapabilityEpochs.set(serverId, (this.debugCapabilityEpochs.get(serverId) ?? 0) + 1);
-    this.debugCapabilities.delete(serverId);
+  private forgetDebugCapability(connectionId: string): void {
+    this.debugCapabilityEpochs.set(
+      connectionId,
+      (this.debugCapabilityEpochs.get(connectionId) ?? 0) + 1,
+    );
+    this.debugCapabilities.delete(connectionId);
   }
 }

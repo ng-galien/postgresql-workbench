@@ -77,19 +77,19 @@ export class WorkbenchGraphTreeSync {
     this.selected = item;
     if (!this.graph.isOpen || !this.graph.currentScope) return false;
     if (item.kind === "databaseSource" || item.kind === "sourcesSnapshot") {
-      const identity = { serverId: item.server.id, database: item.server.database };
+      const identity = { connectionId: item.connection.id, database: item.connection.database };
       const state = this.index.databaseState(identity);
       const result = state.result;
       if (state.status !== "available" || !result) return false;
       return this.graph.openDatabase(identity, result);
     }
     if (item.kind === "schema") {
-      const identity = { serverId: item.server.id, database: item.server.database };
+      const identity = { connectionId: item.connection.id, database: item.connection.database };
       const state = this.index.databaseState(identity);
       const result = state.result;
       if (state.status !== "available" || !result) return false;
       if (
-        this.graph.currentDatabase?.serverId !== identity.serverId ||
+        this.graph.currentDatabase?.connectionId !== identity.connectionId ||
         this.graph.currentDatabase.database !== identity.database
       ) {
         return this.graph.openSchema(identity, item.schema, result);
@@ -111,12 +111,12 @@ export class WorkbenchGraphTreeSync {
     if (item.kind === "extensionGroup") {
       const owner = item.objects[0];
       if (!owner) return false;
-      const identity = { serverId: owner.serverId, database: owner.database };
+      const identity = { connectionId: owner.connectionId, database: owner.database };
       const state = this.index.databaseState(identity);
       const result = state.result;
       if (state.status !== "available" || !result) return false;
       if (
-        this.graph.currentDatabase?.serverId !== identity.serverId ||
+        this.graph.currentDatabase?.connectionId !== identity.connectionId ||
         this.graph.currentDatabase.database !== identity.database
       ) {
         return this.graph.openSchema(identity, item.schema, result);

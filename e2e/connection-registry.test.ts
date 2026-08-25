@@ -13,7 +13,7 @@ const ADMIN_CONFIG = {
 const DATABASE_A = "pgwb_connection_it_a";
 const DATABASE_B = "pgwb_connection_it_b";
 
-describe("e2e: independent PostgreSQL Connexions", () => {
+describe("e2e: independent PostgreSQL Connections", () => {
   let admin: Client;
 
   beforeAll(async () => {
@@ -36,7 +36,7 @@ describe("e2e: independent PostgreSQL Connexions", () => {
     await admin.end();
   });
 
-  it("keeps A and B alive and disconnects only the exact Connexion", async () => {
+  it("keeps A and B alive and disconnects only the exact Connection", async () => {
     const registry = new PostgresConnectionRegistry();
     const open = (database: string, applicationName: string) => async () => {
       const client = new Client({

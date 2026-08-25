@@ -15,10 +15,10 @@ source, variables, notices, and results attached to the same launch.
 
 {{media}}
 
-## Server requirements
+## Connection requirements
 
 PostgreSQL must load `plugin_debugger` through `shared_preload_libraries` and
-expose the `pldbgapi` extension. Run **PL/pgSQL: Check Server Requirements** for
+expose the `pldbgapi` extension. Run **PostgreSQL Workbench: Check Connection Requirements** for
 diagnostics.
 
 The debugger works with standard EnterpriseDB, Debian, and RPM pldebugger

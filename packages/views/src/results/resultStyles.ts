@@ -1,5 +1,7 @@
 import { codiconGlyphs, codicons } from "./codicons.js";
+import exportStyles from "./export.css";
 import iconButtonStyles from "./iconButton.css";
+import modalStyles from "./modal.css";
 import gridStyles from "./styles.css";
 
 /**
@@ -7,7 +9,7 @@ import gridStyles from "./styles.css";
  * buttons. Built once — a notebook shows many outputs, and each carries the whole sheet, so what
  * only one view uses is that view's to carry.
  */
-export const resultViewStyles = `${codicons}\n${gridStyles}\n${iconButtonStyles}`;
+export const resultViewStyles = `${codicons}\n${gridStyles}\n${iconButtonStyles}\n${modalStyles}\n${exportStyles}`;
 
 /**
  * The same sheet for a view that renders inside a shadow root, which carries every rule but the
@@ -15,4 +17,4 @@ export const resultViewStyles = `${codicons}\n${gridStyles}\n${iconButtonStyles}
  * `registerCodiconFont` rather than into every shadow root — a notebook draws one per output, and
  * the font is the largest thing in the sheet.
  */
-export const resultViewStylesInShadowRoot = `${codiconGlyphs}\n${gridStyles}\n${iconButtonStyles}`;
+export const resultViewStylesInShadowRoot = `${codiconGlyphs}\n${gridStyles}\n${iconButtonStyles}\n${modalStyles}\n${exportStyles}`;

@@ -60,14 +60,14 @@ const document = {
 describe("plpgsql_check diagnostics", () => {
   const query = vi.fn();
   const connections = {
-    isServerConnected: (serverId: string) => serverId === "demo",
+    isConnectionConnected: (connectionId: string) => connectionId === "demo",
     getClient: () => ({ query }),
-    onServerChanged: () => ({ dispose() {} }),
+    onConnectionChanged: () => ({ dispose() {} }),
   };
   const index = {
     sourceDescriptorForDocumentUri: () => ({
       plpgsql: true,
-      serverId: "demo",
+      connectionId: "demo",
       oid: 42,
     }),
   };
@@ -134,13 +134,13 @@ describe("plpgsql_check diagnostics", () => {
     provider.dispose();
   });
 
-  it("clears diagnostics only for documents owned by the changed Connexion", async () => {
-    let onServerChanged: ((change: { serverIds: string[] }) => void) | undefined;
+  it("clears diagnostics only for documents owned by the changed Connection", async () => {
+    let onConnectionChanged: ((change: { connectionIds: string[] }) => void) | undefined;
     const scopedConnections = {
-      isServerConnected: () => true,
+      isConnectionConnected: () => true,
       getClient: () => ({ query }),
-      onServerChanged: (listener: (change: { serverIds: string[] }) => void) => {
-        onServerChanged = listener;
+      onConnectionChanged: (listener: (change: { connectionIds: string[] }) => void) => {
+        onConnectionChanged = listener;
         return { dispose() {} };
       },
     };
@@ -149,7 +149,7 @@ describe("plpgsql_check diagnostics", () => {
     const scopedIndex = {
       sourceDescriptorForDocumentUri: (uri: { toString(): string }) => ({
         plpgsql: true,
-        serverId: uri.toString().endsWith("a") ? "server-a" : "server-b",
+        connectionId: uri.toString().endsWith("a") ? "connection-a" : "connection-b",
         oid: uri.toString().endsWith("a") ? 41 : 42,
       }),
     };
@@ -163,7 +163,7 @@ describe("plpgsql_check diagnostics", () => {
     await vi.waitFor(() => expect(vscodeState.collection.set).toHaveBeenCalledTimes(2));
     vscodeState.collection.delete.mockClear();
 
-    onServerChanged?.({ serverIds: ["server-a"] });
+    onConnectionChanged?.({ connectionIds: ["connection-a"] });
 
     expect(vscodeState.collection.delete).toHaveBeenCalledWith(uriA);
     expect(vscodeState.collection.delete).not.toHaveBeenCalledWith(uriB);

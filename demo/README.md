@@ -9,7 +9,7 @@ dependency graph on something larger than a toy schema.
 
 The playground uses the same
 [`galien0xffffff/postgres-debugger:17`](https://hub.docker.com/r/galien0xffffff/postgres-debugger)
-image offered by the VS Code command **PL/pgSQL: Start Local Debug Database
+image offered by the VS Code command **PostgreSQL Workbench: Start Local Debug Database
 (Docker)**. The canonical local [Dockerfile](../docker/postgres/Dockerfile) adds the PostgreSQL 17
 pgTAP package once and is shared by the demo, integration tests, and internal
 index benchmark. Published debugger image tags cover PostgreSQL 13–18 on amd64
@@ -27,7 +27,7 @@ Connection: `postgresql://postgres:postgres@localhost:5434/demo`
 ## Use
 
 1. Install the extension (`vscode-extension/postgresql-workbench-*.vsix`).
-2. In the PL/pgSQL sidebar, **Add Server** and paste the connection string above.
+2. In the PL/pgSQL sidebar, **Add Connection** and paste the connection string above.
 3. Open [debug-me.sql](debug-me.sql) and click a **Debug** CodeLens, or browse
    the `playground` / `shop` schemas in the sidebar and debug from the tree.
 

@@ -28,11 +28,11 @@ suite("Extension basics", () => {
 
     const commands = await vscode.commands.getCommands(true);
     for (const cmd of [
-      "postgresql-workbench.addServer",
+      "postgresql-workbench.addConnection",
       "postgresql-workbench.startDockerDebugDatabase",
-      "postgresql-workbench.connectServer",
-      "postgresql-workbench.removeServer",
-      "postgresql-workbench.editServer",
+      "postgresql-workbench.connectConnection",
+      "postgresql-workbench.removeConnection",
+      "postgresql-workbench.editConnection",
       "postgresql-workbench.changePassword",
       "postgresql-workbench.manageDebugSessions",
       "postgresql-workbench.debugFromTree",
@@ -203,7 +203,7 @@ suite("Virtual source editing", () => {
     );
     const fakeConnections = {
       getClient: () => fakeClient,
-      onServerChanged: () => new vscode.Disposable(() => {}),
+      onConnectionChanged: () => new vscode.Disposable(() => {}),
     };
     const fakeIndex = {
       onDidChangeState: () => new vscode.Disposable(() => {}),
@@ -212,8 +212,8 @@ suite("Virtual source editing", () => {
         uri.toString() === symbolUri.toString()
           ? {
               symbolUri: symbolUri.toString(true),
-              sourceUri: "postgresql://srv-1/demo/public/routine/demo().sql",
-              serverId: "srv-1",
+              sourceUri: "postgresql://connection-1/demo/public/routine/demo().sql",
+              connectionId: "connection-1",
               database: "demo",
               schema: "public",
               documentKind: "routine",
@@ -231,8 +231,8 @@ suite("Virtual source editing", () => {
         uri === symbolUri.toString(true)
           ? {
               symbolUri: uri,
-              sourceUri: "postgresql://srv-1/demo/public/routine/demo().sql",
-              serverId: "srv-1",
+              sourceUri: "postgresql://connection-1/demo/public/routine/demo().sql",
+              connectionId: "connection-1",
               database: "demo",
               schema: "public",
               documentKind: "routine",

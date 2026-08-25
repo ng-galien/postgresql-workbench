@@ -1,5 +1,4 @@
 import * as vscode from "vscode";
-import type { SqlResultSession } from "../../../packages/rows/src/cursor.js";
 import {
   composeIntoDataViewQuery,
   dataViewAdditions,
@@ -35,10 +34,13 @@ import type {
   DataViewExportChoice,
   DataViewExportScope,
 } from "../../../packages/rows/src/export.js";
+import { dataViewExportText } from "../../../packages/rows/src/export.js";
 import {
   navigateResult,
+  navigationReadsPostgres,
   type ResultNavigationCommand,
 } from "../../../packages/rows/src/navigation.js";
+import type { OffsetResultSession } from "../../../packages/rows/src/offsetQuery.js";
 import type { SqlNotebookResultPayload } from "../../../packages/rows/src/resultPayload.js";
 import { namedSemanticTokens } from "../../../packages/sql/src/languageServer/protocol.js";
 import { type QueryRewrite, SqlQueryModel } from "../../../packages/sql/src/query/model.js";
@@ -48,6 +50,7 @@ import type {
 } from "../../../packages/sql/src/snapshot.js";
 import { quoteSqlIdentifierIfNeeded } from "../../../packages/sql/src/text/identifiers.js";
 import { followLinkFromView } from "../followLink.js";
+import { configuredScratchpadStatementTimeoutMs } from "../scratchpad/scratchpadSettings.js";
 import { DATA_VIEW_SCRATCHES, dataViewQueryUri, dataViewScratchUri } from "./dataViewUri.js";
 import { exportAllRows, exportHeldRows, pickExportTarget } from "./exportResult.js";
 import { completeDataViewFilter } from "./filterCompletion.js";
@@ -57,7 +60,7 @@ class LoadCancelledError extends Error {}
 
 /**
  * One open Data View. Orchestrates its collaborators — the query text and its rewrites, the
- * bounded result cursor, the pending edits — and mirrors their state to the webviews. Every
+ * bounded paged result, the pending edits — and mirrors their state to the webviews. Every
  * VS Code integration point (query file, editor, completion document) is reached through the
  * injected host services.
  */
@@ -74,15 +77,16 @@ export class DataViewDocument implements vscode.CustomDocument {
   private readonly accents = new TableAccents();
   private readonly hidden = new HiddenColumns();
   private initialized: Promise<void> | undefined;
-  private session: SqlResultSession | undefined;
+  private session: OffsetResultSession | undefined;
+  private pendingLoadCancel: (() => Promise<void>) | undefined;
   private payload: SqlNotebookResultPayload | undefined;
   private editability: DataViewEditability = EMPTY_DATA_VIEW_EDITABILITY;
   private projection: DataViewProjection = { tables: [], columnTable: [] };
   private status: DataViewState["status"] = "loading";
   private message: string | undefined;
   private busy = false;
+  private cancellable = false;
   private loadGeneration = 0;
-  private idleTimer: ReturnType<typeof setTimeout> | undefined;
   private readonly webviews = new Set<vscode.Webview>();
   private readonly _onDidChangeTitle = new vscode.EventEmitter<string>();
   private said = "";
@@ -137,7 +141,7 @@ export class DataViewDocument implements vscode.CustomDocument {
   state(): DataViewState {
     return dataViewState({
       source: this.source,
-      serverName: this.serverName(),
+      connectionName: this.connectionName(),
       queryUri: this.queryUri.toString(),
       query: this.query,
       hidden: this.hidden,
@@ -149,6 +153,7 @@ export class DataViewDocument implements vscode.CustomDocument {
       editability: this.editability,
       edits: this.edits,
       busy: this.busy,
+      cancellable: this.cancellable,
     });
   }
 
@@ -169,6 +174,29 @@ export class DataViewDocument implements vscode.CustomDocument {
       case "data-view/refresh":
         await this.load();
         return;
+      case "data-view/inspect": {
+        const retained = this.session?.loadedResult();
+        const first = Math.max(0, request.page.start - 1);
+        const cell = retained?.rows[first + request.row]?.[request.ordinal];
+        this.broadcast({
+          type: "data-view/inspected",
+          requestId: request.requestId,
+          ...(cell ? { cell } : {}),
+        });
+        return;
+      }
+      case "data-view/export-preview": {
+        const values = this.heldValues(request.scope, request.selected);
+        this.broadcast({
+          type: "data-view/export-preview",
+          requestId: request.requestId,
+          text: dataViewExportText(values.columns, values.rows.slice(0, 12), {
+            ...request.choice,
+            finalNewline: false,
+          }),
+        });
+        return;
+      }
       case "data-view/sort":
         await this.applyRewrite(this.query.sorted(request.sorts, tabSize()));
         return;
@@ -296,9 +324,14 @@ export class DataViewDocument implements vscode.CustomDocument {
         this.recordEdit(request.edit);
         return;
       case "data-view/add-row": {
-        const added = this.edits.addRow(this.editability, request.values, request.above);
-        if (!added.held) {
-          this.notify(added.reason, "info");
+        let refused: string | undefined;
+        this.moved("Add row", () => {
+          const added = this.edits.addRow(this.editability, request.values, request.above);
+          if (!added.held) refused = added.reason;
+          return added.held;
+        });
+        if (refused !== undefined) {
+          this.notify(refused, "info");
           return;
         }
         this.hidden.revealRequired(this.editability);
@@ -306,22 +339,32 @@ export class DataViewDocument implements vscode.CustomDocument {
         return;
       }
       case "data-view/drop-row":
-        this.edits.dropRow(request.localId);
-        this.broadcastState();
+        this.moved("Take back row", () => {
+          this.edits.dropRow(request.localId);
+          return true;
+        });
         return;
       case "data-view/fill-row":
-        this.edits.fillRow(request.localId, request.values);
-        this.broadcastState();
+        this.moved("Fill row", () => {
+          this.edits.fillRow(request.localId, request.values, request.unset);
+          return true;
+        });
         return;
       case "data-view/remove-rows": {
-        const removal = this.edits.removeRows(request.rows, this.editability);
-        if (!removal.held) {
-          this.notify(removal.reason, "info");
+        let refused: string | undefined;
+        let consequences: string[] = [];
+        this.moved("Delete rows", () => {
+          const removal = this.edits.removeRows(request.rows, this.editability);
+          if (!removal.held) refused = removal.reason;
+          else consequences = removal.consequences;
+          return removal.held;
+        });
+        if (refused !== undefined) {
+          this.notify(refused, "info");
           return;
         }
-        this.broadcastState();
         // Said when the row is taken, not discovered when the transaction fails.
-        if (removal.consequences.length > 0) this.notify(removal.consequences.join(" "), "info");
+        if (consequences.length > 0) this.notify(consequences.join(" "), "info");
         return;
       }
       case "follow-link":
@@ -335,6 +378,9 @@ export class DataViewDocument implements vscode.CustomDocument {
         return;
       case "data-view/open-sql":
         await this.services.openSql(this.source, this.query.effectiveSql());
+        return;
+      case "data-view/discard-change":
+        this.moved("Discard change", () => this.edits.discardChange(request.change));
         return;
       case "data-view/discard":
       case "data-view/apply":
@@ -355,7 +401,7 @@ export class DataViewDocument implements vscode.CustomDocument {
     const source = this.source;
     const text = await initialDataViewQuery(
       source,
-      this.services.authoringSnapshot(source.serverId, source.database),
+      this.services.authoringSnapshot(source.connectionId, source.database),
       this.services.authoringSettings(this.queryUri.toString()),
       () => this.relationColumns(),
     );
@@ -366,14 +412,14 @@ export class DataViewDocument implements vscode.CustomDocument {
         void this.applyQueryText(saved);
       }
     });
-    await this.services.associate(this.queryUri.toString(), source.serverId);
+    await this.services.associate(this.queryUri.toString(), source.connectionId);
     /*
      * Every scratch document is opened, associated and let go of as a set: a question added to the
      * three is one more entry in the list, and cannot be the one somebody forgets to release.
      */
     for (const scratch of this.scratchUris()) {
       this.services.queryFiles.set(scratch, text);
-      await this.services.associate(scratch.toString(), source.serverId);
+      await this.services.associate(scratch.toString(), source.connectionId);
     }
   }
 
@@ -382,7 +428,7 @@ export class DataViewDocument implements vscode.CustomDocument {
    *
    * The tokens are asked of a document holding exactly that text, so what a view shows is coloured
    * by the same answer an editor tab would be. The legend comes back from the provider as well: a
-   * token number means nothing without it, and the kinds are the server's to name.
+   * token number means nothing without it, and the kinds are the connection's to name.
    */
   private async semanticTokensOf(uri: vscode.Uri, sql: string): Promise<DataViewSqlToken[]> {
     this.services.queryFiles.set(uri, sql);
@@ -420,7 +466,7 @@ export class DataViewDocument implements vscode.CustomDocument {
 
   private async relationColumns(): Promise<string[]> {
     if (this.source.kind !== "relation") return [];
-    const client = await this.services.openClient(this.source.serverId);
+    const client = await this.services.openClient(this.source.connectionId);
     try {
       const probe = await client.query({
         text: `SELECT * FROM ${quoteSqlIdentifierIfNeeded(this.source.schema)}.${quoteSqlIdentifierIfNeeded(this.source.name)} LIMIT 0`,
@@ -509,7 +555,10 @@ export class DataViewDocument implements vscode.CustomDocument {
 
   /** The indexed snapshot to compose against, or nothing when the query or the index refuses it. */
   private composable(): SqlAuthoringSnapshot | undefined {
-    const snapshot = this.services.authoringSnapshot(this.source.serverId, this.source.database);
+    const snapshot = this.services.authoringSnapshot(
+      this.source.connectionId,
+      this.source.database,
+    );
     if (snapshot?.status !== "available") {
       this.notify("Index the database first: composition needs a fresh Workbench Index.", "info");
       return undefined;
@@ -541,7 +590,10 @@ export class DataViewDocument implements vscode.CustomDocument {
     addition?: DataViewAddition,
     relationChoice?: number,
   ): Promise<void> {
-    if (payload.serverId !== this.source.serverId || payload.database !== this.source.database) {
+    if (
+      payload.connectionId !== this.source.connectionId ||
+      payload.database !== this.source.database
+    ) {
       this.notify("This object belongs to another database than the Data View.", "info");
       return;
     }
@@ -582,15 +634,16 @@ export class DataViewDocument implements vscode.CustomDocument {
     await this.updateQueryText(outcome.text);
   }
 
-  // --- Result cursor -------------------------------------------------------------------------
+  // --- Paged result --------------------------------------------------------------------------
 
-  /** (Re)opens the bounded cursor for the current query text. */
+  /** (Re)opens the LIMIT/OFFSET result for the current query text. */
   async load(): Promise<void> {
     const generation = ++this.loadGeneration;
     await this.closeSession();
     this.status = "loading";
     this.message = undefined;
     this.busy = true;
+    this.cancellable = true;
     this.broadcastState();
     try {
       await this.ensureInitialized();
@@ -604,21 +657,27 @@ export class DataViewDocument implements vscode.CustomDocument {
           "The query is empty: add a table with + or drop one from the Workbench tree.";
         return;
       }
-      const client = await this.services.openClient(this.source.serverId);
-      this.assertGeneration(generation);
       const opened = await openDataViewResult({
-        client,
+        openClient: () => this.services.openClient(this.source.connectionId),
         sql: this.query.effectiveSql(),
         settings: this.services.resultSettings(),
         binding: {
-          serverId: this.source.serverId,
-          serverName: this.serverName(),
+          connectionId: this.source.connectionId,
+          connectionName: this.connectionName(),
           database: this.source.database,
         },
         accents: this.accents,
+        orderBy: this.query.orderBy(),
+        relationCount: this.query.analysis?.relations.length,
+        sourcesAreNamedRelations: this.query.analysis?.fromSourcesAreNamedRelations,
         checkpoint: () => this.assertGeneration(generation),
+        registerCancellation: (cancel) => {
+          if (generation !== this.loadGeneration || this.disposed) void cancel();
+          else this.pendingLoadCancel = cancel;
+        },
       });
       this.session = opened.session;
+      this.pendingLoadCancel = undefined;
       this.payload = opened.session.snapshot();
       this.editability = opened.editability;
       this.projection = opened.projection;
@@ -627,68 +686,75 @@ export class DataViewDocument implements vscode.CustomDocument {
       if (forgotten) this.notify(forgotten, "info");
       this.hidden.afterLoad(opened, hideKeyColumns());
       this.status = "ready";
-      this.touch(opened.idleTimeoutMs);
     } catch (error) {
-      if (error instanceof LoadCancelledError) return;
+      if (
+        generation !== this.loadGeneration ||
+        this.disposed ||
+        error instanceof LoadCancelledError
+      ) {
+        return;
+      }
       this.status = "error";
       this.message = errorMessage(error);
       this.log(`failed to load: ${this.message}`);
     } finally {
       if (generation === this.loadGeneration) {
+        this.pendingLoadCancel = undefined;
         this.busy = false;
+        this.cancellable = false;
         this.broadcastState();
       }
     }
   }
 
   private async navigate(action: ResultNavigationCommand): Promise<void> {
-    const session = this.session;
-    if (!session) {
-      this.notify("The result cursor is closed. Refresh to load the rows again.", "info");
-      return;
-    }
     if (action === "cancel") {
+      this.loadGeneration += 1;
       await this.closeSession();
+      this.busy = false;
+      this.cancellable = false;
       this.message = "Loading cancelled. Refresh to load the rows again.";
       this.broadcastState();
       return;
     }
+    const session = this.session;
+    const generation = this.loadGeneration;
+    if (!session) {
+      this.notify("The result is closed. Refresh to load the rows again.", "info");
+      return;
+    }
     if (this.busy) return;
     this.busy = true;
+    this.cancellable = navigationReadsPostgres(action, this.payload);
     this.broadcastState();
     try {
-      this.payload = await navigateResult(session, action, (loadedRowCount) =>
+      const payload = await navigateResult(session, action, (loadedRowCount) =>
         this.broadcast({ type: "data-view/progress", loadedRowCount }),
       );
-      this.touch(this.services.resultSettings().cursorIdleTimeoutSeconds * 1_000);
+      if (this.session !== session) return;
+      this.payload = payload;
     } catch (error) {
       if (this.session === session) {
         await this.closeSession();
-        this.message = `${errorMessage(error)} Refresh to load the rows again.`;
+        if (generation === this.loadGeneration) {
+          this.message = `${errorMessage(error)} Refresh to load the rows again.`;
+        }
       }
     } finally {
-      this.busy = false;
-      this.broadcastState();
+      if (generation === this.loadGeneration) {
+        this.busy = false;
+        this.cancellable = false;
+        this.broadcastState();
+      }
     }
   }
 
-  private touch(idleTimeoutMs: number): void {
-    if (this.idleTimer) clearTimeout(this.idleTimer);
-    this.idleTimer = setTimeout(() => {
-      void this.closeSession().then(() => {
-        this.message =
-          "The result cursor was closed after being idle. Refresh to load the rows again.";
-        this.broadcastState();
-      });
-    }, idleTimeoutMs);
-  }
-
   private async closeSession(): Promise<void> {
-    if (this.idleTimer) clearTimeout(this.idleTimer);
-    this.idleTimer = undefined;
+    const pendingLoadCancel = this.pendingLoadCancel;
+    this.pendingLoadCancel = undefined;
     const session = this.session;
     this.session = undefined;
-    await session?.close().catch(() => {});
+    await Promise.all([pendingLoadCancel?.().catch(() => {}), session?.close().catch(() => {})]);
   }
 
   private assertGeneration(generation: number): void {
@@ -698,25 +764,31 @@ export class DataViewDocument implements vscode.CustomDocument {
   // --- Cell edits ----------------------------------------------------------------------------
 
   private recordEdit(edit: DataViewEdit): void {
-    const held = this.edits.record(edit, this.editability);
-    if (!held.held) {
-      this.notify(held.reason, "info");
-      return;
-    }
-    const { previous } = held;
+    let refused: string | undefined;
+    this.moved(`Edit ${edit.column}`, () => {
+      const held = this.edits.record(edit, this.editability);
+      if (!held.held) refused = held.reason;
+      return held.held;
+    });
+    if (refused !== undefined) this.notify(refused, "info");
+  }
+
+  /**
+   * Every move in what is waiting goes through here. VS Code counts one as an edit of the document
+   * — it is what carries the tab's dirty mark and its undo stack — and a move that skips this leaves
+   * the two out of step: a row added without it, then taken back out through the list, leaves the
+   * tab dirty over an empty list, asking to save nothing at all.
+   */
+  private moved(label: string, mutate: () => boolean): void {
+    const before = this.edits.snapshot();
+    if (!mutate()) return;
     if (this.nativeDirtyTracking()) {
-      this._onDidEdit.fire({
-        label: `Edit ${edit.column}`,
-        undo: () => {
-          if (previous) this.edits.set(previous);
-          else this.edits.remove(edit);
-          this.broadcastState();
-        },
-        redo: () => {
-          this.edits.set(edit);
-          this.broadcastState();
-        },
-      });
+      const after = this.edits.snapshot();
+      const replay = (restore: () => void) => () => {
+        restore();
+        this.broadcastState();
+      };
+      this._onDidEdit.fire({ label, undo: replay(before), redo: replay(after) });
     }
     this.broadcastState();
   }
@@ -734,14 +806,14 @@ export class DataViewDocument implements vscode.CustomDocument {
   /** What this surface can do so held changes reach PostgreSQL; the sequence itself is shared. */
   private get writeHost(): DataViewWriteHost {
     return {
-      openClient: () => this.services.openClient(this.source.serverId),
+      openClient: () => this.services.openClient(this.source.connectionId),
       notify: (message, severity) => {
         if (severity === "error") this.log(`apply failed: ${message}`);
         this.notify(message, severity);
       },
       changed: () => this.broadcastState(),
       reload: () => this.load(),
-      serverName: () => this.serverName(),
+      connectionName: () => this.connectionName(),
     };
   }
 
@@ -763,7 +835,9 @@ export class DataViewDocument implements vscode.CustomDocument {
               choice,
               sql: this.query.effectiveSql(),
               title: this.title,
-              openClient: () => this.services.openClient(this.source.serverId),
+              openClient: () => this.services.openClient(this.source.connectionId),
+              maxCellBytes: this.services.resultSettings().maxCellBytes,
+              statementTimeoutMs: configuredScratchpadStatementTimeoutMs(),
               typeFor: (name) =>
                 declaredColumnType(
                   this.editability,
@@ -787,8 +861,23 @@ export class DataViewDocument implements vscode.CustomDocument {
     scope: DataViewExportScope,
     selected: { from: number; to: number; ordinals: number[] } | undefined,
   ) {
+    const retained = this.session?.loadedResult();
+    const pageStart = this.payload?.navigation?.pageStart ?? 1;
+    const fullPayload =
+      this.payload && retained
+        ? {
+            ...this.payload,
+            rows:
+              scope === "selection"
+                ? retained.rows.slice(
+                    Math.max(0, pageStart - 1),
+                    Math.max(0, pageStart - 1) + this.payload.rows.length,
+                  )
+                : retained.rows,
+          }
+        : this.payload;
     return heldValues({
-      payload: this.payload,
+      payload: fullPayload,
       addedRows: this.edits.addedRows,
       editability: this.editability,
       shownOrdinals: () => this.hidden.shownOrdinals(),
@@ -803,8 +892,8 @@ export class DataViewDocument implements vscode.CustomDocument {
 
   // --- Webview messaging ---------------------------------------------------------------------
 
-  private serverName(): string {
-    return this.services.serverName(this.source.serverId) ?? this.source.serverId;
+  private connectionName(): string {
+    return this.services.connectionName(this.source.connectionId) ?? this.source.connectionId;
   }
 
   private log(line: string): void {

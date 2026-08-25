@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 import { useEffect, useRef } from "react";
 
 /**
@@ -20,13 +20,43 @@ export function Modal({
   const panel = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    const opener =
+      document.activeElement instanceof HTMLElement ? document.activeElement : undefined;
     panel.current?.focus();
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
+    return () => opener?.focus();
+  }, []);
+
+  const keepFocusInside = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      onClose();
+      return;
+    }
+    if (event.key !== "Tab") return;
+    const current = panel.current;
+    if (!current) return;
+    const focusable = [
+      ...current.querySelectorAll<HTMLElement>(
+        'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [href], [tabindex]:not([tabindex="-1"])',
+      ),
+    ];
+    const first = focusable[0];
+    const last = focusable.at(-1);
+    if (!first || !last) {
+      event.preventDefault();
+      current.focus();
+    } else if (
+      event.shiftKey &&
+      (document.activeElement === first || document.activeElement === current)
+    ) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
 
   return (
     <div className="modal-ground">
@@ -39,6 +69,7 @@ export function Modal({
         ref={panel}
         // biome-ignore lint/a11y/noNoninteractiveTabindex: the panel takes focus when it opens.
         tabIndex={0}
+        onKeyDown={keepFocusInside}
       >
         <header className="modal-header">
           <h2 className="modal-title">{title}</h2>

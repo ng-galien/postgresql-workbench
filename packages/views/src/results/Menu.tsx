@@ -18,7 +18,8 @@ import {
  *
  * Four kinds beside the separator, because a menu in the Workbench does four things: it runs
  * something, it turns something on and off, it puts what it offers under the table it belongs to,
- * and — for the changes waiting to be applied — it shows something to read rather than to run.
+ * and it shows something to read rather than to run — which, for the changes waiting to be applied,
+ * carries the one control that takes back what it describes.
  */
 export type MenuEntry =
   | {
@@ -35,7 +36,12 @@ export type MenuEntry =
     }
   | { kind: "check"; label: string; checked: boolean; disabled?: string; run(): void }
   | { kind: "group"; heading?: string; accent?: string; entries: readonly MenuEntry[] }
-  | { kind: "note"; content: ReactNode }
+  /**
+   * Something to read rather than to run — and, where what it describes can be taken back, one
+   * control to take it. The control is a menu item like any other, so the arrows reach it and
+   * Enter runs it: a list a reader can only act on with the pointer is half a list.
+   */
+  | { kind: "note"; content: ReactNode; dismiss?: { label: string; run(): void } }
   | { kind: "separator" };
 
 /** The entries a reader can act on: what the arrows walk, and what Enter runs. */
@@ -109,11 +115,15 @@ export function Menu({
     const y = at.y + height > window.innerHeight - EDGE ? Math.max(EDGE, at.y - height) : at.y;
     /* A menu that already fits where it was asked for is not drawn a second time to say so. */
     setPlaced((current) => (current.x === x && current.y === y ? current : { x, y }));
-    /* Whoever holds the focus reads the keys: the field when there is one, the first entry else. */
+    /*
+     * Whoever holds the focus reads the keys: the field when there is one, the first entry else,
+     * and the menu itself when it holds neither. A menu of nothing but text to read still answers
+     * to Escape — one a reader can open and not close is worse than one that never opened.
+     */
     const first = walking
       ? element.querySelector<HTMLElement>(".menu-header :is(input, textarea, select)")
       : element.querySelector<HTMLElement>("[role=menuitem]:not(:disabled)");
-    first?.focus();
+    (first ?? element).focus();
     // The field is the caller's to render; it does not change which point the menu opened at.
   }, [at, walking]);
 
@@ -140,6 +150,7 @@ export function Menu({
         role="menu"
         aria-label={label}
         ref={menu}
+        tabIndex={-1}
         style={{ left: placed.x, top: placed.y }}
         onKeyDown={(event) =>
           walk(event, {
@@ -169,7 +180,13 @@ export function Menu({
   );
 }
 
-/** What the arrows walk, in the order they are read — groups flattened, refusals left out. */
+/**
+ * What the arrows walk when the menu has a header holding the focus, in the order they are read —
+ * groups flattened, refusals left out. A menu without one walks the DOM instead (see `walk`), which
+ * is what reaches the control a note carries: give this list a header and that control leaves the
+ * walk, so a dismissible note and a filter field do not belong in the same menu until both walks
+ * are one.
+ */
 function runnableEntries(entries: readonly MenuEntry[], into: MenuAction[] = []): MenuAction[] {
   for (const entry of entries) {
     if (entry.kind === "group") runnableEntries(entry.entries, into);
@@ -208,7 +225,25 @@ function MenuLine({
   onRun,
 }: { entry: MenuEntry } & Drawing) {
   if (entry.kind === "separator") return <hr className="menu-separator" />;
-  if (entry.kind === "note") return <div className="menu-note">{entry.content}</div>;
+  if (entry.kind === "note") {
+    return (
+      <div className="menu-note">
+        {entry.content}
+        {entry.dismiss ? (
+          <button
+            type="button"
+            role="menuitem"
+            className="menu-note-dismiss codicon codicon-close"
+            title={entry.dismiss.label}
+            aria-label={entry.dismiss.label}
+            /* The menu stays open: taking several changes out of the list is one gesture, and a
+               list with nothing left in it closes itself. */
+            onClick={() => entry.dismiss?.run()}
+          />
+        ) : null}
+      </div>
+    );
+  }
   if (entry.kind === "group") {
     return (
       <div

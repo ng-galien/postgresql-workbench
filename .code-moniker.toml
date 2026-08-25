@@ -1,5 +1,39 @@
 default_rules = true
 
+[rules.taxonomy]
+patterns = [
+  "composition-root",
+  "dependency",
+  "encapsulation",
+  "hygiene",
+  "lifecycle",
+  "ownership",
+  "single-responsibility",
+]
+components = [
+  "catalog",
+  "code",
+  "connection",
+  "coverage",
+  "data-view",
+  "daemon",
+  "debugger",
+  "ddl-sync",
+  "extension-host",
+  "language-server",
+  "query-engine",
+  "result",
+  "scratchpad",
+  "sql-analysis",
+  "syntax",
+  "webview",
+  "workbench",
+]
+
+# Test code is excluded by what it is, not only by how it is named: a Playwright page object and a
+# VS Code runner config are scaffolding that no rule about the product has anything to say about.
+# `e2e/` and `packages/shell/` stay in: both are named owners in the boundary aliases below, and
+# a rule cannot allow a directory it no longer reads.
 [exclude]
 uris = [
   "**/*.test.ts",
@@ -7,46 +41,54 @@ uris = [
   "**/*.spec.ts",
   "**/*.spec.tsx",
   "**/*.node-test.mjs",
+  "**/vscode-extension/tests/**",
 ]
 
 [aliases]
 typescript = "uri ~ 'lang:ts/**'"
-code_moniker_syntax_factory = "kind = 'imports_symbol' AND target.segment('module') = 'codeMonikerSyntax' AND target.segment('path') = 'createCodeMonikerSyntaxParser'"
-code_moniker_daemon_lifecycle = "kind = 'imports_symbol' AND target.segment('module') = 'localCodeMoniker' AND (target.segment('path') = 'connectLocalCodeMoniker' OR target.segment('path') = 'ensureLocalCodeMonikerWorkspace')"
-syntax_provider_owner = "source.segment('module') = 'localCodeMonikerSyntax' OR source.segment('module') = 'indexController' OR source ~ '**/dir:packages/dir:shell/**' OR source ~ '**/dir:e2e/**' OR source.segment('module') = 'codeMonikerSyntax.test' OR source.segment('module') = 'localCodeMoniker.test'"
-architectural_dependency = "kind = 'imports_symbol' OR kind = 'imports_module' OR kind = 'uses_type' OR kind = 'calls' OR kind = 'method_call' OR kind = 'instantiates' OR kind = 'extends' OR kind = 'implements'"
-workbench_package_target = "target ~ '**/dir:packages/**'"
-extension_local_target = "target ~ '**/dir:vscode-extension/dir:src/**'"
+syntax_factory = "kind = 'imports_symbol' AND target.segment('module') = 'codeMonikerSyntax' AND target.segment('path') = 'createCodeMonikerSyntaxParser'"
+syntax_workbench_debugger_owner = "source.segment('module') = 'localCodeMonikerSyntax' OR source.segment('module') = 'indexController' OR source ~ '**/dir:packages/dir:shell/**' OR source ~ '**/dir:e2e/**' OR source.segment('module') = 'codeMonikerSyntax.test'"
+workbench_daemon_lifecycle = "kind = 'imports_symbol' AND target.segment('module') = 'localCodeMoniker' AND (target.segment('path') = 'connectLocalCodeMoniker' OR target.segment('path') = 'ensureLocalCodeMonikerWorkspace')"
+workbench_daemon_owner = "source.segment('module') = 'indexController' OR source ~ '**/dir:packages/dir:shell/**' OR source ~ '**/dir:e2e/**' OR source.segment('module') = 'localCodeMoniker.test'"
+structural_edge = "kind = 'imports_symbol' OR kind = 'imports_module' OR kind = 'uses_type' OR kind = 'calls' OR kind = 'method_call' OR kind = 'instantiates' OR kind = 'extends' OR kind = 'implements'"
+engine_package_target = "target ~ '**/dir:packages/**'"
+host_local_target = "target ~ '**/dir:vscode-extension/dir:src/**'"
+webview_symbol = "moniker ~ '**/dir:packages/dir:views/**'"
 
 [profiles.smells]
-enable = ["\\.smell-"]
+enable = ["\\.code-single-responsibility-"]
 
 [profiles.architecture]
 enable = [
-  "code-moniker-syntax-provider-owned-by-runtime-boundary",
-  "extension-entry-is-not-a-service",
-  "the-extension-does-not-re-export-the-engine",
-  "postgres-ddl-sync-core-remains-pure",
-  "connection-service-owned-by-connection-manager",
-  "scratchpad-file-remains-passive",
+  "syntax-workbench-debugger-ownership-stays-at-runtime-boundaries",
+  "workbench-daemon-lifecycle-stays-at-runtime-boundaries",
+  "extension-host-composition-root-is-not-a-service-locator",
+  "extension-host-workbench-encapsulation-does-not-re-export-engine",
+  "ddl-sync-single-responsibility-excludes-runtime-orchestration",
+  "connection-service-ownership-stays-with-connection-manager",
+  "scratchpad-single-responsibility-keeps-files-passive",
   # declared by the package fragments
-  "language-server-features-stay-behind-the-server",
-  "query-engine-does-not-depend-on-the-language-server",
-  "package-is-the-leaf-of-the-graph",
-  "package-depends-only-on-what-it-reads",
-  "shell-composes-and-is-composed-by-nothing",
-  "row-writes-are-assembled-in-one-place",
-  "data-view-protocol-has-one-home",
-  "the-data-view-is-read-by-nothing-above-it",
-  "hidden-columns-are-answered-in-one-place",
-  "what-a-data-view-is-is-said-in-one-place",
+  "language-server-encapsulation-keeps-features-inside-server",
+  "query-engine-dependency-does-not-point-to-language-server",
+  "sql-analysis-dependency-stays-inside-sql-analysis",
+  "catalog-dependency-is-limited-to-sql-analysis",
+  "coverage-dependency-is-limited-to-sql-analysis",
+  "debugger-dependency-is-limited-to-sql-analysis",
+  "result-dependency-is-limited-to-sql-analysis-and-debugger",
+  "webview-dependency-is-limited-to-catalog-debugger-and-result",
+  "workbench-composition-root-stays-independent-of-extension-host",
+  "result-row-update-builder-encapsulation-stays-in-result-engine",
+  "data-view-result-protocol-ownership-stays-in-result-engine",
+  "result-dependency-does-not-point-to-data-view",
+  "data-view-hidden-column-ownership-stays-in-hidden-columns",
+  "data-view-query-info-ownership-stays-in-state-contract",
 ]
 
 [[views]]
 id = "postgres-workbench-boundaries"
 title = "PostgreSQL Workbench boundaries"
 scope = "."
-intent = "Review ownership and dependency direction before changing a package boundary, the extension's activation, PostgreSQL Connexions, the Workbench Index, the Cockpit, Scratchpads, or DDL synchronization."
+intent = "Review ownership and dependency direction before changing a package boundary, the extension's activation, PostgreSQL Connections, the Workbench Index, the Cockpit, Scratchpads, or DDL synchronization."
 summary = """
 Six packages and one extension. packages/sql is the leaf: it reads SQL and PL/pgSQL and answers
 editor questions through its language server. packages/catalog says what a database contains and
@@ -54,7 +96,7 @@ keeps the Workbench Index of it. packages/dap debugs PL/pgSQL. packages/rows rea
 rows. packages/coverage maps executed lines back to source. packages/views renders what the others
 produce, in a webview that is a separate runtime and reaches the host only through a typed protocol.
 
-The Extension Host composes them: it owns activation, VS Code commands, the open Connexions, and the
+The Extension Host composes them: it owns activation, VS Code commands, the open Connections, and the
 controllers whose lifecycle outlives a command. No package depends on it, and each package's own
 fragment states what it may depend on.
 """
@@ -74,10 +116,10 @@ forbids = [
   "secondary SQL or PL/pgSQL syntax providers",
 ]
 forbid_rules = [
-  "package-is-the-leaf-of-the-graph",
-  "language-server-features-stay-behind-the-server",
-  "query-engine-does-not-depend-on-the-language-server",
-  "code-moniker-syntax-provider-owned-by-runtime-boundary",
+  "sql-analysis-dependency-stays-inside-sql-analysis",
+  "language-server-encapsulation-keeps-features-inside-server",
+  "query-engine-dependency-does-not-point-to-language-server",
+  "syntax-workbench-debugger-ownership-stays-at-runtime-boundaries",
 ]
 rationale = "The language server is the front door for editor features; a consumer asks it rather than importing completion or semantic tokens. Anything needed outside that protocol is a worker called directly: `query` to rewrite SQL, `text` to read it as text. The package is a leaf because the standalone DAP executable ships it without VS Code."
 symbols = [
@@ -85,16 +127,16 @@ symbols = [
   "ts:packages/sql/src/analysis/codeMonikerSyntax.function:createCodeMonikerSyntaxParser",
 ]
 rules = [
-  "package-is-the-leaf-of-the-graph",
-  "language-server-features-stay-behind-the-server",
-  "query-engine-does-not-depend-on-the-language-server",
+  "sql-analysis-dependency-stays-inside-sql-analysis",
+  "language-server-encapsulation-keeps-features-inside-server",
+  "query-engine-dependency-does-not-point-to-language-server",
 ]
 
 [[views.boundaries]]
 id = "catalog-and-index"
 owns = [
   "reading the PostgreSQL catalog and projecting it into virtual SQL sources",
-  "the Code Moniker session and the per-Connexion Workbench Index",
+  "the Code Moniker session and the per-Connection Workbench Index",
   "DDL support-schema provisioning SQL and notification reduction",
   "the DDL listener lifecycle and the incremental refresh it triggers",
 ]
@@ -104,8 +146,9 @@ forbids = [
   "presentation or result-session state",
 ]
 forbid_rules = [
-  "ts.refs.catalog.package-depends-only-on-what-it-reads",
-  "postgres-ddl-sync-core-remains-pure",
+  "ts.refs.catalog.catalog-dependency-is-limited-to-sql-analysis",
+  "ddl-sync-single-responsibility-excludes-runtime-orchestration",
+  "workbench-daemon-lifecycle-stays-at-runtime-boundaries",
 ]
 rationale = "The catalog answers what a database contains; rows, coverage, debugging and rendering consume that answer. postgresDdlSync builds SQL and coalesces notifications deterministically, while ddlSync owns LISTEN state and refresh coordination."
 symbols = [
@@ -115,7 +158,7 @@ symbols = [
   "ts:packages/catalog/src/postgresCatalog.function:readPostgresCatalog",
   "ts:packages/catalog/src/postgresDdlSync.function:buildWorkbenchDdlProvisioningSql",
 ]
-rules = ["ts.refs.catalog.package-depends-only-on-what-it-reads", "postgres-ddl-sync-core-remains-pure"]
+rules = ["ts.refs.catalog.catalog-dependency-is-limited-to-sql-analysis", "ddl-sync-single-responsibility-excludes-runtime-orchestration", "workbench-daemon-lifecycle-stays-at-runtime-boundaries"]
 
 [[views.boundaries]]
 id = "debugger"
@@ -128,18 +171,18 @@ forbids = [
   "depending on any package other than sql",
   "workspace daemons, indexed sources, catalog projection, or DDL synchronization",
 ]
-forbid_rules = ["ts.refs.dap.package-depends-only-on-what-it-reads"]
+forbid_rules = ["ts.refs.dap.debugger-dependency-is-limited-to-sql-analysis"]
 rationale = "The VS Code adapter and the published standalone executable are two hosts over one library. Neither lets the debugger read or index the user's workspace; a Workbench host may supply canonical source URIs, which the DAP preserves exactly."
 symbols = [
   "ts:packages/dap/src/debugger/session/PlpgsqlDebugSession.class:PlpgsqlDebugSession",
   "ts:packages/dap/src/debugger/session/sourceRegistry.function:clientSourceUris",
 ]
-rules = ["ts.refs.dap.package-depends-only-on-what-it-reads"]
+rules = ["ts.refs.dap.debugger-dependency-is-limited-to-sql-analysis"]
 
 [[views.boundaries]]
 id = "result-rows"
 owns = [
-  "the bounded cursor every surface reads rows through",
+  "the LIMIT/OFFSET paging contract every result surface reads rows through",
   "what a result is: its payload, its navigation, and writing it out",
   "the Data View, in src/dataView: its protocol, its query, its editability, its pending edits, and which of its columns are hidden",
 ]
@@ -149,19 +192,19 @@ forbids = [
   "reading, above the Data View, anything the Data View owns",
 ]
 forbid_rules = [
-  "ts.refs.rows.package-depends-only-on-what-it-reads",
-  "the-data-view-is-read-by-nothing-above-it",
+  "ts.refs.rows.result-dependency-is-limited-to-sql-analysis-and-debugger",
+  "result-dependency-does-not-point-to-data-view",
 ]
-rationale = "A result comes from a query the SQL layer understands or a debugged call the DAP layer captured. The Scratchpad output, the Data View and the debugger output all read rows through the same cursor; depending on the catalog or the views would close a cycle around the thing every result view renders. Two thirds of the package is the Data View, which is why it sits in a directory of its own: it reaches up for the cursor, the payload, navigation and the export writer, and nothing above it reaches down. What a host may not do is answer for the Data View itself — both of them held their own hidden columns, and both wrote out the ones the reader had hidden."
+rationale = "A result comes from a query the SQL layer understands or a debugged call the DAP layer captured. The Scratchpad output and the Data View read rows through the same LIMIT/OFFSET contract; depending on the catalog or the views would close a cycle around the thing every result view renders. Two thirds of the package is the Data View, which is why it sits in a directory of its own: it reaches up for paging, the payload, navigation and the export writer, and nothing above it reaches down. What a host may not do is answer for the Data View itself — both of them held their own hidden columns, and both wrote out the ones the reader had hidden."
 symbols = [
-  "ts:packages/rows/src/cursor.class:SqlResultSession",
+  "ts:packages/rows/src/offsetQuery.class:OffsetResultSession",
   "ts:packages/rows/src/dataView/hiddenColumns.class:HiddenColumns",
 ]
 rules = [
-  "ts.refs.rows.package-depends-only-on-what-it-reads",
-  "the-data-view-is-read-by-nothing-above-it",
-  "data-view-protocol-has-one-home",
-  "hidden-columns-are-answered-in-one-place",
+  "ts.refs.rows.result-dependency-is-limited-to-sql-analysis-and-debugger",
+  "result-dependency-does-not-point-to-data-view",
+  "data-view-result-protocol-ownership-stays-in-result-engine",
+  "data-view-hidden-column-ownership-stays-in-hidden-columns",
 ]
 
 [[views.boundaries]]
@@ -177,13 +220,13 @@ forbids = [
   "PostgreSQL transport, Code Moniker sessions, or VS Code state",
   "declaring the protocol it speaks: the Data View's belongs to the engine",
 ]
-forbid_rules = ["ts.refs.views.package-depends-only-on-what-it-reads"]
+forbid_rules = ["ts.refs.views.webview-dependency-is-limited-to-catalog-debugger-and-result"]
 rationale = "A webview is a separate runtime. It renders values and posts messages; connections, sessions and command execution stay in the host and cross the boundary through the protocol each view declares."
 symbols = [
   "ts:packages/views/src/cockpit/graph/store.interface:CockpitStore",
   "ts:packages/views/src/presentation.function:postgresVisual",
 ]
-rules = ["ts.refs.views.package-depends-only-on-what-it-reads"]
+rules = ["ts.refs.views.webview-dependency-is-limited-to-catalog-debugger-and-result"]
 
 [[views.boundaries]]
 id = "activation"
@@ -199,7 +242,7 @@ forbids = [
   "holding logic that does not adapt anything to VS Code",
   "registering a VS Code command anywhere but a module's registerCommands",
 ]
-forbid_rules = ["extension-entry-is-not-a-service"]
+forbid_rules = ["extension-host-composition-root-is-not-a-service-locator"]
 rationale = """
 Activation chooses implementations and binds commands; feature state stays in the controller that
 defines its lifecycle. The extension adapts the engine to VS Code and holds nothing else, because
@@ -226,28 +269,28 @@ runs — it names the three files excused from the convention and the reason eac
 both on a registration anywhere else and on an excuse that has stopped registering anything.
 """
 symbols = ["ts:vscode-extension/src/extension.interface:PlpgsqlExtensionApi"]
-rules = ["extension-entry-is-not-a-service"]
+rules = ["extension-host-composition-root-is-not-a-service-locator"]
 
 [[views.boundaries]]
-id = "connexions"
+id = "connections"
 owns = [
-  "saved server identities and their secrets",
-  "the open Connexions and the events that announce them",
+  "saved Connection identities and their secrets",
+  "the open Connections and the events that announce them",
   "dedicated PostgreSQL client construction",
 ]
 forbids = [
   "a feature building its own ConnectionService",
   "owning the semantic index or a result session",
 ]
-forbid_rules = ["connection-service-owned-by-connection-manager"]
+forbid_rules = ["connection-service-ownership-stays-with-connection-manager"]
 rationale = "ConnectionManager is the single live facade over PostgreSQL transport. A feature building its own ConnectionService would create a second lifecycle nothing reconnects or disposes."
 symbols = [
   "ts:vscode-extension/src/connection/openConnections.class:ConnectionManager",
   "ts:vscode-extension/src/connection/connectPostgres.class:ConnectionService",
-  "ts:vscode-extension/src/connection/savedConnections.class:ServerStore",
-  "ts:packages/catalog/src/savedConnection.interface:ServerConfig",
+  "ts:vscode-extension/src/connection/savedConnections.class:ConnectionStore",
+  "ts:packages/catalog/src/savedConnection.interface:ConnectionConfig",
 ]
-rules = ["connection-service-owned-by-connection-manager"]
+rules = ["connection-service-ownership-stays-with-connection-manager"]
 
 [[views.boundaries]]
 id = "scratchpads"
@@ -255,20 +298,20 @@ owns = [
   "the Scratchpad file format and its Association value objects",
   "workspace persistence of Scratchpads",
   "dedicated execution connections and Transaction mode",
-  "hosting the bounded result session a notebook cell renders",
+  "hosting the LIMIT/OFFSET result state a notebook cell renders",
 ]
 forbids = [
   "connection or execution lifecycle inside the serialized file",
   "reusing the shared interactive client for notebook execution",
 ]
-forbid_rules = ["scratchpad-file-remains-passive"]
-rationale = "A Scratchpad opens before anything connects, so reading and writing one must not need a live Connexion. Execution, transactions and cursors belong to register, association and resultHost."
+forbid_rules = ["scratchpad-single-responsibility-keeps-files-passive"]
+rationale = "A Scratchpad opens before anything connects, so reading and writing one must not need a live Connection. Execution, explicit transactions and LIMIT/OFFSET paging belong to register, association, resultHost and the shared row engine."
 symbols = [
   "ts:vscode-extension/src/scratchpad/notebookFile.interface:SqlNotebookFile",
   "ts:vscode-extension/src/scratchpad/workspace.class:SqlNotebookWorkspace",
   "ts:vscode-extension/src/scratchpad/resultHost.class:SqlNotebookResultHost",
 ]
-rules = ["scratchpad-file-remains-passive"]
+rules = ["scratchpad-single-responsibility-keeps-files-passive"]
 
 [[views.boundaries]]
 id = "tree-and-cockpit"
@@ -313,86 +356,98 @@ id = "test-coverage-is-layered"
 rationale = "Unit tests sit beside the code they cover and run under vitest. The e2e suites need a real PostgreSQL or a real Code Moniker parser; the VS Code suites need a real VS Code; the Playwright lanes drive it. A module with no unit callers is a layering fact, not evidence of no test."
 check = "npm test && npm run test:e2e:run"
 
+[[views.gotchas]]
+id = "a-command-title-is-read-twice"
+rationale = "The palette prints `category: title`; every menu prints `title` alone. A prefix written into the title therefore appears in full on a right-click, and a command with no category reads like one of VS Code's own. None of this is indexed — `package.json` holds no symbol, and the on-demand parser takes no JSON — so it is guarded by scripts/extension/check-manifest-text.mjs, which also refuses a second category root, and by check-command-registrars.mjs, which refuses a declared command nothing registers: VS Code accepts that declaration in silence and throws only when a reader runs it."
+check = "npm run check"
+
 [[ts.function.where]]
-id = "name-camelcase"
+id = "code-webview-hygiene-enforces-function-casing"
 severity = "error"
-expr = "$camel OR $ts_callback OR (moniker ~ '**/dir:packages/dir:views/**' AND name =~ ^[A-Z][A-Za-z0-9]*$)"
+expr = "$camel OR $ts_callback OR ($webview_symbol AND name =~ ^[A-Z][A-Za-z0-9]*$)"
 message = "Functions use camelCase; React components in the Workbench webview use PascalCase. Rename `{name}`."
 rationale = "PascalCase is part of the React component contract and lets the hooks linter recognise stateful components. packages/views holds every React view, so the exemption stops exactly at that package."
 
 [[ts.shape.annotation.where]]
-id = "no-comment-inside-callable"
+id = "code-hygiene-keeps-comments-outside-callables"
 severity = "error"
 expr = "parent.shape != 'callable'"
 message = "Move this explanation into naming or extracted code, outside the function."
 rationale = "Comments inside functions hide executable intent and can mask gaps in line coverage. Functions should remain understandable through their names, structure, and tests."
 
 [[ts.function.where]]
-id = "smell-long-callable"
-severity = "error"
+id = "code-single-responsibility-flags-long-callables"
+severity = "warn"
 expr = "lines <= 300"
 message = "This callable is unusually long; verify that it still represents one coherent responsibility."
 rationale = "Callables above this emergency bound deserve review for a concrete ownership or control-flow seam. The generous threshold avoids encouraging artificial indirection; this remains a review signal, not an architectural boundary."
 
 [[ts.method.where]]
-id = "smell-long-callable"
-severity = "error"
+id = "code-single-responsibility-flags-long-callables"
+severity = "warn"
 expr = "lines <= 300"
 message = "This callable is unusually long; verify that it still represents one coherent responsibility."
 rationale = "Callables above this emergency bound deserve review for a concrete ownership or control-flow seam. The generous threshold avoids encouraging artificial indirection; this remains a review signal, not an architectural boundary."
 
 [[ts.constructor.where]]
-id = "smell-long-callable"
-severity = "error"
+id = "code-single-responsibility-flags-long-callables"
+severity = "warn"
 expr = "lines <= 300"
 message = "This callable is unusually long; verify that it still represents one coherent responsibility."
 rationale = "Callables above this emergency bound deserve review for a concrete ownership or control-flow seam. The generous threshold avoids encouraging artificial indirection; this remains a review signal, not an architectural boundary."
 
 [[ts.function.where]]
-id = "smell-long-parameter-list"
-severity = "error"
+id = "code-single-responsibility-flags-long-parameter-lists"
+severity = "warn"
 expr = "count(param) <= 6"
 message = "This callable has a long parameter list; check whether the parameters form a stable concept."
 rationale = "Long parameter lists can reveal missing abstractions or excessive responsibility, but adapters and protocol handlers may legitimately need them."
 
 [[ts.method.where]]
-id = "smell-long-parameter-list"
-severity = "error"
+id = "code-single-responsibility-flags-long-parameter-lists"
+severity = "warn"
 expr = "count(param) <= 6"
 message = "This callable has a long parameter list; check whether the parameters form a stable concept."
 rationale = "Long parameter lists can reveal missing abstractions or excessive responsibility, but adapters and protocol handlers may legitimately need them."
 
 [[ts.constructor.where]]
-id = "smell-long-parameter-list"
-severity = "error"
+id = "code-single-responsibility-flags-long-parameter-lists"
+severity = "warn"
 expr = "count(param) <= 6"
 message = "This callable has a long parameter list; check whether the parameters form a stable concept."
 rationale = "Long parameter lists can reveal missing abstractions or excessive responsibility, but adapters and protocol handlers may legitimately need them."
 
 [[ts.class.where]]
-id = "smell-large-class"
-severity = "error"
+id = "code-single-responsibility-flags-large-classes"
+severity = "warn"
 expr = "count(method) <= 20 AND count(field) <= 30"
 message = "This class has a large surface; verify that its responsibilities remain cohesive."
 rationale = "Large classes often accumulate unrelated responsibilities. The TypeScript class domain and its native method and field collections deliberately exclude interfaces and type declarations from this implementation-oriented signal."
 
 [[ts.class.where]]
-id = "smell-method-size-disharmony"
-severity = "error"
+id = "code-single-responsibility-flags-method-size-disharmony"
+severity = "warn"
 expr = "lines <= 300 OR count(method) < 6 OR cv(method, lines) <= 1.0"
 message = "Method sizes vary strongly inside this class; inspect whether one method carries disproportionate responsibility."
 rationale = "A strong size imbalance can expose orchestration or domain logic concentrated in one method. Classes of at most 300 lines are excluded because their distributions are too small to make this signal useful."
 
 [[ts.class.where]]
-id = "smell-balanced-method-fanout"
-severity = "error"
+id = "code-single-responsibility-flags-concentrated-method-fanout"
+severity = "warn"
 expr = "count(method) < 6 OR gini(method, fan_out(each)) <= 0.7"
 message = "Outgoing dependencies are concentrated in a small part of this class."
 rationale = "Concentrated fan-out can identify methods that coordinate too many collaborators. The TypeScript class domain deliberately excludes interfaces because signatures have no executable coordination to review; this remains only a navigation signal."
 
 [[ts.refs.where]]
-id = "code-moniker-syntax-provider-owned-by-runtime-boundary"
+id = "syntax-workbench-debugger-ownership-stays-at-runtime-boundaries"
 severity = "error"
-expr = "($code_moniker_syntax_factory OR $code_moniker_daemon_lifecycle) => $syntax_provider_owner"
+expr = "$syntax_factory => $syntax_workbench_debugger_owner"
 message = "Create the Code Moniker syntax provider only in the Workbench or DAP runtime boundary."
 rationale = "Feature visitors receive SyntaxParser or narrower business ports; they never create clients, daemons, or parallel AST providers."
+
+[[ts.refs.where]]
+id = "workbench-daemon-lifecycle-stays-at-runtime-boundaries"
+severity = "error"
+expr = "$workbench_daemon_lifecycle => $workbench_daemon_owner"
+message = "Connect to or ensure the Code Moniker workspace only at a Workbench runtime boundary."
+rationale = "Feature modules receive indexed capabilities from their host; the Workbench index owner, composition shell, and end-to-end harnesses are the only production or proof boundaries that own a daemon-backed workspace lifecycle."

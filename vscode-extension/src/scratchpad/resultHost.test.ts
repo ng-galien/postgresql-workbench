@@ -1,8 +1,7 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type * as vscode from "vscode";
-import type { SqlResultSession } from "../../../packages/rows/src/cursor.js";
+import type { OffsetResultSession } from "../../../packages/rows/src/offsetQuery.js";
 import type { SqlNotebookResultPayload } from "../../../packages/rows/src/resultPayload.js";
-import type { SqlNotebookResultAction } from "../../../packages/views/src/results/payload.js";
 
 const renderer = vi.hoisted(() => ({
   listener: undefined as
@@ -10,12 +9,13 @@ const renderer = vi.hoisted(() => ({
     | undefined,
   postMessage: vi.fn(),
   executeCommand: vi.fn(),
+  showSaveDialog: vi.fn(),
+  showInformationMessage: vi.fn(),
+  showErrorMessage: vi.fn(),
 }));
 
 vi.mock("vscode", () => ({
-  commands: {
-    executeCommand: renderer.executeCommand,
-  },
+  commands: { executeCommand: renderer.executeCommand },
   notebooks: {
     createRendererMessaging: () => ({
       onDidReceiveMessage(listener: typeof renderer.listener) {
@@ -25,58 +25,48 @@ vi.mock("vscode", () => ({
       postMessage: renderer.postMessage,
     }),
   },
+  window: {
+    showSaveDialog: renderer.showSaveDialog,
+    showInformationMessage: renderer.showInformationMessage,
+    showErrorMessage: renderer.showErrorMessage,
+  },
+  workspace: { workspaceFolders: undefined },
 }));
 
-import { postgresCursorSafetyTimeoutMs } from "../../../packages/rows/src/cursor.js";
 import { SqlNotebookResultHost } from "./resultHost.js";
 
-const TEST_BINDING = {
-  serverId: "test-server",
-  serverName: "Test PostgreSQL",
+const binding = {
+  connectionId: "test-connection",
+  connectionName: "Test PostgreSQL",
   database: "testdb",
 };
 
-const RESULT: SqlNotebookResultPayload = {
-  version: 2,
-  binding: TEST_BINDING,
+const payload: SqlNotebookResultPayload = {
+  version: 3,
+  kind: "rowset",
+  resultId: "result-1",
+  binding,
+  statement: "select id from inventory",
   command: "SELECT",
-  columns: [],
-  rows: [],
-  rowCount: 0,
-  capturedRowCount: 0,
+  columns: [{ name: "id", dataTypeId: 23, typeName: "integer" }],
+  rows: [[{ kind: "number", value: "1" }]],
+  capturedRowCount: 1,
   durationMs: 1,
   truncated: false,
   truncationReasons: [],
-};
-
-const PAGED_RESULT: SqlNotebookResultPayload = {
-  ...RESULT,
-  rowCount: undefined,
-  capturedRowCount: 200,
   navigation: {
-    sessionId: "session-1",
+    sessionId: "result-1",
     mode: "paged",
     pageIndex: 0,
-    pageSize: 200,
+    pageSize: 20,
     pageStart: 1,
-    pageEnd: 200,
-    loadedRowCount: 201,
-    cacheStart: 1,
+    pageEnd: 1,
+    loadedRowCount: 1,
     hasPrevious: false,
     hasNext: true,
     canLoadAll: true,
   },
 };
-
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  let reject!: (error: unknown) => void;
-  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
-    resolve = resolvePromise;
-    reject = rejectPromise;
-  });
-  return { promise, resolve, reject };
-}
 
 function fakeCell(): vscode.NotebookCell {
   return {
@@ -85,296 +75,213 @@ function fakeCell(): vscode.NotebookCell {
   } as unknown as vscode.NotebookCell;
 }
 
-function send(action: SqlNotebookResultAction): void {
-  renderer.listener?.({
-    editor: {} as vscode.NotebookEditor,
-    message: { type: "sql-result/request", sessionId: "session-1", action },
-  });
-}
-
 async function flush(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
+function fakeResult(overrides: Partial<OffsetResultSession> = {}): OffsetResultSession {
+  return {
+    id: "result-1",
+    snapshot: () => payload,
+    next: vi.fn().mockResolvedValue({
+      ...payload,
+      rows: [[{ kind: "number", value: "21" }]],
+      navigation: { ...payload.navigation, pageIndex: 1, pageStart: 21, pageEnd: 21 },
+    }),
+    previous: vi.fn().mockReturnValue(payload),
+    loadAll: vi.fn().mockResolvedValue(payload),
+    loadedResult: () => ({ columns: payload.columns, rows: payload.rows }),
+    displayedRows: () => payload.rows,
+    close: vi.fn().mockResolvedValue(undefined),
+    ...overrides,
+  } as unknown as OffsetResultSession;
+}
+
 beforeEach(() => {
   renderer.listener = undefined;
-  renderer.postMessage.mockReset();
-  renderer.postMessage.mockResolvedValue(true);
-  renderer.executeCommand.mockReset();
-  renderer.executeCommand.mockResolvedValue(undefined);
-});
-
-afterEach(() => {
-  vi.useRealTimers();
+  renderer.postMessage.mockReset().mockResolvedValue(true);
+  renderer.executeCommand.mockReset().mockResolvedValue(undefined);
+  renderer.showSaveDialog.mockReset();
+  renderer.showInformationMessage.mockReset();
+  renderer.showErrorMessage.mockReset();
 });
 
 describe("SQL notebook result host", () => {
-  it("keeps PostgreSQL's recovery timeout behind the result-session deadline", () => {
-    expect(postgresCursorSafetyTimeoutMs(300_000)).toBe(600_000);
-    expect(postgresCursorSafetyTimeoutMs(10_000)).toBe(60_000);
-  });
-
-  it("opens the SQL analysis settings from a renderer budget action", async () => {
+  it("navigates through the shared in-memory LIMIT/OFFSET result", async () => {
+    const result = fakeResult();
     const host = new SqlNotebookResultHost();
+    await host.register(result, fakeCell(), binding);
+
     renderer.listener?.({
       editor: {} as vscode.NotebookEditor,
-      message: { type: "sql-error/open-analysis-settings" },
+      message: { type: "sql-result/request", sessionId: "result-1", action: "next" },
     });
     await flush();
 
-    expect(renderer.executeCommand).toHaveBeenCalledWith(
-      "workbench.action.openSettings",
-      "@ext:ng-galien.postgresql-workbench postgresql-workbench.sqlAuthoring.syntaxMax",
+    expect(result.next).toHaveBeenCalledOnce();
+    expect(renderer.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "sql-result/update", sessionId: "result-1" }),
+      expect.anything(),
     );
     host.dispose();
   });
 
-  it("opens the Scratchpad timeout picker from a renderer timeout action", async () => {
+  it("returns the retained value to inspection and export preview", async () => {
+    const full = "x".repeat(80_000);
+    const result = fakeResult({
+      loadedResult: () => ({
+        columns: payload.columns,
+        rows: [[{ kind: "text", value: full }]],
+      }),
+      displayedRows: () => [[{ kind: "text", value: "xxxx", truncated: true }]],
+    } as Partial<OffsetResultSession>);
     const host = new SqlNotebookResultHost();
-    const notebook = { uri: { toString: () => "notebook://one" } } as vscode.NotebookDocument;
+    await host.register(result, fakeCell(), binding);
+    const editor = {} as vscode.NotebookEditor;
+
     renderer.listener?.({
-      editor: { notebook } as vscode.NotebookEditor,
-      message: { type: "sql-error/increase-scratchpad-timeout" },
-    });
-    await flush();
-
-    expect(renderer.executeCommand).toHaveBeenCalledWith(
-      "postgresql-workbench.setScratchpadStatementTimeout",
-      notebook,
-    );
-    host.dispose();
-  });
-
-  it("detaches a complete result instead of expiring static rows later", async () => {
-    vi.useFakeTimers();
-    const session = {
-      id: "session-1",
-      snapshot: () => RESULT,
-      close: vi.fn().mockResolvedValue(undefined),
-    } as unknown as SqlResultSession;
-    const host = new SqlNotebookResultHost();
-
-    await expect(host.register(session, fakeCell(), 300_000, TEST_BINDING)).resolves.toEqual(
-      RESULT,
-    );
-    expect(session.close).toHaveBeenCalledOnce();
-    await vi.advanceTimersByTimeAsync(300_000);
-    expect(renderer.postMessage).not.toHaveBeenCalled();
-    host.dispose();
-  });
-
-  it("expires a result session at its configured idle deadline, never before", async () => {
-    vi.useFakeTimers();
-    const session = {
-      id: "session-1",
-      snapshot: () => PAGED_RESULT,
-      close: vi.fn().mockRejectedValue(new Error("connection already closed")),
-    } as unknown as SqlResultSession;
-    const host = new SqlNotebookResultHost();
-    await host.register(session, fakeCell(), 300_000, TEST_BINDING);
-
-    await vi.advanceTimersByTimeAsync(299_999);
-    expect(session.close).not.toHaveBeenCalled();
-
-    await vi.advanceTimersByTimeAsync(1);
-    expect(session.close).toHaveBeenCalledOnce();
-    expect(renderer.postMessage).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: "sql-result/error",
-        message:
-          "This result session expired after 300 seconds without result navigation. Run the SQL cell again.",
-        closed: true,
-      }),
-    );
-    host.dispose();
-  });
-
-  it("restarts the idle deadline after renderer activity", async () => {
-    vi.useFakeTimers();
-    const session = {
-      id: "session-1",
-      snapshot: () => PAGED_RESULT,
-      close: vi.fn().mockResolvedValue(undefined),
-    } as unknown as SqlResultSession;
-    const host = new SqlNotebookResultHost();
-    await host.register(session, fakeCell(), 300_000, TEST_BINDING);
-
-    await vi.advanceTimersByTimeAsync(250_000);
-    send("attach");
-    await vi.advanceTimersByTimeAsync(0);
-    renderer.postMessage.mockClear();
-
-    await vi.advanceTimersByTimeAsync(299_999);
-    expect(session.close).not.toHaveBeenCalled();
-    await vi.advanceTimersByTimeAsync(1);
-    expect(session.close).toHaveBeenCalledOnce();
-    host.dispose();
-  });
-
-  it("keeps results across active-context changes and closes them on binding changes", async () => {
-    const session = {
-      id: "session-1",
-      snapshot: () => PAGED_RESULT,
-      close: vi.fn().mockResolvedValue(undefined),
-    } as unknown as SqlResultSession;
-    const host = new SqlNotebookResultHost();
-    await host.register(session, fakeCell(), 300_000, TEST_BINDING);
-
-    await host.closeNotebookAssociationMismatch("notebook://one", { ...TEST_BINDING });
-    expect(session.close).not.toHaveBeenCalled();
-
-    await host.closeNotebookAssociationMismatch("notebook://one", {
-      ...TEST_BINDING,
-      database: "otherdb",
-    });
-    expect(session.close).toHaveBeenCalledOnce();
-    host.dispose();
-  });
-
-  it("rejects a cursor session whose binding changes while registration is yielding", async () => {
-    let current = true;
-    const session = {
-      id: "session-1",
-      snapshot: () => PAGED_RESULT,
-      close: vi.fn().mockResolvedValue(undefined),
-    } as unknown as SqlResultSession;
-    const host = new SqlNotebookResultHost();
-
-    const registration = host.register(session, fakeCell(), 300_000, TEST_BINDING, () => current);
-    current = false;
-
-    await expect(registration).rejects.toThrow("Association changed");
-    expect(session.close).toHaveBeenCalledOnce();
-    host.dispose();
-  });
-
-  it("keeps a single expiration message while cursor closure is still pending", async () => {
-    vi.useFakeTimers();
-    const closing = deferred<void>();
-    const session = {
-      id: "session-1",
-      snapshot: () => PAGED_RESULT,
-      close: vi.fn(() => closing.promise),
-    } as unknown as SqlResultSession;
-    const host = new SqlNotebookResultHost();
-    await host.register(session, fakeCell(), 60_000, TEST_BINDING);
-
-    await vi.advanceTimersByTimeAsync(60_000);
-    send("attach");
-    await vi.advanceTimersByTimeAsync(0);
-    expect(renderer.postMessage).toHaveBeenCalledTimes(1);
-
-    closing.resolve();
-    await vi.advanceTimersByTimeAsync(0);
-    host.dispose();
-  });
-
-  it("delivers Load all progress before the final result update", async () => {
-    const progressPosted = deferred<boolean>();
-    renderer.postMessage.mockImplementation((message: { type: string }) =>
-      message.type === "sql-result/progress" ? progressPosted.promise : Promise.resolve(true),
-    );
-    const session = {
-      id: "session-1",
-      snapshot: () => PAGED_RESULT,
-      loadAll: async (onProgress: (count: number) => void) => {
-        onProgress(2_000);
-        return { ...RESULT, rowCount: 2_000, capturedRowCount: 2_000 };
+      editor,
+      message: {
+        type: "sql-result/inspect",
+        requestId: "inspect-1",
+        resultId: "result-1",
+        page: { start: 1, length: 1 },
+        row: 0,
+        ordinal: 0,
       },
-      close: vi.fn().mockResolvedValue(undefined),
-    } as unknown as SqlResultSession;
-    const host = new SqlNotebookResultHost();
-    await host.register(session, fakeCell(), 60_000, TEST_BINDING);
-
-    send("load-all");
+    });
+    renderer.listener?.({
+      editor,
+      message: {
+        type: "sql-result/preview",
+        requestId: 1,
+        resultId: "result-1",
+        choice: {
+          format: "json",
+          header: true,
+          nullAs: "empty",
+          delimiter: ",",
+          createTable: false,
+          spreadsheetSafe: true,
+          finalNewline: true,
+        },
+        scope: "loaded",
+        page: { start: 1, length: 1 },
+      },
+    });
     await flush();
-    expect(renderer.postMessage.mock.calls.map(([message]) => message.type)).toEqual([
-      "sql-result/progress",
-    ]);
 
-    progressPosted.resolve(true);
-    await flush();
-    expect(renderer.postMessage.mock.calls.map(([message]) => message.type)).toEqual([
-      "sql-result/progress",
-      "sql-result/update",
-    ]);
+    expect(renderer.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "sql-result/inspected",
+        cell: { kind: "text", value: full },
+      }),
+      editor,
+    );
+    expect(renderer.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "sql-result/previewed",
+        text: expect.stringContaining(full),
+      }),
+      editor,
+    );
     host.dispose();
   });
 
-  it("cancels an in-flight Load all without a late duplicate error", async () => {
-    const loading = deferred<SqlNotebookResultPayload>();
-    const session = {
-      id: "session-1",
-      snapshot: () => PAGED_RESULT,
-      loadAll: () => loading.promise,
-      close: vi.fn().mockRejectedValue(new Error("cursor close failed")),
-    } as unknown as SqlResultSession;
+  it("rejects renderer page coordinates outside the retained result", async () => {
     const host = new SqlNotebookResultHost();
-    await host.register(session, fakeCell(), 60_000, TEST_BINDING);
-
-    send("load-all");
+    await host.register(fakeResult(), fakeCell(), binding);
+    renderer.listener?.({
+      editor: {} as vscode.NotebookEditor,
+      message: {
+        type: "sql-result/preview",
+        requestId: 2,
+        resultId: "result-1",
+        choice: {
+          format: "csv",
+          header: true,
+          nullAs: "empty",
+          delimiter: ",",
+          createTable: false,
+          spreadsheetSafe: true,
+          finalNewline: true,
+        },
+        scope: "selection",
+        page: { start: 200, length: 10 },
+        selection: { from: 0, to: 0, ordinals: [0] },
+      },
+    });
     await flush();
-    send("cancel");
-    await flush();
-    loading.reject(new Error("cursor closed"));
-    await flush();
-
-    expect(renderer.postMessage).toHaveBeenCalledTimes(1);
     expect(renderer.postMessage).toHaveBeenCalledWith(
       expect.objectContaining({
-        type: "sql-result/error",
-        message: "Result loading cancelled.",
-        closed: true,
+        type: "sql-result/previewed",
+        text: "The displayed result page is outside the retained rows.",
       }),
       expect.anything(),
     );
-    expect(session.close).toHaveBeenCalledOnce();
     host.dispose();
   });
 
-  it("detaches an exhausted evicted page while preserving its partial-result warning", async () => {
-    const partialResult: SqlNotebookResultPayload = {
-      ...PAGED_RESULT,
-      rowCount: 5_000,
-      capturedRowCount: 1_000,
-      truncated: true,
-      truncationReasons: ["rows"],
-      navigation: {
-        ...PAGED_RESULT.navigation!,
-        pageStart: 4_001,
-        pageEnd: 5_000,
-        cacheStart: 4_001,
-        hasPrevious: false,
-        hasNext: false,
-        canLoadAll: false,
-      },
+  it("orders every retained row by the column the reader sorted, not only the page shown", async () => {
+    const retained = [
+      [{ kind: "number", value: "1" }],
+      [{ kind: "number", value: "3" }],
+      [{ kind: "number", value: "2" }],
+    ] as SqlNotebookResultPayload["rows"];
+    const result = fakeResult({
+      loadedResult: () => ({ columns: payload.columns, rows: retained }),
+      displayedRows: (start: number, length: number) => retained.slice(start, start + length),
+    } as Partial<OffsetResultSession>);
+    const host = new SqlNotebookResultHost();
+    await host.register(result, fakeCell(), binding);
+    const editor = {} as vscode.NotebookEditor;
+    const previewLoaded = (requestId: number, scope: "loaded" | "all") => {
+      renderer.listener?.({
+        editor,
+        message: {
+          type: "sql-result/preview",
+          requestId,
+          resultId: "result-1",
+          choice: {
+            format: "csv",
+            header: false,
+            nullAs: "empty",
+            delimiter: ",",
+            createTable: false,
+            spreadsheetSafe: true,
+            finalNewline: false,
+          },
+          scope,
+          ...(scope === "all" ? {} : { page: { start: 1, length: 3 } }),
+          sort: { columnIndex: 0, direction: "descending" },
+        },
+      });
     };
-    const session = {
-      id: "session-1",
-      snapshot: () => PAGED_RESULT,
-      next: vi.fn().mockResolvedValue(partialResult),
-      close: vi.fn().mockResolvedValue(undefined),
-    } as unknown as SqlResultSession;
-    const host = new SqlNotebookResultHost();
-    await host.register(session, fakeCell(), 60_000, TEST_BINDING);
 
-    send("next");
+    previewLoaded(1, "loaded");
     await flush();
     expect(renderer.postMessage).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: "sql-result/update",
-        payload: expect.objectContaining({
-          rowCount: 5_000,
-          capturedRowCount: 1_000,
-          truncated: true,
-          truncationReasons: ["rows"],
-        }),
-      }),
-      expect.anything(),
+      expect.objectContaining({ type: "sql-result/previewed", requestId: 1, text: "3\n2\n1" }),
+      editor,
     );
-    const postedPayload = renderer.postMessage.mock.calls[0]?.[0].payload;
-    expect(postedPayload).not.toHaveProperty("navigation");
-    expect(session.close).toHaveBeenCalledOnce();
+
+    // Running the query again carries no local sort, so its preview must not promise one.
+    previewLoaded(2, "all");
+    await flush();
+    expect(renderer.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "sql-result/previewed", requestId: 2, text: "1\n3\n2" }),
+      editor,
+    );
+    host.dispose();
+  });
+
+  it("closes the page source when its cell is replaced", async () => {
+    const first = fakeResult();
+    const second = fakeResult({ id: "result-2" } as Partial<OffsetResultSession>);
+    const host = new SqlNotebookResultHost();
+    await host.register(first, fakeCell(), binding);
+    await host.register(second, fakeCell(), binding);
+    expect(first.close).toHaveBeenCalledOnce();
     host.dispose();
   });
 });

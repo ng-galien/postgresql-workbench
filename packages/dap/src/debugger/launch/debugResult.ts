@@ -21,6 +21,8 @@ export interface DebugResultCell {
   kind: DebugResultCellKind;
   value: string | null;
   truncated?: true;
+  /** The retained value itself reached the configured hard per-cell limit. */
+  retainedTruncated?: true;
 }
 
 export interface DebugResultColumn {

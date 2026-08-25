@@ -202,7 +202,7 @@ async function waitForWorkbenchWindow(app: ElectronApplication, timeout: number)
 async function waitForWorkbenchViews(app: ElectronApplication, timeout: number): Promise<Page> {
   const page = await waitForWorkbenchWindow(app, timeout);
   await Promise.all(
-    ["Workbench", "Scratchpads"].map((name) =>
+    ["Connections", "Scratchpads"].map((name) =>
       page
         .locator(".pane-header")
         .filter({ hasText: new RegExp(`^${name}$`, "iu") })
@@ -211,7 +211,7 @@ async function waitForWorkbenchViews(app: ElectronApplication, timeout: number):
     ),
   );
   await page
-    .getByRole("tree", { name: "Workbench", exact: true })
+    .getByRole("tree", { name: "Connections", exact: true })
     .waitFor({ state: "visible", timeout });
   return page;
 }
@@ -258,7 +258,10 @@ export interface VSCodeInstance {
       | "workbench.action.debug.stepInto"
       | "workbench.action.debug.stepOver"
       | "workbench.action.quickOpen"
-      | "workbench.view.testing.focus",
+      | "workbench.view.testing.focus"
+      | "postgresql-workbench.editConnection"
+      | "postgresql-workbench.removeConnection"
+      | "postgresql-workbench.renameConnection",
     timeout?: number,
     arguments_?: unknown[],
   ): Promise<void>;
@@ -269,7 +272,7 @@ export interface VSCodeInstance {
   inspectDebugState(): Promise<DebugStateSnapshot>;
   inspectTestingState(): Promise<TestingStateSnapshot>;
   inspectWorkbenchState(): Promise<WorkbenchStateSnapshot>;
-  removeServer(id: string): Promise<void>;
+  removeConnection(id: string): Promise<void>;
   openWorkspaceFile(fileName: string): Promise<void>;
   openSqlDocument(content: string): Promise<void>;
   resetWorkbenchUI(): Promise<void>;
@@ -281,7 +284,7 @@ export interface VSCodeInstance {
 export interface DebugConfigurationSnapshot extends Record<string, unknown> {
   name?: string;
   request?: string;
-  server?: string;
+  connection?: string;
   sql?: string;
   stopOnEntry?: boolean;
   type?: string;
@@ -300,22 +303,22 @@ export interface WorkbenchIndexActiveRun {
   id: number;
   retainedGeneration?: number | null;
   scope: string;
-  serverId: string;
+  connectionId: string;
 }
 
 export interface WorkbenchStateSnapshot {
   connection: {
     connected: boolean;
-    connectedServerIds: string[];
+    connectedConnectionIds: string[];
   };
   schemaSync: Array<{
-    serverId: string;
+    connectionId: string;
     desired?: {
       enabled: boolean;
       supportSchema: string;
     };
     state: {
-      serverId: string;
+      connectionId: string;
       status:
         | "disabled"
         | "provisioning-required"
@@ -352,7 +355,7 @@ export interface WorkbenchStateSnapshot {
     activeRun?: WorkbenchIndexActiveRun;
     activeRuns: WorkbenchIndexActiveRun[];
     currentRunPending: boolean;
-    pendingRuns: Array<{ scope: string; serverId: string }>;
+    pendingRuns: Array<{ scope: string; connectionId: string }>;
     events: Array<{
       changeKind?: "full" | "incremental";
       generation?: number | null;
@@ -360,7 +363,7 @@ export interface WorkbenchStateSnapshot {
       phase?: WorkbenchIndexPhase;
       runId?: number;
       sequence: number;
-      serverId?: string;
+      connectionId?: string;
       status: string;
     }>;
     gate?: {
@@ -389,10 +392,10 @@ export interface WorkbenchStateSnapshot {
         documents: number;
         generation: number | null;
         revision: string;
-        serverId: string;
+        connectionId: string;
         symbols: number;
       };
-      serverId?: string;
+      connectionId?: string;
       status: string;
     }>;
     state: {
@@ -412,10 +415,10 @@ export interface WorkbenchStateSnapshot {
         documents: number;
         generation: number | null;
         revision: string;
-        serverId: string;
+        connectionId: string;
         symbols: number;
       };
-      serverId?: string;
+      connectionId?: string;
       status: string;
     };
   };
@@ -462,7 +465,7 @@ export interface TestingStateSnapshot {
     database?: string;
     generation?: number | null;
     revision?: string;
-    serverId?: string;
+    connectionId?: string;
     status: string;
   };
   coverage?: {
@@ -808,8 +811,8 @@ export async function launchVSCode(options: LaunchVSCodeOptions = {}): Promise<V
         );
         return state.result as WorkbenchStateSnapshot;
       },
-      async removeServer(id) {
-        await runAcceptanceCommand("postgresql-workbench.acceptance.removeServer", 5_000, [id]);
+      async removeConnection(id) {
+        await runAcceptanceCommand("postgresql-workbench.acceptance.removeConnection", 5_000, [id]);
       },
       async openWorkspaceFile(fileName) {
         await runAcceptanceCommand("postgresql-workbench.acceptance.openWorkspaceFile", 5_000, [

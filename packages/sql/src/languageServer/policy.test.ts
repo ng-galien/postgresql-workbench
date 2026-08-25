@@ -76,7 +76,7 @@ describe("SQL authoring server policy", () => {
         context: { status: "not-indexed", message: "not indexed" },
         documentUri: "vscode-notebook-cell:///s#1",
         scope: "scratchpad",
-        connexionName: "dev",
+        connectionName: "dev",
       }),
     ).toMatchObject({ text: "Index missing for dev", command: { title: "Reindex" } });
   });

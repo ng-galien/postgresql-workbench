@@ -58,6 +58,7 @@ const host = await startDataViewHost({
   connection: CONNECTION,
   ...(RELATION ? { relation: RELATION } : {}),
   languageServerPath: `${OUT}sql-authoring-server.cjs`,
+  navigationDelayMs: Number(process.env.PGWB_NAVIGATION_DELAY_MS ?? 0),
   emit,
 });
 

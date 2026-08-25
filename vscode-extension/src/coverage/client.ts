@@ -4,28 +4,31 @@ import type { ConnectionManager } from "../connection/index.js";
 
 export async function openCoverageClient(
   connections: ConnectionManager,
-  serverId: string,
+  connectionId: string,
   options: {
     applicationName?: string;
     statementTimeoutMs?: number;
   } = {},
 ): Promise<Client> {
-  const server = connections.store.get(serverId);
-  if (!server) throw new Error(`PostgreSQL connection ${serverId} is no longer configured.`);
-  const password = await connections.store.getPassword(serverId);
+  const connection = connections.store.get(connectionId);
+  if (!connection)
+    throw new Error(`PostgreSQL connection ${connectionId} is no longer configured.`);
+  const password = await connections.store.getPassword(connectionId);
   if (password === undefined) {
-    throw new Error(`PostgreSQL connection ${getConnectionName(server)} has no saved password.`);
+    throw new Error(
+      `PostgreSQL connection ${getConnectionName(connection)} has no saved password.`,
+    );
   }
   const client = new Client({
-    host: server.host,
-    port: server.port,
-    database: server.database,
-    user: server.user,
+    host: connection.host,
+    port: connection.port,
+    database: connection.database,
+    user: connection.user,
     password,
     connectionTimeoutMillis: 10_000,
     statement_timeout: options.statementTimeoutMs ?? 60_000,
     application_name: options.applicationName ?? "postgresql-workbench:test-runner",
-    ...(server.ssl === "require" || server.ssl === "prefer"
+    ...(connection.ssl === "require" || connection.ssl === "prefer"
       ? { ssl: { rejectUnauthorized: false } }
       : {}),
   });

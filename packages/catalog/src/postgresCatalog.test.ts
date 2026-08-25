@@ -143,11 +143,11 @@ describe("readPostgresCatalog", () => {
     const client = new FakeCatalogClient();
 
     const first = await readPostgresCatalog(client, {
-      serverId: "local-dev",
+      connectionId: "local-dev",
       database: "sample",
     });
     const second = await readPostgresCatalog(new FakeCatalogClient(), {
-      serverId: "local-dev",
+      connectionId: "local-dev",
       database: "sample",
     });
 
@@ -212,7 +212,7 @@ describe("readPostgresCatalog", () => {
 
     await expect(
       readPostgresCatalog(client, {
-        serverId: "local-dev",
+        connectionId: "local-dev",
         database: "sample",
       }),
     ).rejects.toThrow("catalog failed");
@@ -222,11 +222,11 @@ describe("readPostgresCatalog", () => {
 
   it("changes the snapshot revision when extension ownership changes without a DDL change", async () => {
     const first = await readPostgresCatalog(new FakeCatalogClient(undefined, "pgtap"), {
-      serverId: "local-dev",
+      connectionId: "local-dev",
       database: "sample",
     });
     const second = await readPostgresCatalog(new FakeCatalogClient(undefined, "workbench_tools"), {
-      serverId: "local-dev",
+      connectionId: "local-dev",
       database: "sample",
     });
 
@@ -236,11 +236,11 @@ describe("readPostgresCatalog", () => {
 
   it("keeps semantic source identity stable when PostgreSQL recreates a routine with a new OID", async () => {
     const first = await readPostgresCatalog(new FakeCatalogClient(undefined, "pgtap", 40), {
-      serverId: "local-dev",
+      connectionId: "local-dev",
       database: "sample",
     });
     const second = await readPostgresCatalog(new FakeCatalogClient(undefined, "pgtap", 400), {
-      serverId: "local-dev",
+      connectionId: "local-dev",
       database: "sample",
     });
     const firstRoutine = first.sourceSet.documents.find(
@@ -255,13 +255,13 @@ describe("readPostgresCatalog", () => {
     expect(secondRoutine?.postgres?.oid).toBe(400);
   });
 
-  it("namespaces identical deployment OIDs by server without putting the OID in identity", async () => {
+  it("namespaces identical deployment OIDs by connection without putting the OID in identity", async () => {
     const first = await readPostgresCatalog(new FakeCatalogClient(), {
-      serverId: "first:5432/sample:postgres",
+      connectionId: "first:5432/sample:postgres",
       database: "sample",
     });
     const second = await readPostgresCatalog(new FakeCatalogClient(), {
-      serverId: "second:5432/sample:postgres",
+      connectionId: "second:5432/sample:postgres",
       database: "sample",
     });
     const firstRoutine = first.sourceSet.documents.find(
@@ -279,7 +279,7 @@ describe("readPostgresCatalog", () => {
       first.sourceSet.documents.every((document) =>
         document.uri.startsWith(
           postgresDatabaseDocumentGlob({
-            serverId: "first:5432/sample:postgres",
+            connectionId: "first:5432/sample:postgres",
             database: "sample",
           }).slice(0, -2),
         ),
@@ -289,7 +289,7 @@ describe("readPostgresCatalog", () => {
       second.sourceSet.documents.every((document) =>
         document.uri.startsWith(
           postgresDatabaseDocumentGlob({
-            serverId: "second:5432/sample:postgres",
+            connectionId: "second:5432/sample:postgres",
             database: "sample",
           }).slice(0, -2),
         ),
@@ -297,13 +297,13 @@ describe("readPostgresCatalog", () => {
     ).toBe(true);
   });
 
-  it("derives every PostgreSQL index identity from the exact Connexion and database", () => {
+  it("derives every PostgreSQL index identity from the exact Connection and database", () => {
     const first = {
-      serverId: "db.example.test:5432/app:alice",
+      connectionId: "db.example.test:5432/app:alice",
       database: "app",
     };
     const second = {
-      serverId: "db.example.test:5432/app:bob",
+      connectionId: "db.example.test:5432/app:bob",
       database: "app",
     };
 
@@ -318,7 +318,7 @@ describe("readPostgresCatalog", () => {
 
   it("reprojects only the exact documents selected by the SourceSet provider", async () => {
     const baseline = await readPostgresCatalog(new FakeCatalogClient(), {
-      serverId: "local-dev",
+      connectionId: "local-dev",
       database: "sample",
     });
     const account = baseline.sourceSet.documents.find((document) => document.postgres?.oid === 20)!;
@@ -422,7 +422,7 @@ describe("readPostgresCatalog", () => {
 
     const patch = await readPostgresCatalogDocuments(
       client,
-      { serverId: "local-dev", database: "sample" },
+      { connectionId: "local-dev", database: "sample" },
       baseline.sourceSet.documents,
       new Set([account.uri, activeAccount.uri]),
     );
@@ -483,7 +483,7 @@ describe("readPostgresCatalog", () => {
     await expect(
       readPostgresCatalogDocuments(
         new FakeCatalogClient(),
-        { serverId: "local-dev", database: "sample" },
+        { connectionId: "local-dev", database: "sample" },
         [],
         new Set(["postgresql://local-dev/sample/app/table/missing.sql"]),
       ),

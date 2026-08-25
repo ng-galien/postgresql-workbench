@@ -6,7 +6,7 @@ const cockpit = vi.hoisted(() => ({
   session: null,
   exploration: { nodes: {}, edges: {}, neighborhoods: {}, focusIdentity: null },
   preview: null,
-  error: "The Cockpit Connexion changed. Open its graph again.",
+  error: "The Cockpit Connection changed. Open its graph again.",
   radius: { incoming: 1, outgoing: 1 },
   reveal: vi.fn(),
   undoExpansion: vi.fn(),
@@ -29,7 +29,7 @@ describe("Workbench graph cockpit shell", () => {
     const html = renderToStaticMarkup(<App />);
 
     expect(html).toContain("cockpit-error");
-    expect(html).toContain("The Cockpit Connexion changed");
+    expect(html).toContain("The Cockpit Connection changed");
     expect(html).not.toContain("Opening PostgreSQL cockpit");
   });
 });

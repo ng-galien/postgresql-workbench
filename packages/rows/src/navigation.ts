@@ -1,9 +1,9 @@
-import type { SqlResultSession } from "./cursor.js";
+import type { OffsetResultSession } from "./offsetQuery.js";
 import type { SqlNotebookResultNavigation, SqlNotebookResultPayload } from "./resultPayload.js";
 
 /**
  * What a reader can ask of a bounded result, whatever surface asks it. One vocabulary for the
- * Scratchpad output, the Data View, and anything that reads rows through a cursor.
+ * Scratchpad output, the Data View, and anything that reads LIMIT/OFFSET pages.
  */
 export type ResultNavigationAction = "attach" | "previous" | "next" | "load-all" | "cancel";
 
@@ -15,7 +15,9 @@ export interface ResultNavigationState {
   navigation?: SqlNotebookResultNavigation;
   /** An action is already running. */
   busy: boolean;
-  /** The cursor is gone: only a fresh load can bring rows back. */
+  /** The running action owns a page read that this control can cancel. */
+  cancellable: boolean;
+  /** The paged result cannot execute more queries. */
   closed: boolean;
 }
 
@@ -27,19 +29,35 @@ export function canNavigate(
   action: ResultNavigationCommand,
   state: ResultNavigationState,
 ): boolean {
-  if (action === "cancel") return state.busy;
+  if (action === "cancel") return state.cancellable;
   if (state.busy || state.closed || !state.navigation) return false;
   if (action === "previous") return state.navigation.hasPrevious;
   if (action === "next") return state.navigation.hasNext;
   return state.navigation.canLoadAll;
 }
 
+/** Whether an action must open PostgreSQL rather than only rearranging pages already retained. */
+export function navigationReadsPostgres(
+  action: ResultNavigationAction,
+  payload: SqlNotebookResultPayload | undefined,
+): boolean {
+  const navigation = payload?.navigation;
+  if (!navigation) return false;
+  if (action === "next") {
+    return navigation.hasNext && navigation.pageEnd >= navigation.loadedRowCount;
+  }
+  if (action === "load-all") {
+    return navigation.canLoadAll && payload.rowCount === undefined;
+  }
+  return false;
+}
+
 /**
  * What each action means against a session. Closing is left to the caller: a surface owns how it
- * announces a cursor it will not reopen.
+ * announces a result it will not reopen.
  */
 export async function navigateResult(
-  session: SqlResultSession,
+  session: OffsetResultSession,
   action: ResultNavigationAction,
   onProgress?: (loadedRowCount: number) => void,
 ): Promise<SqlNotebookResultPayload> {

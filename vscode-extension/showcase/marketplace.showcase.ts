@@ -31,7 +31,7 @@ const CONTROL_DIR = process.env.POSTGRESQL_WORKBENCH_SHOWCASE_CONTROL_DIR;
 const THEME = process.env.POSTGRESQL_WORKBENCH_SHOWCASE_THEME ?? "light";
 const EXPECTED_EXTENSION_PATH = process.env.POSTGRESQL_WORKBENCH_SHOWCASE_EXTENSION_PATH;
 const EXPECTED_EXTENSION_VERSION = process.env.POSTGRESQL_WORKBENCH_SHOWCASE_EXTENSION_VERSION;
-const SERVER = {
+const CONNECTION = {
   id: "showcase:localhost:5434/demo:postgres",
   name: "postgres@localhost:5434/demo",
   host: "localhost",
@@ -73,9 +73,9 @@ suite("PostgreSQL Workbench Marketplace showcase", function () {
         `from ${extension.extensionPath}\n`,
     );
     api = extension.isActive ? extension.exports : await extension.activate();
-    await api.connectionManager.store.add(SERVER, "postgres");
+    await api.connectionManager.store.add(CONNECTION, "postgres");
     assert.strictEqual(
-      await vscode.commands.executeCommand("postgresql-workbench.connectServer", SERVER.id),
+      await vscode.commands.executeCommand("postgresql-workbench.connectConnection", CONNECTION.id),
       true,
     );
     assert.ok(
@@ -100,11 +100,11 @@ suite("PostgreSQL Workbench Marketplace showcase", function () {
       await vscode.workspace.fs.delete(uri).then(undefined, () => {});
     }
     if (api) {
-      for (const id of api.connectionManager.connectedServerIds) {
+      for (const id of api.connectionManager.connectedConnectionIds) {
         await api.connectionManager.disconnect(id);
       }
     }
-    await api?.connectionManager.store.remove(SERVER.id).catch(() => {});
+    await api?.connectionManager.store.remove(CONNECTION.id).catch(() => {});
   });
 
   test("runs the selected feature choreography", async () => {
@@ -156,8 +156,8 @@ async function dataViewScene(api: PlpgsqlExtensionApi): Promise<void> {
   const product = object(api, "shop", "product", "table");
   await api.dataViews.open({
     kind: "relation",
-    serverId: SERVER.id,
-    database: SERVER.database,
+    connectionId: CONNECTION.id,
+    database: CONNECTION.database,
     schema: product.schema,
     name: product.name,
     relationKind: "table",
@@ -261,7 +261,7 @@ async function cockpitScene(api: PlpgsqlExtensionApi): Promise<void> {
 }
 
 async function notebookScene(notebooks: vscode.Uri[]): Promise<void> {
-  const uri = await vscode.commands.executeCommand<vscode.Uri>(NEW_SQL_NOTEBOOK_COMMAND, SERVER.id);
+  const uri = await vscode.commands.executeCommand<vscode.Uri>(NEW_SQL_NOTEBOOK_COMMAND, CONNECTION.id);
   assert.ok(uri);
   notebooks.push(uri);
   const notebook = vscode.workspace.notebookDocuments.find(
@@ -306,7 +306,7 @@ ORDER BY available, product.name, warehouse.code;`;
 
 async function coverageScene(api: PlpgsqlExtensionApi): Promise<void> {
   const routine = object(api, "shop", "restock_report", "function");
-  assert.ok(await api.coverageTests.revealRoutine(SERVER.id, routine.oid));
+  assert.ok(await api.coverageTests.revealRoutine(CONNECTION.id, routine.oid));
 
   await record(async () => {
     await delay(650);
@@ -382,7 +382,7 @@ async function debuggerScene(api: PlpgsqlExtensionApi): Promise<void> {
       type: "postgresql-workbench",
       request: "launch",
       name: "Showcase: place_order",
-      server: SERVER.id,
+      connection: CONNECTION.id,
       sql: "SELECT shop.place_order(1, 1, 2)",
       stopOnEntry: true,
     }),
@@ -503,7 +503,7 @@ function object(
   name: string,
   kind: WorkbenchObjectModel["kind"],
 ): WorkbenchObjectModel {
-  const database = { serverId: SERVER.id, database: SERVER.database };
+  const database = { connectionId: CONNECTION.id, database: CONNECTION.database };
   const target = buildWorkbenchObjects(api.workbenchIndex.databaseSymbols(database), database).find(
     (candidate) =>
       candidate.schema === schema && candidate.name === name && candidate.kind === kind,
@@ -514,12 +514,12 @@ function object(
 
 function snapshot(api: PlpgsqlExtensionApi) {
   const result = api.workbenchIndex.databaseState({
-    serverId: SERVER.id,
-    database: SERVER.database,
+    connectionId: CONNECTION.id,
+    database: CONNECTION.database,
   }).result;
   assert.ok(result);
   return {
-    serverId: result.serverId,
+    connectionId: result.connectionId,
     database: result.database,
     revision: result.revision,
     generation: result.generation,
@@ -673,7 +673,7 @@ async function waitForStoppedSource(timeoutMs = 15_000): Promise<void> {
 }
 
 async function resetShopDebugData(api: PlpgsqlExtensionApi): Promise<void> {
-  const firstConnected = api.connectionManager.connectedServerIds[0];
+  const firstConnected = api.connectionManager.connectedConnectionIds[0];
   const client = firstConnected ? api.connectionManager.getClient(firstConnected) : undefined;
   assert.ok(client);
   await client.query(`
@@ -702,7 +702,7 @@ async function waitForControlFile(name: string, timeoutMs = 30_000): Promise<voi
 
 function postgresAvailable(): Promise<boolean> {
   return new Promise((resolve) => {
-    const socket = net.createConnection({ host: SERVER.host, port: SERVER.port }, () => {
+    const socket = net.createConnection({ host: CONNECTION.host, port: CONNECTION.port }, () => {
       socket.destroy();
       resolve(true);
     });

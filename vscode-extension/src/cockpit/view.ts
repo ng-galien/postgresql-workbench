@@ -46,7 +46,7 @@ import { WorkbenchGraphPanel } from "./panel.js";
 
 type WorkbenchSnapshot = Pick<
   WorkbenchIndexResult,
-  "serverId" | "database" | "revision" | "generation"
+  "connectionId" | "database" | "revision" | "generation"
 >;
 
 interface NavigationState {
@@ -74,7 +74,7 @@ export interface WorkbenchGraphViewOptions {
 // Explicit debt exception: this host controller still coordinates navigation/session state,
 // webview messages, search counts, and perspective persistence. Keeping one owner avoids split
 // snapshot lifecycles; future extraction should start with search and perspective capabilities.
-// code-moniker: ignore[smell-large-class]
+// code-moniker: ignore[code-single-responsibility-flags-large-classes]
 export class WorkbenchGraphView implements vscode.Disposable {
   private readonly panel: WorkbenchGraphPanel;
   private readonly navigation = new GraphNavigation<NavigationState>();
@@ -174,7 +174,7 @@ export class WorkbenchGraphView implements vscode.Disposable {
     if (this.refreshRun) await this.refreshRun;
     if (this.disposed) return false;
     const changed = this.setContext(
-      { serverId: object.serverId, database: object.database },
+      { connectionId: object.connectionId, database: object.database },
       snapshot,
     );
     this.panel.ensure(object.database);
@@ -277,20 +277,20 @@ export class WorkbenchGraphView implements vscode.Disposable {
       return false;
     }
     if (this.refreshRun) await this.refreshRun;
-    const identity = { serverId: payload.serverId, database: payload.database };
+    const identity = { connectionId: payload.connectionId, database: payload.database };
     const state = this.index.databaseState(identity);
     const result = state.result;
     if (
       state.status !== "available" ||
       !result ||
-      result.serverId !== payload.serverId ||
+      result.connectionId !== payload.connectionId ||
       result.database !== payload.database
     ) {
-      await this.rejectTreeDrop("This object is not part of the Cockpit Connexion index.");
+      await this.rejectTreeDrop("This object is not part of the Cockpit Connection index.");
       return false;
     }
     const object = buildWorkbenchObjects(this.symbols(identity), {
-      serverId: result.serverId,
+      connectionId: result.connectionId,
       database: result.database,
     }).find(
       (candidate) =>
@@ -324,7 +324,7 @@ export class WorkbenchGraphView implements vscode.Disposable {
   async refreshSnapshot(snapshot: WorkbenchSnapshot): Promise<boolean> {
     if (
       !this.database ||
-      snapshot.serverId !== this.database.serverId ||
+      snapshot.connectionId !== this.database.connectionId ||
       snapshot.database !== this.database.database ||
       !this.panel.current ||
       this.sameSnapshot(snapshot)
@@ -364,7 +364,7 @@ export class WorkbenchGraphView implements vscode.Disposable {
     if (
       state.status !== "available" ||
       !result ||
-      result.serverId !== database.serverId ||
+      result.connectionId !== database.connectionId ||
       result.database !== database.database
     ) {
       return false;
@@ -596,7 +596,7 @@ export class WorkbenchGraphView implements vscode.Disposable {
     this.reset();
     this.lastMessage = {
       type: "cockpitContextInvalidated",
-      message: "The Cockpit Connexion changed. Open the graph again.",
+      message: "The Cockpit Connection changed. Open the graph again.",
     };
     void this.panel.post(this.lastMessage);
   }
@@ -625,7 +625,7 @@ export class WorkbenchGraphView implements vscode.Disposable {
 
   private setContext(database: WorkbenchDatabaseIdentity, snapshot: WorkbenchSnapshot): boolean {
     const changed =
-      this.database?.serverId !== database.serverId ||
+      this.database?.connectionId !== database.connectionId ||
       this.database.database !== database.database ||
       !this.sameSnapshot(snapshot);
     this.database = database;
@@ -650,7 +650,7 @@ export class WorkbenchGraphView implements vscode.Disposable {
 
   private matchesContext(object: WorkbenchObjectModel, snapshot: WorkbenchSnapshot): boolean {
     return (
-      this.database?.serverId === object.serverId &&
+      this.database?.connectionId === object.connectionId &&
       this.database.database === object.database &&
       this.sameSnapshot(snapshot)
     );
@@ -660,7 +660,7 @@ export class WorkbenchGraphView implements vscode.Disposable {
     return (
       this.snapshot?.revision === snapshot.revision &&
       this.snapshot.generation === snapshot.generation &&
-      this.snapshot.serverId === snapshot.serverId &&
+      this.snapshot.connectionId === snapshot.connectionId &&
       this.snapshot.database === snapshot.database
     );
   }
@@ -769,7 +769,7 @@ export class WorkbenchGraphView implements vscode.Disposable {
     const objects = this.database ? buildWorkbenchObjects(this.symbols(), this.database) : [];
     return {
       renderId: ++this.renderSequence,
-      serverId: this.database?.serverId ?? "",
+      connectionId: this.database?.connectionId ?? "",
       database: this.database?.database ?? "PostgreSQL",
       revision: this.snapshot?.revision ?? "",
       generation: this.snapshot?.generation ?? null,
@@ -1004,7 +1004,7 @@ export class WorkbenchGraphView implements vscode.Disposable {
 
   private async loadGraphObject(symbol: CodeMonikerSymbol, snapshot: WorkbenchSnapshot) {
     const database = this.database;
-    if (!database) throw new Error("The PostgreSQL Cockpit has no selected Connexion.");
+    if (!database) throw new Error("The PostgreSQL Cockpit has no selected Connection.");
     const [source, sourcePreview] = await Promise.all([
       this.index.graphFocus(symbol.uri, this.indexSnapshot(snapshot)),
       this.index.graphSourcePreview(symbol.uri, this.indexSnapshot(snapshot)),
@@ -1120,7 +1120,7 @@ export class WorkbenchGraphView implements vscode.Disposable {
   }
 
   private perspectiveKey(): string {
-    return `plpgsql.cockpit.perspectives.${this.database?.serverId ?? "none"}.${this.database?.database ?? "none"}`;
+    return `plpgsql.cockpit.perspectives.${this.database?.connectionId ?? "none"}.${this.database?.database ?? "none"}`;
   }
 
   private readPerspectives(): CockpitPerspective[] {
@@ -1173,7 +1173,7 @@ export class WorkbenchGraphView implements vscode.Disposable {
 
   private indexSnapshot(snapshot: WorkbenchSnapshot) {
     const database = this.database;
-    if (!database) throw new Error("The PostgreSQL Cockpit has no selected Connexion.");
+    if (!database) throw new Error("The PostgreSQL Cockpit has no selected Connection.");
     return snapshot;
   }
 
@@ -1196,7 +1196,7 @@ export class WorkbenchGraphView implements vscode.Disposable {
     if (!descriptor) return undefined;
     return this.symbols().find(
       (candidate) =>
-        candidate.postgres?.serverId === descriptor.serverId &&
+        candidate.postgres?.connectionId === descriptor.connectionId &&
         candidate.postgres.database === descriptor.database &&
         candidate.postgres.documentKind === descriptor.documentKind &&
         candidate.postgres.oid === descriptor.oid,
@@ -1263,7 +1263,7 @@ function sameTreeDrag(
     );
   }
   return (
-    active.serverId === requested.serverId &&
+    active.connectionId === requested.connectionId &&
     active.database === requested.database &&
     active.sourceUri === requested.sourceUri &&
     active.symbolUri === requested.symbolUri &&

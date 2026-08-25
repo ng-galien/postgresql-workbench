@@ -170,7 +170,7 @@ CALL audit.run(7);`,
 
   it("accepts only an exact managed CREATE OR REPLACE routine identity", async () => {
     const binding = {
-      serverId: "demo",
+      connectionId: "demo",
       database: "demo",
       schema: "shop",
       oid: 42,
@@ -183,7 +183,7 @@ RETURNS int4 LANGUAGE plpgsql AS $$ BEGIN RETURN value; END $$;`,
     };
     const snapshot = {
       status: "available" as const,
-      serverId: "demo",
+      connectionId: "demo",
       database: "demo",
       revision: "one",
       generation: 1,

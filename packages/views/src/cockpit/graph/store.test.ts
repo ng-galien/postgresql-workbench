@@ -3,11 +3,11 @@ import { emptyExploration } from "./domain.js";
 import { useCockpitStore } from "./store.js";
 
 describe("Workbench graph cockpit invalidation", () => {
-  it("clears retained graph state when the Cockpit Connexion changes", () => {
+  it("clears retained graph state when the Cockpit Connection changes", () => {
     useCockpitStore.setState({
       session: {
         renderId: 1,
-        serverId: "old-server",
+        connectionId: "old-connection",
         database: "old-database",
         revision: "old-revision",
         generation: 1,
@@ -50,7 +50,7 @@ describe("Workbench graph cockpit invalidation", () => {
 
     useCockpitStore.getState().receive({
       type: "cockpitContextInvalidated",
-      message: "Cockpit Connexion changed.",
+      message: "Cockpit Connection changed.",
     });
 
     const state = useCockpitStore.getState();
@@ -63,7 +63,7 @@ describe("Workbench graph cockpit invalidation", () => {
     expect(state.selectedEdgeId).toBeNull();
     expect(state.hoveredIdentity).toBeNull();
     expect(state.pathIdentities).toEqual([]);
-    expect(state.error).toBe("Cockpit Connexion changed.");
+    expect(state.error).toBe("Cockpit Connection changed.");
   });
 });
 
@@ -98,7 +98,7 @@ describe("Workbench graph cockpit perspectives", () => {
     };
     const session = {
       renderId: 2,
-      serverId: "server",
+      connectionId: "connection",
       database: "database",
       revision: "revision",
       generation: 2,
@@ -166,7 +166,7 @@ describe("Workbench graph cockpit perspectives", () => {
   it("removes pinned nodes from the previous view when loading another perspective", () => {
     const session = {
       renderId: 3,
-      serverId: "server",
+      connectionId: "connection",
       database: "database",
       revision: "revision",
       generation: 3,
@@ -252,7 +252,7 @@ describe("Workbench graph cockpit perspectives", () => {
 describe("Workbench graph Source panel", () => {
   const session = {
     renderId: 20,
-    serverId: "server",
+    connectionId: "connection",
     database: "demo",
     revision: "revision",
     generation: 1,

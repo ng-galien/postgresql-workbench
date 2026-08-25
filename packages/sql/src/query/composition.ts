@@ -35,7 +35,7 @@ export interface SqlCompositionChoice {
   description: string;
 }
 
-/** Why the engine will not rewrite. The server has reasons of its own; this is the engine's. */
+/** Why the engine will not rewrite. The connection has reasons of its own; this is the engine's. */
 export type SqlCompositionRejection = "stale";
 
 /** What composing produced: an edit to apply, a choice to make, or a reason it cannot be done. */
@@ -89,10 +89,10 @@ function composePostgresStatement(
   shape?: SqlQueryShape,
 ): SqlCompositionResult {
   const payload = request.payload;
-  if (payload.serverId !== snapshot.serverId || payload.database !== snapshot.database) {
+  if (payload.connectionId !== snapshot.connectionId || payload.database !== snapshot.database) {
     return {
       status: "rejected",
-      message: "The dragged object belongs to another Connexion.",
+      message: "The dragged object belongs to another Connection.",
     };
   }
   if (snapshot.status === "stale") {

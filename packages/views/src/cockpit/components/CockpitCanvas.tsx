@@ -373,7 +373,7 @@ export function graphDragPayload(
       return {
         version: 1,
         availability: "accepted",
-        serverId: "",
+        connectionId: "",
         database: "",
         sourceUri: "",
         symbolUri: "",

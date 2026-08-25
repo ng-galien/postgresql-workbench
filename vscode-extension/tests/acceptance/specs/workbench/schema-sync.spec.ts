@@ -1,9 +1,9 @@
 import {
+  demoConnectionTreeItem as connection,
   demoDatabaseTreeItem as database,
   demoAssociationText,
   demoConnectionId,
   demoConnectionUrl,
-  demoConnexionTreeItem as server,
 } from "../../fixtures/demoDatabase";
 import { expect, test } from "../../fixtures/test";
 import type { VSCodeInstance, WorkbenchStateSnapshot } from "../../fixtures/vscode";
@@ -24,7 +24,7 @@ interface SchemaSyncCheckpoint {
 }
 
 function schemaSyncState(snapshot: WorkbenchStateSnapshot) {
-  return snapshot.schemaSync.find(({ serverId }) => serverId === demoConnectionId);
+  return snapshot.schemaSync.find(({ connectionId }) => connectionId === demoConnectionId);
 }
 
 async function expectSchemaSyncQuiescent(
@@ -37,12 +37,12 @@ async function expectSchemaSyncQuiescent(
         snapshot = await vscode.inspectWorkbenchState();
         const sync = schemaSyncState(snapshot);
         const exactIndex = snapshot.index.states.find(
-          (state) => state.result?.serverId === demoConnectionId,
+          (state) => state.result?.connectionId === demoConnectionId,
         );
         const result = exactIndex?.result;
         return Boolean(
           snapshot.connection.connected &&
-            snapshot.connection.connectedServerIds.includes(demoConnectionId) &&
+            snapshot.connection.connectedConnectionIds.includes(demoConnectionId) &&
             sync?.desired?.enabled &&
             sync.state.status === "listening" &&
             typeof sync.listener?.processId === "number" &&
@@ -56,7 +56,7 @@ async function expectSchemaSyncQuiescent(
             !sync.refresh.active &&
             sync.refresh.queued === 0 &&
             exactIndex?.status === "available" &&
-            result?.serverId === demoConnectionId &&
+            result?.connectionId === demoConnectionId &&
             typeof result.generation === "number" &&
             !snapshot.index.activeRun &&
             !snapshot.index.currentRunPending &&
@@ -71,7 +71,7 @@ async function expectSchemaSyncQuiescent(
     .toBe(true);
 
   const result = snapshot?.index.states.find(
-    (state) => state.result?.serverId === demoConnectionId,
+    (state) => state.result?.connectionId === demoConnectionId,
   )?.result;
   if (!snapshot || typeof result?.generation !== "number") {
     throw new Error(`Schema Sync checkpoint is incomplete: ${JSON.stringify(snapshot)}`);
@@ -97,7 +97,7 @@ async function expectIncrementalDdlRefresh(
         snapshot = await vscode.inspectWorkbenchState();
         const sync = schemaSyncState(snapshot);
         const exactIndex = snapshot.index.states.find(
-          (state) => state.result?.serverId === demoConnectionId,
+          (state) => state.result?.connectionId === demoConnectionId,
         );
         const result = exactIndex?.result;
         const matchingPublication = snapshot.index.events.some(
@@ -173,7 +173,7 @@ async function expectPublicChild(
 ): Promise<void> {
   await expectChildAtPath(
     workbench,
-    [server, database, SCHEMAS_TREE_ITEM, /^public$/],
+    [connection, database, SCHEMAS_TREE_ITEM, /^public$/],
     child,
     present,
   );
@@ -226,11 +226,11 @@ test.describe("Workbench schema synchronization", () => {
       expect(
         await demoDatabase.inspectTrigger("public", "ddl_sync_probe", "ddl_sync_probe_trigger"),
       ).toEqual({ exists: false });
-      await workbench.ensureServer(demoConnectionUrl, server);
+      await workbench.ensureConnection(demoConnectionUrl, connection);
     });
 
     await test.step("provision explicitly and resume the existing provisioning after opt-out", async () => {
-      await workbench.enableAndProvisionSchemaSync(server, database);
+      await workbench.enableAndProvisionSchemaSync(connection, database);
       expect(await demoDatabase.inspectSchemaSync("workbench")).toEqual({
         ddlFunction: true,
         ddlTrigger: true,
@@ -240,8 +240,8 @@ test.describe("Workbench schema synchronization", () => {
       // Provisioning itself is structural DDL and intentionally invalidates the
       // pre-provisioning snapshot. Rebuild once, then every business DDL below
       // must advance this baseline incrementally.
-      await workbench.ensureDatabaseIndexed(server, database);
-      await workbench.restartSchemaSync(server, database);
+      await workbench.ensureDatabaseIndexed(connection, database);
+      await workbench.restartSchemaSync(connection, database);
       await expectSchemaSyncQuiescent(vscode);
     });
 
@@ -278,12 +278,12 @@ test.describe("Workbench schema synchronization", () => {
       });
       await expectChildAtPath(
         workbench,
-        [server, database, SCHEMAS_TREE_ITEM, /^public$/, probe],
+        [connection, database, SCHEMAS_TREE_ITEM, /^public$/, probe],
         /^note/,
         true,
       );
       const table = await workbench.tree.expandPath([
-        server,
+        connection,
         database,
         SCHEMAS_TREE_ITEM,
         /^public$/,
@@ -313,12 +313,12 @@ test.describe("Workbench schema synchronization", () => {
       await expectPublicChild(workbench, renamedProbe, true);
       await expectChildAtPath(
         workbench,
-        [server, database, SCHEMAS_TREE_ITEM, /^public$/, renamedProbe],
+        [connection, database, SCHEMAS_TREE_ITEM, /^public$/, renamedProbe],
         /^note/,
         true,
       );
       const renamedTable = await workbench.tree.expandPath([
-        server,
+        connection,
         database,
         SCHEMAS_TREE_ITEM,
         /^public$/,
@@ -398,7 +398,7 @@ test.describe("Workbench schema synchronization", () => {
     });
 
     await test.step("remove the test provisioning and leave synchronization disabled", async () => {
-      await workbench.removeAndDisableSchemaSync(server, database);
+      await workbench.removeAndDisableSchemaSync(connection, database);
       expect(await demoDatabase.inspectSchemaSync("workbench")).toEqual({
         ddlFunction: false,
         ddlTrigger: false,

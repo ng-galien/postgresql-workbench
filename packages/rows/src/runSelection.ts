@@ -5,6 +5,7 @@ import {
   createDebugResultContext,
   DEBUG_RESULT_LIMITS,
   type DebugResult,
+  type DebugResultCell,
   type DebugResultError,
   type DebugResultSource,
   type DebugResultStatus,
@@ -32,6 +33,8 @@ export interface SqlResultSink {
 
 export interface ExecuteSqlSelectionOptions {
   maxRows: number;
+  maxRetainedCellBytes?: number;
+  onRetainedRows?: (rows: readonly DebugResultCell[][]) => void;
   classifyStatementCount(sql: string): Promise<SqlStatementCount>;
   id?: string;
   timestamp?: string;
@@ -94,6 +97,10 @@ export async function executeSqlSelection(
       source: context.source,
       timestamp,
       maxRows: options.maxRows,
+      ...(options.maxRetainedCellBytes !== undefined
+        ? { maxRetainedCellBytes: options.maxRetainedCellBytes }
+        : {}),
+      ...(options.onRetainedRows ? { onRetainedRows: options.onRetainedRows } : {}),
       now,
     });
     sink.add(result);

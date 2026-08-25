@@ -42,6 +42,7 @@
 
 .result-navigation {
   display: inline-flex;
+  flex: 0 0 auto;
   gap: 2px;
   align-items: center;
 }
@@ -52,16 +53,25 @@
  * that walks away from the pointer between two presses is an arrow a reader stops trusting.
  */
 .result-navigation-summary {
-  display: inline-flex;
-  min-width: 15ch;
-  gap: 6px;
-  align-items: center;
-  justify-content: center;
+  display: block;
+  flex: 0 0 17ch;
+  inline-size: 17ch;
+  overflow: hidden;
   padding: 0 4px;
+  line-height: 22px;
+  text-align: center;
+  text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--vscode-descriptionForeground);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
+}
+
+.result-navigation-cancel-slot {
+  display: inline-flex;
+  flex: 0 0 22px;
+  inline-size: 22px;
+  block-size: 22px;
 }
 
 .result-navigation-summary .codicon-warning {

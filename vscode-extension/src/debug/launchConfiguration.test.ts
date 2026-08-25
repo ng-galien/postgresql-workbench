@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { ServerConfig } from "../../../packages/catalog/src/savedConnection.js";
+import type { ConnectionConfig } from "../../../packages/catalog/src/savedConnection.js";
 import {
   buildRoutineArgs,
   buildRoutineTarget,
@@ -19,7 +19,7 @@ const noSqlTarget: SqlTargetParser = async () => ({
   kind: null,
 });
 
-function makeServer(overrides: Partial<ServerConfig> = {}): ServerConfig {
+function makeConnection(overrides: Partial<ConnectionConfig> = {}): ConnectionConfig {
   return {
     id: "localhost:5432/testdb:postgres",
     name: "postgres@localhost:5432/testdb",
@@ -32,17 +32,17 @@ function makeServer(overrides: Partial<ServerConfig> = {}): ServerConfig {
 }
 
 function makeManager(
-  server: ServerConfig | undefined,
+  connection: ConnectionConfig | undefined,
   overrides: Partial<DebugConfigConnectionManager> = {},
 ): DebugConfigConnectionManager {
   return {
     store: {
-      get: vi.fn((id: string) => (server?.id === id ? server : undefined)),
+      get: vi.fn((id: string) => (connection?.id === id ? connection : undefined)),
     },
-    connectedServerIds: server ? [server.id] : [],
+    connectedConnectionIds: connection ? [connection.id] : [],
     commands: { pickConnection: vi.fn(async () => undefined) },
-    isServerConnected: vi.fn(() => Boolean(server)),
-    connectServer: vi.fn(async () => true),
+    isConnectionConnected: vi.fn(() => Boolean(connection)),
+    connectConnection: vi.fn(async () => true),
     refreshDebugCapability: vi.fn(async () => ({ available: true, error: "" })),
     getPassword: vi.fn(async () => "secret"),
     ...overrides,
@@ -173,12 +173,12 @@ describe("debugConfig", () => {
     expect(resolved?.name).toBe("Debug PL/pgSQL");
   });
 
-  it("resolves active server credentials and connects if needed", async () => {
-    const server = makeServer({ ssl: "require" });
+  it("resolves active connection credentials and connects if needed", async () => {
+    const connection = makeConnection({ ssl: "require" });
     const ui: DebugConfigUi = { showErrorMessage: vi.fn() };
     const out: DebugConfigLogger = { appendLine: vi.fn() };
-    const cm = makeManager(server, {
-      isServerConnected: vi.fn(() => false),
+    const cm = makeManager(connection, {
+      isConnectionConnected: vi.fn(() => false),
     });
     const config: DebugConfigurationLike = {
       routine: {
@@ -192,35 +192,35 @@ describe("debugConfig", () => {
 
     const resolved = await resolveDebugConfiguration(config, cm, ui, noSqlTarget, out);
 
-    expect(cm.connectServer).toHaveBeenCalledWith(server.id);
+    expect(cm.connectConnection).toHaveBeenCalledWith(connection.id);
     expect(resolved).toMatchObject({
       type: "postgresql-workbench",
       request: "launch",
-      host: server.host,
-      port: server.port,
-      database: server.database,
-      user: server.user,
+      host: connection.host,
+      port: connection.port,
+      database: connection.database,
+      user: connection.user,
       password: "secret",
       ssl: "require",
     });
   });
 
-  it("picks a server when no Connexion is selected", async () => {
-    const server = makeServer();
+  it("picks a connection when no Connection is selected", async () => {
+    const connection = makeConnection();
     const ui: DebugConfigUi = { showErrorMessage: vi.fn() };
     let connectedIds: readonly string[] = [];
     const pickedManager: DebugConfigConnectionManager = {
-      ...makeManager(server),
-      get connectedServerIds() {
+      ...makeManager(connection),
+      get connectedConnectionIds() {
         return connectedIds;
       },
       commands: {
         pickConnection: vi.fn(async function (this: void) {
-          connectedIds = [server.id];
-          return server.id;
+          connectedIds = [connection.id];
+          return connection.id;
         }),
       },
-      isServerConnected: vi.fn(() => true),
+      isConnectionConnected: vi.fn(() => true),
     };
     const config: DebugConfigurationLike = {
       routine: {
@@ -235,23 +235,23 @@ describe("debugConfig", () => {
     const resolved = await resolveDebugConfiguration(config, pickedManager, ui, noSqlTarget);
 
     expect(pickedManager.commands.pickConnection).toHaveBeenCalledOnce();
-    expect(resolved?.host).toBe(server.host);
+    expect(resolved?.host).toBe(connection.host);
   });
 
-  it("uses the exact picked Connexion when several Connexions are already connected", async () => {
-    const first = makeServer({ id: "first", host: "first.example" });
-    const second = makeServer({ id: "second", host: "second.example" });
+  it("uses the exact picked Connection when several Connections are already connected", async () => {
+    const first = makeConnection({ id: "first", host: "first.example" });
+    const second = makeConnection({ id: "second", host: "second.example" });
     const ui: DebugConfigUi = { showErrorMessage: vi.fn() };
-    const servers = new Map([
+    const connections = new Map([
       [first.id, first],
       [second.id, second],
     ]);
     const cm: DebugConfigConnectionManager = {
       ...makeManager(undefined),
-      store: { get: vi.fn((id: string) => servers.get(id)) },
-      connectedServerIds: [first.id, second.id],
+      store: { get: vi.fn((id: string) => connections.get(id)) },
+      connectedConnectionIds: [first.id, second.id],
       commands: { pickConnection: vi.fn(async () => second.id) },
-      isServerConnected: vi.fn(() => true),
+      isConnectionConnected: vi.fn(() => true),
     };
     const config: DebugConfigurationLike = { sql: "SELECT public.test_simple(1)" };
 
@@ -259,17 +259,17 @@ describe("debugConfig", () => {
 
     expect(cm.commands.pickConnection).toHaveBeenCalledOnce();
     expect(resolved?.host).toBe(second.host);
-    expect(resolved?.server).toBe(second.id);
+    expect(resolved?.connection).toBe(second.id);
   });
 
-  it("never falls back to another connection when the associated server is gone", async () => {
-    const other = makeServer();
+  it("never falls back to another connection when the associated connection is gone", async () => {
+    const other = makeConnection();
     const ui: DebugConfigUi = { showErrorMessage: vi.fn() };
     const cm = makeManager(other, {
       commands: { pickConnection: vi.fn(async () => other.id) },
     });
     const config: DebugConfigurationLike = {
-      server: "missing-server-id",
+      connection: "missing-connection-id",
       sql: "SELECT public.test_simple(1)",
     };
 
@@ -280,12 +280,39 @@ describe("debugConfig", () => {
     expect(ui.showErrorMessage).toHaveBeenCalledWith(expect.stringContaining("no longer exists"));
   });
 
-  it("aborts when connection fails", async () => {
-    const server = makeServer();
+  it("normalizes a persisted server target before considering any active Connection", async () => {
+    const legacy = makeConnection({ id: "legacy", host: "legacy.example" });
+    const active = makeConnection({ id: "active", host: "active.example" });
+    const connections = new Map([
+      [legacy.id, legacy],
+      [active.id, active],
+    ]);
     const ui: DebugConfigUi = { showErrorMessage: vi.fn() };
-    const cm = makeManager(server, {
-      isServerConnected: vi.fn(() => false),
-      connectServer: vi.fn(async () => false),
+    const cm: DebugConfigConnectionManager = {
+      ...makeManager(undefined),
+      store: { get: vi.fn((id: string) => connections.get(id)) },
+      connectedConnectionIds: [active.id],
+      commands: { pickConnection: vi.fn(async () => active.id) },
+      isConnectionConnected: vi.fn(() => true),
+    };
+    const config: DebugConfigurationLike = {
+      server: legacy.id,
+      sql: "SELECT public.test_simple(1)",
+    };
+
+    const resolved = await resolveDebugConfiguration(config, cm, ui, noSqlTarget);
+
+    expect(resolved).toMatchObject({ connection: legacy.id, host: legacy.host });
+    expect(resolved).not.toHaveProperty("server");
+    expect(cm.commands.pickConnection).not.toHaveBeenCalled();
+  });
+
+  it("aborts when connection fails", async () => {
+    const connection = makeConnection();
+    const ui: DebugConfigUi = { showErrorMessage: vi.fn() };
+    const cm = makeManager(connection, {
+      isConnectionConnected: vi.fn(() => false),
+      connectConnection: vi.fn(async () => false),
     });
 
     const resolved = await resolveDebugConfiguration(
@@ -304,13 +331,13 @@ describe("debugConfig", () => {
     );
 
     expect(resolved).toBeUndefined();
-    expect(cm.connectServer).toHaveBeenCalledWith(server.id);
+    expect(cm.connectConnection).toHaveBeenCalledWith(connection.id);
   });
 
-  it("rejects a debug launch before DAP startup when the exact Connexion lacks pldbgapi", async () => {
-    const server = makeServer();
+  it("rejects a debug launch before DAP startup when the exact Connection lacks pldbgapi", async () => {
+    const connection = makeConnection();
     const ui: DebugConfigUi = { showErrorMessage: vi.fn() };
-    const cm = makeManager(server, {
+    const cm = makeManager(connection, {
       refreshDebugCapability: vi.fn(async () => ({
         available: false,
         error: 'pldbgapi extension not installed on "testdb".',
@@ -320,7 +347,7 @@ describe("debugConfig", () => {
     const resolved = await resolveDebugConfiguration(
       {
         sql: "SELECT public.test_simple(1, 'x')",
-        server: server.id,
+        connection: connection.id,
       },
       cm,
       ui,
@@ -328,18 +355,18 @@ describe("debugConfig", () => {
     );
 
     expect(resolved).toBeUndefined();
-    expect(cm.refreshDebugCapability).toHaveBeenCalledWith(server.id);
+    expect(cm.refreshDebugCapability).toHaveBeenCalledWith(connection.id);
     expect(ui.showErrorMessage).toHaveBeenCalledWith(
       expect.stringContaining("PL/pgSQL debugging is unavailable"),
     );
   });
 
-  it("uses the explicitly associated Connexion", async () => {
-    const server = makeServer();
+  it("uses the explicitly associated Connection", async () => {
+    const connection = makeConnection();
     const ui: DebugConfigUi = { showErrorMessage: vi.fn() };
-    const cm = makeManager(server, {
-      isServerConnected: vi.fn(() => true),
-      connectServer: vi.fn(async () => {
+    const cm = makeManager(connection, {
+      isConnectionConnected: vi.fn(() => true),
+      connectConnection: vi.fn(async () => {
         throw new Error("must not switch context");
       }),
     });
@@ -347,17 +374,17 @@ describe("debugConfig", () => {
     const resolved = await resolveDebugConfiguration(
       {
         sql: "SELECT public.test_simple(1, 'x')",
-        server: server.id,
+        connection: connection.id,
       },
       cm,
       ui,
       noSqlTarget,
     );
 
-    expect(cm.connectServer).not.toHaveBeenCalled();
+    expect(cm.connectConnection).not.toHaveBeenCalled();
     expect(resolved).toMatchObject({
-      host: server.host,
-      database: server.database,
+      host: connection.host,
+      database: connection.database,
     });
   });
 });

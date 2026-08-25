@@ -73,7 +73,7 @@ export interface SqlAuthoringNavigationTarget {
   column?: string;
   database: string;
   oid: number;
-  serverId: string;
+  connectionId: string;
 }
 
 /** The running SQL authoring server: every consumer composes through it, never through the engine. */
@@ -165,7 +165,7 @@ export async function registerSqlAuthoring(
       context,
       documentUri: uri,
       scope,
-      connexionName: sqlAuthoringConnexionName(uri, context, connections, documentAssociation),
+      connectionName: sqlAuthoringConnectionName(uri, context, connections, documentAssociation),
     });
     languageStatus.text = status.text;
     languageStatus.detail = status.detail;
@@ -302,7 +302,7 @@ export async function registerSqlAuthoring(
     async (target: SqlAuthoringNavigationTarget) => {
       if (!navigate || !(await navigate(target))) {
         void vscode.window.showWarningMessage(
-          "This PostgreSQL reference is no longer available in this Connexion's Workbench Sources.",
+          "This PostgreSQL reference is no longer available in this Connection's Workbench Sources.",
         );
       }
     },
@@ -317,7 +317,7 @@ export async function registerSqlAuthoring(
   );
   const semanticTokenRefreshSubscriptions = vscode.Disposable.from(
     index.onDidChangeState(refreshSemanticTokens),
-    connections.onServerChanged(refreshSemanticTokens),
+    connections.onConnectionChanged(refreshSemanticTokens),
     connections.onChanged(updateLanguageStatus),
     vscode.window.onDidChangeActiveTextEditor(updateLanguageStatus),
     vscode.window.onDidChangeActiveNotebookEditor(updateLanguageStatus),
@@ -479,14 +479,14 @@ function sqlReference(
   document: vscode.TextDocument,
   offset: number,
   length: number,
-  object: { database: string; name: string; oid: number; schema: string; serverId: string },
+  object: { database: string; name: string; oid: number; schema: string; connectionId: string },
   column?: string,
 ): SqlReference {
   const target: SqlAuthoringNavigationTarget = {
     column,
     database: object.database,
     oid: object.oid,
-    serverId: object.serverId,
+    connectionId: object.connectionId,
   };
   return {
     label: column ? `${object.schema}.${object.name}.${column}` : `${object.schema}.${object.name}`,
@@ -550,7 +550,7 @@ function unchangedDropEdit(title: string): vscode.DocumentDropEdit {
 
 export function resolveDocumentContext(
   uri: string,
-  connections: Pick<ConnectionManager, "servers">,
+  connections: Pick<ConnectionManager, "connections">,
   index: Pick<WorkbenchIndexController, "sqlAuthoringSnapshot">,
   documentAssociation?: (uri: string) => string | undefined,
 ): SqlAuthoringDocumentContext {
@@ -573,7 +573,7 @@ export function resolveDocumentContext(
     }
     const association = resolveScratchpadAssociation(
       sqlNotebookMetadata(notebook.metadata),
-      connections.servers,
+      connections.connections,
     );
     if (association.status === "unassociated") {
       return { status: "unassociated", message: "This Scratchpad has no Association." };
@@ -586,22 +586,22 @@ export function resolveDocumentContext(
     }
     return indexedContext(
       index,
-      association.snapshot.serverId,
+      association.snapshot.connectionId,
       association.snapshot.database,
       "Scratchpad Association",
     );
   }
 
   if (documentAssociation) {
-    const serverId = documentAssociation(uri);
-    if (!serverId) {
+    const connectionId = documentAssociation(uri);
+    if (!connectionId) {
       return { status: "unassociated", message: "This SQL document has no Association." };
     }
-    const server = connections.servers.find((candidate) => candidate.id === serverId);
-    if (!server) {
+    const connection = connections.connections.find((candidate) => candidate.id === connectionId);
+    if (!connection) {
       return { status: "unavailable", message: "This SQL Document Association is unavailable." };
     }
-    return indexedContext(index, server.id, server.database, "SQL Document Association");
+    return indexedContext(index, connection.id, connection.database, "SQL Document Association");
   }
   return { status: "unassociated", message: "This SQL document has no Association." };
 }
@@ -610,33 +610,35 @@ function sqlAuthoringScope(uri: string): SqlAuthoringScope {
   return vscode.Uri.parse(uri).scheme === "vscode-notebook-cell" ? "scratchpad" : "document";
 }
 
-function sqlAuthoringConnexionName(
+function sqlAuthoringConnectionName(
   uri: string,
   context: SqlAuthoringDocumentContext,
-  connections: Pick<ConnectionManager, "servers">,
+  connections: Pick<ConnectionManager, "connections">,
   documentAssociation?: (uri: string) => string | undefined,
 ): string | undefined {
-  const serverId =
+  const connectionId =
     context.status === "available"
-      ? context.snapshot.serverId
+      ? context.snapshot.connectionId
       : vscode.Uri.parse(uri).scheme === "vscode-notebook-cell"
         ? undefined
         : documentAssociation?.(uri);
-  return serverId
+  return connectionId
     ? (() => {
-        const server = connections.servers.find((candidate) => candidate.id === serverId);
-        return server ? getConnectionName(server) : undefined;
+        const connection = connections.connections.find(
+          (candidate) => candidate.id === connectionId,
+        );
+        return connection ? getConnectionName(connection) : undefined;
       })()
     : undefined;
 }
 
 function indexedContext(
   index: Pick<WorkbenchIndexController, "sqlAuthoringSnapshot">,
-  serverId: string,
+  connectionId: string,
   database: string,
   label: string,
 ): SqlAuthoringDocumentContext {
-  const snapshot = index.sqlAuthoringSnapshot({ serverId, database });
+  const snapshot = index.sqlAuthoringSnapshot({ connectionId, database });
   return snapshot
     ? { status: "available", snapshot }
     : { status: "not-indexed", message: `The ${label} is not indexed.` };
@@ -646,8 +648,9 @@ function sqlNotebookMetadata(value: unknown): SqlNotebookMetadata {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   const metadata = value as Record<string, unknown>;
   return {
-    serverId: typeof metadata.serverId === "string" ? metadata.serverId : undefined,
-    serverName: typeof metadata.serverName === "string" ? metadata.serverName : undefined,
+    connectionId: typeof metadata.connectionId === "string" ? metadata.connectionId : undefined,
+    connectionName:
+      typeof metadata.connectionName === "string" ? metadata.connectionName : undefined,
     database: typeof metadata.database === "string" ? metadata.database : undefined,
     executionMode: metadata.executionMode === "manual" ? "manual" : "auto",
   };

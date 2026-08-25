@@ -6,7 +6,7 @@ import {
   directPostgresDocumentUris,
 } from "./postgresSourceProvider.js";
 
-const IDENTITY = { serverId: "local", database: "app" };
+const IDENTITY = { connectionId: "local", database: "app" };
 
 describe("PostgreSQL SourceSet provider", () => {
   it("uses every incoming-usage page to select the changed table and its direct dependent", async () => {
@@ -21,7 +21,7 @@ describe("PostgreSQL SourceSet provider", () => {
       symbol(ordersView, "view", "code+moniker://sql/view/orders_view"),
       symbol(unrelated, "view", "code+moniker://sql/view/unrelated_view"),
     ];
-    const otherConnexionUsage =
+    const otherConnectionUsage =
       "postgresql://other%3A5432%2Fapp%3Apostgres/app/app/view/orders_view.sql";
     const usages = vi
       .fn()
@@ -29,7 +29,7 @@ describe("PostgreSQL SourceSet provider", () => {
         data: {
           rows: [
             { direction: "incoming", file: ordersView.uri },
-            { direction: "incoming", file: otherConnexionUsage },
+            { direction: "incoming", file: otherConnectionUsage },
           ],
           total: 3,
         },
@@ -53,7 +53,7 @@ describe("PostgreSQL SourceSet provider", () => {
     );
 
     expect([...selected.documentUris]).toEqual([orders.uri, ordersView.uri]);
-    expect(selected.documentUris.has(otherConnexionUsage)).toBe(false);
+    expect(selected.documentUris.has(otherConnectionUsage)).toBe(false);
     expect(selected.newResources).toEqual([{ kind: "constraint", oid: 12 }]);
     expect(usages).toHaveBeenNthCalledWith(
       1,

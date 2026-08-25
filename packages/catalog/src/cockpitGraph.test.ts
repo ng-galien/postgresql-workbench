@@ -11,7 +11,7 @@ import {
 import type { CodeMonikerGraphResult, CodeMonikerSymbol } from "./localCodeMoniker.js";
 import type { PostgresDocumentDescriptor } from "./postgresCatalog.js";
 
-const database = { serverId: "localhost:5433/testdb:postgres", database: "testdb" };
+const database = { connectionId: "localhost:5433/testdb:postgres", database: "testdb" };
 const databasePrefix =
   "code+moniker://./srcset:postgres/lang:sql/dir:postgresql:/dir:localhost%3A5433%2Ftestdb%3Apostgres/dir:testdb";
 
@@ -25,7 +25,7 @@ function symbol(name: string, kind: string, oid: number, schema = "shop"): CodeM
     uri: `${databasePrefix}/dir:${schema}/dir:${documentKind}/module:${name}${signature}/schema:${schema}/${kind}:${name}${signature}`,
     name,
     kind,
-    file: `postgresql://${encodeURIComponent(database.serverId)}/${database.database}/${schema}/${documentKind}/${encodeURIComponent(`${name}${signature}`)}.sql`,
+    file: `postgresql://${encodeURIComponent(database.connectionId)}/${database.database}/${schema}/${documentKind}/${encodeURIComponent(`${name}${signature}`)}.sql`,
     signature: "",
     postgres: {
       ...database,

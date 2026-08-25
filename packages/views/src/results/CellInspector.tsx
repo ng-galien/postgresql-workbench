@@ -1,4 +1,11 @@
-import { type PointerEvent, type ReactNode, useRef, useState } from "react";
+import {
+  type KeyboardEvent,
+  type PointerEvent,
+  type ReactNode,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import type { DebugResultCell } from "../../../dap/src/debugger/launch/index.js";
 import { countLabel } from "../../../rows/src/countLabel.js";
 import { useClipboardCopy } from "../clipboardCopy.js";
@@ -16,14 +23,19 @@ export function CellInspector({
   column,
   typeName,
   cell,
+  inspectorId,
   onClose,
+  onResize,
 }: {
   /** The column the cursor is in, and what it was declared as. */
   column: string;
   typeName?: string;
   /** The cell under the cursor; absent when the cursor is on no cell at all. */
   cell?: DebugResultCell;
+  inspectorId?: string;
   onClose: () => void;
+  /** Lets the grid reserve enough room when the panel grows beyond its usual viewport. */
+  onResize?: (height: number) => void;
 }) {
   const detail = cell ? cellDetail(cell, typeName) : undefined;
   /*
@@ -31,40 +43,157 @@ export function CellInspector({
    * one and dragging towards the rows makes it bigger — the corner it is pinned to never moves.
    */
   const [size, setSize] = useState<{ width: number; height: number }>();
-  const drag = useRef<{ x: number; y: number; width: number; height: number }>(undefined);
+  const [position, setPosition] = useState<{ left: number; top: number }>();
+  const panelRef = useRef<HTMLElement>(null);
+  const resize = useRef<{
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    position?: { left: number; top: number };
+  }>(undefined);
+  const move = useRef<{
+    x: number;
+    y: number;
+    left: number;
+    top: number;
+    maxLeft: number;
+    maxTop: number;
+  }>(undefined);
   const clipboard = useClipboardCopy();
+  useEffect(() => {
+    const panel = panelRef.current;
+    const frame = panel?.parentElement;
+    if (!panel || !frame || (!size && !position)) return undefined;
+    const keepInsideFrame = () => {
+      const frameBounds = frame.getBoundingClientRect();
+      const panelBounds = panel.getBoundingClientRect();
+      const maximumWidth = Math.max(1, frameBounds.width - (position ? 0 : 36));
+      const width = Math.min(size?.width ?? panelBounds.width, maximumWidth);
+      const height = size?.height ?? panelBounds.height;
+      if (size && (width !== size.width || height !== size.height)) setSize({ width, height });
+      if (position) {
+        const next = {
+          left: Math.min(Math.max(0, frameBounds.width - width), Math.max(0, position.left)),
+          top: Math.min(Math.max(0, frameBounds.height - height), Math.max(0, position.top)),
+        };
+        if (next.left !== position.left || next.top !== position.top) setPosition(next);
+      }
+      onResize?.(height);
+    };
+    keepInsideFrame();
+    const observer = new ResizeObserver(keepInsideFrame);
+    observer.observe(frame);
+    return () => observer.disconnect();
+  }, [onResize, position, size]);
+  const resizeTo = (
+    panel: HTMLElement,
+    requestedWidth: number,
+    requestedHeight: number,
+    anchor?: { left: number; top: number; width: number; height: number },
+  ) => {
+    const frame = panel.parentElement;
+    if (!frame) return;
+    const frameBounds = frame.getBoundingClientRect();
+    const minimumWidth = Math.min(16 * 12, frameBounds.width);
+    const width = Math.min(
+      Math.max(1, frameBounds.width - (position ? 0 : 36)),
+      Math.max(minimumWidth, requestedWidth),
+    );
+    const height = Math.max(16 * 6, requestedHeight);
+    setSize({ width, height });
+    if (position || anchor) {
+      const wanted = anchor
+        ? {
+            left: anchor.left + anchor.width - width,
+            top: anchor.top + anchor.height - height,
+          }
+        : (position ?? { left: 0, top: 0 });
+      const futureFrameHeight = Math.max(frameBounds.height, height + 24);
+      setPosition({
+        left: Math.min(Math.max(0, frameBounds.width - width), Math.max(0, wanted.left)),
+        top: Math.min(Math.max(0, futureFrameHeight - height), Math.max(0, wanted.top)),
+      });
+    }
+    onResize?.(height);
+  };
   return (
     <aside
+      ref={panelRef}
+      id={inspectorId}
       className="cell-inspector"
       aria-label={`Value of ${column}`}
-      style={size ? { width: `${size.width}px`, maxHeight: `${size.height}px` } : undefined}
+      style={
+        size || position
+          ? {
+              ...(size
+                ? {
+                    width: `${size.width}px`,
+                    height: `${size.height}px`,
+                    maxHeight: `${size.height}px`,
+                  }
+                : {}),
+              ...(position
+                ? {
+                    left: `${position.left}px`,
+                    top: `${position.top}px`,
+                    right: "auto",
+                    bottom: "auto",
+                  }
+                : {}),
+            }
+          : undefined
+      }
     >
-      {/* The grip: dragging is a pointer gesture, and the panel's size is not a control's value. */}
-      <div
+      <button
+        type="button"
         className="cell-inspector-grip"
         title="Drag to resize"
-        onPointerDown={(event: PointerEvent<HTMLDivElement>) => {
+        aria-label="Resize the value panel (arrow keys)"
+        onPointerDown={(event: PointerEvent<HTMLButtonElement>) => {
           const panel = event.currentTarget.parentElement;
           if (!panel) return;
           const bounds = panel.getBoundingClientRect();
-          drag.current = {
+          resize.current = {
             x: event.clientX,
             y: event.clientY,
             width: bounds.width,
             height: bounds.height,
+            ...(position ? { position } : {}),
           };
           event.currentTarget.setPointerCapture(event.pointerId);
         }}
-        onPointerMove={(event: PointerEvent<HTMLDivElement>) => {
-          const from = drag.current;
+        onPointerMove={(event: PointerEvent<HTMLButtonElement>) => {
+          const from = resize.current;
           if (!from) return;
-          setSize({
-            width: Math.max(16 * 12, from.width - (event.clientX - from.x)),
-            height: Math.max(16 * 6, from.height - (event.clientY - from.y)),
-          });
+          const panel = event.currentTarget.parentElement;
+          if (!panel) return;
+          resizeTo(
+            panel,
+            from.width - (event.clientX - from.x),
+            from.height - (event.clientY - from.y),
+            from.position
+              ? { ...from.position, width: from.width, height: from.height }
+              : undefined,
+          );
         }}
         onPointerUp={() => {
-          drag.current = undefined;
+          resize.current = undefined;
+        }}
+        onPointerCancel={() => {
+          resize.current = undefined;
+        }}
+        onKeyDown={(event: KeyboardEvent<HTMLButtonElement>) => {
+          if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
+          event.preventDefault();
+          const panel = event.currentTarget.parentElement;
+          if (!panel) return;
+          const bounds = panel.getBoundingClientRect();
+          resizeTo(
+            panel,
+            bounds.width + (event.key === "ArrowRight" ? 16 : event.key === "ArrowLeft" ? -16 : 0),
+            bounds.height + (event.key === "ArrowDown" ? 16 : event.key === "ArrowUp" ? -16 : 0),
+          );
         }}
       />
       <header className="cell-inspector-head">
@@ -73,6 +202,71 @@ export function CellInspector({
         </span>
         {typeName ? <span className="cell-inspector-type">{typeName}</span> : null}
         <span className="cell-inspector-spacer" />
+        <button
+          type="button"
+          className="cell-inspector-move"
+          title="Drag to move"
+          aria-label="Move the value panel"
+          onPointerDown={(event: PointerEvent<HTMLButtonElement>) => {
+            const panel = event.currentTarget.closest<HTMLElement>(".cell-inspector");
+            const frame = panel?.parentElement;
+            if (!panel || !frame) return;
+            const bounds = panel.getBoundingClientRect();
+            const frameBounds = frame.getBoundingClientRect();
+            move.current = {
+              x: event.clientX,
+              y: event.clientY,
+              left: bounds.left - frameBounds.left,
+              top: bounds.top - frameBounds.top,
+              maxLeft: Math.max(0, frameBounds.width - bounds.width),
+              maxTop: Math.max(0, frameBounds.height - bounds.height),
+            };
+            event.currentTarget.setPointerCapture(event.pointerId);
+          }}
+          onPointerMove={(event: PointerEvent<HTMLButtonElement>) => {
+            const from = move.current;
+            if (!from) return;
+            setPosition({
+              left: Math.min(from.maxLeft, Math.max(0, from.left + event.clientX - from.x)),
+              top: Math.min(from.maxTop, Math.max(0, from.top + event.clientY - from.y)),
+            });
+          }}
+          onPointerUp={() => {
+            move.current = undefined;
+          }}
+          onPointerCancel={() => {
+            move.current = undefined;
+          }}
+          onKeyDown={(event: KeyboardEvent<HTMLButtonElement>) => {
+            if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
+            event.preventDefault();
+            const panel = event.currentTarget.closest<HTMLElement>(".cell-inspector");
+            const frame = panel?.parentElement;
+            if (!panel || !frame) return;
+            const bounds = panel.getBoundingClientRect();
+            const frameBounds = frame.getBoundingClientRect();
+            const left = bounds.left - frameBounds.left;
+            const top = bounds.top - frameBounds.top;
+            setPosition({
+              left: Math.min(
+                Math.max(0, frameBounds.width - bounds.width),
+                Math.max(
+                  0,
+                  left + (event.key === "ArrowRight" ? 16 : event.key === "ArrowLeft" ? -16 : 0),
+                ),
+              ),
+              top: Math.min(
+                Math.max(0, frameBounds.height - bounds.height),
+                Math.max(
+                  0,
+                  top + (event.key === "ArrowDown" ? 16 : event.key === "ArrowUp" ? -16 : 0),
+                ),
+              ),
+            });
+          }}
+        >
+          <span className="codicon codicon-grabber" aria-hidden="true" />
+        </button>
         {detail && detail.shape !== "empty" ? (
           <button
             type="button"
@@ -99,9 +293,14 @@ export function CellInspector({
         </button>
       </header>
       <div className="cell-inspector-body">{detail ? shown(detail) : null}</div>
-      {cell?.truncated ? (
+      {cell?.retainedTruncated ? (
         <footer className="cell-inspector-foot">
-          Cut short on its way here — the whole value is larger than a result may carry.
+          Truncated at the configured result-cell limit. Change PostgreSQL Workbench › Results: Max
+          Cell Bytes in Settings.
+        </footer>
+      ) : cell?.truncated ? (
+        <footer className="cell-inspector-foot">
+          Shortened for display. The retained value remains available to the result host.
         </footer>
       ) : null}
     </aside>
@@ -123,14 +322,7 @@ function shown(detail: CellDetail): ReactNode {
         <p className="cell-inspector-null">NULL — no value at all, which is not an empty one.</p>
       );
     case "json":
-      return (
-        <>
-          {detail.invalid ? (
-            <p className="cell-inspector-invalid">Not valid JSON: {detail.invalid}</p>
-          ) : null}
-          <pre className="cell-inspector-json">{jsonTokens(detail.text)}</pre>
-        </>
-      );
+      return <pre className="cell-inspector-json">{jsonTokens(detail.text)}</pre>;
     case "list":
       return detail.items.length === 0 ? (
         <p className="cell-inspector-null">An empty list — which is not the same as NULL.</p>

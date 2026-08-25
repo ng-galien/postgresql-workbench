@@ -30,7 +30,7 @@ import { matchesCoveragePatterns } from "./selection.js";
 
 export interface PgTapCoverageTarget {
   item: vscode.TestItem;
-  serverId: string;
+  connectionId: string;
   test: PgTapTestRoutine;
   routine?: PgTapSourceRoutine;
   explicit: boolean;
@@ -44,7 +44,7 @@ export interface PgTapCoverageSnapshot {
 
 interface CoverageAggregate {
   symbolUri: string;
-  serverId: string;
+  connectionId: string;
   routine: CoverageRoutine;
   analysis: CoverageAnalysis;
   executions: Map<string, number>;
@@ -53,7 +53,7 @@ interface CoverageAggregate {
 }
 
 interface CoverageFileMetadata {
-  serverId: string;
+  connectionId: string;
   routineOid: number;
   ddl: string;
   details: vscode.FileCoverageDetail[];
@@ -85,7 +85,7 @@ export interface PgTapCoverageProfileOptions {
   syntaxParser: () => Promise<SyntaxParser>;
   resolveRequest: (request: vscode.TestRunRequest) => Promise<void>;
   collectTargets: (request: vscode.TestRunRequest) => PgTapCoverageTarget[];
-  resolveRoutineSymbolUri: (serverId: string, oid: number) => string | undefined;
+  resolveRoutineSymbolUri: (connectionId: string, oid: number) => string | undefined;
   resolveDocumentUri: (symbolUri: string) => vscode.Uri | undefined;
 }
 
@@ -101,7 +101,10 @@ export class PgTapCoverageProfile implements vscode.Disposable {
   private readonly syntaxParser: () => Promise<SyntaxParser>;
   private readonly resolveRequest: (request: vscode.TestRunRequest) => Promise<void>;
   private readonly collectTargets: (request: vscode.TestRunRequest) => PgTapCoverageTarget[];
-  private readonly resolveRoutineSymbolUri: (serverId: string, oid: number) => string | undefined;
+  private readonly resolveRoutineSymbolUri: (
+    connectionId: string,
+    oid: number,
+  ) => string | undefined;
   private readonly resolveDocumentUri: (symbolUri: string) => vscode.Uri | undefined;
 
   constructor(options: PgTapCoverageProfileOptions) {
@@ -232,12 +235,12 @@ export class PgTapCoverageProfile implements vscode.Disposable {
         runnableTargets.push({ ...target, routine: target.routine });
       }
       const routineCount = new Set(
-        runnableTargets.flatMap(({ serverId, test }) =>
+        runnableTargets.flatMap(({ connectionId, test }) =>
           test.sourceRoutines
             .filter((routine) =>
               matchesCoveragePatterns(routine, settings.include, settings.exclude),
             )
-            .map((routine) => `${serverId}:${routine.oid}`),
+            .map((routine) => `${connectionId}:${routine.oid}`),
         ),
       ).size;
       if (routineCount > settings.maxRoutines) {
@@ -249,19 +252,19 @@ export class PgTapCoverageProfile implements vscode.Disposable {
         runnableTargets.length = 0;
         this.output.appendLine(`[Coverage] ${message}`);
       }
-      const targetsByServer = groupTargetsByServer(runnableTargets);
+      const targetsByConnection = groupTargetsByConnection(runnableTargets);
       await runBounded(
-        [...targetsByServer.values()],
+        [...targetsByConnection.values()],
         settings.maxParallelDatabases,
-        async (serverTargets) => {
+        async (connectionTargets) => {
           if (abort.signal.aborted) {
-            for (const { item } of serverTargets) {
+            for (const { item } of connectionTargets) {
               run.skipped(item);
               outcomes.set(item.id, "skipped");
             }
             return;
           }
-          await this.runTargetGroup(serverTargets, {
+          await this.runTargetGroup(connectionTargets, {
             run,
             signal: abort.signal,
             outcomes,
@@ -312,14 +315,14 @@ export class PgTapCoverageProfile implements vscode.Disposable {
       const syntax = createCoverageSyntaxService(() => this.syntaxParser());
       const runner = new CoverageRunner(
         () =>
-          openCoverageClient(this.connections, first.serverId, {
+          openCoverageClient(this.connections, first.connectionId, {
             applicationName: "postgresql-workbench:coverage-runner",
             statementTimeoutMs: 0,
           }),
         syntax,
       );
       const result = await runner.runSuite({
-        connectionId: first.serverId,
+        connectionId: first.connectionId,
         routineOids,
         testSchema: [...new Set(tests.map(({ schema }) => schema))].join(", "),
         signal,
@@ -328,19 +331,19 @@ export class PgTapCoverageProfile implements vscode.Disposable {
           executeTestSuite(client, tests, settings, reports, testErrors, testExecutions),
       });
       for (const routine of result.routines) {
-        const symbolUri = this.resolveRoutineSymbolUri(first.serverId, routine.routine.oid);
+        const symbolUri = this.resolveRoutineSymbolUri(first.connectionId, routine.routine.oid);
         if (!symbolUri) {
           throw new Error(
             `Code Moniker identity is missing for ${routine.routine.schema}.${routine.routine.name}(${routine.routine.identityArguments}).`,
           );
         }
-        mergeCoverage(aggregates, first.serverId, symbolUri, routine);
+        mergeCoverage(aggregates, first.connectionId, symbolUri, routine);
       }
       for (const target of targets) {
         for (const routine of target.test.sourceRoutines.filter((candidate) =>
           matchesCoveragePatterns(candidate, settings.include, settings.exclude),
         )) {
-          const symbolUri = this.resolveRoutineSymbolUri(target.serverId, routine.oid);
+          const symbolUri = this.resolveRoutineSymbolUri(target.connectionId, routine.oid);
           const aggregate = symbolUri ? aggregates.get(symbolUri) : undefined;
           const executions = testExecutions.get(target.test.oid)?.get(routine.oid);
           if (aggregate && executions) {
@@ -378,7 +381,7 @@ export class PgTapCoverageProfile implements vscode.Disposable {
         }
       }
       this.output.appendLine(
-        `[Coverage] Suite on ${first.serverId} for ${routineOids.length} routine(s): ${errorMessage(error)}`,
+        `[Coverage] Suite on ${first.connectionId} for ${routineOids.length} routine(s): ${errorMessage(error)}`,
       );
     }
   }
@@ -410,7 +413,7 @@ export class PgTapCoverageProfile implements vscode.Disposable {
       ]),
     );
     this.fileMetadata.set(file, {
-      serverId: aggregate.serverId,
+      connectionId: aggregate.connectionId,
       routineOid: aggregate.routine.oid,
       ddl: aggregate.routine.ddl,
       details,
@@ -450,20 +453,20 @@ export class PgTapCoverageProfile implements vscode.Disposable {
   }
 }
 
-function groupTargetsByServer(
+function groupTargetsByConnection(
   targets: Array<PgTapCoverageTarget & { routine: PgTapSourceRoutine }>,
 ): Map<string, Array<PgTapCoverageTarget & { routine: PgTapSourceRoutine }>> {
   const groups = new Map<string, Array<PgTapCoverageTarget & { routine: PgTapSourceRoutine }>>();
   for (const target of targets) {
-    const group = groups.get(target.serverId) ?? [];
+    const group = groups.get(target.connectionId) ?? [];
     group.push(target);
-    groups.set(target.serverId, group);
+    groups.set(target.connectionId, group);
   }
   return groups;
 }
 
 // The six logical parameters are over-counted because nested Map type arguments contain commas.
-// code-moniker: ignore[smell-long-parameter-list]
+// code-moniker: ignore[code-single-responsibility-flags-long-parameter-lists]
 async function executeTestSuite(
   client: CoverageTestClient,
   tests: readonly PgTapTestRoutine[],
@@ -518,7 +521,7 @@ async function executeTestSuite(
 
 function mergeCoverage(
   aggregates: Map<string, CoverageAggregate>,
-  serverId: string,
+  connectionId: string,
   symbolUri: string,
   result: CoverageSuiteRoutineResult,
 ): void {
@@ -527,7 +530,7 @@ function mergeCoverage(
   if (!existing) {
     aggregates.set(key, {
       symbolUri,
-      serverId,
+      connectionId,
       routine: result.routine,
       analysis: result.analysis,
       bodyStartLine: result.bodyStartLine,
@@ -693,7 +696,7 @@ async function assertSourceCurrent(
   if (token.isCancellationRequested) throw new Error("Coverage detail loading cancelled.");
   const client = await openClientWithCancellation(
     () =>
-      openCoverageClient(connections, metadata.serverId, {
+      openCoverageClient(connections, metadata.connectionId, {
         applicationName: "postgresql-workbench:coverage-details",
         statementTimeoutMs: 10_000,
       }),

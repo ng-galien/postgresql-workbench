@@ -56,8 +56,9 @@ export function dataViewPayload(
   rows: readonly (readonly (string | null)[])[],
 ): SqlNotebookResultPayload {
   return {
-    version: 2,
-    binding: { serverId: "demo", serverName: "demo", database: "demo" },
+    version: 3,
+    kind: "rowset",
+    binding: { connectionId: "demo", connectionName: "demo", database: "demo" },
     command: "SELECT",
     durationMs: 3,
     columns: [
@@ -69,8 +70,7 @@ export function dataViewPayload(
     capturedRowCount: rows.length,
     truncated: false,
     truncationReasons: [],
-    // A Data View result always comes from a bounded cursor, and a cursor always says where the
-    // reader stands: a payload without this is a shape the host never sends.
+    // A Data View result always says where the reader stands in its LIMIT/OFFSET pages.
     navigation: {
       sessionId: "data-view-1",
       mode: "paged",
@@ -79,7 +79,6 @@ export function dataViewPayload(
       pageStart: rows.length === 0 ? 0 : 1,
       pageEnd: rows.length,
       loadedRowCount: rows.length,
-      cacheStart: 1,
       hasPrevious: false,
       hasNext: false,
       canLoadAll: false,
@@ -92,13 +91,13 @@ export function readyDataView(overrides: Partial<DataViewState> = {}): DataViewS
   return {
     source: {
       kind: "relation",
-      serverId: "demo",
+      connectionId: "demo",
       database: "demo",
       schema: "shop",
       name: "product",
       relationKind: "table",
     },
-    serverName: "demo",
+    connectionName: "demo",
     query: {
       uri: "data-view:/shop.product.sql",
       text: "SELECT id, name FROM shop.product",
@@ -121,6 +120,7 @@ export function readyDataView(overrides: Partial<DataViewState> = {}): DataViewS
     removedRows: [],
     addedRows: [],
     busy: false,
+    cancellable: false,
     applying: false,
     ...overrides,
   };

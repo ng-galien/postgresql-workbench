@@ -5,7 +5,7 @@ import { parseSqlDefinitions } from "../callParser.js";
 import type { SqlAuthoringSnapshot } from "../snapshot.js";
 
 export interface ManagedRoutineBinding {
-  serverId: string;
+  connectionId: string;
   database: string;
   schema: string;
   oid: number;
@@ -64,7 +64,7 @@ export async function validateManagedRoutineDeployment(
   );
   if (
     !snapshot ||
-    snapshot.serverId !== binding.serverId ||
+    snapshot.connectionId !== binding.connectionId ||
     snapshot.database !== binding.database
   ) {
     return { status: "rejected", message: "Index missing: reindex the bound database first" };

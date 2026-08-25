@@ -14,7 +14,7 @@ export interface PostgresSourceToken {
   offset: number;
   lightColor?: string;
   darkColor?: string;
-  /** Set when the language server named this piece: the class its kind is painted with. */
+  /** Set when the language Connection named this piece: the class its kind is painted with. */
   className?: string;
 }
 

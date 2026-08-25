@@ -28,13 +28,13 @@ import {
 
 const snapshot: SqlAuthoringSnapshot = {
   status: "available",
-  serverId: "demo-server",
+  connectionId: "demo-connection",
   database: "demo",
   revision: "r1",
   generation: 1,
   objects: [
     {
-      serverId: "demo-server",
+      connectionId: "demo-connection",
       database: "demo",
       schema: "shop",
       oid: 1,
@@ -48,7 +48,7 @@ const snapshot: SqlAuthoringSnapshot = {
       ],
     },
     {
-      serverId: "demo-server",
+      connectionId: "demo-connection",
       database: "demo",
       schema: "shop",
       oid: 3,
@@ -59,7 +59,7 @@ const snapshot: SqlAuthoringSnapshot = {
       columns: [],
     },
     {
-      serverId: "demo-server",
+      connectionId: "demo-connection",
       database: "demo",
       schema: "shop",
       oid: 2,
@@ -73,7 +73,7 @@ const snapshot: SqlAuthoringSnapshot = {
       ],
     },
     {
-      serverId: "demo-server",
+      connectionId: "demo-connection",
       database: "demo",
       schema: "shop",
       oid: 40,
@@ -168,7 +168,7 @@ describe("SQL authoring language contracts", async () => {
   it("round-trips only a current TreeView SQL drag payload", async () => {
     const payload = {
       kind: "table" as const,
-      serverId: "demo-server",
+      connectionId: "demo-connection",
       database: "demo",
       oid: 1,
       schema: "shop",
@@ -179,7 +179,7 @@ describe("SQL authoring language contracts", async () => {
     expect(parseSqlAuthoringDrag("not-json")).toBeUndefined();
     const routine = {
       kind: "function" as const,
-      serverId: "demo-server",
+      connectionId: "demo-connection",
       database: "demo",
       oid: 3,
       schema: "shop",
@@ -195,7 +195,7 @@ describe("SQL authoring language contracts", async () => {
         offset: 0,
         payload: {
           kind: "function",
-          serverId: "demo-server",
+          connectionId: "demo-connection",
           database: "demo",
           oid: 3,
           schema: "shop",
@@ -225,7 +225,7 @@ describe("SQL authoring language contracts", async () => {
         offset: 8,
         payload: {
           kind: "procedure",
-          serverId: "demo-server",
+          connectionId: "demo-connection",
           database: "demo",
           oid: 4,
           schema: "shop",
@@ -271,7 +271,7 @@ describe("SQL authoring language contracts", async () => {
         offset: 0,
         payload: {
           kind: "function",
-          serverId: "demo-server",
+          connectionId: "demo-connection",
           database: "demo",
           oid: 5,
           schema: "shop",
@@ -332,7 +332,7 @@ describe("SQL authoring language contracts", async () => {
         offset: 0,
         payload: {
           kind: "trigger",
-          serverId: "demo-server",
+          connectionId: "demo-connection",
           database: "demo",
           oid: 50,
           schema: "shop",
@@ -378,7 +378,7 @@ describe("SQL authoring language contracts", async () => {
         offset: 0,
         payload: {
           kind: "function",
-          serverId: "demo-server",
+          connectionId: "demo-connection",
           database: "demo",
           oid: triggerFunction.oid,
           schema: "shop",
@@ -588,7 +588,7 @@ SELECT broken FROM;`;
         offset: 10,
         payload: {
           kind: "table",
-          serverId: "demo-server",
+          connectionId: "demo-connection",
           database: "demo",
           oid: 2,
           schema: "shop",
@@ -617,7 +617,7 @@ SELECT broken FROM;`;
         offset: 10,
         payload: {
           kind: "table",
-          serverId: "demo-server",
+          connectionId: "demo-connection",
           database: "demo",
           oid: 2,
           schema: "shop",
@@ -658,7 +658,7 @@ SELECT broken FROM;`;
         offset: 10,
         payload: {
           kind: "table",
-          serverId: "demo-server",
+          connectionId: "demo-connection",
           database: "demo",
           oid: 2,
           schema: "shop",
@@ -700,7 +700,7 @@ SELECT broken FROM;`;
         offset: 10,
         payload: {
           kind: "table",
-          serverId: "demo-server",
+          connectionId: "demo-connection",
           database: "demo",
           oid: 40,
           schema: "shop",
@@ -746,7 +746,7 @@ SELECT broken FROM;`;
         offset: 0,
         payload: {
           kind: "table",
-          serverId: "demo-server",
+          connectionId: "demo-connection",
           database: "demo",
           oid: keywordTable.oid,
           schema: keywordTable.schema,
@@ -764,7 +764,7 @@ SELECT broken FROM;`;
         offset: 10,
         payload: {
           kind: "column",
-          serverId: "demo-server",
+          connectionId: "demo-connection",
           database: "demo",
           tableOid: keywordTable.oid,
           tableSchema: keywordTable.schema,
@@ -799,7 +799,7 @@ SELECT broken FROM;`;
         offset: 10,
         payload: {
           kind: "column",
-          serverId: "demo-server",
+          connectionId: "demo-connection",
           database: "demo",
           tableOid: caseSensitiveTable.oid,
           tableSchema: caseSensitiveTable.schema,
@@ -819,7 +819,7 @@ SELECT broken FROM;`;
         offset: 10,
         payload: {
           kind: "column",
-          serverId: "demo-server",
+          connectionId: "demo-connection",
           database: "demo",
           tableOid: 1,
           tableSchema: "shop",
@@ -848,7 +848,7 @@ SELECT broken FROM;`;
         offset: 10,
         payload: {
           kind: "column",
-          serverId: "demo-server",
+          connectionId: "demo-connection",
           database: "demo",
           tableOid: productView.oid,
           tableSchema: productView.schema,
@@ -872,7 +872,7 @@ SELECT broken FROM;`;
         offset: 10,
         payload: {
           kind: "column",
-          serverId: "demo-server",
+          connectionId: "demo-connection",
           database: "demo",
           tableOid: 1,
           tableSchema: "shop",
@@ -897,7 +897,7 @@ SELECT broken FROM;`;
           offset: 10,
           payload: {
             kind: "column",
-            serverId: "demo-server",
+            connectionId: "demo-connection",
             database: "demo",
             tableOid: 1,
             tableSchema: "shop",
@@ -921,7 +921,7 @@ SELECT broken FROM;`;
         offset: 30,
         payload: {
           kind: "column",
-          serverId: "demo-server",
+          connectionId: "demo-connection",
           database: "demo",
           tableOid: 1,
           tableSchema: "shop",
@@ -946,7 +946,7 @@ SELECT broken FROM;`;
         offset: text.indexOf("order_line"),
         payload: {
           kind: "table",
-          serverId: "demo-server",
+          connectionId: "demo-connection",
           database: "demo",
           oid: 1,
           schema: "shop",
@@ -968,7 +968,7 @@ SELECT broken FROM;`;
         offset: 0,
         payload: {
           kind: "table",
-          serverId: "demo-server",
+          connectionId: "demo-connection",
           database: "demo",
           oid: 1,
           schema: "shop",
@@ -988,7 +988,7 @@ SELECT broken FROM;`;
         offset: 0,
         payload: {
           kind: "table",
-          serverId: "demo-server",
+          connectionId: "demo-connection",
           database: "demo",
           oid: 1,
           schema: "shop",
@@ -1005,7 +1005,7 @@ SELECT broken FROM;`;
         offset: 0,
         payload: {
           kind: "column",
-          serverId: "demo-server",
+          connectionId: "demo-connection",
           database: "demo",
           tableOid: 1,
           tableSchema: "shop",
@@ -1023,7 +1023,7 @@ SELECT broken FROM;`;
         offset: 0,
         payload: {
           kind: "column",
-          serverId: "demo-server",
+          connectionId: "demo-connection",
           database: "demo",
           tableOid: 1,
           tableSchema: "shop",
@@ -1081,7 +1081,7 @@ SELECT broken FROM;`;
         offset: 0,
         payload: {
           kind: "table",
-          serverId: "demo-server",
+          connectionId: "demo-connection",
           database: "demo",
           oid: address.oid,
           schema: "shop",
@@ -1102,7 +1102,7 @@ SELECT broken FROM;`;
         offset: curatedProjection.indexOf("shop.address"),
         payload: {
           kind: "table",
-          serverId: "demo-server",
+          connectionId: "demo-connection",
           database: "demo",
           oid: customerAddress.oid,
           schema: "shop",
@@ -1127,7 +1127,7 @@ SELECT broken FROM;`;
         offset: 0,
         payload: {
           kind: "table",
-          serverId: "demo-server",
+          connectionId: "demo-connection",
           database: "demo",
           oid: 1,
           schema: "shop",
@@ -1149,7 +1149,7 @@ SELECT broken FROM;`;
         offset: 10,
         payload: {
           kind: "table",
-          serverId: "demo-server",
+          connectionId: "demo-connection",
           database: "demo",
           oid: 40,
           schema: "shop",
@@ -1171,7 +1171,7 @@ SELECT broken FROM;`;
         offset: 10,
         payload: {
           kind: "table",
-          serverId: "demo-server",
+          connectionId: "demo-connection",
           database: "demo",
           oid: 2,
           schema: "shop",
@@ -1208,7 +1208,7 @@ SELECT broken FROM;`;
           offset: 10,
           payload: {
             kind: "table",
-            serverId: "demo-server",
+            connectionId: "demo-connection",
             database: "demo",
             oid: 1,
             schema: "shop",
@@ -1250,7 +1250,7 @@ SELECT broken FROM;`;
         offset: 10,
         payload: {
           kind: "table",
-          serverId: "demo-server",
+          connectionId: "demo-connection",
           database: "demo",
           oid: 1,
           schema: "shop",
@@ -1269,7 +1269,7 @@ SELECT broken FROM;`;
       offset: 0,
       payload: {
         kind: "table" as const,
-        serverId: "other",
+        connectionId: "other",
         database: "demo",
         oid: 1,
         schema: "shop",
@@ -1279,7 +1279,7 @@ SELECT broken FROM;`;
     expect(await compose(request, snapshot)).toMatchObject({ status: "rejected" });
     expect(
       await compose(
-        { ...request, payload: { ...request.payload, serverId: "demo-server" } },
+        { ...request, payload: { ...request.payload, connectionId: "demo-connection" } },
         { ...snapshot, status: "stale" },
       ),
     ).toMatchObject({ status: "rejected" });
@@ -1292,7 +1292,7 @@ SELECT broken FROM;`;
         offset: 10,
         payload: {
           kind: "table",
-          serverId: "demo-server",
+          connectionId: "demo-connection",
           database: "demo",
           oid: 1,
           schema: "shop",
@@ -1333,7 +1333,7 @@ SELECT broken FROM;`;
         offset: 10,
         payload: {
           kind: "table",
-          serverId: "demo-server",
+          connectionId: "demo-connection",
           database: "demo",
           oid: 40,
           schema: "shop",
@@ -1367,7 +1367,7 @@ SELECT broken FROM;`;
   it("rejects JOIN composition from unqualified, CTE, and nested relation references", async () => {
     const payload = {
       kind: "table" as const,
-      serverId: "demo-server",
+      connectionId: "demo-connection",
       database: "demo",
       oid: 2,
       schema: "shop",
@@ -1426,7 +1426,7 @@ SELECT broken FROM;`;
           offset: source.indexOf("shop.product"),
           payload: {
             kind: "table",
-            serverId: "demo-server",
+            connectionId: "demo-connection",
             database: "demo",
             oid: 2,
             schema: "shop",
@@ -1445,7 +1445,7 @@ SELECT broken FROM;`;
         offset: 10,
         payload: {
           kind: "column",
-          serverId: "demo-server",
+          connectionId: "demo-connection",
           database: "demo",
           tableOid: 2,
           tableSchema: "shop",
@@ -1465,7 +1465,7 @@ SELECT broken FROM;`;
         offset: 10,
         payload: {
           kind: "table",
-          serverId: "demo-server",
+          connectionId: "demo-connection",
           database: "demo",
           oid: 2,
           schema: "shop",
@@ -1495,7 +1495,7 @@ SELECT broken FROM;`;
         offset: 10,
         payload: {
           kind: "table",
-          serverId: "demo-server",
+          connectionId: "demo-connection",
           database: "demo",
           oid: shipment.oid,
           schema: shipment.schema,
@@ -1532,7 +1532,7 @@ SELECT broken FROM;`;
         offset: source.indexOf("P.id"),
         payload: {
           kind: "column",
-          serverId: "demo-server",
+          connectionId: "demo-connection",
           database: "demo",
           tableOid: 1,
           tableSchema: "shop",
@@ -1574,7 +1574,7 @@ SELECT broken FROM;`;
         offset: quotedKeyword.indexOf('"where".id'),
         payload: {
           kind: "column",
-          serverId: "demo-server",
+          connectionId: "demo-connection",
           database: "demo",
           tableOid: 1,
           tableSchema: "shop",
@@ -1607,7 +1607,7 @@ SELECT broken FROM;`;
         offset: 10,
         payload: {
           kind: "table",
-          serverId: "demo-server",
+          connectionId: "demo-connection",
           database: "demo",
           oid: brand.oid,
           schema: brand.schema,
@@ -1646,7 +1646,7 @@ SELECT broken FROM;`;
         offset: source.indexOf("shop.product"),
         payload: {
           kind: "table",
-          serverId: "demo-server",
+          connectionId: "demo-connection",
           database: "demo",
           oid: 2,
           schema: "shop",
@@ -1677,7 +1677,7 @@ SELECT broken FROM;`;
           offset: source.indexOf("shop.product"),
           payload: {
             kind: "table",
-            serverId: "demo-server",
+            connectionId: "demo-connection",
             database: "demo",
             oid: 2,
             schema: "shop",
@@ -1702,7 +1702,7 @@ SELECT broken FROM;`;
         offset: source.indexOf("shop.order_line"),
         payload: {
           kind: "table",
-          serverId: "demo-server",
+          connectionId: "demo-connection",
           database: "demo",
           oid: 1,
           schema: "shop",
@@ -1723,7 +1723,7 @@ SELECT broken FROM;`;
         offset: filtered.indexOf("shop.product"),
         payload: {
           kind: "table",
-          serverId: "demo-server",
+          connectionId: "demo-connection",
           database: "demo",
           oid: 2,
           schema: "shop",
@@ -1746,7 +1746,7 @@ SELECT broken FROM;`;
         offset: substring.indexOf("shop.product"),
         payload: {
           kind: "column",
-          serverId: "demo-server",
+          connectionId: "demo-connection",
           database: "demo",
           tableOid: 1,
           tableSchema: "shop",
@@ -1769,7 +1769,7 @@ SELECT broken FROM;`;
         offset: 10,
         payload: {
           kind: "table",
-          serverId: "demo-server",
+          connectionId: "demo-connection",
           database: "demo",
           oid: 1,
           schema: "shop",
@@ -1794,7 +1794,7 @@ SELECT broken FROM;`;
         offset: 9,
         payload: {
           kind: "table",
-          serverId: "demo-server",
+          connectionId: "demo-connection",
           database: "demo",
           oid: 2,
           schema: "shop",
@@ -1828,7 +1828,7 @@ SELECT broken FROM;`;
           offset: 10,
           payload: {
             kind: "table",
-            serverId: "demo-server",
+            connectionId: "demo-connection",
             database: "demo",
             oid: 40,
             schema: "shop",
@@ -1864,7 +1864,7 @@ SELECT broken FROM;`;
         offset: source.indexOf("ol.id"),
         payload: {
           kind: "table",
-          serverId: "demo-server",
+          connectionId: "demo-connection",
           database: "demo",
           oid: 1,
           schema: "shop",
