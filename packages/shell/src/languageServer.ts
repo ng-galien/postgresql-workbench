@@ -12,6 +12,7 @@ import {
   StreamMessageReader,
   StreamMessageWriter,
 } from "vscode-languageserver-protocol/node";
+import { analyzePlpgsqlSource } from "../../sql/src/analysis/plpgsqlDocument.js";
 import type { SyntaxParser } from "../../sql/src/analysis/syntaxTree.js";
 import {
   answerSyntaxRequest,
@@ -23,9 +24,12 @@ import {
 } from "../../sql/src/languageServer/client.js";
 import {
   SQL_AUTHORING_CONTEXT_REQUEST,
+  SQL_AUTHORING_PLPGSQL_TOKENS_REQUEST,
   SQL_AUTHORING_SETTINGS_REQUEST,
   SQL_AUTHORING_SYNTAX_REQUEST,
+  type SqlAuthoringPlpgsqlTokensResult,
 } from "../../sql/src/languageServer/protocol.js";
+import { plpgsqlSemanticTokens } from "../../sql/src/routines/semanticTokens.js";
 import {
   DEFAULT_SQL_AUTHORING_SETTINGS,
   type SqlAuthoringSnapshot,
@@ -60,6 +64,10 @@ export async function startSqlLanguageServer(options: {
     new StreamMessageWriter(child.stdin),
   );
 
+  /** The text of every document this host has put in front of the server, by URI. */
+  const held = new Map<string, string>();
+  let version = 0;
+
   connection.onRequest(SQL_AUTHORING_CONTEXT_REQUEST, () => ({
     status: "available" as const,
     snapshot: options.snapshot(),
@@ -67,6 +75,15 @@ export async function startSqlLanguageServer(options: {
   connection.onRequest(SQL_AUTHORING_SETTINGS_REQUEST, () => DEFAULT_SQL_AUTHORING_SETTINGS);
   connection.onRequest(SQL_AUTHORING_SYNTAX_REQUEST, (request: SqlAuthoringSyntaxRequest) =>
     answerSyntaxRequest(request, options.parser, DEFAULT_SQL_AUTHORING_SETTINGS),
+  );
+  connection.onRequest(
+    SQL_AUTHORING_PLPGSQL_TOKENS_REQUEST,
+    async ({ uri }: { uri: string }): Promise<SqlAuthoringPlpgsqlTokensResult> => {
+      const source = held.get(uri);
+      if (source === undefined) return { tokens: [] };
+      const routines = await analyzePlpgsqlSource(source, options.parser);
+      return { tokens: plpgsqlSemanticTokens(source, routines) };
+    },
   );
 
   connection.listen();
@@ -88,15 +105,14 @@ export async function startSqlLanguageServer(options: {
   await connection.sendNotification(InitializedNotification.type, {});
   const legend = initialized.capabilities.semanticTokensProvider?.legend.tokenTypes ?? [];
 
-  const open = new Set<string>();
-  let version = 0;
-
   const client = createSqlAuthoringClient({
     connection,
     legend: () => legend,
     async sync(uri, text) {
       version += 1;
-      if (open.has(uri)) {
+      const opened = held.has(uri);
+      held.set(uri, text);
+      if (opened) {
         await connection.sendNotification(DidChangeTextDocumentNotification.type, {
           textDocument: { uri, version },
           contentChanges: [{ text }],
@@ -106,7 +122,6 @@ export async function startSqlLanguageServer(options: {
       await connection.sendNotification(DidOpenTextDocumentNotification.type, {
         textDocument: { uri, languageId: "sql", version, text },
       });
-      open.add(uri);
     },
   });
 

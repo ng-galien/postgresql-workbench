@@ -1,13 +1,16 @@
 import * as vscode from "vscode";
 import type { SyntaxParser } from "../../../packages/sql/src/analysis/syntaxTree.js";
-import {
-  analyzePlpgsqlDocument,
-  findIdentifierColumns,
-} from "../../../packages/sql/src/routines/documentAnalysis.js";
+import { analyzePlpgsqlDocument } from "../../../packages/sql/src/routines/documentAnalysis.js";
+import { plpgsqlSemanticTokens } from "../../../packages/sql/src/routines/semanticTokens.js";
 import { TOKEN_MODIFIERS, TOKEN_TYPES } from "../../../packages/sql/src/text/plpgsqlTokenLegend.js";
 
 export const LEGEND = new vscode.SemanticTokensLegend([...TOKEN_TYPES], [...TOKEN_MODIFIERS]);
 
+/**
+ * VS Code's way of asking for a PL/pgSQL body's own names. What the names are is answered by the
+ * row of tokens the engine returns; this adapts that row to the shape VS Code takes them in, and
+ * holds nothing else — the same answer serves a host that has no VS Code to register with.
+ */
 export class PlpgsqlSemanticTokensProvider implements vscode.DocumentSemanticTokensProvider {
   private readonly _onDidChange = new vscode.EventEmitter<void>();
   readonly onDidChangeSemanticTokens = this._onDidChange.event;
@@ -22,61 +25,21 @@ export class PlpgsqlSemanticTokensProvider implements vscode.DocumentSemanticTok
     document: vscode.TextDocument,
   ): Promise<vscode.SemanticTokens> {
     const builder = new vscode.SemanticTokensBuilder(LEGEND);
-    const text = document.getText();
-    const lines = text.split("\n");
-
-    for (const routine of await analyzePlpgsqlDocument(document, await this.syntaxParser())) {
-      const vars = routine.variables;
-      if (vars.length === 0) continue;
-
-      const varNames = new Set(vars.map((v) => v.name));
-
-      const varMap = new Map(vars.map((v) => [v.name, v]));
-
-      for (const v of vars) {
-        if (v.isParam || v.declareLine === 0) continue;
-        const absLine = routine.bodyStartLine + v.declareLine - 1;
-        if (absLine >= lines.length) continue;
-        const line = lines[absLine];
-
-        const cols = findIdentifierColumns(line, v.name);
-        for (const col of cols) {
-          const typeIdx = TOKEN_TYPES.indexOf("variable");
-          const modIdx = [
-            TOKEN_MODIFIERS.indexOf("declaration"),
-            ...(v.isConst ? [TOKEN_MODIFIERS.indexOf("readonly")] : []),
-          ].reduce((acc, i) => acc | (1 << i), 0);
-          builder.push(absLine, col, v.name.length, typeIdx, modIdx);
-        }
-
-        if (v.typeName) {
-          const typeCols = findIdentifierColumns(line, v.typeName.split(".").pop()!);
-          for (const col of typeCols) {
-            builder.push(absLine, col, v.typeName.length, TOKEN_TYPES.indexOf("type"), 0);
-          }
-        }
-      }
-
-      const bodyStart = routine.bodyStartLine;
-      const bodyEnd = routine.bodyEndLine;
-
-      for (let lineIdx = bodyStart; lineIdx <= bodyEnd && lineIdx < lines.length; lineIdx++) {
-        const line = lines[lineIdx];
-        if (/^\s*--/.test(line)) continue;
-
-        for (const name of varNames) {
-          const info = varMap.get(name)!;
-          const cols = findIdentifierColumns(line, name);
-          for (const col of cols) {
-            const tokenType = info.isParam
-              ? TOKEN_TYPES.indexOf("parameter")
-              : TOKEN_TYPES.indexOf("variable");
-            builder.push(lineIdx, col, name.length, tokenType, 0);
-          }
-        }
-      }
+    for (const token of await this.tokens(document)) {
+      builder.push(
+        token.line,
+        token.character,
+        token.length,
+        token.tokenType,
+        token.tokenModifiers,
+      );
     }
-
     return builder.build();
+  }
+
+  /** The names of every routine in this document, as the engine reads them. */
+  async tokens(document: vscode.TextDocument) {
+    const routines = await analyzePlpgsqlDocument(document, await this.syntaxParser());
+    return plpgsqlSemanticTokens(document.getText(), routines);
   }
 }

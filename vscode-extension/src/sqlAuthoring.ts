@@ -24,7 +24,6 @@ import {
   sqlAuthoringRejectionAction,
 } from "../../packages/sql/src/languageServer/languageStatus.js";
 import {
-  decodeSemanticTokenData,
   SQL_AUTHORING_COMPOSE_REQUEST,
   SQL_AUTHORING_CONTEXT_REQUEST,
   SQL_AUTHORING_PLPGSQL_TOKENS_REQUEST,
@@ -128,8 +127,7 @@ export async function registerSqlAuthoring(
       );
       if (!document) return { tokens: [] };
       try {
-        const tokens = await plpgsqlSemanticTokens.provideDocumentSemanticTokens(document);
-        return { tokens: decodeSemanticTokenData(tokens.data) };
+        return { tokens: await plpgsqlSemanticTokens.tokens(document) };
       } catch {
         return { tokens: [] };
       }
