@@ -1,3 +1,4 @@
+import { sqlLexicalTokens } from "../analysis/lexicalTokens.js";
 import { firstSyntaxErrorLine } from "../analysis/syntaxNodes.js";
 import type { SyntaxParser } from "../analysis/syntaxTree.js";
 import { analyzeSqlQuery } from "../query/analysis.js";
@@ -11,6 +12,11 @@ export interface SqlAuthoringSyntaxRequest {
   source: string;
   /** Offset being typed: a placeholder goes there so an unfinished statement still parses. */
   caret?: number;
+  /**
+   * Also read what the statement is made of. Asked for only where it is used — colouring — because
+   * the pieces need a parse that keeps the punctuation, and nothing else does.
+   */
+  lexical?: boolean;
 }
 
 /**
@@ -44,6 +50,12 @@ export async function answerSyntaxRequest(
     namedOnly: true,
   };
   const syntax = await parser.parse({ language: "sql", ...budget });
+  const lexical = request.lexical
+    ? sqlLexicalTokens(
+        await parser.parse({ language: "sql", ...budget, namedOnly: false }),
+        parsedSource,
+      )
+    : undefined;
   if (!syntax.hasError || syntax.truncated) {
     // The composition engine rewrites from this analysis; it never scans the text itself.
     const analyzed = syntax.truncated
@@ -60,6 +72,7 @@ export async function answerSyntaxRequest(
       ...(analyzed?.shape === undefined ? {} : { shape: analyzed.shape }),
       relations,
       ...(caretRole === undefined ? {} : { caretRole }),
+      ...(lexical === undefined ? {} : { lexical }),
     };
   }
   const plpgsqlBody =
@@ -73,5 +86,6 @@ export async function answerSyntaxRequest(
     ...(plpgsqlBody ? { plpgsqlBody } : {}),
     relations,
     ...(caretRole === undefined ? {} : { caretRole }),
+    ...(lexical === undefined ? {} : { lexical }),
   };
 }

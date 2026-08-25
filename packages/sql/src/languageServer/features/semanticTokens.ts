@@ -1,5 +1,6 @@
 import { SemanticTokensBuilder } from "vscode-languageserver/node";
 import type { TextDocument } from "vscode-languageserver-textdocument";
+import type { SqlLexicalToken } from "../../analysis/lexicalTokens.js";
 import type { SqlRelationMention } from "../../query/relations.js";
 import type { SqlAuthoringObject, SqlAuthoringSnapshot } from "../../snapshot.js";
 import {
@@ -26,6 +27,16 @@ export const SQL_SEMANTIC_TOKEN_TYPES = [
   "sqlParameter",
   "sqlType",
   "sqlWindow",
+  /*
+   * What a statement is made of, under the names. Appended rather than ordered among them: a
+   * legend is read by position, and a client that has one in hand must not find it renumbered.
+   */
+  "keyword",
+  "string",
+  "number",
+  "comment",
+  "operator",
+  "punctuation",
 ] as const;
 
 export const SQL_SEMANTIC_TOKEN_MODIFIERS = ["declaration", "readonly"] as const;
@@ -137,11 +148,18 @@ interface EncodedToken {
  * precedence over indexed tokens covering the same range. Without a snapshot only those tokens
  * are emitted.
  */
+/**
+ * One stream, in two layers. What each piece of the statement *is* comes from the parse; what each
+ * name *means* needs the catalog, and only this server has it. They are laid in that order and a
+ * piece already spoken for is left alone, so a word the grammar reserves but a query uses as a
+ * column name is coloured by what it means here rather than by how it is spelled.
+ */
 export function postgresSemanticTokens(
   document: TextDocument,
   snapshot: SqlAuthoringSnapshot | undefined,
   plpgsqlTokens: readonly SqlAuthoringSemanticToken[] = [],
   relations: readonly SqlRelationMention[] = [],
+  lexical: readonly SqlLexicalToken[] = [],
 ) {
   const source = document.getText();
   const encoded: EncodedToken[] = plpgsqlTokens
@@ -177,6 +195,17 @@ export function postgresSemanticTokens(
         tokenModifiers: 0,
       });
     }
+  }
+  const taken = new Set(encoded.map((token) => `${token.offset}:${token.length}`));
+  for (const token of lexical) {
+    const offset = document.offsetAt({ line: token.line, character: token.character });
+    if (taken.has(`${offset}:${token.length}`)) continue;
+    encoded.push({
+      length: token.length,
+      offset,
+      tokenType: SQL_SEMANTIC_TOKEN_TYPES.indexOf(token.type),
+      tokenModifiers: 0,
+    });
   }
   encoded.sort((left, right) => left.offset - right.offset || left.length - right.length);
   const builder = new SemanticTokensBuilder();

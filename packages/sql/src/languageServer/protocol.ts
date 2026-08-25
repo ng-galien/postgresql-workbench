@@ -1,3 +1,4 @@
+import type { SqlLexicalToken } from "../analysis/lexicalTokens.js";
 import type { SqlQueryAnalysis } from "../query/analysis.js";
 import type {
   SqlComposition,
@@ -32,6 +33,11 @@ export type SqlAuthoringDocumentContext =
 export interface SqlAuthoringSyntaxResult {
   hasError: boolean;
   truncated: boolean;
+  /**
+   * What the statement is made of, when it was asked for: the parse's own leaves. Only the host
+   * has a parser, so this is the one place the pieces can come from without a second grammar.
+   */
+  lexical?: SqlLexicalToken[];
   /** Syntax analysis of the statement, when it is a plain SELECT the engine can rewrite. */
   analysis?: SqlQueryAnalysis;
   /** Relations the statement names, whatever its kind: FROM, JOIN, USING, UPDATE, INSERT INTO. */

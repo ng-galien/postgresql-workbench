@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { TextDocument } from "vscode-languageserver-textdocument";
 import { ensureLocalCodeMonikerWorkspace } from "../packages/catalog/src/localCodeMoniker.js";
 import { createCodeMonikerSyntaxParser } from "../packages/sql/src/analysis/codeMonikerSyntax.js";
+import { sqlLexicalTokens } from "../packages/sql/src/analysis/lexicalTokens.js";
 import type { SyntaxParser } from "../packages/sql/src/analysis/syntaxTree.js";
 import {
   postgresSemanticTokens,
@@ -37,12 +38,13 @@ describe("SQL authoring semantic tokens", () => {
   /** Colors as the server does: the Host reads the relations from the syntax tree first. */
   async function tokensOf(document: TextDocument, tokenSnapshot = snapshot) {
     const source = document.getText();
-    const { relations } = await documentRelations(parser, source, {
-      uri: document.uri,
-      maxDepth: 1_024,
-      maxNodes: 100_000,
-    });
-    return postgresSemanticTokens(document, tokenSnapshot, [], relations);
+    const budget = { uri: document.uri, maxDepth: 1_024, maxNodes: 100_000 };
+    const { relations } = await documentRelations(parser, source, budget);
+    const lexical = sqlLexicalTokens(
+      await parser.parse({ language: "sql", source, ...budget, namedOnly: false }),
+      source,
+    );
+    return postgresSemanticTokens(document, tokenSnapshot, [], relations, lexical);
   }
 
   it("distinguishes schemas, tables, views, aliases, and qualified or unqualified columns", async () => {
@@ -178,6 +180,40 @@ describe("SQL authoring semantic tokens", () => {
     const document = TextDocument.create("file:///multiline.sql", "sql", 1, source);
     const tokens = decode(document, await tokensOf(document));
     expect(tokens.every(([text]) => !text.includes("\n"))).toBe(true);
+  });
+
+  it("carries what a statement is made of under what its names mean, in one stream", async () => {
+    const source = "-- pick\nSELECT address.city, 'x', 10 FROM shop.address AS address;";
+    const document = TextDocument.create("file:///both.sql", "sql", 1, source);
+    const tokens = decode(document, await tokensOf(document));
+
+    expect(tokens).toEqual(
+      expect.arrayContaining([
+        ["-- pick", "comment"],
+        ["SELECT", "keyword"],
+        ["FROM", "keyword"],
+        ["'x'", "string"],
+        ["10", "number"],
+        [",", "punctuation"],
+        ["shop", "sqlSchema"],
+        ["address", "sqlTable"],
+        ["city", "sqlColumn"],
+      ]),
+    );
+  });
+
+  it("colours a statement no Connection can name, which was left black before", async () => {
+    const source = "SELECT 'x' FROM nowhere;";
+    const document = TextDocument.create("file:///lonely.sql", "sql", 1, source);
+    const tokens = decode(document, await tokensOf(document, undefined));
+
+    expect(tokens).toEqual(
+      expect.arrayContaining([
+        ["SELECT", "keyword"],
+        ["'x'", "string"],
+        ["FROM", "keyword"],
+      ]),
+    );
   });
 });
 

@@ -117,13 +117,19 @@ connection.languages.semanticTokens.on(async (params) => {
     context.status === "available" && context.snapshot.status === "available"
       ? context.snapshot
       : undefined;
-  if (!snapshot && plpgsqlTokens.length === 0) return { data: [] };
+
   // Relations are read from the syntax tree by the Extension Host, never scanned from the text.
   const syntax = await connection.sendRequest<SqlAuthoringSyntaxResult>(
     SQL_AUTHORING_SYNTAX_REQUEST,
-    { uri: params.textDocument.uri, source: document.getText() },
+    { uri: params.textDocument.uri, source: document.getText(), lexical: true },
   );
-  return postgresSemanticTokens(document, snapshot, plpgsqlTokens, syntax.relations ?? []);
+  return postgresSemanticTokens(
+    document,
+    snapshot,
+    plpgsqlTokens,
+    syntax.relations ?? [],
+    syntax.lexical ?? [],
+  );
 });
 
 connection.onNotification(SQL_AUTHORING_SEMANTIC_TOKENS_CHANGED, () => {
