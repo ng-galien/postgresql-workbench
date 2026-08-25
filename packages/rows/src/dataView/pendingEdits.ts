@@ -16,18 +16,25 @@ import type { HiddenColumns } from "./hiddenColumns.js";
 import { buildRowDeletes, buildRowInserts, buildRowUpdates } from "./updates.js";
 
 /**
- * What a surface showing a Data View must be able to do for changes to reach PostgreSQL. Each
- * surface answers these its own way — the Extension Host through VS Code, the composition shell
- * through its own connection and its own message bridge — and nothing about writing is written
- * twice: the sequence below is the only one there is.
+ * What every surface showing a Data View can do, whichever way its changes are going. A move asks
+ * for exactly these two and a write asks for them as well, so they are said once: a surface that
+ * can hold a change can already report one.
  */
-export interface DataViewWriteHost {
-  /** A connection to write through. It is closed once the changes have been applied. */
-  openClient(): Promise<Client>;
+export interface DataViewSurface {
   /** Tells the reader what happened, in whatever way this surface has to say it. */
   notify(message: string, severity: "info" | "error"): void;
   /** The held changes moved: whatever shows them must be told. */
   changed(): void;
+}
+
+/**
+ * What a surface must be able to do besides for changes to reach PostgreSQL. Each answers these its
+ * own way — the Extension Host through VS Code, the composition shell through its own connection —
+ * and nothing about writing is written twice: the sequence below is the only one there is.
+ */
+export interface DataViewWriteHost extends DataViewSurface {
+  /** A connection to write through. It is closed once the changes have been applied. */
+  openClient(): Promise<Client>;
   /** Re-reads the rows once the database has taken the changes. */
   reload(): Promise<void>;
   /** How the connection is named to a reader. */
@@ -88,7 +95,7 @@ export function isDataViewMove<T extends { type: string }>(
 }
 
 /** How a move is named to a surface that holds one undo entry per move. */
-export function dataViewMoveLabel(move: DataViewMove): string {
+function dataViewMoveLabel(move: DataViewMove): string {
   switch (move.type) {
     case "data-view/edit":
       return `Edit ${move.edit.column}`;
@@ -106,34 +113,37 @@ export function dataViewMoveLabel(move: DataViewMove): string {
 }
 
 /**
- * What a surface must be able to do when what is waiting has moved. A surface that counts a move
- * as an edit of its own document says so through `remember`; one without an undo stack leaves it
- * out, and the move is otherwise the same move.
+ * What a surface must be able to do when what is waiting has moved. A surface that counts a move as
+ * an edit of its own document says so through `remember`; one without an undo stack leaves it out,
+ * and the move is otherwise the same move — and pays for no way back nothing will ever walk.
  */
-export interface DataViewMoveHost {
-  /** Tells the reader what happened, in whatever way this surface has to say it. */
-  notify(message: string, severity: "info" | "error"): void;
-  /** The held changes moved: whatever shows them must be told. */
-  changed(): void;
+export interface DataViewMoveHost extends DataViewSurface {
   /** The way back to what was held before this move, and the way forward to it again. */
   remember?(label: string, undo: () => void, redo: () => void): void;
 }
 
-/** What a move is decided against, and what it is answered to. */
+/** What a move is decided against, what it may act on, and what it is answered to. */
 export interface DataViewMoveContext {
   editability: DataViewEditability;
-  /** Adding a row brings back the columns it cannot go without. */
+  /** Which columns this Data View is not showing, for the moves that need one back. */
   hidden: HiddenColumns;
   host: DataViewMoveHost;
 }
 
 /**
- * What a move did. It was refused and nothing happened; or it was allowed and found nothing to do,
- * which is not a change to remember; or it moved, and may drag consequences a reader should hear.
+ * What a move did. A refusal is the one that carries a sentence to say; a move allowed but with
+ * nothing to do carries neither, and is not a change to remember; and one that moved may drag
+ * consequences a reader should hear, or need columns brought back before they can fill it in.
  */
-type MoveOutcome =
-  | { held: false; reason: string }
-  | { held: true; moved: boolean; consequences?: string[] };
+interface MoveOutcome {
+  moved: boolean;
+  /** Why it was refused, in the words the reader is given. Absent when nothing refused it. */
+  reason?: string;
+  /** What a deletion drags along with it, said as the row is taken. */
+  consequences?: string[];
+  /** The move needs the columns it cannot go without brought back: a reader cannot fill in one they cannot see. */
+  reveals?: true;
+}
 
 /** Local, unapplied cell edits of a Data View, and their atomic application. */
 /** Which cell an edit is held against: one row of one table, and one column of it. */
@@ -162,7 +172,7 @@ export class PendingEdits {
     return this.items.length + this.removals.length + this.insertions.length;
   }
 
-  /** True while the changes are being written: nothing may be held or discarded meanwhile. */
+  /** True while the changes are being written: no move a reader makes is taken meanwhile. */
   get applying(): boolean {
     return this.writing;
   }
@@ -170,9 +180,10 @@ export class PendingEdits {
   /**
    * The one door every move a reader makes goes through, so that what is true of one move is true
    * of all six: a write under way refuses it, the refusal is worded once and said once, a move that
-   * found nothing to do leaves nothing behind, adding a row brings back the columns it cannot go
-   * without, and whatever shows the held changes is told afterwards rather than by each caller in
-   * its own order. A deletion says what it drags along as the row is taken, not when the write fails.
+   * found nothing to do leaves nothing behind, and whatever shows the held changes is told
+   * afterwards rather than by each caller in its own order. What is particular to one move — the
+   * columns it needs back, what its deletion drags along — is answered where that move is performed
+   * and carried out from here, so nothing in this door has to know which move it is holding.
    *
    * A write in flight used to refuse the cell edits alone, because that was the only move that
    * asked. The others were held, and then dropped without a word when the transaction that never
@@ -184,20 +195,21 @@ export class PendingEdits {
       context.host.notify(READ_ONLY_REASONS.applying, "info");
       return;
     }
-    const before = this.snapshot();
+    const before = context.host.remember ? this.snapshot() : undefined;
     const outcome = this.perform(move, context.editability);
-    if (!outcome.held) {
+    if (outcome.reason !== undefined) {
       context.host.notify(outcome.reason, "info");
       return;
     }
     if (!outcome.moved) return;
-    if (move.type === "data-view/add-row") context.hidden.revealRequired(context.editability);
-    const after = this.snapshot();
-    const replay = (restore: () => void) => () => {
-      restore();
-      context.host.changed();
-    };
-    context.host.remember?.(dataViewMoveLabel(move), replay(before), replay(after));
+    if (outcome.reveals) context.hidden.revealRequired(context.editability);
+    if (before) {
+      const replay = (restore: () => void) => () => {
+        restore();
+        context.host.changed();
+      };
+      context.host.remember?.(dataViewMoveLabel(move), replay(before), replay(this.snapshot()));
+    }
     context.host.changed();
     const consequences = outcome.consequences ?? [];
     if (consequences.length > 0) context.host.notify(consequences.join(" "), "info");
@@ -216,11 +228,11 @@ export class PendingEdits {
       case "data-view/remove-rows":
         return this.removeRows(move.rows, editability);
       case "data-view/drop-row":
-        return { held: true, moved: this.discard({ kind: "insert", localId: move.localId }) };
+        return { moved: this.discard({ kind: "insert", localId: move.localId }) };
       case "data-view/fill-row":
-        return { held: true, moved: this.fillRow(move.localId, move.values, move.unset) };
+        return { moved: this.fillRow(move.localId, move.values, move.unset) };
       case "data-view/discard-change":
-        return { held: true, moved: this.discard(move.change) };
+        return { moved: this.discard(move.change) };
     }
   }
 
@@ -234,9 +246,9 @@ export class PendingEdits {
    */
   private record(edit: DataViewEdit, editability: DataViewEditability): MoveOutcome {
     const refused = reasonAgainstWriting(editability.columns[edit.ordinal], this.isRemoved(edit));
-    if (refused) return { held: false, reason: refused };
+    if (refused) return { moved: false, reason: refused };
     this.set(edit);
-    return { held: true, moved: true };
+    return { moved: true };
   }
 
   /**
@@ -306,18 +318,18 @@ export class PendingEdits {
   ): MoveOutcome {
     const table = dataViewWritableTable(editability);
     if ("reason" in table)
-      return { held: false, reason: `Rows can only be taken away ${table.reason}` };
-    if (rows.length === 0) return { held: true, moved: false };
+      return { moved: false, reason: `Rows can only be taken away ${table.reason}` };
+    if (rows.length === 0) return { moved: false };
     const keys = new Set(rows.map((row) => dataViewRowKey(row)));
     if (rows.every((row) => this.isRemoved(row))) {
       this.removals = this.removals.filter((row) => !keys.has(dataViewRowKey(row)));
-      return { held: true, moved: true };
+      return { moved: true };
     }
     this.items = this.items.filter((edit) => !keys.has(dataViewRowKey(edit)));
     for (const row of rows) {
       if (!this.isRemoved(row)) this.removals.push(row);
     }
-    return { held: true, moved: true, consequences: describeDeleteConsequences(table) };
+    return { moved: true, consequences: describeDeleteConsequences(table) };
   }
 
   /**
@@ -327,6 +339,10 @@ export class PendingEdits {
    *
    * They are held in the order they are shown, so the one just added is the one just under the
    * reader's eye: last among the rows waiting over the same loaded row, and over every row below it.
+   *
+   * It asks for the columns it cannot go without to be brought back, because a reader cannot fill
+   * in a column they cannot see — and the identity and relationship columns a Data View hides by
+   * default are exactly the ones an insertion tends to need.
    */
   private addRow(
     editability: DataViewEditability,
@@ -334,13 +350,14 @@ export class PendingEdits {
     above = 0,
   ): MoveOutcome {
     const table = dataViewWritableTable(editability);
-    if ("reason" in table) return { held: false, reason: `Rows can only be added ${table.reason}` };
+    if ("reason" in table)
+      return { moved: false, reason: `Rows can only be added ${table.reason}` };
     this.added += 1;
     const at = this.insertions.findIndex((insertion) => insertion.above > above);
     const row = { tableOid: table.tableOid, localId: `new-${this.added}`, values, above };
     if (at < 0) this.insertions.push(row);
     else this.insertions.splice(at, 0, row);
-    return { held: true, moved: true };
+    return { moved: true, reveals: true };
   }
 
   /**

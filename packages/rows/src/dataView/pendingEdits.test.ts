@@ -115,10 +115,7 @@ describe("the one door every move goes through", () => {
   it("refuses whole rows over a join, where no one table owns them", () => {
     const edits = new PendingEdits();
     const { context, said } = surface();
-    edits.move(
-      { type: "data-view/add-row" },
-      { ...context, editability: joined, host: context.host },
-    );
+    edits.move({ type: "data-view/add-row" }, { ...context, editability: joined });
     expect(said).toEqual([
       {
         message: "Rows can only be added to one table, and this query joins several.",
@@ -161,6 +158,22 @@ describe("the one door every move goes through", () => {
     );
     expect(changed).not.toHaveBeenCalled();
     expect(remembered).toEqual([]);
+  });
+
+  it("moves the same for a surface with no undo stack of its own to keep in step", () => {
+    const edits = new PendingEdits();
+    const said: string[] = [];
+    const changed = vi.fn();
+    const host: DataViewMoveHost = {
+      notify: (message) => said.push(message),
+      changed,
+    };
+    const context = { editability, hidden: new HiddenColumns(), host };
+    edits.move({ type: "data-view/edit", edit: edit() }, context);
+    edits.move({ type: "data-view/edit", edit: edit({ ordinal: 0, column: "id" }) }, context);
+    expect(edits.list).toEqual([edit()]);
+    expect(changed).toHaveBeenCalledTimes(1);
+    expect(said).toEqual([READ_ONLY_REASONS.identity]);
   });
 
   it("names each move and remembers the way back to what was held before it", () => {

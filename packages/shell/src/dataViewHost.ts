@@ -186,7 +186,8 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
   };
 
   /**
-   * What this surface answers a move with. It has no document of its own to mark dirty, so it
+   * What this surface answers a move with. It speaks the same way whether a change is being held or
+   * written, so it says so once. It has no document of its own to mark dirty and therefore
    * remembers nothing: the view holds the list, and Discard is how a reader takes a move back.
    */
   const moveContext: DataViewMoveContext = {
@@ -194,10 +195,7 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
       return state.editability;
     },
     hidden,
-    host: {
-      notify: (message, severity) => emit({ type: "data-view/notice", message, severity }),
-      changed: () => broadcast(),
-    },
+    host: writeHost,
   };
 
   /*

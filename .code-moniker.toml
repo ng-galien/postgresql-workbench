@@ -240,9 +240,11 @@ in the reader's language, before they commit to it. `pendingEdits` holds the thr
 one door every move goes through. `updates` turns them into SQL, and nothing else assembles a
 statement that writes a row.
 
-A surface brings four things and no judgement: a connection to write through, a way to say what
-happened, a way to tell whatever shows the changes, and — where it has one — a way to remember the
-move so its own undo stack keeps step. Everything else is decided before it is handed anything.
+A surface brings what it holds and no judgement: what may be written, which columns it is showing,
+a connection to write through, a way to say what happened, a way to tell whatever shows the changes,
+and — where it has one — a way to remember the move so its own undo stack keeps step. A surface
+speaks the same way whether a change is being held or written, so it says that once. Everything
+else is decided before it is handed anything.
 
 Measured against that, August 2026. Both surfaces answered all six moves themselves, and what was
 true of one move was true of the others only by coincidence. It had already stopped being true: a

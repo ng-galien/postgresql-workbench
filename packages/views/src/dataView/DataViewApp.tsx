@@ -642,13 +642,13 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
   const payload = state.payload;
   // Rows come in one table at a time, exactly as they are added one at a time.
   const writableTable = dataViewWritableTable(state.editability);
-  const addable = state.applying
-    ? READ_ONLY_REASONS.applying
-    : "reason" in writableTable
-      ? `Rows can only be added ${writableTable.reason}`
-      : undefined;
-  const importable =
-    "reason" in writableTable ? `Rows can only be imported ${writableTable.reason}` : undefined;
+  const applying = state.applying ? READ_ONLY_REASONS.applying : undefined;
+  const unwritable = (verb: string) =>
+    "reason" in writableTable ? `Rows can only be ${verb} ${writableTable.reason}` : undefined;
+  const addable = applying ?? unwritable("added");
+  const importable = applying ?? unwritable("imported");
+  const removable =
+    applying ?? (selectedCount === 0 ? "Select rows in the gutter to delete them" : undefined);
   const navigation = payload?.navigation;
   // The same rules the Scratchpad output applies, read from the one place that states them.
   const navigationState = {
@@ -1644,14 +1644,8 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
           <button
             type="button"
             className="edit-bar-button remove"
-            title={
-              state.applying
-                ? READ_ONLY_REASONS.applying
-                : selectedCount > 0
-                  ? `Delete ${countLabel(selectedCount, "row")}`
-                  : "Select rows in the gutter to delete them"
-            }
-            disabled={selectedCount === 0 || state.applying}
+            title={removable ?? `Delete ${countLabel(selectedCount, "row")}`}
+            disabled={removable !== undefined}
             onClick={() => {
               // A row that was only ever local is taken back; one that exists is provisioned away.
               for (const localId of selected.added) post({ type: "data-view/drop-row", localId });
