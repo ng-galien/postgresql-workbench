@@ -73,7 +73,7 @@ export class PendingEdits {
   record(
     edit: DataViewEdit,
     editability: DataViewEditability,
-  ): { held: true; previous?: DataViewEdit } | { held: false; reason: string } {
+  ): { held: true } | { held: false; reason: string } {
     if (this.writing) return { held: false, reason: READ_ONLY_REASONS.applying };
     /*
      * A row already provisioned to go holds nothing to change. Taking one away drops the edits it
@@ -82,8 +82,8 @@ export class PendingEdits {
      */
     const refused = reasonAgainstWriting(editability.columns[edit.ordinal], this.isRemoved(edit));
     if (refused) return { held: false, reason: refused };
-    const previous = this.set(edit);
-    return previous ? { held: true, previous } : { held: true };
+    this.set(edit);
+    return { held: true };
   }
 
   /**
@@ -116,10 +116,9 @@ export class PendingEdits {
     }
   }
 
-  /** Stores one cell edit; returns the edit it replaced. Reverting to the original drops it. */
-  set(edit: DataViewEdit): DataViewEdit | undefined {
+  /** Stores one cell edit. An edit that puts the original value back is not a change at all. */
+  private set(edit: DataViewEdit): void {
     const index = this.indexOfEdit(edit);
-    const previous = index >= 0 ? this.items[index] : undefined;
     const restoresOriginal = !edit.toDefault && edit.value === edit.original;
     if (index >= 0) {
       if (restoresOriginal) this.items.splice(index, 1);
@@ -127,12 +126,6 @@ export class PendingEdits {
     } else if (!restoresOriginal) {
       this.items.push(edit);
     }
-    return previous;
-  }
-
-  remove(edit: EditPlace): void {
-    const index = this.indexOfEdit(edit);
-    if (index >= 0) this.items.splice(index, 1);
   }
 
   /** Where the edit of this row and this column is held, or -1. The one way of asking. */
@@ -168,7 +161,7 @@ export class PendingEdits {
     const keys = new Set(rows.map((row) => dataViewRowKey(row)));
     const alreadyGone = rows.every((row) => this.isRemoved(row));
     if (alreadyGone) {
-      for (const key of keys) this.unremove(key);
+      this.removals = this.removals.filter((row) => !keys.has(dataViewRowKey(row)));
       return { held: true, consequences: [] };
     }
     this.items = this.items.filter((edit) => !keys.has(dataViewRowKey(edit)));
@@ -215,10 +208,13 @@ export class PendingEdits {
     values: Record<string, string | null>,
     unset: readonly string[] | undefined = [],
   ): void {
-    const row = this.insertions.find((candidate) => candidate.localId === localId);
+    const at = this.insertions.findIndex((candidate) => candidate.localId === localId);
+    const row = this.insertions[at];
     if (!row) return;
-    for (const [column, value] of Object.entries(values)) row.values[column] = value;
-    for (const column of unset) delete row.values[column];
+    // Replaced rather than written into: what a snapshot captured must not change under it later.
+    const next = { ...row.values, ...values };
+    for (const column of unset) delete next[column];
+    this.insertions[at] = { ...row, values: next };
   }
 
   /**
@@ -246,17 +242,18 @@ export class PendingEdits {
   /**
    * Everything held right now, as the way back to it. A host that counts a move in what is waiting
    * as an edit of its document needs an undo for each one, and there are six ways to move: asking
-   * each of them for its own inverse is six chances to get one wrong. These are the reader's own
-   * changes — tens of them, not thousands — so remembering all three lists costs nothing.
+   * each of them for its own inverse is six chances to get one wrong. Every row held here is
+   * replaced rather than written into, so remembering the three lists is remembering three arrays —
+   * an undo held for the life of a tab shares its rows with the others rather than copying them.
    */
   snapshot(): () => void {
     const items = [...this.items];
     const removals = [...this.removals];
-    const insertions = this.insertions.map((row) => ({ ...row, values: { ...row.values } }));
+    const insertions = [...this.insertions];
     return () => {
       this.items = [...items];
       this.removals = [...removals];
-      this.insertions = insertions.map((row) => ({ ...row, values: { ...row.values } }));
+      this.insertions = [...insertions];
     };
   }
 
