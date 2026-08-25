@@ -1,6 +1,8 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import {
   add,
+  columns,
+  cursor,
   editBar,
   enterEditMode,
   openEmpty,
@@ -15,33 +17,88 @@ import {
  * queries; this one only ever asks what the grid does with a keystroke and a row.
  */
 
-/** The visible column names, in the order they are shown, paired with the ordinal each one uses. */
-async function columns(page: Page): Promise<{ name: string; ordinal: string }[]> {
-  const names = await page.locator("thead th:not(.row-gutter)").allInnerTexts();
-  const ordinals = await page
-    .locator("tbody tr:not(.result-spacer)")
-    .first()
-    .locator("td[data-column]")
-    .evaluateAll((cells) => cells.map((cell) => cell.getAttribute("data-column") ?? ""));
-  return names.map((name, index) => ({
-    name: name.split("\n")[0]?.trim() ?? "",
-    ordinal: ordinals[index] ?? "",
-  }));
-}
+test("opens the editor on the row the cursor is on, added rows included", async ({ page }) => {
+  await openEmpty(page);
+  await add(page, "shop.product");
+  await enterEditMode(page);
+  const bar = editBar(page);
 
-/** Where the cursor stands: the anchor cell, or the gutter when whole rows are selected. */
-function cursor(page: Page): Promise<string> {
-  return page.evaluate(() => {
-    const gutter = document.querySelector("th.row-gutter.selected");
-    const anchor = document.querySelector("td.anchor");
-    const cell = anchor ?? gutter;
-    if (!cell) return "nothing";
-    const row = cell.closest("tr");
-    const index = row ? [...(row.parentElement?.children ?? [])].indexOf(row) : -1;
-    if (!anchor) return `gutter:${index}`;
-    return `${index}:${anchor.getAttribute("data-column")}`;
-  });
-}
+  await page.locator("tbody tr:not(.result-spacer) td").first().click();
+  await bar.add.click();
+  await bar.add.click();
+  await expect(page.locator("tbody tr .row-gutter-state.added")).toHaveCount(2);
+
+  /*
+   * The arrows count through the rows waiting to be added and the loaded ones alike, so the row
+   * under the cursor is not the row at that place among the loaded ones. Asked from the keys, the
+   * editor used to open on whichever loaded row happened to sit at that number.
+   */
+  /*
+   * Which row the editor opened on, said by what addresses it rather than by what numbers it: the
+   * local id of a row waiting to be added counts up across the whole shell and is nobody's business
+   * here, where the question is only whether the editor landed on the row the cursor was on.
+   */
+  const openedOn = () =>
+    page.evaluate(() => {
+      const cell = document.querySelector(".cell-editor")?.closest("td");
+      if (!cell) return "none";
+      return cell.hasAttribute("data-added-row")
+        ? "added"
+        : `loaded:${cell.getAttribute("data-row")}`;
+    });
+
+  await page.locator("tbody tr:has(.row-gutter-state.added) td").first().click();
+  await page.keyboard.press("Enter");
+  expect(await openedOn()).toBe("added");
+  await page.keyboard.press("Escape");
+
+  // And the loaded row under the cursor is the one it says, however many rows wait above it.
+  await page.locator("tbody tr:not(:has(.row-gutter-state.added)) td").first().click();
+  await page.keyboard.press("Enter");
+  expect(await openedOn()).toBe("loaded:0");
+});
+
+test("walks onto the gutter with the arrows, and takes whole rows from there", async ({ page }) => {
+  await openEmpty(page);
+  await add(page, "shop.product");
+
+  await page.locator("tbody tr:not(.result-spacer) td").first().click();
+  const gutter = page.locator("th.row-gutter.selected");
+  await expect(gutter).toHaveCount(0);
+
+  // The gutter is one step left of the first column. Standing on it is what selecting a whole row
+  // means, so the reader never has to reach for the pointer to take one.
+  await page.keyboard.press("ArrowLeft");
+  await expect(gutter).toHaveCount(1);
+
+  // Down the gutter walks whole rows, and a held shift extends the run of them.
+  await page.keyboard.press("ArrowDown");
+  await expect(gutter).toHaveCount(1);
+  await page.keyboard.press("Shift+ArrowDown");
+  await expect(gutter).toHaveCount(2);
+
+  // One step right is the first column again, and the row selection is behind him.
+  await page.keyboard.press("ArrowRight");
+  await expect(gutter).toHaveCount(0);
+});
+
+test("gives the keyboard back when a cell editor closes", async ({ page }) => {
+  await openEmpty(page);
+  await add(page, "shop.product");
+  await enterEditMode(page);
+
+  await page.locator("tbody tr:not(.result-spacer) td").nth(1).dblclick();
+  await expect(page.locator(".cell-editor input, .cell-editor textarea")).toHaveCount(1);
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".cell-editor input, .cell-editor textarea")).toHaveCount(0);
+
+  // Closing the editor unmounted the field the focus was in. Unless the grid takes it back, every
+  // arrow after an edit goes to the page and the reader has to click to get the keyboard again.
+  const rowOf = async () => Number((await cursor(page)).split(":")[0]);
+  const before = await rowOf();
+  await page.keyboard.press("ArrowDown");
+  expect(await rowOf()).toBe(before + 1);
+});
 
 test("walks the rows and the columns with the arrows, and jumps to the ends", async ({ page }) => {
   await openEmpty(page);
@@ -58,11 +115,11 @@ test("walks the rows and the columns with the arrows, and jumps to the ends", as
   expect(await cursor(page)).toBe("1:2");
 
   // End is the last column of the row, Home the first — the gutter is one step further left still.
+  const shown = await columns(page);
+  const first = shown[0]?.ordinal;
   await page.keyboard.press("End");
-  const last = (await columns(page)).at(-1)?.ordinal;
-  expect(await cursor(page)).toBe(`1:${last}`);
+  expect(await cursor(page)).toBe(`1:${shown.at(-1)?.ordinal}`);
   await page.keyboard.press("Home");
-  const first = (await columns(page))[0]?.ordinal;
   expect(await cursor(page)).toBe(`1:${first}`);
 
   // A page is as many rows as the window shows, so it never walks past what there is.

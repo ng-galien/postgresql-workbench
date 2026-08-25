@@ -123,21 +123,14 @@ export function movedSelection(
 ): GridSelection {
   const { visibleOrdinals } = bounds;
   const from = extend ? selection.head : selection.anchor;
-  const column = visibleOrdinals.indexOf(from.ordinal);
-  const onGutter = selection.kind === "rows";
-  const entersGutter = !onGutter && columnDelta < 0 && column <= 0;
-  const kind: GridSelection["kind"] = entersGutter
-    ? "rows"
-    : onGutter && columnDelta > 0
-      ? "cells"
-      : selection.kind;
-  const nextColumn = clampIndex(column < 0 ? 0 : column + columnDelta, visibleOrdinals.length);
+  // Where the cursor stands along the row, counting the gutter as the column before the first.
+  const column =
+    selection.kind === "rows" ? -1 : Math.max(0, visibleOrdinals.indexOf(from.ordinal));
+  const next = Math.max(-1, Math.min(column + columnDelta, visibleOrdinals.length - 1));
+  const kind: GridSelection["kind"] = next < 0 ? "rows" : "cells";
   const head = {
     row: clampIndex(from.row + rowDelta, bounds.rows),
-    ordinal:
-      onGutter || entersGutter
-        ? (visibleOrdinals[0] ?? from.ordinal)
-        : (visibleOrdinals[nextColumn] ?? from.ordinal),
+    ordinal: visibleOrdinals[Math.max(0, next)] ?? from.ordinal,
   };
   if (extend) return extendedTo(selection, head, kind);
   return { kind, anchor: head, head };

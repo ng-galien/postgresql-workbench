@@ -6,6 +6,7 @@ import {
 import { conditionForCell, withCondition } from "../../../packages/rows/src/dataView/cellFilter.js";
 import {
   type DataViewAddition,
+  type DataViewChangeHandle,
   type DataViewEdit,
   type DataViewEditability,
   type DataViewProjection,
@@ -338,7 +339,7 @@ export class DataViewDocument implements vscode.CustomDocument {
         this.broadcastState();
         return;
       case "data-view/fill-row":
-        this.edits.fillRow(request.localId, request.values, request.unset ?? []);
+        this.edits.fillRow(request.localId, request.values, request.unset);
         this.broadcastState();
         return;
       case "data-view/remove-rows": {
@@ -365,8 +366,7 @@ export class DataViewDocument implements vscode.CustomDocument {
         await this.services.openSql(this.source, this.query.effectiveSql());
         return;
       case "data-view/discard-change":
-        this.edits.discardChange(request.change);
-        this.broadcastState();
+        this.discardChange(request.change);
         return;
       case "data-view/discard":
       case "data-view/apply":
@@ -766,6 +766,30 @@ export class DataViewDocument implements vscode.CustomDocument {
         },
         redo: () => {
           this.edits.set(edit);
+          this.broadcastState();
+        },
+      });
+    }
+    this.broadcastState();
+  }
+
+  /**
+   * Taking one change back out is a move in what is waiting, exactly as making one is, so VS Code
+   * is told about it the same way. Left out, the tab keeps its dirty mark over an empty list and
+   * asks to save nothing on close, and an undo puts back the change the reader just took away.
+   */
+  discardChange(change: DataViewChangeHandle): void {
+    const discarded = this.edits.discardChange(change);
+    if (!discarded) return;
+    if (this.nativeDirtyTracking()) {
+      this._onDidEdit.fire({
+        label: "Discard change",
+        undo: () => {
+          this.edits.restoreChange(discarded);
+          this.broadcastState();
+        },
+        redo: () => {
+          this.edits.discardChange(change);
           this.broadcastState();
         },
       });

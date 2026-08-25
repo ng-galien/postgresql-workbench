@@ -34,7 +34,6 @@ export async function enterEditMode(page: Page) {
   await expect(page.getByRole("toolbar", { name: "Row editing" })).toBeVisible();
 }
 
-/** Selects whole rows the way a reader does: in the gutter, extending with shift. */
 /** Puts text on the clipboard the reader will paste from. */
 export async function putOnClipboard(page: Page, text: string) {
   await page.evaluate((value) => navigator.clipboard.writeText(value), text);
@@ -51,6 +50,7 @@ export async function openExport(page: Page) {
   await expect(page.getByRole("dialog", { name: "Export rows" })).toBeVisible();
 }
 
+/** Selects whole rows the way a reader does: in the gutter, extending with shift. */
 export async function selectRows(page: Page, first: number, last = first) {
   const gutters = page.locator("tbody th.row-gutter");
   await gutters.nth(first).click();
@@ -67,4 +67,32 @@ export function editBar(page: Page) {
     changes: bar.locator(".edit-bar-button.count"),
     apply: bar.getByRole("button", { name: /Apply/u }),
   };
+}
+
+/** The visible column names, in the order they are shown, paired with the ordinal each one uses. */
+export async function columns(page: Page): Promise<{ name: string; ordinal: string }[]> {
+  const names = await page.locator("thead th:not(.row-gutter)").allInnerTexts();
+  const ordinals = await page
+    .locator("tbody tr:not(.result-spacer)")
+    .first()
+    .locator("td[data-column]")
+    .evaluateAll((cells) => cells.map((cell) => cell.getAttribute("data-column") ?? ""));
+  return names.map((name, index) => ({
+    name: name.split("\n")[0]?.trim() ?? "",
+    ordinal: ordinals[index] ?? "",
+  }));
+}
+
+/** Where the cursor stands: the anchor cell, or the gutter when whole rows are selected. */
+export function cursor(page: Page): Promise<string> {
+  return page.evaluate(() => {
+    const gutter = document.querySelector("th.row-gutter.selected");
+    const anchor = document.querySelector("td.anchor");
+    const cell = anchor ?? gutter;
+    if (!cell) return "nothing";
+    const row = cell.closest("tr");
+    const index = row ? [...(row.parentElement?.children ?? [])].indexOf(row) : -1;
+    if (!anchor) return `gutter:${index}`;
+    return `${index}:${anchor.getAttribute("data-column")}`;
+  });
 }

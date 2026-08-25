@@ -51,7 +51,7 @@ describe("provisioned changes", () => {
       {
         kind: "update",
         // The change itself, so a reader who reads the list can take this one line out of it.
-        handle: { of: "edit", tableOid: 42, key: ["12"], ordinal: 3 },
+        handle: { kind: "update", tableOid: 42, key: ["12"], ordinal: 3 },
         table: "shop.address",
         row: "id = 12",
         column: "city",
@@ -99,7 +99,7 @@ describe("provisioned row removals", () => {
     expect(summaries).toEqual([
       {
         kind: "delete",
-        handle: { of: "removal", tableOid: 42, key: ["12"] },
+        handle: { kind: "delete", tableOid: 42, key: ["12"] },
         table: "shop.address",
         row: "id = 12",
       },
@@ -134,7 +134,7 @@ describe("provisioned row insertions", () => {
     expect(summaries).toEqual([
       {
         kind: "insert",
-        handle: { of: "insertion", localId: "new-1" },
+        handle: { kind: "insert", localId: "new-1" },
         table: "shop.address",
         row: "city = Brest, label = Dépôt",
       },

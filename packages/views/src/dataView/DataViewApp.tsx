@@ -21,6 +21,7 @@ import {
   dataViewWritableTable,
   defaultNullsOrder,
   describeDataViewChanges,
+  sameDataViewChangeRow,
 } from "../../../rows/src/dataView/dataView.js";
 import type {
   DataViewRequest,
@@ -955,13 +956,11 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
         // Several cells of one row are one place, said once: the row above is where they all land.
         const previous = all[index - 1];
         const sameRow =
-          previous?.table === change.table &&
-          previous?.row === change.row &&
-          previous?.kind === change.kind;
+          previous !== undefined && sameDataViewChangeRow(previous.handle, change.handle);
         return {
           kind: "note",
           dismiss: {
-            label: `Take this change out of what is waiting`,
+            label: "Take this change out",
             run: () => post({ type: "data-view/discard-change", change: change.handle }),
           },
           content: (

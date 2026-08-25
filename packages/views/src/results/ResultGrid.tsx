@@ -30,7 +30,7 @@ import { isWebAddress } from "./cellDetail.js";
 import { matchFrom, matchingCells } from "./findInRows.js";
 import { GridFinder } from "./GridFinder.js";
 import { GridHeader } from "./GridHeader.js";
-import { GridRow, type GridRowContext } from "./GridRow.js";
+import { cellOf, GridRow, type GridRowContext, type GridRowSubject } from "./GridRow.js";
 import {
   cellIsSelected,
   cellSelection,
@@ -83,8 +83,10 @@ export interface GridEditing {
     /** Rows the reader added, in the order they are shown, each over the row it was added on. */
     added: readonly DataViewRowInsertion[];
     drop(localId: string): void;
-    /** Fills columns of an added row; null leaves a column to PostgreSQL. */
-    /** `unset` names the columns to leave out of the INSERT, which is not the same as NULL. */
+    /**
+     * Fills columns of a row being added. A value is written, `null` is written as NULL, and a
+     * column named in `unset` is left out of the INSERT — which is not the same change at all.
+     */
     fill(localId: string, values: Record<string, string | null>, unset?: readonly string[]): void;
     /** Adds a row already filled in — a line of a paste that fell past the last loaded row. */
     appendPasted(values: Record<string, string | null>, above: number): void;
@@ -638,21 +640,19 @@ export function ResultGrid({
         ? activeAdded?.localId === subject.added.localId && activeAdded.ordinal === ordinal
         : activeCell?.row === subject.loadedIndex && activeCell.ordinal === ordinal;
     },
+    // A row waiting to be taken away holds nothing to change, and a value cut short on its way here
+    // is not a value to edit: writing it back would truncate it.
     openEditor(shownRow, ordinal) {
       const policy = editing?.policies[ordinal];
-      if (!policy?.editable) return;
-      const shown = order.at(shownRow);
-      if ("added" in shown) {
-        setActiveAdded({ localId: shown.added.localId, ordinal });
+      const subject = subjectAt(shownRow);
+      if (!policy?.editable || !subject) return;
+      if (subject.of === "added") {
+        setActiveAdded({ localId: subject.added.localId, ordinal });
         return;
       }
-      const cell = rows[shown.loaded]?.[ordinal];
-      // A row waiting to be taken away holds nothing to change, and a value cut short on its way
-      // here is not a value to edit: writing it back would truncate it.
-      const row = rows[shown.loaded];
-      if (!row || !cell || cell.truncated) return;
-      if (editing?.rows?.isRemoved(row)) return;
-      setActiveCell({ row: shown.loaded, ordinal });
+      const cell = subject.cells[ordinal];
+      if (!cell || cell.truncated || subject.removed) return;
+      setActiveCell({ row: subject.loadedIndex, ordinal });
     },
     closeEditor() {
       setActiveCell(undefined);
@@ -661,23 +661,33 @@ export function ResultGrid({
   };
 
   /*
-   * The cell the cursor is on, for whatever is showing it whole. A row waiting to be added has no
-   * loaded cell behind it, so what it has been filled with stands in for one.
+   * Which row stands at a place the arrows count to. The arrows walk the rows waiting to be added
+   * and the loaded ones alike, so everything that acts on "the row under the cursor" asks this and
+   * not the loaded rows directly — a shown index is not a loaded index once one waits above it.
+   */
+  const subjectAt = (shownRow: number): GridRowSubject | undefined => {
+    const shown = order.at(shownRow);
+    if ("added" in shown) return { of: "added", added: shown.added };
+    const cells = rows[shown.loaded];
+    if (!cells) return undefined;
+    return {
+      of: "loaded",
+      cells,
+      loadedIndex: shown.loaded,
+      number: firstRowNumber + shown.loaded,
+      removed: editing?.rows?.isRemoved(cells) ?? false,
+    };
+  };
+  /*
+   * The cell the cursor is on, for whatever is showing it whole — projected by the one function
+   * that says what a cell shows, so the panel and the grid never disagree about what is in it.
    */
   const cursorCell = ((): DebugResultCell | undefined => {
-    const shown = order.at(selection.anchor.row);
-    if ("added" in shown) {
-      const filled = shown.added.values[payload.columns[selection.anchor.ordinal]?.name ?? ""];
-      return {
-        kind: filled === undefined || filled === null ? "null" : "text",
-        value: filled ?? null,
-      };
-    }
-    const row = rows[shown.loaded];
-    const cell = row?.[selection.anchor.ordinal];
-    if (!cell) return undefined;
-    const edit = editing?.editFor(row ?? [], shown.loaded, selection.anchor.ordinal);
-    return edit ? { ...cell, value: edit.value } : cell;
+    const subject = subjectAt(selection.anchor.row);
+    const column = payload.columns[selection.anchor.ordinal];
+    if (!subject || !column) return undefined;
+    if (subject.of === "loaded" && !subject.cells[selection.anchor.ordinal]) return undefined;
+    return cellOf(subject, selection.anchor.ordinal, column.name, editing);
   })();
   const lastInspection = useRef<
     | {

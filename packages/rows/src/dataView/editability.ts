@@ -25,11 +25,20 @@ export interface CatalogColumn {
 }
 
 /**
+ * Whether PostgreSQL has something of its own for this column, so a row can be written without the
+ * reader giving one: a DEFAULT, a sequence behind an identity, a generated expression. Asked by the
+ * two rules that turn on it — what a new row cannot go without, and what a cell can be given back to.
+ */
+export function columnHasOwnValue(column: CatalogColumn): boolean {
+  return column.hasDefault || column.identity !== "" || column.generated !== "";
+}
+
+/**
  * Whether a new row cannot be written without a value for this column. Generated columns and
  * anything PostgreSQL fills in on its own are not demanded of the reader.
  */
 export function columnDemandsValue(column: CatalogColumn): boolean {
-  return column.notNull && !column.hasDefault && column.generated === "" && column.identity === "";
+  return column.notNull && !columnHasOwnValue(column);
 }
 
 export interface CatalogUniqueIndex {
@@ -250,6 +259,6 @@ function columnPolicy(
     column: column.name,
     dataType: column.type,
     editor: valueEditorForType(column.type),
-    hasDefault: column.hasDefault || column.identity !== "" || column.generated !== "",
+    hasDefault: columnHasOwnValue(column),
   };
 }

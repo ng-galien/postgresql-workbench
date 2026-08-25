@@ -266,16 +266,26 @@ export function dataViewRelationOwning(
   };
 }
 
-/** One provisioned change, told the way a reader needs to read it back. */
 /**
  * Which change a summary stands for, so a reader who reads the list can take one out of it. A
  * summary otherwise holds only what to show — `id = 12` is a sentence, not a row it can be found by.
  */
 export type DataViewChangeHandle =
-  | { of: "edit"; tableOid: number; key: (string | null)[]; ordinal: number }
-  | { of: "removal"; tableOid: number; key: (string | null)[] }
-  | { of: "insertion"; localId: string };
+  | { kind: "update"; tableOid: number; key: (string | null)[]; ordinal: number }
+  | { kind: "delete"; tableOid: number; key: (string | null)[] }
+  | { kind: "insert"; localId: string };
 
+/**
+ * Whether two changes land on the same row of the same table, in the same way. What a summary shows
+ * — `id = 12` — is a sentence written for a reader; the handle is what the two can be compared by.
+ */
+export function sameDataViewChangeRow(a: DataViewChangeHandle, b: DataViewChangeHandle): boolean {
+  if (a.kind !== b.kind) return false;
+  if (a.kind === "insert" || b.kind === "insert") return false;
+  return sameDataViewRow(a, b);
+}
+
+/** One provisioned change, told the way a reader needs to read it back. */
 export interface DataViewChangeSummary {
   kind: "update" | "delete" | "insert";
   /** The change itself, to take it back out of what is waiting. */
@@ -320,7 +330,7 @@ export function describeDataViewChanges(
     ...removals.map((removal) => ({
       kind: "delete" as const,
       handle: {
-        of: "removal" as const,
+        kind: "delete" as const,
         tableOid: removal.tableOid,
         key: [...removal.key],
       },
@@ -329,7 +339,7 @@ export function describeDataViewChanges(
     ...edits.map((edit) => ({
       kind: "update" as const,
       handle: {
-        of: "edit" as const,
+        kind: "update" as const,
         tableOid: edit.tableOid,
         key: [...edit.key],
         ordinal: edit.ordinal,
@@ -344,7 +354,7 @@ export function describeDataViewChanges(
       const filled = Object.entries(insertion.values);
       return {
         kind: "insert" as const,
-        handle: { of: "insertion" as const, localId: insertion.localId },
+        handle: { kind: "insert" as const, localId: insertion.localId },
         table: describe({ tableOid: insertion.tableOid, key: [] }).table,
         // A row with nothing filled in is a row of defaults, which is worth saying out loud.
         row:
@@ -422,12 +432,15 @@ export function dataViewTitle(source: DataViewSource, projection: DataViewProjec
   return rest.length === 0 ? first.name : `${first.name} +${rest.length}`;
 }
 
-/** Same stored row: same table and same identity values. */
 /** Identity of one row of one table: the key values of its projected unique index. */
 export function dataViewRowKey(row: { tableOid: number; key: readonly (string | null)[] }): string {
   return `${row.tableOid}:${JSON.stringify(row.key)}`;
 }
 
-export function sameDataViewRow(a: DataViewEdit, b: DataViewEdit): boolean {
+/** Same stored row: same table and same identity values. */
+export function sameDataViewRow(
+  a: { tableOid: number; key: readonly (string | null)[] },
+  b: { tableOid: number; key: readonly (string | null)[] },
+): boolean {
   return dataViewRowKey(a) === dataViewRowKey(b);
 }

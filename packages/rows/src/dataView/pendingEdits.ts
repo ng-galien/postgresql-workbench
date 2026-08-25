@@ -14,6 +14,12 @@ import {
 import { READ_ONLY_REASONS } from "./editability.js";
 import { buildRowDeletes, buildRowInserts, buildRowUpdates } from "./updates.js";
 
+/** What was taken out of what is waiting, so a host that counts edits can put it back. */
+export type DiscardedChange =
+  | { kind: "update"; edit: DataViewEdit }
+  | { kind: "delete"; row: DataViewRowRemoval }
+  | { kind: "insert"; row: DataViewRowInsertion };
+
 /**
  * What a surface showing a Data View must be able to do for changes to reach PostgreSQL. Each
  * surface answers these its own way — the Extension Host through VS Code, the composition shell
@@ -131,7 +137,7 @@ export class PendingEdits {
     return previous;
   }
 
-  remove(edit: DataViewEdit): void {
+  remove(edit: Pick<DataViewEdit, "tableOid" | "key" | "ordinal">): void {
     this.items = this.items.filter(
       (candidate) => !(sameDataViewRow(candidate, edit) && candidate.ordinal === edit.ordinal),
     );
@@ -163,7 +169,7 @@ export class PendingEdits {
     const keys = new Set(rows.map((row) => dataViewRowKey(row)));
     const alreadyGone = rows.every((row) => this.isRemoved(row));
     if (alreadyGone) {
-      this.removals = this.removals.filter((row) => !keys.has(dataViewRowKey(row)));
+      for (const key of keys) this.unremove(key);
       return { held: true, consequences: [] };
     }
     this.items = this.items.filter((edit) => !keys.has(dataViewRowKey(edit)));
@@ -200,16 +206,15 @@ export class PendingEdits {
     this.insertions = this.insertions.filter((row) => row.localId !== localId);
   }
 
-  /** Fills columns of an added row; clearing one back to nothing leaves it to PostgreSQL. */
   /**
-   * A cell of a row being added holds one of three things, and they are not the same row in the
+   * Fills columns of a row being added. A cell of one holds one of three things, and they are not the same row in the
    * database: a value, an explicit NULL, or nothing at all. Only the third is left out of the
    * INSERT, which is what makes the column take the default the table gives it.
    */
   fillRow(
     localId: string,
     values: Record<string, string | null>,
-    unset: readonly string[] = [],
+    unset: readonly string[] | undefined = [],
   ): void {
     const row = this.insertions.find((candidate) => candidate.localId === localId);
     if (!row) return;
@@ -218,24 +223,43 @@ export class PendingEdits {
   }
 
   /**
-   * Takes one change back out of what is waiting, whichever kind it is. A reader who reads the list
-   * before committing to it should be able to change their mind about one line of it without
-   * discarding the eight others — and the grid answers straight away, because what it draws is
-   * these three lists and nothing else.
+   * Takes one change back out of what is waiting, whichever kind it is, and hands it back so a host
+   * that counts moves as document edits can put it back. A reader who reads the list before
+   * committing to it should be able to change their mind about one line without discarding the
+   * eight others — and the grid answers straight away, because what it draws is these three lists.
    */
-  discardChange(change: DataViewChangeHandle): void {
-    if (change.of === "insertion") {
-      this.insertions = this.insertions.filter((row) => row.localId !== change.localId);
-      return;
+  discardChange(change: DataViewChangeHandle): DiscardedChange | undefined {
+    if (change.kind === "insert") {
+      const row = this.insertions.find((candidate) => candidate.localId === change.localId);
+      if (!row) return undefined;
+      this.dropRow(change.localId);
+      return { kind: "insert", row };
     }
-    const key = dataViewRowKey({ tableOid: change.tableOid, key: change.key });
-    if (change.of === "removal") {
-      this.removals = this.removals.filter((row) => dataViewRowKey(row) !== key);
-      return;
+    const key = dataViewRowKey(change);
+    if (change.kind === "delete") {
+      const row = this.removals.find((candidate) => dataViewRowKey(candidate) === key);
+      if (!row) return undefined;
+      this.unremove(key);
+      return { kind: "delete", row };
     }
-    this.items = this.items.filter(
-      (edit) => !(dataViewRowKey(edit) === key && edit.ordinal === change.ordinal),
+    const edit = this.items.find(
+      (candidate) => dataViewRowKey(candidate) === key && candidate.ordinal === change.ordinal,
     );
+    if (!edit) return undefined;
+    this.remove(edit);
+    return { kind: "update", edit };
+  }
+
+  /** Puts back a change that was taken out, so an undo restores what the reader took away. */
+  restoreChange(discarded: DiscardedChange): void {
+    if (discarded.kind === "insert") this.insertions.push(discarded.row);
+    else if (discarded.kind === "delete") this.removals.push(discarded.row);
+    else this.set(discarded.edit);
+  }
+
+  /** Puts one row back among those the result holds, which is what a second Delete does to it. */
+  private unremove(key: string): void {
+    this.removals = this.removals.filter((row) => dataViewRowKey(row) !== key);
   }
 
   clear(): void {

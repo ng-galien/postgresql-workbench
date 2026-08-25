@@ -130,6 +130,14 @@ export function GridRow({
       {columns.map(({ key, ordinal, value: column }) => {
         const policy = editing?.policies[ordinal];
         const cell = cellOf(subject, ordinal, column.name, editing);
+        /* Leaving a column to the database: the same sentence, said to whichever list holds the row. */
+        const leaveToDatabase = () => {
+          context.closeEditor();
+          if (added) editing?.rows?.fill(added.localId, {}, [column.name]);
+          else if (subject.of === "loaded") {
+            editing?.onEdit(subject.cells, subject.loadedIndex, ordinal, null, cell.raw, true);
+          }
+        };
         const shown = cell.value;
         const editingHere = context.isEditingCell(subject, ordinal);
         return (
@@ -202,25 +210,7 @@ export function GridRow({
                 editor={policy.editor}
                 value={shown}
                 given={cell.given}
-                {...(policy.hasDefault
-                  ? {
-                      onLeaveToDatabase: () => {
-                        context.closeEditor();
-                        if (added) {
-                          editing.rows?.fill(added.localId, {}, [column.name]);
-                        } else if (subject.of === "loaded") {
-                          editing.onEdit(
-                            subject.cells,
-                            subject.loadedIndex,
-                            ordinal,
-                            null,
-                            cell.raw,
-                            true,
-                          );
-                        }
-                      },
-                    }
-                  : {})}
+                onLeaveToDatabase={added || policy.hasDefault ? leaveToDatabase : undefined}
                 onCommit={(next) => {
                   context.closeEditor();
                   if (added) editing.rows?.fill(added.localId, { [column.name]: next });
@@ -243,9 +233,7 @@ export function GridRow({
                 {shown}
               </span>
             ) : (
-              <span className="cell-value">
-                {shown === null ? emptyLabel(subject, cell.given === true) : shown}
-              </span>
+              <span className="cell-value">{shown === null ? emptyLabel(cell.given) : shown}</span>
             )}
           </td>
         );
@@ -263,11 +251,14 @@ interface ShownCell extends DebugResultCell {
    * would become what the database is told the row used to hold.
    */
   raw: string | null;
-  /** On a row being added: whether the reader has given this column anything, NULL included. */
-  given?: boolean;
+  /** Whether the reader has given this column anything, NULL included. A loaded row always has. */
+  given: boolean;
 }
 
-function cellOf(
+/** A cell the result has nothing for. One object, shared: `cellOf` runs per cell per frame. */
+const NOTHING: DebugResultCell = { kind: "null", value: null };
+
+export function cellOf(
   subject: GridRowSubject,
   ordinal: number,
   columnName: string,
@@ -278,24 +269,22 @@ function cellOf(
     const filled = given ? (subject.added.values[columnName] ?? null) : null;
     return { kind: filled === null ? "null" : "text", value: filled, raw: filled, given };
   }
-  const cell = {
-    ...(subject.cells[ordinal] ?? { kind: "null" as const, value: null }),
-    given: true,
-  };
+  const source = subject.cells[ordinal] ?? NOTHING;
   const edit = editing?.editFor(subject.cells, subject.loadedIndex, ordinal);
-  if (!edit) return { ...cell, raw: cell.value };
+  if (!edit) return { ...source, raw: source.value, given: true };
   // A column asked for its default holds no value to show until PostgreSQL has written one.
   if (edit.toDefault) {
-    return { ...cell, kind: "null", value: null, edited: true, raw: cell.value, given: false };
+    return { ...source, kind: "null", value: null, edited: true, raw: source.value, given: false };
   }
-  return { ...cell, value: edit.value, edited: true, raw: cell.value, given: true };
+  return { ...source, value: edit.value, edited: true, raw: source.value, given: true };
 }
 
 /*
- * A cell holding no text says which of three things that means. On a loaded row there is only one:
- * NULL. On a row being added there are two, and they are not the same row in the database — an
- * explicit NULL is inserted, a column left alone is not named at all and takes the table's default.
+ * A cell holding no text says which of the three things it means. A loaded row holds NULL — it was
+ * written once, if only with nothing. A row being added holds NULL where the reader gave it one,
+ * and DEFAULT where they gave nothing at all: that column is left out of the INSERT, so the table
+ * answers for it. Whether the answer is a default of its own or NULL again is PostgreSQL's to say.
  */
-function emptyLabel(_subject: GridRowSubject, given: boolean): string {
+export function emptyLabel(given: boolean): string {
   return given ? "NULL" : "DEFAULT";
 }

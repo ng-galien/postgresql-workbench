@@ -791,10 +791,6 @@ body,
 }
 
 /*
- * The provisioned changes, read before they are written: what table and row each lands on, and
- * the value it replaces.
- */
-/*
  * What is waiting to be written, as a list to read before committing to it. Each change wears the
  * mark of what it is — a row going, a row arriving, a cell changing — so the three are told apart
  * before a word is read. Several cells of one row say the row once and sit under it as a block.
