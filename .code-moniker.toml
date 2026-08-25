@@ -108,13 +108,16 @@ owns = [
   "the Code Moniker syntax boundary for SQL and PL/pgSQL",
   "SQL as text: identifiers, lexing, formatting, document language",
   "the query engine: analysis, relations, composition, join planning",
-  "the SQL authoring language server and its protocol",
+  "the SQL authoring language server, its protocol, and the one client every surface asks it through",
+  "what a PL/pgSQL routine body's own names are: its variables, its parameters, its declared types",
 ]
 forbids = [
   "depending on any other package, or on the Extension Host",
   "importing what the language server answers with, from outside the server",
   "the query engine depending on the language server",
   "secondary SQL or PL/pgSQL syntax providers",
+  "asking a host's own provider registry for what the server answers",
+  "a question the server asks its host that only one host can answer",
 ]
 forbid_rules = [
   "sql-analysis-dependency-stays-inside-sql-analysis",
@@ -122,10 +125,31 @@ forbid_rules = [
   "query-engine-dependency-does-not-point-to-language-server",
   "syntax-workbench-debugger-ownership-stays-at-runtime-boundaries",
 ]
-rationale = "The language server is the front door for editor features; a consumer asks it rather than importing completion or semantic tokens. Anything needed outside that protocol is a worker called directly: `query` to rewrite SQL, `text` to read it as text. The package is a leaf because the standalone DAP executable ships it without VS Code."
+rationale = """
+The language server is the front door for editor features; a consumer asks it rather than importing
+completion or semantic tokens. Anything needed outside that protocol is a worker called directly:
+`query` to rewrite SQL, `text` to read it as text. The package is a leaf because the standalone DAP
+executable ships it without VS Code.
+
+There is one client, built on the protocol library the server itself is built on, and every surface
+asks through it. A host supplies the two things that genuinely differ — how its documents reach the
+server, and what carries the request — and VS Code's own language client satisfies that without
+adaptation, which is the point: VS Code is one host of this server, not the condition for having
+one. The composition shell runs the server as a child process over stdio, which is the shape a
+standalone application takes.
+
+Measured against that, August 2026. The Data View asked VS Code what to propose and how to colour.
+VS Code answers with every provider registered for the language, so a second SQL extension installed
+beside this one landed its proposals in a Workbench view wearing this one's vocabulary — and outside
+VS Code there is no aggregator to ask at all. Colouring a PL/pgSQL body was worse: it existed only
+inside a VS Code provider, and the server asked the Extension Host for it and relayed the answer, so
+a body opened anywhere else was coloured by nobody and nothing said so.
+"""
 symbols = [
   "ts:packages/sql/src/localCodeMonikerSyntax.class:StatelessCodeMonikerSyntaxRuntime",
   "ts:packages/sql/src/analysis/codeMonikerSyntax.function:createCodeMonikerSyntaxParser",
+  "ts:packages/sql/src/languageServer/client.function:createSqlAuthoringClient",
+  "ts:packages/sql/src/routines/semanticTokens.function:plpgsqlSemanticTokens",
 ]
 rules = [
   "sql-analysis-dependency-stays-inside-sql-analysis",
@@ -406,6 +430,12 @@ id = "a-move-is-not-an-indexed-edge"
 rationale = "The door that every move on a Data View's held changes goes through is held by TypeScript and by a test, not by a rule — and that is not a choice. A call to `edits.move(...)` is a method call on a field, and this index links no reference from either surface to a method of `PendingEdits`: a rule written against one reports zero violations while both hosts sit in front of it. So the six mutators are private, which makes the door the only way in and a second one a compile error rather than a review comment; the moves are named in a record over their own union, so a seventh cannot be added without being named, labelled and performed; and pendingEdits.test proves the guard by holding a transaction open and attempting all six moves against it. What the graph can see is guarded by rules instead: the policy that refuses a write, and the three builders that assemble one."
 symbols = ["ts:packages/rows/src/dataView/pendingEdits.class:PendingEdits"]
 check = "npx vitest run packages/rows/src/dataView/pendingEdits.test.ts"
+
+[[views.gotchas]]
+id = "one-language-authority-is-guarded-by-a-script"
+rationale = "The application is meant to run under a host that is not VS Code, and two ways of losing that are invisible to every other check here. A surface can ask VS Code's provider registry instead of this server — which answers with everyone's providers, and answers nothing at all outside VS Code. And a question the server sends back to its host can end up with only one host able to answer it, at which point the capability is VS Code's rather than the application's; the server catches such a failure, so the feature simply stops without a word. check-extension-adapts asks whether a file adapts anything to VS Code and is blind to both — the files at fault imported `vscode` and passed. scripts/test/check-language-authority.mjs asks the other question: it reads the requests the server actually sends, requires every host to answer each of them, and refuses any aggregator call in the extension. It fails on a host that stops answering, on a surface that goes back to asking VS Code, and on losing sight of the server itself; all three were proved by planting them."
+symbols = ["ts:packages/sql/src/languageServer/client.function:createSqlAuthoringClient"]
+check = "node scripts/test/check-language-authority.mjs"
 
 [[views.gotchas]]
 id = "lifecycle-concentration"

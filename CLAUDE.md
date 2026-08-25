@@ -168,4 +168,10 @@ returns undefined.
 - Biome for lint+format, Lefthook for pre-commit (biome fix → typecheck DAP + extension in parallel)
 - `npm run check:architecture` checks the package boundaries (code-moniker architecture profile) and
   runs in CI as the `Architecture` job — a boundary is not a convention here, it is a gate
+- One language authority: every SQL proposal and every semantic token comes from the SQL authoring
+  server, asked through the single client in `packages/sql/src/languageServer/client.ts`. Never ask
+  VS Code's provider registry (`vscode.executeCompletionItemProvider`, `vscode.provideDocumentSemanticTokens`):
+  it answers with every installed provider, and answers nothing outside VS Code. Every request the
+  server sends back to its host must be answered by both hosts — `scripts/test/check-language-authority.mjs`
+  fails otherwise, in the same `npm run check` the commit hook runs
 - Node.js 24+ required
