@@ -29,6 +29,7 @@ import type {
   DataViewSqlToken,
   DataViewState,
 } from "../../../rows/src/dataView/dataViewProtocol.js";
+import { READ_ONLY_REASONS } from "../../../rows/src/dataView/editability.js";
 import { rowOrder } from "../../../rows/src/dataView/rowOrder.js";
 import { shownValues } from "../../../rows/src/dataView/shownValues.js";
 import { followLinkRequest } from "../../../rows/src/followLink.js";
@@ -641,8 +642,11 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
   const payload = state.payload;
   // Rows come in one table at a time, exactly as they are added one at a time.
   const writableTable = dataViewWritableTable(state.editability);
-  const addable =
-    "reason" in writableTable ? `Rows can only be added ${writableTable.reason}` : undefined;
+  const addable = state.applying
+    ? READ_ONLY_REASONS.applying
+    : "reason" in writableTable
+      ? `Rows can only be added ${writableTable.reason}`
+      : undefined;
   const importable =
     "reason" in writableTable ? `Rows can only be imported ${writableTable.reason}` : undefined;
   const navigation = payload?.navigation;
@@ -1641,11 +1645,13 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
             type="button"
             className="edit-bar-button remove"
             title={
-              selectedCount > 0
-                ? `Delete ${countLabel(selectedCount, "row")}`
-                : "Select rows in the gutter to delete them"
+              state.applying
+                ? READ_ONLY_REASONS.applying
+                : selectedCount > 0
+                  ? `Delete ${countLabel(selectedCount, "row")}`
+                  : "Select rows in the gutter to delete them"
             }
-            disabled={selectedCount === 0}
+            disabled={selectedCount === 0 || state.applying}
             onClick={() => {
               // A row that was only ever local is taken back; one that exists is provisioned away.
               for (const localId of selected.added) post({ type: "data-view/drop-row", localId });

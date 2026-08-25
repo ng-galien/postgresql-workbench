@@ -29,7 +29,12 @@ import { filterDraft, filterTokensOf } from "../../rows/src/dataView/filterToken
 import { HiddenColumns } from "../../rows/src/dataView/hiddenColumns.js";
 import { initialDataViewQuery } from "../../rows/src/dataView/initialProjection.js";
 import { openDataViewResult, TableAccents } from "../../rows/src/dataView/openRows.js";
-import { type DataViewWriteHost, PendingEdits } from "../../rows/src/dataView/pendingEdits.js";
+import {
+  type DataViewMoveContext,
+  type DataViewWriteHost,
+  isDataViewMove,
+  PendingEdits,
+} from "../../rows/src/dataView/pendingEdits.js";
 import { declaredColumnType, heldValues } from "../../rows/src/dataView/shownValues.js";
 import {
   type DataViewExportChoice,
@@ -178,6 +183,21 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
     changed: () => broadcast(),
     reload: () => load(),
     connectionName: () => connectionName,
+  };
+
+  /**
+   * What this surface answers a move with. It has no document of its own to mark dirty, so it
+   * remembers nothing: the view holds the list, and Discard is how a reader takes a move back.
+   */
+  const moveContext: DataViewMoveContext = {
+    get editability() {
+      return state.editability;
+    },
+    hidden,
+    host: {
+      notify: (message, severity) => emit({ type: "data-view/notice", message, severity }),
+      changed: () => broadcast(),
+    },
   };
 
   /*
@@ -453,6 +473,10 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
       await load();
     },
     async handle(request) {
+      if (isDataViewMove(request)) {
+        edits.move(request, moveContext);
+        return;
+      }
       switch (request.type) {
         case "data-view/ready":
           await load();
@@ -601,53 +625,6 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
           }
           return;
         }
-        case "data-view/edit": {
-          const held = edits.record(request.edit, state.editability);
-          if (!held.held) {
-            emit({ type: "data-view/notice", message: held.reason, severity: "info" });
-            return;
-          }
-          broadcast();
-          return;
-        }
-        case "data-view/remove-rows": {
-          const removal = edits.removeRows(request.rows, state.editability);
-          if (!removal.held) {
-            emit({ type: "data-view/notice", message: removal.reason, severity: "info" });
-            return;
-          }
-          broadcast();
-          // Said when the row is taken, not discovered when the transaction fails.
-          if (removal.consequences.length > 0)
-            emit({
-              type: "data-view/notice",
-              message: removal.consequences.join(" "),
-              severity: "info",
-            });
-          return;
-        }
-        case "data-view/add-row": {
-          const added = edits.addRow(state.editability, request.values, request.above);
-          if (!added.held) {
-            emit({ type: "data-view/notice", message: added.reason, severity: "info" });
-            return;
-          }
-          hidden.revealRequired(state.editability);
-          broadcast();
-          return;
-        }
-        case "data-view/drop-row":
-          edits.dropRow(request.localId);
-          broadcast();
-          return;
-        case "data-view/fill-row":
-          edits.fillRow(request.localId, request.values, request.unset);
-          broadcast();
-          return;
-        case "data-view/discard-change":
-          edits.discardChange(request.change);
-          broadcast();
-          return;
         case "data-view/discard":
           edits.clear();
           broadcast();

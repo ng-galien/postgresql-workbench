@@ -82,6 +82,7 @@ enable = [
   "result-dependency-does-not-point-to-data-view",
   "data-view-hidden-column-ownership-stays-in-hidden-columns",
   "data-view-query-info-ownership-stays-in-state-contract",
+  "data-view-edit-policy-ownership-stays-with-the-engine-and-the-grid",
 ]
 
 [[views]]
@@ -204,6 +205,62 @@ rules = [
   "ts.refs.rows.result-dependency-is-limited-to-sql-analysis-and-debugger",
   "result-dependency-does-not-point-to-data-view",
   "data-view-result-protocol-ownership-stays-in-result-engine",
+  "data-view-hidden-column-ownership-stays-in-hidden-columns",
+]
+
+[[views.boundaries]]
+id = "data-view-editing"
+owns = [
+  "what a change is: a cell edit, a row taken away, a row added — and the row identity all three are held against",
+  "what may be written and why not: the column policy, the one table whole rows go to, what a deletion drags along",
+  "what is waiting: the three lists, the one door every move goes through, and the way back to what was held before it",
+  "how a change is written: the guarded UPDATE, the DELETE by identity, the INSERT of the columns filled in",
+  "the single transaction the three are written in, and the ROLLBACK that leaves the database as it was",
+]
+forbids = [
+  "a surface deciding whether a cell may be written, or wording the refusal itself",
+  "a surface assembling a statement that writes a row",
+  "a surface performing a move on the held changes other than by handing it to PendingEdits.move",
+  "taking a change while the transaction that would carry it is in flight",
+]
+forbid_rules = [
+  "data-view-edit-policy-ownership-stays-with-the-engine-and-the-grid",
+  "result-row-update-builder-encapsulation-stays-in-result-engine",
+]
+rationale = """
+The hot path. A reader changes a cell, takes rows away, adds one and fills it in, reads back the
+list of what is waiting, and then writes all of it at once or throws all of it away. Nothing here
+touches PostgreSQL until they say so, and when they do it is one transaction: every statement or
+none, guarded against the row having moved under them since it was read.
+
+The journey is four questions asked in one place each. `editability` says what may be written and
+why not, and both the grid and the held changes ask it, so a reader who is refused is refused in
+the same words wherever they meet it. `dataView` says what a change is and what each one will do,
+in the reader's language, before they commit to it. `pendingEdits` holds the three lists and is the
+one door every move goes through. `updates` turns them into SQL, and nothing else assembles a
+statement that writes a row.
+
+A surface brings four things and no judgement: a connection to write through, a way to say what
+happened, a way to tell whatever shows the changes, and — where it has one — a way to remember the
+move so its own undo stack keeps step. Everything else is decided before it is handed anything.
+
+Measured against that, August 2026. Both surfaces answered all six moves themselves, and what was
+true of one move was true of the others only by coincidence. It had already stopped being true: a
+write in flight refused the cell edits, because that was the only move that asked. A row added
+meanwhile was held, and then dropped without a word when the transaction that never carried it
+cleared what was waiting — the reader was told their changes had been applied, and the row they had
+just added was gone. One door, one guard, one refusal, one undo entry, and the six moves named
+together as `DataViewMove`: a seventh is added here, and both surfaces route it untouched.
+"""
+symbols = [
+  "ts:packages/rows/src/dataView/pendingEdits.class:PendingEdits",
+  "ts:packages/rows/src/dataView/pendingEdits.type:DataViewMove",
+  "ts:packages/rows/src/dataView/editability.function:reasonAgainstWriting",
+  "ts:packages/rows/src/dataView/updates.function:buildRowUpdates",
+]
+rules = [
+  "data-view-edit-policy-ownership-stays-with-the-engine-and-the-grid",
+  "result-row-update-builder-encapsulation-stays-in-result-engine",
   "data-view-hidden-column-ownership-stays-in-hidden-columns",
 ]
 
@@ -341,6 +398,12 @@ check = "code_moniker_rules uri=\"workspace\" action=\"run\" profile=\"architect
 id = "a-rule-that-guards-nothing"
 rationale = "Every boundary rule lives in the fragment of the package it constrains, and the workspace file keeps only the vocabulary that is general. A rule whose subject is renamed keeps passing while checking nothing, so `check --report` names any rule whose antecedent never matched, and each rule here was proved by planting a forbidden edge and watching it fire."
 check = "code_moniker_rules uri=\"workspace\" action=\"run\" profile=\"architecture\" report=true limit=200"
+
+[[views.gotchas]]
+id = "a-move-is-not-an-indexed-edge"
+rationale = "The door that every move on a Data View's held changes goes through is held by TypeScript and by a test, not by a rule — and that is not a choice. A call to `edits.move(...)` is a method call on a field, and this index links no reference from either surface to a method of `PendingEdits`: a rule written against one reports zero violations while both hosts sit in front of it. So the six mutators are private, which makes the door the only way in and a second one a compile error rather than a review comment; the moves are named in a record over their own union, so a seventh cannot be added without being named, labelled and performed; and pendingEdits.test proves the guard by holding a transaction open and attempting all six moves against it. What the graph can see is guarded by rules instead: the policy that refuses a write, and the three builders that assemble one."
+symbols = ["ts:packages/rows/src/dataView/pendingEdits.class:PendingEdits"]
+check = "npx vitest run packages/rows/src/dataView/pendingEdits.test.ts"
 
 [[views.gotchas]]
 id = "lifecycle-concentration"

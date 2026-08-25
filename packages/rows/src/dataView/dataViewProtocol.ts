@@ -6,7 +6,6 @@ import type { ResultNavigationCommand } from "../navigation.js";
 import type { SqlNotebookResultPayload } from "../resultPayload.js";
 import type {
   DataViewAddition,
-  DataViewChangeHandle,
   DataViewCompletion,
   DataViewEdit,
   DataViewEditability,
@@ -17,6 +16,7 @@ import type {
   DataViewSort,
   DataViewSource,
 } from "./dataView.js";
+import type { DataViewMove } from "./pendingEdits.js";
 
 /** What the Data View webview and the Extension Host send each other. */
 
@@ -71,28 +71,8 @@ export type DataViewRequest =
   | { type: "data-view/complete"; requestId: number; text: string; offset: number }
   | { type: "data-view/edit-query"; clause?: "select" }
   | { type: "data-view/apply-query" }
-  | { type: "data-view/edit"; edit: DataViewEdit }
-  /**
-   * Adds a row to fill in; it exists only in the grid until the changes are applied. `values`
-   * arrives already filled when a pasted line fell past the last loaded row.
-   */
-  | { type: "data-view/add-row"; values?: Record<string, string | null>; above?: number }
-  /** Takes away every row of the selection, by identity. */
-  | { type: "data-view/remove-rows"; rows: DataViewRowRemoval[] }
-  | { type: "data-view/drop-row"; localId: string }
-  /**
-   * Fills columns of an added row; a paste arrives as one message, not one per column. A column a
-   * reader gives NULL is inserted as NULL; one named in `unset` is left out of the INSERT, so the
-   * database gives it whatever it would have given — a DEFAULT, a sequence, an identity.
-   */
-  | {
-      type: "data-view/fill-row";
-      localId: string;
-      values: Record<string, string | null>;
-      unset?: readonly string[];
-    }
-  /** Takes one change back out of what is waiting, leaving every other one held. */
-  | { type: "data-view/discard-change"; change: DataViewChangeHandle }
+  /** Everything a reader can do to what is waiting to be written; the row engine names them. */
+  | DataViewMove
   | { type: "data-view/discard" }
   | { type: "data-view/apply" }
   | { type: "data-view/copy"; text: string }

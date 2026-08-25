@@ -5,7 +5,7 @@ enabled = true
 result_source = "source ~ '**/dir:packages/dir:rows/**'"
 result_target = "target ~ '**/dir:packages/dir:rows/**'"
 result_sql_analysis_debugger_target = "target ~ '**/dir:packages/dir:rows/**' OR target ~ '**/dir:packages/dir:sql/**' OR target ~ '**/dir:packages/dir:dap/**'"
-result_row_write_target = "kind = 'imports_symbol' AND target.segment('path') = 'buildRowUpdates'"
+result_row_write_target = "kind = 'imports_symbol' AND (target.segment('path') = 'buildRowUpdates' OR target.segment('path') = 'buildRowDeletes' OR target.segment('path') = 'buildRowInserts')"
 data_view_source = "source ~ '**/dir:packages/dir:rows/dir:src/dir:dataView/**'"
 data_view_target = "target ~ '**/dir:packages/dir:rows/dir:src/dir:dataView/**'"
 data_view_protocol_target = "kind = 'imports_symbol' AND (target.segment('path') = 'DataViewRequest' OR target.segment('path') = 'DataViewResponse' OR target.segment('path') = 'DataViewState')"
@@ -13,6 +13,8 @@ data_view_hidden_columns_target = "kind = 'imports_symbol' AND target.segment('p
 data_view_hidden_columns_owner = "source.segment('module') = 'hiddenColumns'"
 data_view_query_info_target = "kind = 'imports_symbol' AND target.segment('path') = 'DataViewQueryInfo'"
 data_view_state_owner = "source.segment('module') = 'dataViewState' OR source.segment('module') = 'dataViewProtocol'"
+data_view_edit_policy_target = "kind = 'imports_symbol' AND (target.segment('path') = 'READ_ONLY_REASONS' OR target.segment('path') = 'reasonAgainstWriting' OR target.segment('path') = 'dataViewWritableTable' OR target.segment('path') = 'describeDeleteConsequences')"
+data_view_edit_policy_reader = "source ~ '**/dir:packages/dir:rows/dir:src/dir:dataView/**' OR source ~ '**/dir:packages/dir:views/**'"
 
 [[ts.refs.where]]
 id = "result-dependency-is-limited-to-sql-analysis-and-debugger"
@@ -26,7 +28,7 @@ id = "result-row-update-builder-encapsulation-stays-in-result-engine"
 severity = "error"
 expr = "$result_row_write_target => $result_source"
 message = "Only packages/rows assembles the statements that write rows back to PostgreSQL."
-rationale = "The Extension Host and the composition shell both hold changes and both apply them. The moment either builds its own UPDATE the two drift, and a reader gets a different guarantee depending on which surface they opened. Surfaces supply what they can do — a connection, a way to speak, a way to reload — and the write sequence stays here."
+rationale = "The Extension Host and the composition shell both hold changes and both apply them. The moment either builds its own UPDATE the two drift, and a reader gets a different guarantee depending on which surface they opened. Surfaces supply what they can do — a connection, a way to speak, a way to reload — and the write sequence stays here. The rule named the UPDATE alone for a year, because that was the statement it was written after; the DELETE and the INSERT beside it were guarded by nothing, and a host importing either would have passed. Three builders, one antecedent."
 
 [[ts.refs.where]]
 id = "data-view-result-protocol-ownership-stays-in-result-engine"
@@ -55,3 +57,10 @@ severity = "error"
 expr = "$data_view_query_info_target => $data_view_state_owner"
 message = "A host says what its Data View is through dataViewState; it does not assemble the shape itself."
 rationale = "Saying what a Data View currently is asks nothing, opens nothing and decides nothing — it is a plain reading of what the host already holds, and only two of its fields come from the host at all: the Connection's name and whether the query's editor has unsaved text. Both hosts wrote it out anyway, and had already drifted: one kept an empty message where the other dropped it. Nothing here ever needed a second author."
+
+[[ts.refs.where]]
+id = "data-view-edit-policy-ownership-stays-with-the-engine-and-the-grid"
+severity = "error"
+expr = "$data_view_edit_policy_target => $data_view_edit_policy_reader"
+message = "Whether a cell may be written, and the sentence said when it may not, are the engine's answer: a host asks for it and does not compose one."
+rationale = "Two things ask this question and they ask it for opposite reasons: the grid, to decide whether to open an editor on a cell, and the held changes, to decide whether to take one. They must agree word for word, because a reader who is refused twice must not be told two different things — and the wording is the whole of what they get. A host has no reason to ask at all: it opens the connection, says what happened and remembers the move, and every judgement about the change itself is made before it is handed one. The moment a host words its own refusal there are two policies, and only one of them is the one the write will actually enforce."
