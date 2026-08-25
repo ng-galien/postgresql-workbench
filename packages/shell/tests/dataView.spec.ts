@@ -563,6 +563,54 @@ test("gives a column the width the reader drags it to, and takes it back", async
   await expect.poll(widthOf).toBe(fitted);
 });
 
+test("walks onto the gutter with the arrows, and takes whole rows from there", async ({ page }) => {
+  await openEmpty(page);
+  await add(page, "shop.product");
+
+  await page.locator("tbody tr:not(.result-spacer) td").first().click();
+  const gutter = page.locator("th.row-gutter.selected");
+  await expect(gutter).toHaveCount(0);
+
+  // The gutter is one step left of the first column. Standing on it is what selecting a whole row
+  // means, so the reader never has to reach for the pointer to take one.
+  await page.keyboard.press("ArrowLeft");
+  await expect(gutter).toHaveCount(1);
+
+  // Down the gutter walks whole rows, and a held shift extends the run of them.
+  await page.keyboard.press("ArrowDown");
+  await expect(gutter).toHaveCount(1);
+  await page.keyboard.press("Shift+ArrowDown");
+  await expect(gutter).toHaveCount(2);
+
+  // One step right is the first column again, and the row selection is behind him.
+  await page.keyboard.press("ArrowRight");
+  await expect(gutter).toHaveCount(0);
+});
+
+test("gives the keyboard back when a cell editor closes", async ({ page }) => {
+  await openEmpty(page);
+  await add(page, "shop.product");
+  await enterEditMode(page);
+
+  const rowOf = () =>
+    page.evaluate(() => {
+      const cell = document.querySelector("td.selected");
+      const row = cell?.closest("tr");
+      return row ? [...(row.parentElement?.children ?? [])].indexOf(row) : -1;
+    });
+
+  await page.locator("tbody tr:not(.result-spacer) td").nth(1).dblclick();
+  await expect(page.locator(".cell-editor input, .cell-editor textarea")).toHaveCount(1);
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".cell-editor input, .cell-editor textarea")).toHaveCount(0);
+
+  // Closing the editor unmounted the field the focus was in. Unless the grid takes it back, every
+  // arrow after an edit goes to the page and the reader has to click to get the keyboard again.
+  const before = await rowOf();
+  await page.keyboard.press("ArrowDown");
+  expect(await rowOf()).toBe(before + 1);
+});
+
 test("widens and narrows a column from the keyboard alone", async ({ page }) => {
   await openEmpty(page);
   await add(page, "shop.product");

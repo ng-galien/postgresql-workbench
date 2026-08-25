@@ -3,6 +3,7 @@ import {
   Fragment,
   type MouseEvent as ReactMouseEvent,
   type UIEvent,
+  useCallback,
   useEffect,
   useId,
   useMemo,
@@ -437,12 +438,12 @@ export function ResultGrid({
     focusClipboard();
     document.execCommand("copy");
   };
-  const focusClipboard = () => {
+  const focusClipboard = useCallback(() => {
     const proxy = clipboard.current;
     if (!proxy) return;
     proxy.focus({ preventScroll: true });
     proxy.select();
-  };
+  }, []);
   /*
    * A press has to leave the keystrokes with the grid. Letting the browser handle it would move
    * the focus to whatever it finds around the cell — in practice the page itself — so the press is
@@ -454,6 +455,19 @@ export function ResultGrid({
     event.preventDefault();
     focusClipboard();
   };
+  /*
+   * An open editor holds the focus in a real field, and closing it unmounts that field — which
+   * leaves the focus on the page and the grid deaf to every arrow. Taking it back belongs after the
+   * unmount: reaching for it while the field is still there would blur it, and a blurred editor
+   * commits, so the edit would be written twice.
+   */
+  const editorIsOpen = activeCell !== undefined || activeAdded !== undefined;
+  const editorWasOpen = useRef(false);
+  useEffect(() => {
+    if (editorWasOpen.current && !editorIsOpen) focusClipboard();
+    editorWasOpen.current = editorIsOpen;
+  }, [editorIsOpen, focusClipboard]);
+
   /*
    * A keystroke lands where the focus is. Re-selecting after every move keeps the proxy ready for
    * the next Ctrl+C, and keeps the focus from drifting back to the page after a paste.
