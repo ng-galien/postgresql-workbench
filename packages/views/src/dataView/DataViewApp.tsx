@@ -1597,10 +1597,12 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
             label={editMode ? "Leave edit mode" : "Edit mode"}
             text="Edit"
             primary={editMode}
-            onClick={() => {
-              setEditMode((on) => !on);
-              setSelection(undefined);
-            }}
+            /*
+             * Turning writing on adds the bar and nothing else. What a reader had picked out is
+             * theirs — they chose those rows in order to do something to them, and that something
+             * is usually what they came to edit mode for.
+             */
+            onClick={() => setEditMode((on) => !on)}
           />
         ) : null}
         <span className="data-view-rows-spacer" />

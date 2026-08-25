@@ -132,6 +132,34 @@ async function writeStockCheck(page: Page, mark: string) {
   return { bar, at, written, status };
 }
 
+test("leaves what the reader picked out alone when writing is turned on", async ({ page }) => {
+  await openEmpty(page);
+  await add(page, "shop.address");
+  const city = ordinalOf(await columns(page), "city");
+  const cells = page.locator("td.selected");
+  const gutters = page.locator("th.row-gutter.selected");
+
+  /*
+   * Turning writing on adds the bar and nothing else. A reader picks rows out in order to do
+   * something to them, and that something is usually what they came to edit mode for — losing the
+   * selection on the way in means picking them out twice.
+   */
+  await bodyRows(page).nth(1).locator(`td[data-column="${city}"]`).click();
+  await page.keyboard.press("Shift+ArrowDown");
+  await expect(cells).toHaveCount(2);
+
+  await page.getByTitle("Edit mode", { exact: true }).click();
+  await expect(page.getByRole("toolbar", { name: "Row editing" })).toBeVisible();
+  await expect(cells).toHaveCount(2);
+
+  // And on the way back out, where whole rows can still be picked out and copied.
+  await selectRows(page, 2, 3);
+  await expect(gutters).toHaveCount(2);
+  await page.getByTitle("Leave edit mode", { exact: true }).click();
+  await expect(page.getByRole("toolbar", { name: "Row editing" })).toBeHidden();
+  await expect(gutters).toHaveCount(2);
+});
+
 test("walks the rows and the columns with the arrows, and jumps to the ends", async ({ page }) => {
   await openEmpty(page);
   await add(page, "shop.address");
