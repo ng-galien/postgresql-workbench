@@ -1,5 +1,13 @@
 import { expect, type Page, test } from "@playwright/test";
-import { add, editBar, enterEditMode, openEmpty, readClipboard, selectRows } from "./harness.js";
+import {
+  add,
+  editBar,
+  enterEditMode,
+  openEmpty,
+  putOnClipboard,
+  readClipboard,
+  selectRows,
+} from "./harness.js";
 
 /**
  * The grid itself, driven the way a reader drives it: the keys, the selection, the clipboard, and
@@ -179,6 +187,51 @@ test("tells apart the three things a cell of a new row can hold", async ({ page 
   await bar.remove.click();
   await bar.apply.click();
   await expect(page.locator("tbody tr", { hasText: mark })).toHaveCount(0);
+});
+
+test("holds a row waiting to go still, and lets it be copied all the same", async ({ page }) => {
+  await openEmpty(page);
+  await add(page, "shop.address");
+  await enterEditMode(page);
+  const bar = editBar(page);
+  const city = (await columns(page)).find((column) => column.name === "city");
+  if (!city) throw new Error("The address view must show its city column");
+
+  const row = page.locator("tbody tr:not(.result-spacer)").nth(1);
+  const cell = row.locator(`td[data-column="${city.ordinal}"]`);
+  const held = (await cell.innerText()).trim();
+
+  await selectRows(page, 1);
+  await bar.remove.click();
+  await expect(row).toHaveClass(/removed/u);
+
+  /*
+   * A row provisioned to go holds nothing to change. The DELETE is written before the updates, so
+   * an edit landing on it afterwards would guard against a row that has already left and roll the
+   * whole transaction back — and it is one gesture away from being put back if that is the mistake.
+   */
+  await cell.dblclick();
+  await expect(page.locator(".cell-editor")).toHaveCount(0);
+  await expect(bar.changes).toHaveText("1");
+
+  // Reading it is not writing to it: what is on its way out can still be taken down.
+  await page.keyboard.press("ControlOrMeta+c");
+  expect(await readClipboard(page)).toContain(held);
+
+  // What cannot be typed into cannot be pasted into either: the values arrive the same way.
+  await putOnClipboard(page, "Marseille");
+  await cell.click();
+  await page.keyboard.press("ControlOrMeta+v");
+  await expect(cell).toHaveText(held);
+  await expect(bar.changes).toHaveText("1");
+
+  // And putting it back makes it editable again, because the rule is about the row, not the cell.
+  await selectRows(page, 1);
+  await bar.remove.click();
+  await expect(row).not.toHaveClass(/removed/u);
+  await cell.dblclick();
+  await expect(page.locator(".cell-editor")).toHaveCount(1);
+  await page.keyboard.press("Escape");
 });
 
 test("gives a written column back to the default the table would have given it", async ({

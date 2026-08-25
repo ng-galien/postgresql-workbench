@@ -66,6 +66,7 @@ export const READ_ONLY_REASONS = {
   binary: "Binary values are read-only.",
   unknownColumn: "Column no longer exists in the catalog.",
   applying: "Changes are being applied.",
+  removed: "This row is waiting to be taken away.",
 } as const;
 
 /**

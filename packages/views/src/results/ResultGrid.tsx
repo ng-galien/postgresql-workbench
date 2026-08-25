@@ -516,6 +516,8 @@ export function ResultGrid({
         editing.rows?.appendPasted(values(), rows.length);
         return;
       }
+      // A row waiting to be taken away is not written into, whichever way the values arrive.
+      if (editing.rows?.isRemoved(row)) return;
       line.forEach((value, offset) => {
         const target = visibleOrdinals[from + offset];
         if (target === undefined || !editableHere(target)) return;
@@ -644,9 +646,13 @@ export function ResultGrid({
         setActiveAdded({ localId: shown.added.localId, ordinal });
         return;
       }
-      // A value cut short on its way here is not a value to edit: writing it back would truncate it.
       const cell = rows[shown.loaded]?.[ordinal];
-      if (cell && !cell.truncated) setActiveCell({ row: shown.loaded, ordinal });
+      // A row waiting to be taken away holds nothing to change, and a value cut short on its way
+      // here is not a value to edit: writing it back would truncate it.
+      const row = rows[shown.loaded];
+      if (!row || !cell || cell.truncated) return;
+      if (editing?.rows?.isRemoved(row)) return;
+      setActiveCell({ row: shown.loaded, ordinal });
     },
     closeEditor() {
       setActiveCell(undefined);

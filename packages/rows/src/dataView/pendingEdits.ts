@@ -74,6 +74,12 @@ export class PendingEdits {
     if (this.writing) return { held: false, reason: READ_ONLY_REASONS.applying };
     if (!policy?.editable)
       return { held: false, reason: policy?.reason ?? "This column cannot be edited." };
+    /*
+     * A row already provisioned to go holds nothing to change. Taking one away drops the edits it
+     * held; letting an edit land on it afterwards would write an UPDATE the DELETE before it has
+     * left nothing for — the guard would find no row, and the whole transaction would roll back.
+     */
+    if (this.isRemoved(edit)) return { held: false, reason: READ_ONLY_REASONS.removed };
     const previous = this.set(edit);
     return previous ? { held: true, previous } : { held: true };
   }
