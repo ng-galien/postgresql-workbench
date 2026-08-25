@@ -59,7 +59,7 @@ export interface GridRowContext {
   editing?: GridEditing;
   /** Which cell is open for editing right now, whichever kind of row it is on. */
   isEditingCell(subject: GridRowSubject, ordinal: number): boolean;
-  openEditor(subject: GridRowSubject, ordinal: number, cell: DebugResultCell): void;
+  openEditor(shownRow: number, ordinal: number): void;
   closeEditor(): void;
   /** What the reader asked for when they asked for the address a cell holds. */
   onFollowLink(href: string): void;
@@ -191,7 +191,7 @@ export function GridRow({
                   : cellSelection(shownRow, ordinal),
               );
             }}
-            onDoubleClick={() => context.openEditor(subject, ordinal, cell)}
+            onDoubleClick={() => context.openEditor(shownRow, ordinal)}
           >
             {editingHere && policy?.editable && editing ? (
               <CellEditor

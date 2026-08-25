@@ -256,10 +256,6 @@ export function ResultGrid({
    * and the panel is the reader's to open — a cell never decides on their behalf that they wanted
    * to see it.
    */
-  const activate = (rowIndex: number, ordinal: number, cell: DebugResultCell) => {
-    const policy = editing?.policies[ordinal];
-    if (policy?.editable && !cell.truncated) setActiveCell({ row: rowIndex, ordinal });
-  };
   const columns = keyedValues(
     payload.columns,
     (column) => `${column.name}:${column.dataTypeId}:${column.typeName ?? ""}`,
@@ -636,15 +632,17 @@ export function ResultGrid({
         ? activeAdded?.localId === subject.added.localId && activeAdded.ordinal === ordinal
         : activeCell?.row === subject.loadedIndex && activeCell.ordinal === ordinal;
     },
-    openEditor(subject, ordinal, cell) {
+    openEditor(shownRow, ordinal) {
       const policy = editing?.policies[ordinal];
       if (!policy?.editable) return;
-      if (subject.of === "added") {
-        setActiveAdded({ localId: subject.added.localId, ordinal });
+      const shown = order.at(shownRow);
+      if ("added" in shown) {
+        setActiveAdded({ localId: shown.added.localId, ordinal });
         return;
       }
       // A value cut short on its way here is not a value to edit: writing it back would truncate it.
-      if (!cell.truncated) setActiveCell({ row: subject.loadedIndex, ordinal });
+      const cell = rows[shown.loaded]?.[ordinal];
+      if (cell && !cell.truncated) setActiveCell({ row: shown.loaded, ordinal });
     },
     closeEditor() {
       setActiveCell(undefined);
@@ -878,11 +876,9 @@ export function ResultGrid({
                 step(-page, 0, extend);
                 break;
               case "Enter":
-              case " ": {
-                const cell = rows[focus.row]?.[focus.ordinal];
-                if (cell) activate(focus.row, focus.ordinal, cell);
+              case " ":
+                rowContext.openEditor(focus.row, focus.ordinal);
                 break;
-              }
               default:
                 return;
             }

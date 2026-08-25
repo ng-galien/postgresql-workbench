@@ -563,6 +563,40 @@ test("gives a column the width the reader drags it to, and takes it back", async
   await expect.poll(widthOf).toBe(fitted);
 });
 
+test("opens the editor on the row the cursor is on, added rows included", async ({ page }) => {
+  await openEmpty(page);
+  await add(page, "shop.product");
+  await enterEditMode(page);
+  const bar = editBar(page);
+
+  await page.locator("tbody tr:not(.result-spacer) td").first().click();
+  await bar.add.click();
+  await bar.add.click();
+  await expect(page.locator("tbody tr .row-gutter-state.added")).toHaveCount(2);
+
+  /*
+   * The arrows count through the rows waiting to be added and the loaded ones alike, so the row
+   * under the cursor is not the row at that place among the loaded ones. Asked from the keys, the
+   * editor used to open on whichever loaded row happened to sit at that number.
+   */
+  const openedOn = () =>
+    page.evaluate(() => {
+      const cell = document.querySelector(".cell-editor")?.closest("td");
+      if (!cell) return "none";
+      return cell.getAttribute("data-added-row") ?? `loaded:${cell.getAttribute("data-row")}`;
+    });
+
+  await page.locator("tbody tr:has(.row-gutter-state.added) td").first().click();
+  await page.keyboard.press("Enter");
+  expect(await openedOn()).toBe("new-1");
+  await page.keyboard.press("Escape");
+
+  // And the loaded row under the cursor is the one it says, however many rows wait above it.
+  await page.locator("tbody tr:not(:has(.row-gutter-state.added)) td").first().click();
+  await page.keyboard.press("Enter");
+  expect(await openedOn()).toBe("loaded:0");
+});
+
 test("walks onto the gutter with the arrows, and takes whole rows from there", async ({ page }) => {
   await openEmpty(page);
   await add(page, "shop.product");
