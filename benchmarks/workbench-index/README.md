@@ -14,14 +14,57 @@ not query or storage performance, and is not part of CI.
 
 ## Run
 
+From the repository root, run:
+
 ```bash
 npm run bench:workbench-index -- --profile erp-medium
 npm run bench:workbench-index -- --profile erp-large
 ```
 
+Add `--postgis` to install PostGIS, the Tiger geocoder, and topology in the
+generated database before the synthetic ERP objects are created:
+
+```bash
+npm run bench:workbench-index -- --profile erp-medium --postgis
+```
+
+This is an option of the same benchmark. It adds the extension-owned `public`,
+`tiger`, `tiger_data`, and `topology` objects to the catalog and reports the
+installed PostGIS extension versions and setup duration in the final JSON.
+
+Use `--output <path>` to retain the JSON report independently of the Docker and
+Code Moniker diagnostic output. Relative paths are resolved from the repository
+root:
+
+```bash
+npm run bench:workbench-index -- --profile erp-medium --postgis --output windows-postgis.json
+```
+
 The runner uses a dedicated Compose project and port `55433`, builds from the
 existing demo PostgreSQL image, stages the installed Code Moniker runtime, and
 removes its database container and volume after the run by default.
+
+Docker is optional. To use an existing PostgreSQL server, pass `--no-docker`.
+The runner creates a uniquely named `pgwb_index_benchmark_<pid>` database and
+removes it after the run. Standard libpq variables (`PGHOST`, `PGPORT`,
+`PGUSER`, `PGPASSWORD`, and `PGDATABASE`) select the server and maintenance
+database:
+
+```powershell
+$env:PGHOST = "127.0.0.1"
+$env:PGPORT = "5432"
+$env:PGUSER = "postgres"
+$env:PGPASSWORD = "<local password>"
+$env:PGDATABASE = "postgres"
+npm run bench:workbench-index -- --profile erp-medium --no-docker --output windows-medium.json
+```
+
+As an alternative, set `PGWB_BENCH_DATABASE_URL`; connection URLs are accepted
+only through the environment so credentials cannot leak through command-line
+arguments. Do not commit or include credentials in a benchmark report.
+The selected role must be allowed to create and drop the temporary benchmark
+database. A local `--postgis` run also requires the PostGIS, Tiger geocoder,
+and topology extension files to be installed on that PostgreSQL server.
 
 Set `PGWB_BENCH_PORT` to use another host port. Use `--skip-build` only after
 the TypeScript output and packaged runtime have already been prepared. Use

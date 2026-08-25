@@ -6,7 +6,10 @@ COPY demo/postgres-final-server-ready.sh /usr/local/bin/postgres-final-server-re
 # image and pgTAP is installed once here for demo, integration, and benchmark
 # Compose projects.
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends postgresql-17-pgtap \
+  && apt-get install -y --no-install-recommends \
+    postgresql-17-pgtap \
+    postgresql-17-postgis-3 \
+    postgresql-17-postgis-3-scripts \
   && chmod +x /usr/local/bin/postgres-final-server-ready \
   && rm -rf /var/lib/apt/lists/*
 

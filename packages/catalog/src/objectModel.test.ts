@@ -154,7 +154,7 @@ describe("Workbench tree model", () => {
       manifest.contributes.configuration.properties[
         "postgresql-workbench.workbench.codeMoniker.commandTimeoutMs"
       ],
-    ).toMatchObject({ default: 30_000, minimum: 1_000, maximum: 300_000 });
+    ).toMatchObject({ default: 120_000, minimum: 1_000, maximum: 300_000 });
     expect(
       Object.fromEntries(
         manifest.contributes.menus["view/title"]

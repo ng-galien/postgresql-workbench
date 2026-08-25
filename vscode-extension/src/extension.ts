@@ -167,7 +167,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
       commandTimeoutMs: () =>
         vscode.workspace
           .getConfiguration("postgresql-workbench.workbench.codeMoniker")
-          .get<number>("commandTimeoutMs", 30_000),
+          .get<number>("commandTimeoutMs", 120_000),
       acceptanceControlEnabled: () =>
         Boolean(
           process.env.POSTGRESQL_WORKBENCH_ACCEPTANCE_CONTROL_FILE &&

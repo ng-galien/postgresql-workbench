@@ -1264,11 +1264,11 @@
         },
         "postgresql-workbench.workbench.codeMoniker.commandTimeoutMs": {
           "type": "number",
-          "default": 30000,
+          "default": 120000,
           "minimum": 1000,
           "maximum": 300000,
           "scope": "window",
-          "description": "Maximum duration in milliseconds for one Code Moniker daemon command used by Workbench indexing, navigation, graph queries, and debugger syntax analysis. Changes apply to the next extension session."
+          "description": "Maximum duration in milliseconds for a Code Moniker daemon command or workspace readiness transition used by Workbench indexing, navigation, graph queries, and debugger syntax analysis. Changes apply to the next extension session."
         },
         "postgresql-workbench.workbench.graph.compactZoomThreshold": {
           "type": "number",

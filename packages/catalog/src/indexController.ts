@@ -251,6 +251,11 @@ interface Subscription {
   dispose(): void;
 }
 
+type WorkbenchCodeMonikerSession = LocalCodeMonikerSession & {
+  /** Snapshot of the host setting used to create this exact client session. */
+  readonly workbenchCommandTimeoutMs: number;
+};
+
 // Explicit debt exception: this snapshot owner still exposes registry lookup, Code Moniker
 // runtime/session access, graph queries, catalog publication, and DDL synchronization. These
 // capabilities must be split behind snapshot-bound ports before removing this exception.
@@ -262,8 +267,8 @@ export class WorkbenchIndexController {
   private readonly states = new Map<string, WorkbenchIndexState>();
   /** Last event is diagnostic-only for acceptance telemetry; product code never reads it. */
   private lastEventState: WorkbenchIndexState = { status: "not-indexed" };
-  private sessionPromise?: Promise<LocalCodeMonikerSession>;
-  private activeSession?: LocalCodeMonikerSession;
+  private sessionPromise?: Promise<WorkbenchCodeMonikerSession>;
+  private activeSession?: WorkbenchCodeMonikerSession;
   private removeSessionCloseListener?: () => void;
   private sessionEpoch = 0;
   private syntaxParserPromise?: Promise<SyntaxParser>;
@@ -1262,7 +1267,7 @@ export class WorkbenchIndexController {
     const session = await this.ensureSession();
     try {
       this.assertCapabilities(session);
-      await waitForWorkspaceMutationReady(session.client);
+      await waitForWorkspaceMutationReady(session.client, session.workbenchCommandTimeoutMs);
       await reportProgress?.({
         phase: "publishing-sources",
         completed: catalog.metrics.documentCount,
@@ -1349,7 +1354,7 @@ export class WorkbenchIndexController {
   }
 
   private async publishCatalog(
-    session: LocalCodeMonikerSession,
+    session: WorkbenchCodeMonikerSession,
     catalog: PostgresCatalogSnapshot,
     scope: string,
     connectionId: string,
@@ -1384,7 +1389,7 @@ export class WorkbenchIndexController {
   }
 
   private async restorePublishedSnapshot(
-    session: LocalCodeMonikerSession,
+    session: WorkbenchCodeMonikerSession,
     scope: string,
     previousRegistry: IndexedPostgresRegistry | undefined,
     previousPublished: PublishedSourceSet | undefined,
@@ -1411,7 +1416,7 @@ export class WorkbenchIndexController {
       else this.published.delete(scope);
     });
     if (previousRegistry) {
-      await waitForWorkspaceMutationReady(session.client);
+      await waitForWorkspaceMutationReady(session.client, session.workbenchCommandTimeoutMs);
       const status = await session.client.workspace.status();
       previousRegistry.result.generation = workspaceGeneration(status.generation ?? null);
     }
@@ -1496,20 +1501,24 @@ export class WorkbenchIndexController {
     return performance.now() - graphStarted;
   }
 
-  private ensureSession(): Promise<LocalCodeMonikerSession> {
+  private ensureSession(): Promise<WorkbenchCodeMonikerSession> {
     if (!this.sessionPromise) {
       const runtimePath = this.codeMonikerRuntimePath();
       const workspaceRoots = this.workspaceRoots();
+      const commandTimeoutMs = this.codeMonikerCommandTimeoutMs();
       const pending = ensureLocalCodeMonikerWorkspace({
         runtimePath,
         workspaceRoots,
         clientName: "postgresql-workbench",
-        timeoutMs: this.codeMonikerCommandTimeoutMs(),
+        timeoutMs: commandTimeoutMs,
       }).then((session) => {
-        this.activeSession = session;
+        const workbenchSession = Object.assign(session, {
+          workbenchCommandTimeoutMs: commandTimeoutMs,
+        });
+        this.activeSession = workbenchSession;
         this.removeSessionCloseListener?.();
         this.removeSessionCloseListener = session.client.onDidClose(() => {
-          if (this.activeSession !== session) return;
+          if (this.activeSession !== workbenchSession) return;
           this.sessionEpoch += 1;
           this.activeSession = undefined;
           this.sessionPromise = undefined;
@@ -1526,7 +1535,7 @@ export class WorkbenchIndexController {
             `source=${session.metadata.source} daemon=${session.metadata.daemonPid} ` +
             `owned=${session.metadata.ownedDaemon}`,
         );
-        return session;
+        return workbenchSession;
       });
       const retryable = pending.catch((error) => {
         if (this.sessionPromise === retryable) {
@@ -1814,7 +1823,7 @@ function enrichSymbol(
 
 async function waitForWorkspaceMutationReady(
   client: CodeMonikerClient,
-  timeoutMs = 30_000,
+  timeoutMs: number,
 ): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (true) {

@@ -1,12 +1,12 @@
 import { spawn } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { arch, cpus, platform, tmpdir, totalmem } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Client } from "pg";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
-const COMPOSE_FILE = join(ROOT, "benchmarks/workbench-index/compose.yml");
+const COMPOSE_FILE = join(ROOT, "docker/benchmark/compose.yml");
 const DATABASE = "pgwb_index_benchmark";
 const CONNECTION_ID = "workbench-index-benchmark";
 
@@ -38,7 +38,7 @@ export function parseBenchmarkOptions(argv) {
     const argument = argv[index];
     if (!argument.startsWith("--")) throw new Error(`Unexpected argument: ${argument}`);
     const [rawName, inlineValue] = argument.slice(2).split("=", 2);
-    if (["skip-build", "keep-database"].includes(rawName)) {
+    if (["skip-build", "keep-database", "postgis", "no-docker"].includes(rawName)) {
       flags.add(rawName);
       continue;
     }
@@ -56,6 +56,7 @@ export function parseBenchmarkOptions(argv) {
       `Unknown profile ${profileName}; expected ${Object.keys(BENCHMARK_PROFILES).join(" or ")}`,
     );
   }
+  const noDocker = flags.has("no-docker");
   return {
     profileName,
     profile: {
@@ -75,6 +76,10 @@ export function parseBenchmarkOptions(argv) {
     timeoutMs: positiveInteger(values.get("timeout-ms") ?? "600000", "timeout-ms"),
     skipBuild: flags.has("skip-build"),
     keepDatabase: flags.has("keep-database"),
+    postgis: flags.has("postgis"),
+    noDocker,
+    databaseUrl: noDocker ? process.env.PGWB_BENCH_DATABASE_URL : undefined,
+    output: values.get("output"),
   };
 }
 
@@ -98,17 +103,26 @@ async function main() {
     COMPOSE_PROJECT_NAME: "postgresql-workbench-index-benchmark",
   };
   try {
-    await command("docker", ["compose", "-f", COMPOSE_FILE, "up", "-d", "--build", "--wait"], {
-      env: composeEnvironment,
-    });
+    if (!options.noDocker) {
+      await command("docker", ["compose", "-f", COMPOSE_FILE, "up", "-d", "--build", "--wait"], {
+        env: composeEnvironment,
+      });
+    }
     if (!options.skipBuild) {
-      await command("npm", ["run", "build:dap"]);
-      await command("npm", ["--prefix", "vscode-extension", "run", "stage:code-moniker"]);
+      await npmCommand(["run", "build:dap"]);
+      await npmCommand(["--prefix", "vscode-extension", "run", "stage:code-moniker"]);
     }
     const report = await benchmark(options);
-    process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+    const serializedReport = `${JSON.stringify(report, null, 2)}\n`;
+    if (options.output) {
+      const outputPath = resolve(ROOT, options.output);
+      await writeFile(outputPath, serializedReport, "utf8");
+      process.stdout.write(`Wrote benchmark report to ${outputPath}\n`);
+    } else {
+      process.stdout.write(serializedReport);
+    }
   } finally {
-    if (!options.keepDatabase) {
+    if (!options.noDocker && !options.keepDatabase) {
       await command("docker", ["compose", "-f", COMPOSE_FILE, "down", "-v"], {
         env: composeEnvironment,
       }).catch((error) => {
@@ -120,16 +134,11 @@ async function main() {
 
 async function benchmark(options) {
   const [{ readPostgresCatalog }, { ensureLocalCodeMonikerWorkspace }] = await Promise.all([
-    import("../dist/workbench/postgresCatalog.js"),
-    import("../dist/workbench/localCodeMoniker.js"),
+    import(resolve(ROOT, "dist/catalog/src/postgresCatalog.js")),
+    import(resolve(ROOT, "dist/catalog/src/localCodeMoniker.js")),
   ]);
-  const adminConfig = {
-    host: "127.0.0.1",
-    port: options.port,
-    database: "postgres",
-    user: "postgres",
-    password: "postgres",
-  };
+  const database = options.noDocker ? `pgwb_index_benchmark_${process.pid}` : DATABASE;
+  const adminConfig = benchmarkAdminConfig(options);
   const admin = new Client(adminConfig);
   let postgres;
   let session;
@@ -137,11 +146,14 @@ async function benchmark(options) {
   let publishedSourceSet;
   try {
     await admin.connect();
-    await admin.query(`DROP DATABASE IF EXISTS ${DATABASE} WITH (FORCE)`);
-    await admin.query(`CREATE DATABASE ${DATABASE}`);
-    postgres = new Client({ ...adminConfig, database: DATABASE });
+    if (!options.noDocker) await admin.query(`DROP DATABASE IF EXISTS ${database} WITH (FORCE)`);
+    await admin.query(`CREATE DATABASE ${database}`);
+    postgres = new Client(benchmarkDatabaseConfig(adminConfig, database));
     await postgres.connect();
 
+    const extensionStarted = performance.now();
+    if (options.postgis) await installPostgis(postgres, options.noDocker);
+    const extensionMs = performance.now() - extensionStarted;
     const ddlStarted = performance.now();
     await createSyntheticSchema(postgres, options.profile);
     const ddlMs = performance.now() - ddlStarted;
@@ -150,7 +162,7 @@ async function benchmark(options) {
     const indexingStarted = performance.now();
     const catalog = await readPostgresCatalog(catalogClient(postgres), {
       connectionId: CONNECTION_ID,
-      database: DATABASE,
+      database,
     });
     workspaceRoot = await mkdtemp(join(tmpdir(), "pgwb-index-benchmark-"));
     const daemonStarted = performance.now();
@@ -194,7 +206,7 @@ async function benchmark(options) {
     const singleDocumentPublicationMs = performance.now() - singleDocumentPublicationStarted;
 
     const symbolScanStarted = performance.now();
-    const indexed = await readDatabaseSymbols(session, CONNECTION_ID, DATABASE);
+    const indexed = await readDatabaseSymbols(session, CONNECTION_ID, database);
     const symbolScanMs = performance.now() - symbolScanStarted;
     const sampleView = indexed.rows.find((symbol) => symbol.kind === "view");
     const graphStarted = performance.now();
@@ -223,9 +235,14 @@ async function benchmark(options) {
 
     return {
       profile: options.profileName,
+      databaseFixture: {
+        mode: options.noDocker ? "local-server" : "docker",
+        database,
+      },
       requested: options.profile,
       expected: expectedGeneratedCounts(options.profile),
       catalog: catalogCounts,
+      extensions: await readInstalledExtensions(postgres),
       documents: catalog.metrics.documentCount,
       symbols: indexed.rows.length,
       generation: indexed.generation,
@@ -264,6 +281,7 @@ async function benchmark(options) {
       },
       timingsMs: rounded({
         ddl: ddlMs,
+        extensions: extensionMs,
         introspection: catalog.metrics.introspectionMs,
         materialization: catalog.metrics.materializationMs,
         daemonReady: daemonReadyMs,
@@ -305,7 +323,7 @@ async function benchmark(options) {
     if (workspaceRoot) await rm(workspaceRoot, { recursive: true, force: true });
     if (postgres) await postgres.end().catch(() => undefined);
     if (!options.keepDatabase) {
-      await admin.query(`DROP DATABASE IF EXISTS ${DATABASE} WITH (FORCE)`).catch(() => undefined);
+      await admin.query(`DROP DATABASE IF EXISTS ${database} WITH (FORCE)`).catch(() => undefined);
     }
     await admin.end().catch(() => undefined);
   }
@@ -399,6 +417,32 @@ $trigger_function$`);
     );
   }
   await executeBatches(client, triggerStatements);
+}
+
+async function installPostgis(client, localServer) {
+  try {
+    await client.query(`
+      CREATE EXTENSION IF NOT EXISTS postgis;
+      CREATE EXTENSION IF NOT EXISTS fuzzystrmatch;
+      CREATE EXTENSION IF NOT EXISTS postgis_tiger_geocoder;
+      CREATE EXTENSION IF NOT EXISTS postgis_topology;
+    `);
+  } catch (error) {
+    const guidance = localServer
+      ? "Install PostGIS, Tiger geocoder, and topology on the local PostgreSQL server, or rerun without --postgis."
+      : "The benchmark Docker image must provide PostGIS, Tiger geocoder, and topology.";
+    throw new Error(`PostGIS benchmark setup failed. ${guidance}`, { cause: error });
+  }
+}
+
+async function readInstalledExtensions(client) {
+  const { rows } = await client.query(`
+    SELECT extname AS name, extversion AS version
+    FROM pg_extension
+    WHERE extname IN ('postgis', 'postgis_tiger_geocoder', 'postgis_topology')
+    ORDER BY extname
+  `);
+  return rows;
 }
 
 async function executeBatches(client, statements, size = 100) {
@@ -542,6 +586,25 @@ function rounded(values) {
   );
 }
 
+function benchmarkAdminConfig(options) {
+  if (options.databaseUrl) return { connectionString: options.databaseUrl };
+  if (options.noDocker) return { database: process.env.PGDATABASE ?? "postgres" };
+  return {
+    host: "127.0.0.1",
+    port: options.port,
+    database: "postgres",
+    user: "postgres",
+    password: "postgres",
+  };
+}
+
+function benchmarkDatabaseConfig(adminConfig, database) {
+  if (!adminConfig.connectionString) return { ...adminConfig, database };
+  const connectionUrl = new URL(adminConfig.connectionString);
+  connectionUrl.pathname = `/${database}`;
+  return { connectionString: connectionUrl.toString() };
+}
+
 function positiveInteger(value, name) {
   const parsed = Number(value);
   if (!Number.isSafeInteger(parsed) || parsed <= 0) {
@@ -597,6 +660,32 @@ function command(executable, args, options = {}) {
       else rejectCommand(new Error(`${executable} exited with ${code ?? signal}`));
     });
   });
+}
+
+export function npmInvocation(
+  args,
+  {
+    platformName = process.platform,
+    nodeExecutable = process.execPath,
+    npmExecutable = process.env.npm_execpath,
+    commandShell = process.env.ComSpec,
+  } = {},
+) {
+  if (npmExecutable) {
+    return { executable: nodeExecutable, args: [npmExecutable, ...args] };
+  }
+  if (platformName === "win32") {
+    return {
+      executable: commandShell ?? "cmd.exe",
+      args: ["/d", "/s", "/c", "npm", ...args],
+    };
+  }
+  return { executable: "npm", args };
+}
+
+function npmCommand(args) {
+  const invocation = npmInvocation(args);
+  return command(invocation.executable, invocation.args);
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

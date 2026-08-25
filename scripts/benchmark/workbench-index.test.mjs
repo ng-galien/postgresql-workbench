@@ -3,9 +3,36 @@ import { test } from "vitest";
 import {
   BENCHMARK_PROFILES,
   expectedGeneratedCounts,
+  npmInvocation,
   parseBenchmarkOptions,
   validateMemorySourceSetContract,
 } from "./workbench-index.mjs";
+
+test("npm subprocesses use the current npm CLI on every platform", () => {
+  assert.deepEqual(
+    npmInvocation(["run", "build:dap"], {
+      platformName: "win32",
+      nodeExecutable: "C:\\node\\node.exe",
+      npmExecutable: "C:\\node\\node_modules\\npm\\bin\\npm-cli.js",
+    }),
+    {
+      executable: "C:\\node\\node.exe",
+      args: ["C:\\node\\node_modules\\npm\\bin\\npm-cli.js", "run", "build:dap"],
+    },
+  );
+  assert.deepEqual(
+    npmInvocation(["run", "build:dap"], {
+      platformName: "win32",
+      nodeExecutable: "C:\\node\\node.exe",
+      npmExecutable: "",
+      commandShell: "C:\\Windows\\System32\\cmd.exe",
+    }),
+    {
+      executable: "C:\\Windows\\System32\\cmd.exe",
+      args: ["/d", "/s", "/c", "npm", "run", "build:dap"],
+    },
+  );
+});
 
 test("the default benchmark profile represents a medium synthetic ERP", () => {
   const options = parseBenchmarkOptions([]);
@@ -48,8 +75,24 @@ test("explicit scale overrides remain positive integers", () => {
   assert.equal(options.profile.views, 12);
   assert.equal(options.profile.schemas, 50);
   assert.equal(options.skipBuild, true);
+  assert.equal(options.output, undefined);
+  assert.equal(
+    parseBenchmarkOptions(["--output", "windows-medium.json"]).output,
+    "windows-medium.json",
+  );
   assert.throws(() => parseBenchmarkOptions(["--tables", "0"]), /positive integer/);
   assert.throws(() => parseBenchmarkOptions(["--columns", "7"]), /at least 8/);
+});
+
+test("PostGIS remains an option of the generic benchmark", () => {
+  assert.equal(parseBenchmarkOptions([]).postgis, false);
+  assert.equal(parseBenchmarkOptions(["--postgis"]).postgis, true);
+});
+
+test("a local PostgreSQL server is an explicit Docker-free fixture", () => {
+  assert.equal(parseBenchmarkOptions([]).noDocker, false);
+  const options = parseBenchmarkOptions(["--no-docker"]);
+  assert.equal(options.noDocker, true);
 });
 
 test("the benchmark enforces the instrumented SourceSet contract", () => {

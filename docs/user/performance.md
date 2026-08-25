@@ -67,6 +67,22 @@ npm run bench:workbench-index -- --profile erp-medium
 npm run bench:workbench-index -- --profile erp-large
 ```
 
+Use the same benchmark with the PostGIS, Tiger geocoder, and topology catalog
+objects enabled when investigating extension-heavy databases:
+
+```bash
+npm run bench:workbench-index -- --profile erp-medium --postgis
+```
+
+Add `--output <path>` to keep the machine-readable JSON report for a baseline
+or a comparison with another host.
+
+Docker is the default fixture. When Docker is unavailable, configure a local
+PostgreSQL server through the standard `PGHOST`, `PGPORT`, `PGUSER`,
+`PGPASSWORD`, and `PGDATABASE` variables and add `--no-docker`. The benchmark
+creates and removes its own uniquely named database; the selected role must
+have those privileges.
+
 The benchmark validates initial and incremental extraction jobs, worker count,
 linkage count, generations, and the sampled graph relation. For the identical
 replacement, it validates the public `unchanged` result and stable generation;

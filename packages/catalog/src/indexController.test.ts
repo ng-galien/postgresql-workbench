@@ -6,7 +6,7 @@ function testHost() {
     log: vi.fn(),
     runtimePath: () => "/extension/runtime/code-moniker",
     workspaceRoots: () => ["/storage/code-moniker-workspace"],
-    commandTimeoutMs: () => 30_000,
+    commandTimeoutMs: () => 120_000,
     acceptanceControlEnabled: () =>
       Boolean(process.env.POSTGRESQL_WORKBENCH_ACCEPTANCE_CONTROL_FILE),
   };
@@ -766,6 +766,61 @@ describe("WorkbenchIndexController connection state", () => {
       controller.dispose();
     },
   );
+});
+
+describe("WorkbenchIndexController Code Moniker readiness", () => {
+  it("uses the active session timeout while the workspace is loading", async () => {
+    vi.useFakeTimers();
+    const connections = new FakeConnections();
+    let configuredTimeoutMs = 25;
+    const controller = new WorkbenchIndexController(
+      { ...testHost(), commandTimeoutMs: () => configuredTimeoutMs },
+      connections as unknown as IndexConnections,
+    );
+    const session = {
+      workbenchCommandTimeoutMs: configuredTimeoutMs,
+      client: {
+        workspace: { status: vi.fn().mockResolvedValue({ phase: "loading" }) },
+      },
+    } as unknown as LocalCodeMonikerSession;
+    configuredTimeoutMs = 1;
+    const internals = controller as unknown as {
+      ensureSession: () => Promise<LocalCodeMonikerSession>;
+      assertCapabilities: () => void;
+      publishAndReadCatalog: (
+        catalog: PostgresCatalogSnapshot,
+        connectionId: string,
+        database: string,
+        started: number,
+        isCurrent: () => boolean,
+      ) => Promise<unknown>;
+    };
+    internals.ensureSession = vi.fn().mockResolvedValue(session);
+    internals.assertCapabilities = vi.fn();
+
+    try {
+      const result = expect(
+        internals.publishAndReadCatalog(
+          {
+            sourceSet: { srcset: "postgres-test", revision: "revision-a", documents: [] },
+            metrics: { introspectionMs: 0, materializationMs: 0, documentCount: 0 },
+            origins: new Map(),
+            foreignKeys: [],
+            viewDependencies: [],
+          },
+          "connection-a",
+          "database-a",
+          performance.now(),
+          () => true,
+        ),
+      ).rejects.toThrow("Code Moniker workspace remained loading for 25 ms");
+      await vi.advanceTimersByTimeAsync(50);
+      await result;
+    } finally {
+      controller.dispose();
+      vi.useRealTimers();
+    }
+  });
 });
 
 function indexResult(overrides: Partial<WorkbenchIndexResult> = {}): WorkbenchIndexResult {

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Let slower Code Moniker workspaces finish loading before Workbench indexing
+  fails: the workspace readiness wait now follows the configured command
+  timeout, whose default is 120 seconds instead of a separate hard-coded 30
+  seconds
+- Repaired the repository Workbench index benchmark, made its npm subprocesses
+  portable to Windows, added optional PostGIS coverage and JSON reports, and
+  allowed an existing local PostgreSQL server when Docker is unavailable
+
 ## [1.4.0] - 2026-08-22
 
 PostgreSQL Workbench 1.4.0 adds the Data View: an editor tab that holds a query,
