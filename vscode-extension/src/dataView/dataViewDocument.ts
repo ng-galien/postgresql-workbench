@@ -6,7 +6,6 @@ import {
 import { conditionForCell, withCondition } from "../../../packages/rows/src/dataView/cellFilter.js";
 import {
   type DataViewAddition,
-  type DataViewChangeHandle,
   type DataViewEdit,
   type DataViewEditability,
   type DataViewProjection,
@@ -325,9 +324,14 @@ export class DataViewDocument implements vscode.CustomDocument {
         this.recordEdit(request.edit);
         return;
       case "data-view/add-row": {
-        const added = this.edits.addRow(this.editability, request.values, request.above);
-        if (!added.held) {
-          this.notify(added.reason, "info");
+        let refused: string | undefined;
+        this.moved("Add row", () => {
+          const added = this.edits.addRow(this.editability, request.values, request.above);
+          if (!added.held) refused = added.reason;
+          return added.held;
+        });
+        if (refused !== undefined) {
+          this.notify(refused, "info");
           return;
         }
         this.hidden.revealRequired(this.editability);
@@ -335,22 +339,32 @@ export class DataViewDocument implements vscode.CustomDocument {
         return;
       }
       case "data-view/drop-row":
-        this.edits.dropRow(request.localId);
-        this.broadcastState();
+        this.moved("Take back row", () => {
+          this.edits.dropRow(request.localId);
+          return true;
+        });
         return;
       case "data-view/fill-row":
-        this.edits.fillRow(request.localId, request.values, request.unset);
-        this.broadcastState();
+        this.moved("Fill row", () => {
+          this.edits.fillRow(request.localId, request.values, request.unset);
+          return true;
+        });
         return;
       case "data-view/remove-rows": {
-        const removal = this.edits.removeRows(request.rows, this.editability);
-        if (!removal.held) {
-          this.notify(removal.reason, "info");
+        let refused: string | undefined;
+        let consequences: string[] = [];
+        this.moved("Delete rows", () => {
+          const removal = this.edits.removeRows(request.rows, this.editability);
+          if (!removal.held) refused = removal.reason;
+          else consequences = removal.consequences;
+          return removal.held;
+        });
+        if (refused !== undefined) {
+          this.notify(refused, "info");
           return;
         }
-        this.broadcastState();
         // Said when the row is taken, not discovered when the transaction fails.
-        if (removal.consequences.length > 0) this.notify(removal.consequences.join(" "), "info");
+        if (consequences.length > 0) this.notify(consequences.join(" "), "info");
         return;
       }
       case "follow-link":
@@ -366,7 +380,7 @@ export class DataViewDocument implements vscode.CustomDocument {
         await this.services.openSql(this.source, this.query.effectiveSql());
         return;
       case "data-view/discard-change":
-        this.discardChange(request.change);
+        this.moved("Discard change", () => this.edits.discardChange(request.change));
         return;
       case "data-view/discard":
       case "data-view/apply":
@@ -750,49 +764,31 @@ export class DataViewDocument implements vscode.CustomDocument {
   // --- Cell edits ----------------------------------------------------------------------------
 
   private recordEdit(edit: DataViewEdit): void {
-    const held = this.edits.record(edit, this.editability);
-    if (!held.held) {
-      this.notify(held.reason, "info");
-      return;
-    }
-    const { previous } = held;
-    if (this.nativeDirtyTracking()) {
-      this._onDidEdit.fire({
-        label: `Edit ${edit.column}`,
-        undo: () => {
-          if (previous) this.edits.set(previous);
-          else this.edits.remove(edit);
-          this.broadcastState();
-        },
-        redo: () => {
-          this.edits.set(edit);
-          this.broadcastState();
-        },
-      });
-    }
-    this.broadcastState();
+    let refused: string | undefined;
+    this.moved(`Edit ${edit.column}`, () => {
+      const held = this.edits.record(edit, this.editability);
+      if (!held.held) refused = held.reason;
+      return held.held;
+    });
+    if (refused !== undefined) this.notify(refused, "info");
   }
 
   /**
-   * Taking one change back out is a move in what is waiting, exactly as making one is, so VS Code
-   * is told about it the same way. Left out, the tab keeps its dirty mark over an empty list and
-   * asks to save nothing on close, and an undo puts back the change the reader just took away.
+   * Every move in what is waiting goes through here. VS Code counts one as an edit of the document
+   * — it is what carries the tab's dirty mark and its undo stack — and a move that skips this leaves
+   * the two out of step: a row added without it, then taken back out through the list, leaves the
+   * tab dirty over an empty list, asking to save nothing at all.
    */
-  discardChange(change: DataViewChangeHandle): void {
-    const discarded = this.edits.discardChange(change);
-    if (!discarded) return;
+  private moved(label: string, mutate: () => boolean): void {
+    const before = this.edits.snapshot();
+    if (!mutate()) return;
     if (this.nativeDirtyTracking()) {
-      this._onDidEdit.fire({
-        label: "Discard change",
-        undo: () => {
-          this.edits.restoreChange(discarded);
-          this.broadcastState();
-        },
-        redo: () => {
-          this.edits.discardChange(change);
-          this.broadcastState();
-        },
-      });
+      const after = this.edits.snapshot();
+      const replay = (restore: () => void) => () => {
+        restore();
+        this.broadcastState();
+      };
+      this._onDidEdit.fire({ label, undo: replay(before), redo: replay(after) });
     }
     this.broadcastState();
   }

@@ -96,3 +96,18 @@ export function cursor(page: Page): Promise<string> {
     return `${index}:${anchor.getAttribute("data-column")}`;
   });
 }
+
+/** The ordinal a column is drawn at, by its name — what every cell locator is built from. */
+export function ordinalOf(
+  shown: readonly { name: string; ordinal: string }[],
+  name: string,
+): string {
+  const column = shown.find((candidate) => candidate.name === name);
+  if (!column) throw new Error(`The view must show a ${name} column`);
+  return column.ordinal;
+}
+
+/** The rows the result holds, without the spacers the virtualised grid draws around them. */
+export function bodyRows(page: Page) {
+  return page.locator("tbody tr:not(.result-spacer)");
+}

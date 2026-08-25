@@ -17,6 +17,7 @@ import type {
   DataViewEdit,
   DataViewRowInsertion,
 } from "../../../rows/src/dataView/dataView.js";
+import { reasonAgainstWriting } from "../../../rows/src/dataView/editability.js";
 import { rowOrder } from "../../../rows/src/dataView/rowOrder.js";
 import { shownValues } from "../../../rows/src/dataView/shownValues.js";
 import {
@@ -511,14 +512,19 @@ export function ResultGrid({
         editing.rows?.fill(shown.added.localId, values());
         return;
       }
-      const rowIndex = shown.loaded;
-      const row = rows[rowIndex];
+      const row = rows[shown.loaded];
       if (!row) {
         // A line with no row to land on becomes a row of its own, under the last one.
         editing.rows?.appendPasted(values(), rows.length);
         return;
       }
-      // A row waiting to be taken away is not written into, whichever way the values arrive.
+      const rowIndex = shown.loaded;
+      /*
+       * A row on its way out is passed over rather than refused a column at a time: the values of
+       * one pasted line arrive together, and the held changes would answer the same sentence once
+       * per column of it. Which columns may be written is `editableHere`'s question, asked per cell
+       * below; this one is the row's, and it reads the same list the grid struck the row through by.
+       */
       if (editing.rows?.isRemoved(row)) return;
       line.forEach((value, offset) => {
         const target = visibleOrdinals[from + offset];
@@ -640,18 +646,20 @@ export function ResultGrid({
         ? activeAdded?.localId === subject.added.localId && activeAdded.ordinal === ordinal
         : activeCell?.row === subject.loadedIndex && activeCell.ordinal === ordinal;
     },
-    // A row waiting to be taken away holds nothing to change, and a value cut short on its way here
-    // is not a value to edit: writing it back would truncate it.
+    // What the held changes would refuse, the grid does not offer. A value cut short on its way
+    // here is the grid's own refusal: writing it back would truncate what it stands for.
     openEditor(shownRow, ordinal) {
-      const policy = editing?.policies[ordinal];
       const subject = subjectAt(shownRow);
-      if (!policy?.editable || !subject) return;
+      if (!subject) return;
       if (subject.of === "added") {
-        setActiveAdded({ localId: subject.added.localId, ordinal });
+        if (editing?.policies[ordinal]?.editable) {
+          setActiveAdded({ localId: subject.added.localId, ordinal });
+        }
         return;
       }
       const cell = subject.cells[ordinal];
-      if (!cell || cell.truncated || subject.removed) return;
+      if (!cell || cell.truncated) return;
+      if (reasonAgainstWriting(editing?.policies[ordinal], subject.removed)) return;
       setActiveCell({ row: subject.loadedIndex, ordinal });
     },
     closeEditor() {
@@ -665,18 +673,21 @@ export function ResultGrid({
    * and the loaded ones alike, so everything that acts on "the row under the cursor" asks this and
    * not the loaded rows directly — a shown index is not a loaded index once one waits above it.
    */
+  const loadedSubject = (
+    cells: readonly DebugResultCell[],
+    loadedIndex: number,
+  ): GridRowSubject => ({
+    of: "loaded",
+    cells,
+    loadedIndex,
+    number: firstRowNumber + loadedIndex,
+    removed: editing?.rows?.isRemoved(cells) ?? false,
+  });
   const subjectAt = (shownRow: number): GridRowSubject | undefined => {
     const shown = order.at(shownRow);
     if ("added" in shown) return { of: "added", added: shown.added };
     const cells = rows[shown.loaded];
-    if (!cells) return undefined;
-    return {
-      of: "loaded",
-      cells,
-      loadedIndex: shown.loaded,
-      number: firstRowNumber + shown.loaded,
-      removed: editing?.rows?.isRemoved(cells) ?? false,
-    };
+    return cells ? loadedSubject(cells, shown.loaded) : undefined;
   };
   /*
    * The cell the cursor is on, for whatever is showing it whole — projected by the one function
@@ -686,7 +697,6 @@ export function ResultGrid({
     const subject = subjectAt(selection.anchor.row);
     const column = payload.columns[selection.anchor.ordinal];
     if (!subject || !column) return undefined;
-    if (subject.of === "loaded" && !subject.cells[selection.anchor.ordinal]) return undefined;
     return cellOf(subject, selection.anchor.ordinal, column.name, editing);
   })();
   const lastInspection = useRef<
@@ -978,13 +988,7 @@ export function ResultGrid({
                       />
                     ))}
                     <GridRow
-                      subject={{
-                        of: "loaded",
-                        cells: row,
-                        loadedIndex: rowIndex,
-                        number: firstRowNumber + rowIndex,
-                        removed: editing?.rows?.isRemoved(row) ?? false,
-                      }}
+                      subject={loadedSubject(row, rowIndex)}
                       shownRow={order.ofLoaded(rowIndex)}
                       context={rowContext}
                     />

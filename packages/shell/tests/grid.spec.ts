@@ -1,11 +1,13 @@
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import {
   add,
+  bodyRows,
   columns,
   cursor,
   editBar,
   enterEditMode,
   openEmpty,
+  ordinalOf,
   putOnClipboard,
   readClipboard,
   selectRows,
@@ -100,6 +102,36 @@ test("gives the keyboard back when a cell editor closes", async ({ page }) => {
   expect(await rowOf()).toBe(before + 1);
 });
 
+/**
+ * A row of `shop.stock_check` written and read back, which is where both journeys about a written
+ * cell start. It leaves the row in the result; each of them takes it away again at the end.
+ */
+async function writeStockCheck(page: Page, mark: string) {
+  await openEmpty(page);
+  await add(page, "shop.stock_check");
+  await enterEditMode(page);
+  const bar = editBar(page);
+  const shown = await columns(page);
+  const at = (name: string) => ordinalOf(shown, name);
+
+  await bar.add.click();
+  const added = page.locator("tbody tr.added").first();
+  await added.locator(`td[data-column="${at("counted_by")}"]`).dblclick();
+  await page.keyboard.type(mark);
+  await page.keyboard.press("Enter");
+  await added.locator(`td[data-column="${at("status")}"]`).dblclick();
+  await page.keyboard.type("done");
+  await page.keyboard.press("Enter");
+  await bar.apply.click();
+
+  // The write is over when nothing is held any more; the rows are re-read on the way.
+  await expect(bar.changes).toBeDisabled();
+  const written = bodyRows(page).filter({ hasText: mark }).first();
+  const status = written.locator(`td[data-column="${at("status")}"]`);
+  await expect(status).toHaveText("done");
+  return { bar, at, written, status };
+}
+
 test("walks the rows and the columns with the arrows, and jumps to the ends", async ({ page }) => {
   await openEmpty(page);
   await add(page, "shop.address");
@@ -135,7 +167,7 @@ test("copies two whole rows and carries them into two new ones", async ({ page }
   await enterEditMode(page);
   const bar = editBar(page);
 
-  const rows = page.locator("tbody tr:not(.result-spacer)");
+  const rows = bodyRows(page);
   const wanted = [
     await rows.nth(0).locator("td[data-column]").allTextContents(),
     await rows.nth(1).locator("td[data-column]").allTextContents(),
@@ -169,12 +201,12 @@ test("copies the cells of one column alone, and pastes them down another", async
   await add(page, "shop.address");
   await enterEditMode(page);
 
-  const city = (await columns(page)).find((column) => column.name === "city");
-  const label = (await columns(page)).find((column) => column.name === "label");
-  if (!city || !label) throw new Error("The address view must show its city and label columns");
+  const shown = await columns(page);
+  const city = ordinalOf(shown, "city");
+  const label = ordinalOf(shown, "label");
 
   // Three cells of one column, and nothing beside them: a rectangle one column wide.
-  await page.locator(`td[data-row="0"][data-column="${city.ordinal}"]`).click();
+  await page.locator(`td[data-row="0"][data-column="${city}"]`).click();
   await page.keyboard.press("Shift+ArrowDown");
   await page.keyboard.press("Shift+ArrowDown");
   await expect(editBar(page).selection).toHaveText("3 rows × 1 column");
@@ -185,13 +217,11 @@ test("copies the cells of one column alone, and pastes them down another", async
   // One column carries no tab: what is copied is the column, not the rows it was taken from.
   expect(copied.join("")).not.toContain("\t");
 
-  await page.locator(`td[data-row="0"][data-column="${label.ordinal}"]`).click();
+  await page.locator(`td[data-row="0"][data-column="${label}"]`).click();
   await page.keyboard.press("ControlOrMeta+v");
 
   for (const [index, value] of copied.entries()) {
-    await expect(
-      page.locator(`td[data-row="${index}"][data-column="${label.ordinal}"]`),
-    ).toHaveText(value);
+    await expect(page.locator(`td[data-row="${index}"][data-column="${label}"]`)).toHaveText(value);
   }
 });
 
@@ -251,11 +281,10 @@ test("takes one change back out of the list, and the rows follow", async ({ page
   await add(page, "shop.address");
   await enterEditMode(page);
   const bar = editBar(page);
-  const city = (await columns(page)).find((column) => column.name === "city");
-  if (!city) throw new Error("The address view must show its city column");
+  const city = ordinalOf(await columns(page), "city");
 
-  const rows = page.locator("tbody tr:not(.result-spacer)");
-  const edited = rows.nth(0).locator(`td[data-column="${city.ordinal}"]`);
+  const rows = bodyRows(page);
+  const edited = rows.nth(0).locator(`td[data-column="${city}"]`);
   const held = (await edited.innerText()).trim();
 
   // One of each kind waiting at once: a cell changed, a row going, a row arriving.
@@ -297,11 +326,10 @@ test("holds a row waiting to go still, and lets it be copied all the same", asyn
   await add(page, "shop.address");
   await enterEditMode(page);
   const bar = editBar(page);
-  const city = (await columns(page)).find((column) => column.name === "city");
-  if (!city) throw new Error("The address view must show its city column");
+  const city = ordinalOf(await columns(page), "city");
 
-  const row = page.locator("tbody tr:not(.result-spacer)").nth(1);
-  const cell = row.locator(`td[data-column="${city.ordinal}"]`);
+  const row = bodyRows(page).nth(1);
+  const cell = row.locator(`td[data-column="${city}"]`);
   const held = (await cell.innerText()).trim();
 
   await selectRows(page, 1);
@@ -340,28 +368,8 @@ test("holds a row waiting to go still, and lets it be copied all the same", asyn
 test("gives a written column back to the default the table would have given it", async ({
   page,
 }) => {
-  await openEmpty(page);
-  await add(page, "shop.stock_check");
-  await enterEditMode(page);
-  const bar = editBar(page);
-  const shown = await columns(page);
-  const at = (name: string) => shown.find((column) => column.name === name)?.ordinal;
+  const { bar, at, written, status } = await writeStockCheck(page, "Chloé — back to the default");
   const mark = "Chloé — back to the default";
-
-  await bar.add.click();
-  const added = page.locator("tbody tr.added").first();
-  await added.locator(`td[data-column="${at("counted_by")}"]`).dblclick();
-  await page.keyboard.type(mark);
-  await page.keyboard.press("Enter");
-  await added.locator(`td[data-column="${at("status")}"]`).dblclick();
-  await page.keyboard.type("done");
-  await page.keyboard.press("Enter");
-  await bar.apply.click();
-
-  await expect(bar.changes).toBeDisabled();
-  const written = page.locator("tbody tr:not(.result-spacer)", { hasText: mark }).first();
-  const status = written.locator(`td[data-column="${at("status")}"]`);
-  await expect(status).toHaveText("done");
 
   // A column with nothing of its own to fall back on is only ever given NULL.
   await written.locator(`td[data-column="${at("note")}"]`).dblclick();
@@ -390,29 +398,8 @@ test("gives a written column back to the default the table would have given it",
 });
 
 test("gives a value back to NULL, which is not the default beside it", async ({ page }) => {
-  await openEmpty(page);
-  await add(page, "shop.stock_check");
-  await enterEditMode(page);
-  const bar = editBar(page);
-  const shown = await columns(page);
-  const at = (name: string) => shown.find((column) => column.name === name)?.ordinal;
+  const { bar, written, status } = await writeStockCheck(page, "Chloé — back to NULL");
   const mark = "Chloé — back to NULL";
-
-  await bar.add.click();
-  const added = page.locator("tbody tr.added").first();
-  await added.locator(`td[data-column="${at("counted_by")}"]`).dblclick();
-  await page.keyboard.type(mark);
-  await page.keyboard.press("Enter");
-  await added.locator(`td[data-column="${at("status")}"]`).dblclick();
-  await page.keyboard.type("done");
-  await page.keyboard.press("Enter");
-  await bar.apply.click();
-
-  // The write is over when nothing is held any more; the rows are re-read on the way.
-  await expect(bar.changes).toBeDisabled();
-  const written = page.locator("tbody tr:not(.result-spacer)", { hasText: mark }).first();
-  const status = written.locator(`td[data-column="${at("status")}"]`);
-  await expect(status).toHaveText("done");
 
   // The column has a default, and NULL is offered beside it: the reader picks which one they mean.
   await status.dblclick();

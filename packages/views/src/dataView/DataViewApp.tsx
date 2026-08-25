@@ -982,6 +982,9 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
                 ) : change.kind === "insert" ? (
                   <span className="pending-edit-change">
                     <span className="pending-edit-insertion">A new row</span>
+                    {change.left ? (
+                      <span className="pending-edit-left">DEFAULT for {change.left}</span>
+                    ) : null}
                   </span>
                 ) : (
                   <span className="pending-edit-change">

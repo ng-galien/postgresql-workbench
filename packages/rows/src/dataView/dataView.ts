@@ -60,8 +60,8 @@ export type DataViewColumnPolicy =
       column: string;
       dataType: string;
       editor: DataViewValueEditor;
-      /** Whether PostgreSQL has something of its own for this column: a DEFAULT, or a sequence. */
-      hasDefault: boolean;
+      /** Whether PostgreSQL has something of its own for it: a DEFAULT, a sequence, an identity. */
+      hasOwnValue: boolean;
     }
   | { editable: false; reason: string };
 
@@ -298,6 +298,8 @@ export interface DataViewChangeSummary {
   column?: string;
   original?: string | null;
   value?: string | null;
+  /** On a new row: the columns left out of the INSERT, which the table will answer for. */
+  left?: string;
   /** The column is given back to the table's own default, which is not the same as giving it NULL. */
   toDefault?: true;
 }
@@ -332,7 +334,7 @@ export function describeDataViewChanges(
       handle: {
         kind: "delete" as const,
         tableOid: removal.tableOid,
-        key: [...removal.key],
+        key: removal.key,
       },
       ...describe(removal),
     })),
@@ -341,17 +343,23 @@ export function describeDataViewChanges(
       handle: {
         kind: "update" as const,
         tableOid: edit.tableOid,
-        key: [...edit.key],
+        key: edit.key,
         ordinal: edit.ordinal,
       },
       ...describe(edit),
       column: edit.column,
       original: edit.original,
       value: edit.value,
-      ...(edit.toDefault ? { toDefault: edit.toDefault } : {}),
+      toDefault: edit.toDefault,
     })),
     ...insertions.map((insertion) => {
       const filled = Object.entries(insertion.values);
+      const table = editability.tables.find((one) => one.tableOid === insertion.tableOid);
+      const left = (table ? editability.columns : [])
+        .flatMap((policy) =>
+          policy.editable && policy.tableOid === insertion.tableOid ? [policy.column] : [],
+        )
+        .filter((column) => !(column in insertion.values));
       return {
         kind: "insert" as const,
         handle: { kind: "insert" as const, localId: insertion.localId },
@@ -361,6 +369,8 @@ export function describeDataViewChanges(
           filled.length === 0
             ? "every column left to PostgreSQL"
             : filled.map(([column, value]) => `${column} = ${value ?? "NULL"}`).join(", "),
+        /* Columns the reader left alone: named, because "not mentioned" is a choice they made. */
+        ...(left.length > 0 ? { left: left.join(", ") } : {}),
       };
     }),
   ];

@@ -63,6 +63,19 @@ export interface CatalogTable {
   referencedBy: { table: string; onDelete: DataViewDeleteRule }[];
 }
 
+/**
+ * Why this cell cannot be written, or nothing when it can. Two rules meet here — a column that is
+ * not the view's to change, and a row on its way out — and they meet once, so the grid refusing to
+ * open an editor and the held changes refusing to take one give the reader the same sentence.
+ */
+export function reasonAgainstWriting(
+  policy: DataViewColumnPolicy | undefined,
+  rowIsRemoved: boolean,
+): string | undefined {
+  if (!policy?.editable) return policy?.reason ?? "This column cannot be edited.";
+  return rowIsRemoved ? READ_ONLY_REASONS.removed : undefined;
+}
+
 export const READ_ONLY_REASONS = {
   computed: "Computed value: it does not come from one stored column.",
   ambiguous: "Ambiguous: this table appears more than once in the query.",
@@ -259,6 +272,6 @@ function columnPolicy(
     column: column.name,
     dataType: column.type,
     editor: valueEditorForType(column.type),
-    hasDefault: columnHasOwnValue(column),
+    hasOwnValue: columnHasOwnValue(column),
   };
 }

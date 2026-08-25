@@ -77,7 +77,7 @@ describe("the Data View", () => {
           { editable: false, reason: "Identity value (primary key)." },
           {
             editable: true,
-            hasDefault: false,
+            hasOwnValue: false,
             tableOid: 1,
             column: "name",
             dataType: "text",

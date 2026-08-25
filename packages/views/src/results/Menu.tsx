@@ -18,7 +18,8 @@ import {
  *
  * Four kinds beside the separator, because a menu in the Workbench does four things: it runs
  * something, it turns something on and off, it puts what it offers under the table it belongs to,
- * and — for the changes waiting to be applied — it shows something to read rather than to run.
+ * and it shows something to read rather than to run — which, for the changes waiting to be applied,
+ * carries the one control that takes back what it describes.
  */
 export type MenuEntry =
   | {
@@ -179,7 +180,13 @@ export function Menu({
   );
 }
 
-/** What the arrows walk, in the order they are read — groups flattened, refusals left out. */
+/**
+ * What the arrows walk when the menu has a header holding the focus, in the order they are read —
+ * groups flattened, refusals left out. A menu without one walks the DOM instead (see `walk`), which
+ * is what reaches the control a note carries: give this list a header and that control leaves the
+ * walk, so a dismissible note and a filter field do not belong in the same menu until both walks
+ * are one.
+ */
 function runnableEntries(entries: readonly MenuEntry[], into: MenuAction[] = []): MenuAction[] {
   for (const entry of entries) {
     if (entry.kind === "group") runnableEntries(entry.entries, into);

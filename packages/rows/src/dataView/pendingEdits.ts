@@ -11,14 +11,8 @@ import {
   describeDeleteConsequences,
   sameDataViewRow,
 } from "./dataView.js";
-import { READ_ONLY_REASONS } from "./editability.js";
+import { READ_ONLY_REASONS, reasonAgainstWriting } from "./editability.js";
 import { buildRowDeletes, buildRowInserts, buildRowUpdates } from "./updates.js";
-
-/** What was taken out of what is waiting, so a host that counts edits can put it back. */
-export type DiscardedChange =
-  | { kind: "update"; edit: DataViewEdit }
-  | { kind: "delete"; row: DataViewRowRemoval }
-  | { kind: "insert"; row: DataViewRowInsertion };
 
 /**
  * What a surface showing a Data View must be able to do for changes to reach PostgreSQL. Each
@@ -40,6 +34,9 @@ export interface DataViewWriteHost {
 }
 
 /** Local, unapplied cell edits of a Data View, and their atomic application. */
+/** Which cell an edit is held against: one row of one table, and one column of it. */
+type EditPlace = Pick<DataViewEdit, "tableOid" | "key" | "ordinal">;
+
 export class PendingEdits {
   private items: DataViewEdit[] = [];
   private removals: DataViewRowRemoval[] = [];
@@ -77,16 +74,14 @@ export class PendingEdits {
     edit: DataViewEdit,
     editability: DataViewEditability,
   ): { held: true; previous?: DataViewEdit } | { held: false; reason: string } {
-    const policy = editability.columns[edit.ordinal];
     if (this.writing) return { held: false, reason: READ_ONLY_REASONS.applying };
-    if (!policy?.editable)
-      return { held: false, reason: policy?.reason ?? "This column cannot be edited." };
     /*
      * A row already provisioned to go holds nothing to change. Taking one away drops the edits it
      * held; letting an edit land on it afterwards would write an UPDATE the DELETE before it has
      * left nothing for — the guard would find no row, and the whole transaction would roll back.
      */
-    if (this.isRemoved(edit)) return { held: false, reason: READ_ONLY_REASONS.removed };
+    const refused = reasonAgainstWriting(editability.columns[edit.ordinal], this.isRemoved(edit));
+    if (refused) return { held: false, reason: refused };
     const previous = this.set(edit);
     return previous ? { held: true, previous } : { held: true };
   }
@@ -123,9 +118,7 @@ export class PendingEdits {
 
   /** Stores one cell edit; returns the edit it replaced. Reverting to the original drops it. */
   set(edit: DataViewEdit): DataViewEdit | undefined {
-    const index = this.items.findIndex(
-      (candidate) => sameDataViewRow(candidate, edit) && candidate.ordinal === edit.ordinal,
-    );
+    const index = this.indexOfEdit(edit);
     const previous = index >= 0 ? this.items[index] : undefined;
     const restoresOriginal = !edit.toDefault && edit.value === edit.original;
     if (index >= 0) {
@@ -137,9 +130,15 @@ export class PendingEdits {
     return previous;
   }
 
-  remove(edit: Pick<DataViewEdit, "tableOid" | "key" | "ordinal">): void {
-    this.items = this.items.filter(
-      (candidate) => !(sameDataViewRow(candidate, edit) && candidate.ordinal === edit.ordinal),
+  remove(edit: EditPlace): void {
+    const index = this.indexOfEdit(edit);
+    if (index >= 0) this.items.splice(index, 1);
+  }
+
+  /** Where the edit of this row and this column is held, or -1. The one way of asking. */
+  private indexOfEdit(place: EditPlace): number {
+    return this.items.findIndex(
+      (candidate) => sameDataViewRow(candidate, place) && candidate.ordinal === place.ordinal,
     );
   }
 
@@ -223,38 +222,42 @@ export class PendingEdits {
   }
 
   /**
-   * Takes one change back out of what is waiting, whichever kind it is, and hands it back so a host
-   * that counts moves as document edits can put it back. A reader who reads the list before
-   * committing to it should be able to change their mind about one line without discarding the
-   * eight others — and the grid answers straight away, because what it draws is these three lists.
+   * Takes one change back out of what is waiting, whichever kind it is. A reader who reads the list
+   * before committing to it should be able to change their mind about one line of it without
+   * discarding the eight others. Answers whether there was such a change to take out.
    */
-  discardChange(change: DataViewChangeHandle): DiscardedChange | undefined {
+  discardChange(change: DataViewChangeHandle): boolean {
     if (change.kind === "insert") {
-      const row = this.insertions.find((candidate) => candidate.localId === change.localId);
-      if (!row) return undefined;
+      if (!this.insertions.some((candidate) => candidate.localId === change.localId)) return false;
       this.dropRow(change.localId);
-      return { kind: "insert", row };
+      return true;
     }
-    const key = dataViewRowKey(change);
     if (change.kind === "delete") {
-      const row = this.removals.find((candidate) => dataViewRowKey(candidate) === key);
-      if (!row) return undefined;
-      this.unremove(key);
-      return { kind: "delete", row };
+      if (!this.isRemoved(change)) return false;
+      this.unremove(dataViewRowKey(change));
+      return true;
     }
-    const edit = this.items.find(
-      (candidate) => dataViewRowKey(candidate) === key && candidate.ordinal === change.ordinal,
-    );
-    if (!edit) return undefined;
-    this.remove(edit);
-    return { kind: "update", edit };
+    const index = this.indexOfEdit(change);
+    if (index < 0) return false;
+    this.items.splice(index, 1);
+    return true;
   }
 
-  /** Puts back a change that was taken out, so an undo restores what the reader took away. */
-  restoreChange(discarded: DiscardedChange): void {
-    if (discarded.kind === "insert") this.insertions.push(discarded.row);
-    else if (discarded.kind === "delete") this.removals.push(discarded.row);
-    else this.set(discarded.edit);
+  /**
+   * Everything held right now, as the way back to it. A host that counts a move in what is waiting
+   * as an edit of its document needs an undo for each one, and there are six ways to move: asking
+   * each of them for its own inverse is six chances to get one wrong. These are the reader's own
+   * changes — tens of them, not thousands — so remembering all three lists costs nothing.
+   */
+  snapshot(): () => void {
+    const items = [...this.items];
+    const removals = [...this.removals];
+    const insertions = this.insertions.map((row) => ({ ...row, values: { ...row.values } }));
+    return () => {
+      this.items = [...items];
+      this.removals = [...removals];
+      this.insertions = insertions.map((row) => ({ ...row, values: { ...row.values } }));
+    };
   }
 
   /** Puts one row back among those the result holds, which is what a second Delete does to it. */

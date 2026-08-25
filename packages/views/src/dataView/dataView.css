@@ -360,15 +360,6 @@ body,
   background: var(--vscode-editor-background);
 }
 
-/* Between what moves through the rows and what is done to them: one hairline, the bar's own. */
-.data-view-rows-divider {
-  flex: 0 0 auto;
-  width: 1px;
-  height: 1.2em;
-  margin: 0 2px;
-  background: color-mix(in srgb, var(--vscode-foreground) 20%, transparent);
-}
-
 .data-view-rows-spacer {
   flex: 1;
 }
@@ -892,6 +883,14 @@ body,
   color: var(--vscode-foreground);
 }
 
+/* What the table will answer for, said beside what the reader filled in rather than left unsaid. */
+.pending-edit-left {
+  overflow: hidden;
+  color: var(--vscode-descriptionForeground);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /*
  * The edit bar: it appears with edit mode, immediately above the rows it acts on, and carries
  * everything that changes them — what is selected, what can be done to it, what is waiting.
@@ -958,10 +957,17 @@ body,
   opacity: 1;
 }
 
+/* Between what moves through the rows and what is done to them, and between groups of the bar. */
+.data-view-rows-divider,
 .edit-bar-divider {
   width: 1px;
   height: 1.2em;
   background: color-mix(in srgb, var(--vscode-foreground) 20%, transparent);
+}
+
+.data-view-rows-divider {
+  flex: 0 0 auto;
+  margin: 0 2px;
 }
 
 /*

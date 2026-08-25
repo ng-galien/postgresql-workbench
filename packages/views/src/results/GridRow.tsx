@@ -210,7 +210,7 @@ export function GridRow({
                 editor={policy.editor}
                 value={shown}
                 given={cell.given}
-                onLeaveToDatabase={added || policy.hasDefault ? leaveToDatabase : undefined}
+                onLeaveToDatabase={added || policy.hasOwnValue ? leaveToDatabase : undefined}
                 onCommit={(next) => {
                   context.closeEditor();
                   if (added) editing.rows?.fill(added.localId, { [column.name]: next });

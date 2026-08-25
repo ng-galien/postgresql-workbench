@@ -94,8 +94,10 @@ describe("grid selection", () => {
     });
   });
 
+  /* The gutter is a place along the row, so these all ask about the same three columns. */
+  const bounds = { rows: 8, visibleOrdinals: [0, 1, 2] };
+
   it("steps left of the first column onto the gutter, where the whole row is selected", () => {
-    const bounds = { rows: 8, visibleOrdinals: [0, 1, 2] };
     const onGutter = movedSelection(cellSelection(2, 0), 0, -1, false, bounds);
     expect(onGutter.kind).toBe("rows");
     expect(onGutter.anchor).toEqual({ row: 2, ordinal: 0 });
@@ -104,7 +106,6 @@ describe("grid selection", () => {
   });
 
   it("walks whole rows along the gutter, and comes back to the first column", () => {
-    const bounds = { rows: 8, visibleOrdinals: [0, 1, 2] };
     const gutter = rowSelection(2, 0);
     const down = movedSelection(gutter, 1, 0, false, bounds);
     expect(down.kind).toBe("rows");
@@ -115,14 +116,12 @@ describe("grid selection", () => {
   });
 
   it("extends a run of whole rows from the gutter with shift held", () => {
-    const bounds = { rows: 8, visibleOrdinals: [0, 1, 2] };
     const extended = movedSelection(rowSelection(1, 0), 2, 0, true, bounds);
     expect(extended.kind).toBe("rows");
     expect(selectedRows(extended)).toEqual({ first: 1, last: 3 });
   });
 
   it("stays on the gutter when the reader keeps pressing left", () => {
-    const bounds = { rows: 8, visibleOrdinals: [0, 1, 2] };
     const still = movedSelection(rowSelection(2, 0), 0, -1, false, bounds);
     expect(still.kind).toBe("rows");
     expect(still.anchor).toEqual({ row: 2, ordinal: 0 });
