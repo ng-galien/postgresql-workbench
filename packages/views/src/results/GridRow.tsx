@@ -198,11 +198,22 @@ export function GridRow({
                 editor={policy.editor}
                 value={shown}
                 given={cell.given}
-                {...(subject.of === "added" && added
+                {...(policy.hasDefault
                   ? {
                       onLeaveToDatabase: () => {
                         context.closeEditor();
-                        editing.rows?.fill(added.localId, {}, [column.name]);
+                        if (added) {
+                          editing.rows?.fill(added.localId, {}, [column.name]);
+                        } else if (subject.of === "loaded") {
+                          editing.onEdit(
+                            subject.cells,
+                            subject.loadedIndex,
+                            ordinal,
+                            null,
+                            cell.raw,
+                            true,
+                          );
+                        }
                       },
                     }
                   : {})}
@@ -263,11 +274,17 @@ function cellOf(
     const filled = given ? (subject.added.values[columnName] ?? null) : null;
     return { kind: filled === null ? "null" : "text", value: filled, raw: filled, given };
   }
-  const cell = subject.cells[ordinal] ?? { kind: "null" as const, value: null };
+  const cell = {
+    ...(subject.cells[ordinal] ?? { kind: "null" as const, value: null }),
+    given: true,
+  };
   const edit = editing?.editFor(subject.cells, subject.loadedIndex, ordinal);
-  return edit
-    ? { ...cell, value: edit.value, edited: true, raw: cell.value }
-    : { ...cell, raw: cell.value };
+  if (!edit) return { ...cell, raw: cell.value };
+  // A column asked for its default holds no value to show until PostgreSQL has written one.
+  if (edit.toDefault) {
+    return { ...cell, kind: "null", value: null, edited: true, raw: cell.value, given: false };
+  }
+  return { ...cell, value: edit.value, edited: true, raw: cell.value, given: true };
 }
 
 /*
@@ -275,7 +292,6 @@ function cellOf(
  * NULL. On a row being added there are two, and they are not the same row in the database — an
  * explicit NULL is inserted, a column left alone is not named at all and takes the table's default.
  */
-function emptyLabel(subject: GridRowSubject, given: boolean): string {
-  if (subject.of !== "added") return "NULL";
+function emptyLabel(_subject: GridRowSubject, given: boolean): string {
   return given ? "NULL" : "DEFAULT";
 }

@@ -60,6 +60,8 @@ export type DataViewColumnPolicy =
       column: string;
       dataType: string;
       editor: DataViewValueEditor;
+      /** Whether PostgreSQL has something of its own for this column: a DEFAULT, or a sequence. */
+      hasDefault: boolean;
     }
   | { editable: false; reason: string };
 
@@ -123,6 +125,12 @@ export interface DataViewEdit {
   column: string;
   original: string | null;
   value: string | null;
+  /**
+   * Writes `= DEFAULT` rather than a value, so the column takes what the table would have given
+   * it. It is not the same change as giving it NULL, and only a column that has a default of its
+   * own can be asked for it.
+   */
+  toDefault?: true;
 }
 
 /**

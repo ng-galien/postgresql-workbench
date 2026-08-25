@@ -114,7 +114,7 @@ export class PendingEdits {
       (candidate) => sameDataViewRow(candidate, edit) && candidate.ordinal === edit.ordinal,
     );
     const previous = index >= 0 ? this.items[index] : undefined;
-    const restoresOriginal = edit.value === edit.original;
+    const restoresOriginal = !edit.toDefault && edit.value === edit.original;
     if (index >= 0) {
       if (restoresOriginal) this.items.splice(index, 1);
       else this.items[index] = edit;

@@ -155,28 +155,30 @@ export function CellEditor({
           spellCheck={false}
         />
       )}
-      <button
-        type="button"
-        className="cell-editor-empty"
-        title="Insert NULL"
-        aria-pressed={onLeaveToDatabase ? given === true && value === null : value === null}
-        onMouseDown={(event) => event.preventDefault()}
-        onClick={() => onCommit(null)}
-      >
-        NULL
-      </button>
-      {onLeaveToDatabase ? (
+      <div className="cell-editor-empties">
         <button
           type="button"
           className="cell-editor-empty"
-          title="Leave it to the database"
-          aria-pressed={given !== true}
+          title="Insert NULL"
+          aria-pressed={onLeaveToDatabase ? given === true && value === null : value === null}
           onMouseDown={(event) => event.preventDefault()}
-          onClick={onLeaveToDatabase}
+          onClick={() => onCommit(null)}
         >
-          DEFAULT
+          NULL
         </button>
-      ) : null}
+        {onLeaveToDatabase ? (
+          <button
+            type="button"
+            className="cell-editor-empty"
+            title="Leave it to the database"
+            aria-pressed={given !== true}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={onLeaveToDatabase}
+          >
+            DEFAULT
+          </button>
+        ) : null}
+      </div>
     </div>
   );
 }

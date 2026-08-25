@@ -75,7 +75,14 @@ describe("the Data View", () => {
         ],
         columns: [
           { editable: false, reason: "Identity value (primary key)." },
-          { editable: true, tableOid: 1, column: "name", dataType: "text", editor: "text" },
+          {
+            editable: true,
+            hasDefault: false,
+            tableOid: 1,
+            column: "name",
+            dataType: "text",
+            editor: "text",
+          },
         ],
         requiredOrdinals: [],
         technicalOrdinals: [0],

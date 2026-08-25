@@ -82,7 +82,8 @@ export function buildRowUpdates(
     const assignments = rowEdits.map((edit) => {
       const policy = editability.columns[edit.ordinal];
       if (!policy?.editable) throw new Error(`Column ${edit.column} is not editable.`);
-      return `${quoteSqlIdentifierIfNeeded(edit.column)} = ${bind(edit.value, policy.dataType)}`;
+      const assigned = edit.toDefault ? "DEFAULT" : bind(edit.value, policy.dataType);
+      return `${quoteSqlIdentifierIfNeeded(edit.column)} = ${assigned}`;
     });
     const identity = keyPredicates(table, first.key, bind);
     const guards = rowEdits.map((edit) => {

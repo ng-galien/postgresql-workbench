@@ -249,5 +249,6 @@ function columnPolicy(
     column: column.name,
     dataType: column.type,
     editor: valueEditorForType(column.type),
+    hasDefault: column.hasDefault || column.identity !== "" || column.generated !== "",
   };
 }

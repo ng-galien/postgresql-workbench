@@ -181,7 +181,53 @@ test("tells apart the three things a cell of a new row can hold", async ({ page 
   await expect(page.locator("tbody tr", { hasText: mark })).toHaveCount(0);
 });
 
-test("gives a value back to NULL on a row the result already held", async ({ page }) => {
+test("gives a written column back to the default the table would have given it", async ({
+  page,
+}) => {
+  await openEmpty(page);
+  await add(page, "shop.stock_check");
+  await enterEditMode(page);
+  const bar = editBar(page);
+  const shown = await columns(page);
+  const at = (name: string) => shown.find((column) => column.name === name)?.ordinal;
+  const mark = "Chloé — back to the default";
+
+  await bar.add.click();
+  const added = page.locator("tbody tr.added").first();
+  await added.locator(`td[data-column="${at("counted_by")}"]`).dblclick();
+  await page.keyboard.type(mark);
+  await page.keyboard.press("Enter");
+  await added.locator(`td[data-column="${at("status")}"]`).dblclick();
+  await page.keyboard.type("done");
+  await page.keyboard.press("Enter");
+  await bar.apply.click();
+
+  await expect(bar.changes).toBeDisabled();
+  const written = page.locator("tbody tr:not(.result-spacer)", { hasText: mark }).first();
+  const status = written.locator(`td[data-column="${at("status")}"]`);
+  await expect(status).toHaveText("done");
+
+  // A column with nothing of its own to fall back on is only ever given NULL.
+  await written.locator(`td[data-column="${at("note")}"]`).dblclick();
+  await expect(page.locator(".cell-editor button")).toHaveCount(1);
+  await page.keyboard.press("Escape");
+
+  // One that has a default can be given back to it, which writes `= DEFAULT` and not NULL.
+  await status.dblclick();
+  await expect(page.locator(".cell-editor button")).toHaveCount(2);
+  await page.locator('.cell-editor button[title="Leave it to the database"]').click();
+  await expect(status).toHaveText("DEFAULT");
+
+  await bar.apply.click();
+  await expect(status).toHaveText("pending");
+
+  await written.locator("th").click();
+  await bar.remove.click();
+  await bar.apply.click();
+  await expect(page.locator("tbody tr", { hasText: mark })).toHaveCount(0);
+});
+
+test("gives a value back to NULL, which is not the default beside it", async ({ page }) => {
   await openEmpty(page);
   await add(page, "shop.stock_check");
   await enterEditMode(page);
@@ -190,24 +236,30 @@ test("gives a value back to NULL on a row the result already held", async ({ pag
   const at = (name: string) => shown.find((column) => column.name === name)?.ordinal;
   const mark = "Chloé — back to NULL";
 
-  // A row of its own to work on: a journey that writes must not depend on what another one left.
   await bar.add.click();
   const added = page.locator("tbody tr.added").first();
   await added.locator(`td[data-column="${at("counted_by")}"]`).dblclick();
   await page.keyboard.type(mark);
   await page.keyboard.press("Enter");
+  await added.locator(`td[data-column="${at("status")}"]`).dblclick();
+  await page.keyboard.type("done");
+  await page.keyboard.press("Enter");
   await bar.apply.click();
+
+  // The write is over when nothing is held any more; the rows are re-read on the way.
+  await expect(bar.changes).toBeDisabled();
   const written = page.locator("tbody tr:not(.result-spacer)", { hasText: mark }).first();
   const status = written.locator(`td[data-column="${at("status")}"]`);
-  await expect(status).toHaveText("pending");
+  await expect(status).toHaveText("done");
 
-  // A row already written holds something, if only NULL: it has no default to be left to.
+  // The column has a default, and NULL is offered beside it: the reader picks which one they mean.
   await status.dblclick();
-  await expect(page.locator(".cell-editor button")).toHaveCount(1);
+  await expect(page.locator(".cell-editor button")).toHaveCount(2);
   await page.locator('.cell-editor button[title="Insert NULL"]').click();
   await expect(status).toHaveText("NULL");
   await expect(bar.changes).toHaveText("1");
 
+  // NULL is written, not the 'pending' the table would have given: the two are not the same change.
   await bar.apply.click();
   await expect(status).toHaveText("NULL");
   await expect(bar.changes).toBeDisabled();

@@ -486,13 +486,20 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
         if (!identity) return undefined;
         return editsByRow.get(`${ordinal}:${dataViewRowKey(identity)}`);
       },
-      onEdit(row, _rowIndex, ordinal, value, original) {
+      onEdit(row, _rowIndex, ordinal, value, original, toDefault) {
         const identity = rowIdentity(row, ordinal);
         const policy = state.editability.columns[ordinal];
         if (!identity || !policy?.editable) return;
         messaging.post({
           type: "data-view/edit",
-          edit: { ...identity, ordinal, column: policy.column, original, value },
+          edit: {
+            ...identity,
+            ordinal,
+            column: policy.column,
+            original,
+            value,
+            ...(toDefault ? { toDefault } : {}),
+          },
         });
       },
       /**
@@ -1598,7 +1605,7 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
             disabled={addable !== undefined}
             onClick={() => post({ type: "data-view/add-row", above: addAbove })}
           >
-            ✚ Add row
+            <span className="codicon codicon-add" aria-hidden="true" /> Add row
           </button>
           <button
             type="button"
@@ -1618,7 +1625,7 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
                 post({ type: "data-view/remove-rows", rows: selected.rows });
             }}
           >
-            ✕ Delete
+            <span className="codicon codicon-trash" aria-hidden="true" /> Delete
           </button>
           <span className="edit-bar-divider" aria-hidden="true" />
           <div className="edit-bar-changes">
@@ -1642,7 +1649,7 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
             disabled={editCount === 0 || state.applying}
             onClick={() => post({ type: "data-view/discard" })}
           >
-            ↩ Discard
+            <span className="codicon codicon-discard" aria-hidden="true" /> Discard
           </button>
           <button
             type="button"

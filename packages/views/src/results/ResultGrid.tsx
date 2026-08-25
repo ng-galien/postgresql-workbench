@@ -70,6 +70,8 @@ export interface GridEditing {
     ordinal: number,
     value: string | null,
     original: string | null,
+    /** Writes `= DEFAULT` instead of the value, for a column that has one of its own. */
+    toDefault?: true,
   ): void;
   /**
    * Whole rows, when there is exactly one table to write them to. A grid over a join can still

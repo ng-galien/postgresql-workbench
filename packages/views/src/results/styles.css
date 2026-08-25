@@ -739,17 +739,33 @@ td.editing {
   outline: none;
 }
 
-.cell-editor-empty {
+/*
+ * What a cell can hold besides a value, stacked rather than laid side by side: two words across a
+ * narrow column would take the whole of it, and the field would have nowhere left to be typed in.
+ */
+.cell-editor-empties {
   flex: 0 0 auto;
-  padding: 0 6px;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--vscode-panel-border);
+}
+
+.cell-editor-empty {
+  flex: 1 1 0;
+  min-height: 0;
+  padding: 0 5px;
   color: var(--vscode-descriptionForeground);
   background: transparent;
   border: 0;
-  border-left: 1px solid var(--vscode-panel-border);
   cursor: pointer;
   font: inherit;
-  font-size: 0.85em;
+  font-size: 9px;
+  line-height: 1;
   letter-spacing: 0.04em;
+}
+
+.cell-editor-empties > .cell-editor-empty + .cell-editor-empty {
+  border-top: 1px solid var(--vscode-panel-border);
 }
 
 .cell-editor-empty:hover {
