@@ -410,6 +410,11 @@ jobs:
       - run: npm ci
       - run: npm --prefix vscode-extension ci
       - run: npm --prefix vscode-extension run package
+      - name: Require the packaged Code Moniker index to reach ready
+        env:
+          REQUIRE_LOCAL_CODE_MONIKER: "1"
+        run: npm run test:code-moniker-runtime
+        timeout-minutes: 3
       - run: git diff --exit-code -- vscode-extension/THIRD_PARTY_NOTICES.md
       - name: Smoke-test extension activation and Code Moniker on Linux
         if: runner.os == 'Linux'

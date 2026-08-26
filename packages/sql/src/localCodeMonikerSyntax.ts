@@ -12,7 +12,6 @@ import type { SyntaxParser } from "./analysis/syntaxTree.js";
 const moduleRequire = createRequire(__filename);
 const MCP_PROTOCOL_VERSION = "2025-06-18";
 const DEFAULT_TIMEOUT_MS = 30_000;
-const MAX_MCP_RESPONSE_CHARS = 100_000;
 const WORKSPACE_BUSY_RETRY_COUNT = 20;
 const WORKSPACE_BUSY_RETRY_DELAY_MS = 50;
 const WORKER_GRACEFUL_TIMEOUT_MS = 2_000;
@@ -29,6 +28,7 @@ interface JsonRpcResponse {
 
 export interface McpToolResult {
   content?: Array<{ type?: string; text?: string }>;
+  structuredContent?: unknown;
   isError?: boolean;
 }
 
@@ -91,6 +91,7 @@ export class StatelessCodeMonikerSyntaxRuntime {
 
 class CodeMonikerSyntaxWorker {
   private readonly pending = new Map<number, PendingRequest>();
+  private readonly parseQueue = new SerialTaskQueue();
   private nextId = 1;
   private stdoutBuffer = "";
   private stderrTail = "";
@@ -143,7 +144,11 @@ class CodeMonikerSyntaxWorker {
     }
   }
 
-  async parse(request: Record<string, unknown>): Promise<CodeMonikerSyntaxTree> {
+  parse(request: Record<string, unknown>): Promise<CodeMonikerSyntaxTree> {
+    return this.parseQueue.run(() => this.parseExclusive(request));
+  }
+
+  private async parseExclusive(request: Record<string, unknown>): Promise<CodeMonikerSyntaxTree> {
     const language = requiredString(request.language, "language");
     const source = requiredString(request.source, "source");
     const arguments_ = syntaxReadArguments({
@@ -164,7 +169,7 @@ class CodeMonikerSyntaxWorker {
       await delay(WORKSPACE_BUSY_RETRY_DELAY_MS);
     }
     if (!result) throw new Error("Code Moniker syntax parse produced no result");
-    return syntaxTreeFromToolResult(result, source);
+    return syntaxTreeFromToolResult(result);
   }
 
   async dispose(): Promise<void> {
@@ -232,80 +237,31 @@ class CodeMonikerSyntaxWorker {
   }
 }
 
-export function syntaxTreeFromToolResult(
-  result: McpToolResult,
-  source: string,
-): CodeMonikerSyntaxTree {
-  const text = result.content?.find((item) => item.type === "text")?.text;
-  if (result.isError || !text) {
-    const detail = text?.trim();
+/** @internal Exported so the MCP worker's serialization contract can be tested directly. */
+export class SerialTaskQueue {
+  private tail: Promise<void> = Promise.resolve();
+
+  run<T>(task: () => Promise<T>): Promise<T> {
+    const operation = this.tail.then(task);
+    this.tail = operation.then(
+      () => undefined,
+      () => undefined,
+    );
+    return operation;
+  }
+}
+
+export function syntaxTreeFromToolResult(result: McpToolResult): CodeMonikerSyntaxTree {
+  if (result.isError) {
+    const detail = toolResultErrorDetail(result);
     throw new Error(
       detail ? `Code Moniker syntax parse failed: ${detail}` : "Code Moniker syntax parse failed",
     );
   }
-  if (text.includes("… output omitted")) throw new Error("Code Moniker truncated the syntax tree");
-  const file = headerValue(text, "file");
-  const language = headerValue(text, "language");
-  const focus = headerValue(text, "focus");
-  const summary = /^nodes:\s+(\d+)\/(\d+)\s+max_depth:(\d+)\s+parse_error:(true|false)$/m.exec(
-    text,
-  );
-  if (!file || !language || !focus || !summary) {
-    throw new Error("Code Moniker returned an invalid syntax response");
+  if (!isCodeMonikerSyntaxTree(result.structuredContent)) {
+    throw new Error("Code Moniker returned an invalid structured syntax response");
   }
-  const emittedNodes = Number(summary[1]);
-  const totalNodes = Number(summary[2]);
-  const sourceBuffer = Buffer.from(source, "utf8");
-  const lineStarts = sourceLineStarts(sourceBuffer);
-  const stack: CodeMonikerSyntaxTree["root"][] = [];
-  let root: CodeMonikerSyntaxTree["root"] | undefined;
-  let parsedNodes = 0;
-  for (const line of text.slice(text.indexOf("\ntree:") + 7).split("\n")) {
-    const match = /^(\s*)-\s+(\S+)\s+(\d+):(\d+)-(\d+):(\d+)(?:\s+\[([^\]]+)\])?$/.exec(line);
-    if (!match) continue;
-    const depth = Math.floor(match[1].length / 2);
-    const kind = match[2];
-    const flags = new Set((match[7] ?? "").split(",").map((flag) => flag.trim()));
-    const nodeLanguage = [...flags].find((flag) => flag === "sql" || flag === "plpgsql");
-    const node: CodeMonikerSyntaxTree["root"] = {
-      kind,
-      language: nodeLanguage ?? null,
-      named: !flags.has("anonymous"),
-      error: kind === "ERROR" || flags.has("error"),
-      missing: kind.startsWith("MISSING") || flags.has("missing"),
-      byte_range: [
-        sourceByteOffset(lineStarts, sourceBuffer.length, Number(match[3]), Number(match[4])),
-        sourceByteOffset(lineStarts, sourceBuffer.length, Number(match[5]), Number(match[6])),
-      ],
-      start: { line: Number(match[3]), column: Number(match[4]) },
-      end: { line: Number(match[5]), column: Number(match[6]) },
-      text: null,
-      children: [],
-    };
-    const parent = stack[depth - 1];
-    if (parent) parent.children.push(node);
-    else if (!root) root = node;
-    stack.length = depth;
-    stack[depth] = node;
-    parsedNodes++;
-  }
-  if (!root || parsedNodes !== emittedNodes) {
-    throw new Error(
-      `Code Moniker syntax tree is incomplete: parsed ${parsedNodes} of ${emittedNodes} emitted nodes`,
-    );
-  }
-  return {
-    file,
-    language,
-    focus,
-    focus_line_range: null,
-    root,
-    emitted_nodes: emittedNodes,
-    total_nodes: totalNodes,
-    max_depth: Number(summary[3]),
-    truncated: emittedNodes < totalNodes,
-    has_error: summary[4] === "true",
-  };
+  return result.structuredContent;
 }
 
 export function syntaxReadArguments(request: {
@@ -326,34 +282,65 @@ export function syntaxReadArguments(request: {
     named_only: request.namedOnly,
     include_text: false,
     max_text_chars: 0,
+    format: "json",
     compact: true,
     budget: "full",
-    max_chars: MAX_MCP_RESPONSE_CHARS,
   };
 }
 
-function headerValue(text: string, name: string): string | undefined {
-  const match = new RegExp(`^${name}:\\s+(.+)$`, "m").exec(text);
-  return match?.[1].trim();
+function isCodeMonikerSyntaxTree(value: unknown): value is CodeMonikerSyntaxTree {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.file === "string" &&
+    typeof value.language === "string" &&
+    typeof value.focus === "string" &&
+    isOptionalLineRange(value.focus_line_range) &&
+    isCodeMonikerSyntaxNode(value.root) &&
+    isNonNegativeInteger(value.emitted_nodes) &&
+    isNonNegativeInteger(value.total_nodes) &&
+    isNonNegativeInteger(value.max_depth) &&
+    typeof value.truncated === "boolean" &&
+    typeof value.has_error === "boolean"
+  );
 }
 
-function sourceLineStarts(source: Buffer): number[] {
-  const starts = [0];
-  for (let index = 0; index < source.length; index++) {
-    if (source[index] === 0x0a) starts.push(index + 1);
-  }
-  return starts;
+function isCodeMonikerSyntaxNode(value: unknown): value is CodeMonikerSyntaxTree["root"] {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.kind === "string" &&
+    (value.language === undefined ||
+      value.language === null ||
+      typeof value.language === "string") &&
+    typeof value.named === "boolean" &&
+    typeof value.error === "boolean" &&
+    typeof value.missing === "boolean" &&
+    isIntegerPair(value.byte_range) &&
+    isSyntaxPoint(value.start) &&
+    isSyntaxPoint(value.end) &&
+    (value.text === undefined || value.text === null || typeof value.text === "string") &&
+    Array.isArray(value.children) &&
+    value.children.every(isCodeMonikerSyntaxNode)
+  );
 }
 
-function sourceByteOffset(
-  lineStarts: readonly number[],
-  sourceLength: number,
-  oneBasedLine: number,
-  column: number,
-): number {
-  const lineStart = lineStarts[oneBasedLine - 1];
-  if (lineStart === undefined) return sourceLength;
-  return Math.min(lineStart + column, sourceLength);
+function isSyntaxPoint(value: unknown): boolean {
+  return isRecord(value) && isNonNegativeInteger(value.line) && isNonNegativeInteger(value.column);
+}
+
+function isOptionalLineRange(value: unknown): boolean {
+  return value === undefined || value === null || isIntegerPair(value);
+}
+
+function isIntegerPair(value: unknown): value is [number, number] {
+  return Array.isArray(value) && value.length === 2 && value.every(isNonNegativeInteger);
+}
+
+function isNonNegativeInteger(value: unknown): value is number {
+  return Number.isInteger(value) && Number(value) >= 0;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function codeMonikerBinary(runtimePath?: string): string {
@@ -398,13 +385,27 @@ function optionalBoolean(value: unknown): boolean | undefined {
   return typeof value === "boolean" ? value : undefined;
 }
 
-function isWorkspaceBusy(result: McpToolResult): boolean {
+/** @internal Exported so the structured MCP retry contract can be tested directly. */
+export function isWorkspaceBusy(result: McpToolResult): boolean {
   return (
     result.isError === true &&
-    result.content?.some(
-      (item) => item.type === "text" && item.text?.includes("problem: workspace_busy"),
-    ) === true
+    (structuredProblem(result)?.startsWith("workspace_busy") === true ||
+      result.content?.some(
+        (item) => item.type === "text" && item.text?.includes("problem: workspace_busy"),
+      ) === true)
   );
+}
+
+function toolResultErrorDetail(result: McpToolResult): string | undefined {
+  const problem = structuredProblem(result);
+  if (problem) return problem;
+  return result.content?.find((item) => item.type === "text")?.text?.trim() || undefined;
+}
+
+function structuredProblem(result: McpToolResult): string | undefined {
+  if (!isRecord(result.structuredContent)) return undefined;
+  const problem = result.structuredContent.problem;
+  return typeof problem === "string" ? problem.trim() || undefined : undefined;
 }
 
 function delay(milliseconds: number): Promise<void> {

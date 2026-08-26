@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## [1.4.1] - 2026-08-26
+
+- Restored Workbench indexing on Windows by adopting Code Moniker 0.9.1, which
+  no longer builds a Git change overlay for ordinary indexing or virtual source
+  sets and publishes the initial ready generation before watcher activation
+- Added a four-platform packaged-runtime regression that requires a non-empty
+  filesystem workspace and a PostgreSQL `postgresql://` source set to both
+  reach ready and expose their indexed symbols
 - Let slower Code Moniker workspaces finish loading before Workbench indexing
   fails: the workspace readiness wait now follows the configured command
   timeout, whose default is 120 seconds instead of a separate hard-coded 30
