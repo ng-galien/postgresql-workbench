@@ -19,6 +19,11 @@ export class ResultTable {
     return this.root.locator(`td[data-row="${rowIndex}"][data-column="${columnIndex}"]`);
   }
 
+  /** The texts of one column, in the order the rows are shown. */
+  async columnTexts(columnIndex: number): Promise<string[]> {
+    return this.root.locator(`tbody td[data-column="${columnIndex}"]`).allTextContents();
+  }
+
   /** Every cell holding exactly this text, whichever column it sits in. */
   cellsWithText(text: string): Locator {
     return this.root

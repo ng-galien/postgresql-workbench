@@ -146,8 +146,21 @@ test("sorts on a column, and says so in the SQL", async ({ page }) => {
   await page.getByTitle(/^Sort by price/u).click();
 
   await expect.poll(async () => runningSql(page)).toMatch(/ORDER BY\s+product\.price ASC/u);
-  // Cheapest first: the rows really came back sorted, not just the SQL.
-  await expect(rows.cell(0, 2)).toHaveText("6.40");
+  /*
+   * Cheapest first: the rows really came back sorted, not just the SQL. Sortedness is read from
+   * what is shown, never from a value the seed once held: this is the demo database, and the
+   * product legitimately edits it — a spec pinned to a seeded price fails the day someone
+   * exercises the very editing journey this suite exists to prove.
+   */
+  await expect
+    .poll(async () => {
+      const prices = (await rows.columnTexts(2)).map(Number);
+      return (
+        prices.length > 1 &&
+        prices.every((price, index) => index === 0 || (prices[index - 1] ?? 0) <= price)
+      );
+    })
+    .toBe(true);
 });
 
 test("turns a criterion over when it is pressed, with nothing else to reach for", async ({
