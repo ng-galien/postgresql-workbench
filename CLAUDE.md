@@ -62,7 +62,7 @@ packages/              # The engine, one package per subject; boundaries enforce
   dap/                 # @ng-galien/postgresql-dap — its own version and release tag
     main.ts             # Entry point — runs DAP session over stdio
     debugger/           # Public DAP surface, launch contract, pldbgapi backend, session
-  shell/               # Browser harness driving the views against PostgreSQL without VS Code
+  shell/               # The second shell: engine + LSP + views in a browser, seed of the Electron app
 
 e2e/
   init/                # SQL init scripts (extension + test functions)
