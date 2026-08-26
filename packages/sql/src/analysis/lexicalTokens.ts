@@ -1,6 +1,8 @@
 import { byteToCharOffsets } from "../query/analysis.js";
 import {
+  anonymousKind,
   GRAMMAR_INJECTION_ROOT,
+  PLPGSQL_EMBEDDED_SQL_KINDS,
   SQL_KEYWORD_PREFIX,
   SQL_LEXICAL_KINDS,
   SQL_NAME_POSITIONS,
@@ -9,17 +11,22 @@ import {
 import type { SyntaxNode, SyntaxTree } from "./syntaxTree.js";
 
 /**
- * Placing what a statement is made of, read from the parse rather than from a second grammar.
+ * Placing what a statement is made of, read from the parse and from nothing else.
  *
  * Colouring SQL takes two answers: what each piece *is* — a keyword, a literal, a comment — and
- * what each name *means*, which needs the catalog. The second was always the server's. The first
- * was a TextMate grammar running inside the webview, so the same text was read twice, by two
- * things that could disagree, and one of them could not be reached outside a bundled view.
+ * what each name *means*, which needs the catalog. The second was always the server's; this is
+ * the first, and it is a total function over the syntax tree. Every node is decided by its kind:
+ * the kinds come generated from the grammars, the keyword prefix and the injection root are the
+ * grammars' own conventions, and the one split the grammars leave open — which anonymous kind
+ * separates and which computes — is a single named decision. Nothing here reads the text to decide
+ * what the text is.
  *
- * They come from one parse now. It is also the better reader: a grammar matching words sees
- * `SELECT name FROM t` and paints `name` as a keyword, because in PostgreSQL's grammar it is one.
- * The tree knows it stands where a column name stands and says so.
+ * Where a grammar stops, the reading does not: a dollar-quoted body carries an injected PL/pgSQL
+ * tree and the reader descends into it, and the PL/pgSQL grammar keeps its embedded SQL opaque —
+ * a body's UPDATE is one leaf to it — so those slices are handed back to the SQL grammar and the
+ * answer is walked the same way, however deep the nesting goes.
  */
+
 /** One piece of a statement, placed as the language server counts: zero-based, in UTF-16 units. */
 export interface SqlLexicalToken {
   line: number;
@@ -28,10 +35,15 @@ export interface SqlLexicalToken {
   type: SqlLexicalKind;
 }
 
-const PUNCTUATION = /^[(),;.[\]{}]$/u;
+/** Parses one embedded slice with the SQL grammar; the host's parser, handed in by the caller. */
+export type EmbeddedSqlParse = (source: string) => Promise<SyntaxTree>;
 
 /** Every piece of a parsed statement, in the order a reader reads them. */
-export function sqlLexicalTokens(tree: SyntaxTree, source: string): SqlLexicalToken[] {
+export async function sqlLexicalTokens(
+  tree: SyntaxTree,
+  source: string,
+  parseEmbedded?: EmbeddedSqlParse,
+): Promise<SqlLexicalToken[]> {
   const character = byteToCharOffsets(source);
   const lineStarts = startsOfLines(source);
   const tokens: SqlLexicalToken[] = [];
@@ -42,66 +54,57 @@ export function sqlLexicalTokens(tree: SyntaxTree, source: string): SqlLexicalTo
     if (end > start) tokens.push(...placed(start, end, type, lineStarts));
   };
 
-  /*
-   * A node of the lexical map is one whole piece — until the grammar has injected a parse inside
-   * it. A dollar-quoted body carries a PL/pgSQL `source_file` under the SQL literal that holds it:
-   * the injected tree is walked like any other source, and only what it does not cover — the
-   * delimiters — stays a piece of the literal.
-   */
-  const walk = (node: SyntaxNode, ancestors: string[]): void => {
+  // `shift` places a reparsed slice back where it was cut from: an embedded parse counts its
+  // bytes from its own start, and every piece it yields belongs at the slice's place in the whole.
+  const walk = async (node: SyntaxNode, ancestors: string[], shift: number): Promise<void> => {
+    const from = node.byteRange[0] + shift;
+    const to = node.byteRange[1] + shift;
     const mapped = SQL_LEXICAL_KINDS.get(node.kind);
     if (mapped !== undefined) {
       const injections = node.children.filter((child) => child.kind === GRAMMAR_INJECTION_ROOT);
-      if (injections.length === 0) {
-        emit(node.byteRange[0], node.byteRange[1], mapped);
-        return;
-      }
-      let from = node.byteRange[0];
+      let cursor = from;
       for (const injection of injections) {
-        emit(from, injection.byteRange[0], mapped);
-        walk(injection, ancestors);
-        from = injection.byteRange[1];
+        emit(cursor, injection.byteRange[0] + shift, mapped);
+        await walk(injection, ancestors, shift);
+        cursor = injection.byteRange[1] + shift;
       }
-      emit(from, node.byteRange[1], mapped);
+      emit(cursor, to, mapped);
+      return;
+    }
+    if (PLPGSQL_EMBEDDED_SQL_KINDS.has(node.kind) && parseEmbedded && to > from) {
+      const embedded = await parseEmbedded(sliceByBytes(source, from, to));
+      await walk(embedded.root, [], from);
       return;
     }
     if (node.children.length === 0) {
-      const start = character(node.byteRange[0]);
-      const end = character(node.byteRange[1]);
-      if (end <= start) return;
-      const type = typeOf(node, ancestors, source.slice(start, end));
-      if (type) tokens.push(...placed(start, end, type, lineStarts));
+      const type = leafKind(node, ancestors);
+      if (type) emit(from, to, type);
       return;
     }
     ancestors.push(node.kind);
-    for (const child of node.children) walk(child, ancestors);
+    for (const child of node.children) await walk(child, ancestors, shift);
     ancestors.pop();
   };
 
-  walk(tree.root, []);
+  await walk(tree.root, [], 0);
   return tokens.sort((a, b) => a.line - b.line || a.character - b.character);
 }
 
 /**
- * What a node is, or nothing when it is not a piece worth colouring. An identifier is left alone:
- * what a name means is the other answer, and painting it here would only be overwritten.
- *
- * The written form is taken from the source rather than from the node, which carries none: asking
- * the parser for the text of every node would send the whole document back a second time, spelled
- * one word per line.
+ * What a leaf is, by its kind alone. A keyword standing where a name stands is left to the names
+ * layer, an identifier is always the names layer's, and an anonymous kind is the split's.
  */
-function typeOf(
-  node: SyntaxNode,
-  ancestors: readonly string[],
-  written: string,
-): SqlLexicalKind | undefined {
-  const known = SQL_LEXICAL_KINDS.get(node.kind);
-  if (known) return known;
+function leafKind(node: SyntaxNode, ancestors: readonly string[]): SqlLexicalKind | undefined {
   if (node.kind.startsWith(SQL_KEYWORD_PREFIX)) {
     return ancestors.some((kind) => SQL_NAME_POSITIONS.has(kind)) ? undefined : "keyword";
   }
   if (node.named) return undefined;
-  return PUNCTUATION.test(written) ? "punctuation" : "operator";
+  return anonymousKind(node.kind);
+}
+
+/** The characters whose bytes span `[from, to)` of the source's UTF-8 form. */
+function sliceByBytes(source: string, from: number, to: number): string {
+  return Buffer.from(source, "utf8").subarray(from, to).toString("utf8");
 }
 
 /**

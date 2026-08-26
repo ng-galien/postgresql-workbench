@@ -1,4 +1,8 @@
-import { PLPGSQL_GRAMMAR_KINDS, SQL_GRAMMAR_KINDS } from "./grammarKinds.js";
+import {
+  GRAMMAR_ANONYMOUS_KINDS,
+  PLPGSQL_GRAMMAR_KINDS,
+  SQL_GRAMMAR_KINDS,
+} from "./grammarKinds.js";
 import type { SyntaxNode } from "./syntaxTree.js";
 
 /**
@@ -42,6 +46,31 @@ export const PLPGSQL_BLOCK = "pl_block";
  * body carries a whole PL/pgSQL `source_file` under the SQL literal that holds it.
  */
 export const GRAMMAR_INJECTION_ROOT = "source_file";
+
+/**
+ * The PL/pgSQL nodes that hold raw SQL the grammar does not parse: a body's statements and the
+ * expressions its control flow tests. The grammar keeps them opaque; a reading that stops at them
+ * leaves the very meat of a routine unread — whole UPDATE statements as one blank piece — so a
+ * reader hands each one back to the SQL grammar and walks what comes back.
+ */
+export const PLPGSQL_EMBEDDED_SQL_KINDS: ReadonlySet<string> = new Set(
+  ["sql_expression", "for_query"].filter((kind) => PLPGSQL_GRAMMAR_KINDS.includes(kind)),
+);
+
+/**
+ * How an anonymous kind reads: what separates, or what computes. The kinds themselves are the
+ * grammars' own, generated; only this split is a decision, and it is total — an anonymous kind
+ * that is not named a separator is an operator, so a grammar that grows a new one cannot fall
+ * through unpainted.
+ */
+const SEPARATORS: ReadonlySet<string> = new Set(["(", ")", ",", ";", ".", "..", ":", "[", "]"]);
+
+export function anonymousKind(kind: string): "punctuation" | "operator" {
+  return SEPARATORS.has(kind) ? "punctuation" : "operator";
+}
+
+/** Every anonymous kind the grammars can produce, for the split above to be held against. */
+export const GRAMMAR_ANONYMOUS: readonly string[] = GRAMMAR_ANONYMOUS_KINDS;
 
 /**
  * The word to show for a statement: the grammar's own, without the prefix it spells it with. Only

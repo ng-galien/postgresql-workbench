@@ -1428,3 +1428,37 @@ export const PLPGSQL_GRAMMAR_KINDS: readonly string[] = [
   "type_name",
   "unreserved_keyword",
 ];
+
+/**
+ * The anonymous kinds of both grammars: the punctuation and the operators, spelled as themselves.
+ * Everything a parse can produce that is not a named node is one of these.
+ */
+export const GRAMMAR_ANONYMOUS_KINDS: readonly string[] = [
+  "#",
+  "%",
+  "(",
+  ")",
+  "*",
+  "+",
+  ",",
+  "-",
+  ".",
+  "..",
+  "/",
+  ":",
+  "::",
+  ":=",
+  ";",
+  "<",
+  "<<",
+  "<=",
+  "<>",
+  "=",
+  "=>",
+  ">",
+  ">=",
+  ">>",
+  "[",
+  "]",
+  "^",
+];

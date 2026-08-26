@@ -69,11 +69,11 @@ function vendoredProvenance() {
   return derived ? `tree-sitter-postgres ${derived[1]} at ${derived[2]}` : "unknown";
 }
 
-function namedKinds(file) {
+function kinds(file, named) {
   return [
     ...new Set(
       JSON.parse(readFileSync(file, "utf8"))
-        .filter((node) => node.named === true && typeof node.type === "string")
+        .filter((node) => node.named === named && typeof node.type === "string")
         .map((node) => node.type),
     ),
   ].sort();
@@ -96,8 +96,9 @@ if (!existsSync(vendored)) fail(`No vendored PL/pgSQL grammar at ${vendored}.`);
 const sqlFile = crateNodeTypes(version);
 if (!sqlFile) fail(`tree-sitter-postgres ${version} is not unpacked in any Cargo registry.`);
 
-const sql = namedKinds(sqlFile);
-const plpgsql = namedKinds(vendored);
+const sql = kinds(sqlFile, true);
+const plpgsql = kinds(vendored, true);
+const anonymous = [...new Set([...kinds(sqlFile, false), ...kinds(vendored, false)])].sort();
 
 const list = (kinds) => kinds.map((kind) => `  ${JSON.stringify(kind)},`).join("\n");
 
@@ -120,6 +121,14 @@ ${list(sql)}
 /** Node kinds of the PL/pgSQL grammar, which is not the same artifact as the SQL one. */
 export const PLPGSQL_GRAMMAR_KINDS: readonly string[] = [
 ${list(plpgsql)}
+];
+
+/**
+ * The anonymous kinds of both grammars: the punctuation and the operators, spelled as themselves.
+ * Everything a parse can produce that is not a named node is one of these.
+ */
+export const GRAMMAR_ANONYMOUS_KINDS: readonly string[] = [
+${list(anonymous)}
 ];
 `,
   "utf8",

@@ -40,9 +40,10 @@ describe("SQL authoring semantic tokens", () => {
     const source = document.getText();
     const budget = { uri: document.uri, maxDepth: 1_024, maxNodes: 100_000 };
     const { relations } = await documentRelations(parser, source, budget);
-    const lexical = sqlLexicalTokens(
+    const lexical = await sqlLexicalTokens(
       await parser.parse({ language: "sql", source, ...budget, namedOnly: false }),
       source,
+      (slice) => parser.parse({ language: "sql", source: slice, namedOnly: false }),
     );
     return postgresSemanticTokens(document, tokenSnapshot, [], relations, lexical);
   }

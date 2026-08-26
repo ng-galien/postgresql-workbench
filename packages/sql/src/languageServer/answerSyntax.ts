@@ -51,9 +51,17 @@ export async function answerSyntaxRequest(
   };
   const syntax = await parser.parse({ language: "sql", ...budget });
   const lexical = request.lexical
-    ? sqlLexicalTokens(
+    ? await sqlLexicalTokens(
         await parser.parse({ language: "sql", ...budget, namedOnly: false }),
         parsedSource,
+        (slice) =>
+          parser.parse({
+            language: "sql",
+            source: slice,
+            maxDepth: settings.syntaxMaxDepth,
+            maxNodes: settings.syntaxMaxNodes,
+            namedOnly: false,
+          }),
       )
     : undefined;
   if (!syntax.hasError || syntax.truncated) {

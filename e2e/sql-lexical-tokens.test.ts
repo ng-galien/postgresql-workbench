@@ -36,7 +36,9 @@ describe("what a statement is made of", () => {
   async function piecesOf(source: string) {
     const tree = await parser.parse({ language: "sql", source, namedOnly: false });
     const lines = source.split("\n");
-    return sqlLexicalTokens(tree, source).map((token) => ({
+    const embedded = (slice: string) =>
+      parser.parse({ language: "sql", source: slice, namedOnly: false });
+    return (await sqlLexicalTokens(tree, source, embedded)).map((token) => ({
       text: lines[token.line]?.slice(token.character, token.character + token.length),
       type: token.type,
     }));
@@ -118,6 +120,95 @@ describe("what a statement is made of", () => {
     // The delimiters stay the literal's; the body between them belongs to its own grammar.
     expect(kinds.get("$fn$")).toBe("string");
     expect(pieces.filter((piece) => piece.type === "string")).toHaveLength(2);
+  });
+
+  it("reparses the SQL the PL/pgSQL grammar keeps opaque, however deep it sits", async () => {
+    const source = [
+      "CREATE FUNCTION shop.reprice(p_order_id bigint) RETURNS void LANGUAGE plpgsql AS $fn$",
+      "BEGIN",
+      "  UPDATE shop.sales_order_line",
+      "  SET line_total = round(unit_price * quantity * (1 - discount_rate), 2)",
+      "  WHERE sales_order_id = p_order_id;",
+      "END;",
+      "$fn$;",
+    ].join("\n");
+    const pieces = await piecesOf(source);
+    const kinds = new Map(pieces.map((piece) => [piece.text, piece.type]));
+    expect(kinds.get("UPDATE")).toBe("keyword");
+    expect(kinds.get("SET")).toBe("keyword");
+    expect(kinds.get("WHERE")).toBe("keyword");
+    expect(kinds.get("2")).toBe("number");
+    expect(kinds.get("*")).toBe("operator");
+    expect(kinds.get("=")).toBe("operator");
+  });
+
+  it("covers every piece of a statement: what is not painted is a name, never a gap", async () => {
+    /*
+     * The completeness proof. Every non-blank byte of the corpus must be covered by a lexical
+     * piece or stand where a name stands — an identifier, or a keyword in a name position, both
+     * the names layer's to colour. A construct the reader does not know shows up here as its own
+     * uncovered text, so a missing kind is a red test naming the text it missed, not a plain
+     * piece nobody looks at.
+     */
+    const source = [
+      "CREATE OR REPLACE FUNCTION shop.reprice_order(p_order_id bigint)",
+      "RETURNS shop.sales_order",
+      "LANGUAGE plpgsql",
+      "AS $function$",
+      "DECLARE",
+      "  result shop.sales_order;",
+      "BEGIN",
+      "  UPDATE shop.sales_order_line",
+      "  SET line_total = round(unit_price * quantity * (1 - discount_rate), 2)",
+      "  WHERE sales_order_id = p_order_id;",
+      "",
+      "  UPDATE shop.sales_order",
+      "  SET subtotal = totals.subtotal,",
+      "      tax_total = round((totals.subtotal - totals.discount_total) * 0.20, 2),",
+      "      updated_at = now()",
+      "  FROM (",
+      "    SELECT",
+      "      coalesce(sum(unit_price * quantity), 0) AS subtotal,",
+      "      coalesce(sum(unit_price * quantity - line_total), 0) AS discount_total",
+      "    FROM shop.sales_order_line",
+      "    WHERE sales_order_id = p_order_id",
+      "  ) AS totals",
+      "  WHERE sales_order.id = p_order_id",
+      "  RETURNING sales_order.* INTO result;",
+      "",
+      "  RETURN result; -- and E'\\n' or X'1f'",
+      "END;",
+      "$function$;",
+    ].join("\n");
+    const tree = await parser.parse({ language: "sql", source, namedOnly: false });
+    const embedded = (slice: string) =>
+      parser.parse({ language: "sql", source: slice, namedOnly: false });
+    const tokens = await sqlLexicalTokens(tree, source, embedded);
+
+    const lines = source.split("\n");
+    const covered = lines.map((line) => Array.from(line, () => false));
+    for (const token of tokens) {
+      for (let at = token.character; at < token.character + token.length; at += 1) {
+        const line = covered[token.line];
+        if (line) line[at] = true;
+      }
+    }
+    const identifier = /[\w$"%.]/u;
+    const gaps: string[] = [];
+    for (const [index, line] of lines.entries()) {
+      let gap = "";
+      for (let at = 0; at < line.length; at += 1) {
+        const character = line[at] ?? " ";
+        const fine = covered[index]?.[at] || /\s/u.test(character) || identifier.test(character);
+        if (!fine) gap += character;
+        else if (gap) {
+          gaps.push(`line ${index + 1}: "${gap}"`);
+          gap = "";
+        }
+      }
+      if (gap) gaps.push(`line ${index + 1}: "${gap}"`);
+    }
+    expect(gaps).toEqual([]);
   });
 
   it("says nothing about a name: what a name means is the other answer", async () => {
