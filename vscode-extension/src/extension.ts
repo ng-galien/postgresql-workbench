@@ -34,7 +34,11 @@ import { CallSiteConnectionStore, ConnectionManager } from "./connection/index.j
 import { registerConnectionCommands } from "./connection/registerCommands.js";
 import { openCoverageClient, PgTapTestController } from "./coverage/index.js";
 import { DataViewEditorProvider } from "./dataView/dataViewEditorProvider.js";
-import { DataViewQueryFileSystem } from "./dataView/queryFileSystem.js";
+import {
+  DATA_VIEW_QUERY_SCHEME,
+  DataViewQueryFileSystem,
+  syncQueryDocument,
+} from "./dataView/queryFileSystem.js";
 import { registerDataViewQueryLens } from "./dataView/queryLens.js";
 import {
   debugLaunchToken,
@@ -316,6 +320,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
     workspaceState: context.workspaceState,
     collectRenderEvidence: context.extensionMode === vscode.ExtensionMode.Test,
     treeDragPayload: (consume) => workbenchTreeDragAndDrop.activePayload(consume),
+    sourceNames: async (text) => {
+      const client = askSqlAuthoring?.((uri, sql) =>
+        syncQueryDocument(dataViewQueryFiles, uri, sql),
+      );
+      return client?.semanticTokens(`${DATA_VIEW_QUERY_SCHEME}:/cockpit/preview.sql`, text);
+    },
   });
   context.subscriptions.push(workbenchTreeDragAndDrop, workbenchGraph);
   registerWorkbenchGraphDropBridge(context, workbenchGraph);

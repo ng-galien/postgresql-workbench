@@ -1,11 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { postgresVisual } from "../../presentation.js";
-import {
-  type HighlightedPostgresSource,
-  highlightPostgresSource,
-  plainPostgresSource,
-} from "../../source/highlight.js";
+import { plainPostgresSource } from "../../source/highlight.js";
 import { PostgresSourceView } from "../../source/PostgresSourceView.js";
+import { withSemanticTokens } from "../../source/semanticTokens.js";
 import type { WorkbenchGraphSourcePreview } from "../protocol.js";
 import { post } from "../vscodeApi.js";
 
@@ -20,21 +17,17 @@ function SourceInspector({
   pinned: boolean;
   onPinnedChange(pinned: boolean): void;
 }) {
-  const fallback = useMemo<HighlightedPostgresSource>(
-    () => plainPostgresSource(preview.lines),
-    [preview.lines],
-  );
-  const [source, setSource] = useState(fallback);
-  useEffect(() => {
-    let active = true;
-    setSource(fallback);
-    void highlightPostgresSource(preview.lines).then((highlighted) => {
-      if (active) setSource(highlighted);
-    });
-    return () => {
-      active = false;
-    };
-  }, [fallback, preview.lines]);
+  /*
+   * The server counted lines from the top of the text it was asked about; the preview numbers its
+   * lines as the file does. The shift between the two is the first line's number.
+   */
+  const source = useMemo(() => {
+    const shift = (preview.lines[0]?.number ?? 1) - 1;
+    return withSemanticTokens(
+      plainPostgresSource(preview.lines),
+      (preview.tokens ?? []).map((token) => ({ ...token, line: token.line + shift })),
+    );
+  }, [preview.lines, preview.tokens]);
   const visual = postgresVisual(preview.kind);
   const file = preview.file.split("/").at(-1) ?? preview.file;
   return (

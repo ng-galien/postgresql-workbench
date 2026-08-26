@@ -56,6 +56,7 @@ import { configuredScratchpadStatementTimeoutMs } from "../scratchpad/scratchpad
 import { DATA_VIEW_SCRATCHES, dataViewQueryUri, dataViewScratchUri } from "./dataViewUri.js";
 import { exportAllRows, exportHeldRows, pickExportTarget } from "./exportResult.js";
 import { type DataViewHostServices, errorMessage } from "./hostServices.js";
+import { syncQueryDocument } from "./queryFileSystem.js";
 
 class LoadCancelledError extends Error {}
 
@@ -394,23 +395,9 @@ export class DataViewDocument implements vscode.CustomDocument {
    * a real SQL document the server's own client already watches, holding exactly this text.
    */
   private authoring(): SqlAuthoringClient | undefined {
-    this.client ??= this.services.askAuthoring(async (uri, text) => {
-      const target = vscode.Uri.parse(uri);
-      this.services.queryFiles.set(target, text);
-      const document = await vscode.workspace.openTextDocument(target);
-      if (document.languageId !== "sql") {
-        await vscode.languages.setTextDocumentLanguage(document, "sql");
-      }
-      const held = document.getText();
-      if (held === text) return;
-      const edit = new vscode.WorkspaceEdit();
-      edit.replace(
-        target,
-        new vscode.Range(document.positionAt(0), document.positionAt(held.length)),
-        text,
-      );
-      await vscode.workspace.applyEdit(edit);
-    });
+    this.client ??= this.services.askAuthoring((uri, text) =>
+      syncQueryDocument(this.services.queryFiles, uri, text),
+    );
     return this.client;
   }
 

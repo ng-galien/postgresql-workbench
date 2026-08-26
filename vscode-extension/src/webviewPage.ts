@@ -20,6 +20,12 @@ const VIEW_COLOUR_NAMES = `:root {
   --postgres-name-routine: var(--vscode-symbolIcon-functionForeground);
   --postgres-name-parameter: var(--vscode-charts-yellow);
   --postgres-name-type: var(--vscode-symbolIcon-interfaceForeground);
+  --postgres-lex-keyword: var(--vscode-symbolIcon-keywordForeground);
+  --postgres-lex-string: var(--vscode-symbolIcon-stringForeground);
+  --postgres-lex-number: var(--vscode-symbolIcon-numberForeground);
+  --postgres-lex-comment: var(--vscode-descriptionForeground);
+  --postgres-lex-operator: var(--vscode-symbolIcon-operatorForeground);
+  --postgres-lex-punctuation: var(--vscode-editor-foreground);
   --postgres-field-unapplied: var(--vscode-inputValidation-warningBorder, var(--vscode-focusBorder));
   --postgres-scroll-thumb: var(--vscode-scrollbarSlider-background);
   --postgres-scroll-thumb-hover: var(--vscode-scrollbarSlider-hoverBackground);

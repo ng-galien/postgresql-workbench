@@ -31,29 +31,47 @@
 }
 
 /*
- * A piece the language Connection named carries `--postgres-name`; everything else is coloured by the
- * grammar. The name is read here rather than in a rule of its own so that neither layer has to
- * out-specify the other: a name that no host gave a value to leaves the variable invalid, and the
- * grammar's colour stands.
+ * A piece the stream named carries `--postgres-name`; a piece it did not stays the editor's plain
+ * foreground. The name is read here rather than in a rule of its own so no class has to
+ * out-specify another: a name no host gave a value to leaves the variable invalid, and the plain
+ * colour stands.
  */
 .postgres-source-token {
-  color: var(--postgres-name, var(--postgres-token-light, var(--vscode-editor-foreground)));
+  color: var(--postgres-name, var(--vscode-editor-foreground));
   background: transparent;
 }
 
-body.vscode-dark .postgres-source-token,
-body.vscode-high-contrast .postgres-source-token {
-  color: var(--postgres-name, var(--postgres-token-dark, var(--vscode-editor-foreground)));
+/*
+ * Every colour is the view's own name — a schema, a column, a keyword, a string — with no value of
+ * its own here beyond "leave it as it was". A host that has a theme says what the names are worth:
+ * under VS Code the extension maps them onto the editor's colours, the shell's page does the same.
+ * Nothing in this file reaches into a host to ask, and nothing here computes a colour: every kind
+ * below is a kind of the language server's one legend.
+ */
+.postgres-token-keyword {
+  --postgres-name: var(--postgres-lex-keyword);
 }
 
-/*
- * What the language Connection named, painted over what the grammar coloured.
- *
- * The colours are the view's own names — a schema, a relation, a column, a routine — with no
- * value of their own here beyond "leave it as it was". A host that has a theme says what they are
- * worth: under VS Code the extension maps them onto the editor's symbol colours, in the shell the
- * harness does the same. Nothing in this file reaches into a host to ask.
- */
+.postgres-token-string {
+  --postgres-name: var(--postgres-lex-string);
+}
+
+.postgres-token-number {
+  --postgres-name: var(--postgres-lex-number);
+}
+
+.postgres-token-comment {
+  --postgres-name: var(--postgres-lex-comment);
+}
+
+.postgres-token-operator {
+  --postgres-name: var(--postgres-lex-operator);
+}
+
+.postgres-token-punctuation {
+  --postgres-name: var(--postgres-lex-punctuation);
+}
+
 .postgres-token-sqlSchema {
   --postgres-name: var(--postgres-name-schema);
 }

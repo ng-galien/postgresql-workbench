@@ -7,12 +7,11 @@ describe("PostgreSQL readonly source view", () => {
     const html = renderToStaticMarkup(
       <PostgresSourceView
         source={{
-          highlighted: true,
           lines: [
             {
               number: 7,
               tokens: [
-                { text: "SELECT", offset: 0, lightColor: "#0000FF", darkColor: "#569CD6" },
+                { text: "SELECT", offset: 0, className: "postgres-token-keyword" },
                 { text: " 1;", offset: 6 },
               ],
             },
@@ -28,7 +27,7 @@ describe("PostgreSQL readonly source view", () => {
     expect(html).toContain('data-source-line="7"');
     expect(html).toContain('data-source-line="8"');
     expect(html).toContain('data-source-line="12"');
-    expect(html).toContain("--postgres-token-light:#0000FF");
+    expect(html).toContain("postgres-token-keyword");
     expect(html).toContain("  &lt;unsafe&gt;");
     expect(html).not.toContain("<pre");
     expect(html).not.toContain('class="shiki');

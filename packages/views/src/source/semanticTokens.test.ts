@@ -2,16 +2,15 @@ import { describe, expect, it } from "vitest";
 import type { HighlightedPostgresSource } from "./highlight.js";
 import { withSemanticTokens } from "./semanticTokens.js";
 
-/** One line as the grammar coloured it: `shop.brand` in a single token, then ` AS brand`. */
+/** One line in three plain pieces: `shop.brand`, then ` AS `, then `brand`. */
 const SOURCE: HighlightedPostgresSource = {
-  highlighted: true,
   lines: [
     {
       number: 1,
       tokens: [
-        { text: "shop.brand", offset: 0, darkColor: "#ccc" },
-        { text: " AS ", offset: 10, darkColor: "#569" },
-        { text: "brand", offset: 14, darkColor: "#ccc" },
+        { text: "shop.brand", offset: 0 },
+        { text: " AS ", offset: 10 },
+        { text: "brand", offset: 14 },
       ],
     },
   ],
@@ -37,13 +36,12 @@ describe("withSemanticTokens", () => {
     ]);
   });
 
-  it("keeps the colour the grammar gave what no name covers", () => {
+  it("leaves what no name covers unpainted, for the plain colour to stand", () => {
     const painted = withSemanticTokens(SOURCE, [
       { line: 0, character: 5, length: 5, type: "sqlTable" },
     ]);
 
     const keyword = painted.lines[0]?.tokens.find((token) => token.text === " AS ");
-    expect(keyword?.darkColor).toBe("#569");
     expect(keyword?.className).toBeUndefined();
   });
 

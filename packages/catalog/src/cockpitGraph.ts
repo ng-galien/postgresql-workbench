@@ -1,3 +1,4 @@
+import type { NamedSqlToken } from "../../sql/src/languageServer/protocol.js";
 import type {
   CodeMonikerGraphResult,
   CodeMonikerIdentityGraphResult,
@@ -67,6 +68,12 @@ export interface WorkbenchGraphSourcePreview {
   firstLine: number;
   lastLine: number;
   lines: Array<{ number: number; text: string }>;
+  /**
+   * What the SQL authoring server made of this source, when the host asked it: each piece and each
+   * name, kinds named against the server's legend. The view paints these and computes nothing —
+   * the same single path every other SQL surface reads its colours through.
+   */
+  tokens?: NamedSqlToken[];
 }
 
 export const COCKPIT_BATCH_SIZE = 3;

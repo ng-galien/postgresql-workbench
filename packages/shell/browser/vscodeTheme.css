@@ -98,6 +98,12 @@
   --postgres-name-routine: #b180d7;
   --postgres-name-parameter: #cca700;
   --postgres-name-type: #75beff;
+  --postgres-lex-keyword: #569cd6;
+  --postgres-lex-string: #ce9178;
+  --postgres-lex-number: #b5cea8;
+  --postgres-lex-comment: #6a9955;
+  --postgres-lex-operator: #d4d4d4;
+  --postgres-lex-punctuation: #d4d4d4;
   --postgres-field-unapplied: #cca700;
   --postgres-scroll-thumb: #79797966;
   --postgres-scroll-thumb-hover: #646464b3;

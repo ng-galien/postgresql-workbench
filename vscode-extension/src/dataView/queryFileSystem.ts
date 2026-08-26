@@ -117,3 +117,30 @@ export class DataViewQueryFileSystem implements vscode.FileSystemProvider, vscod
     this.files.clear();
   }
 }
+
+/**
+ * Puts this text in front of the SQL authoring server as a real document: a file of this system,
+ * opened as SQL, holding exactly this text. It is the one way the Extension Host synchronises a
+ * scratch question — the Data View's drafts and the Cockpit's preview ask through the same door.
+ */
+export async function syncQueryDocument(
+  files: DataViewQueryFileSystem,
+  uri: string,
+  text: string,
+): Promise<void> {
+  const target = vscode.Uri.parse(uri);
+  files.set(target, text);
+  const document = await vscode.workspace.openTextDocument(target);
+  if (document.languageId !== "sql") {
+    await vscode.languages.setTextDocumentLanguage(document, "sql");
+  }
+  const held = document.getText();
+  if (held === text) return;
+  const edit = new vscode.WorkspaceEdit();
+  edit.replace(
+    target,
+    new vscode.Range(document.positionAt(0), document.positionAt(held.length)),
+    text,
+  );
+  await vscode.workspace.applyEdit(edit);
+}

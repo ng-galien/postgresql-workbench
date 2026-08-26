@@ -1626,10 +1626,6 @@
   },
   "dependencies": {
     "@code-moniker/client": "0.9.1",
-    "@shikijs/core": "^4.4.1",
-    "@shikijs/engine-javascript": "^4.4.1",
-    "@shikijs/langs": "^4.4.1",
-    "@shikijs/themes": "^4.4.1",
     "@vscode/codicons": "^0.0.46-24",
     "@xyflow/react": "^12.11.2",
     "pg": "^8.20.0",

@@ -9,6 +9,7 @@ import {
   schemaLandingIdentity,
   searchGraphObjects,
   sourcePreviewPresentation,
+  type WorkbenchGraphSourcePreview,
 } from "../../../packages/catalog/src/cockpitGraph.js";
 import type {
   WorkbenchIndexController,
@@ -69,6 +70,8 @@ export interface WorkbenchGraphViewOptions {
   workspaceState?: vscode.Memento;
   collectRenderEvidence?: boolean;
   treeDragPayload?: (consume: boolean) => WorkbenchGraphDragPayload | undefined;
+  /** What the SQL authoring server makes of a preview's source; absent while it is starting. */
+  sourceNames?: (text: string) => Promise<WorkbenchGraphSourcePreview["tokens"]>;
 }
 
 // Explicit debt exception: this host controller still coordinates navigation/session state,
@@ -109,10 +112,21 @@ export class WorkbenchGraphView implements vscode.Disposable {
   private readonly selectInTree: NonNullable<WorkbenchGraphViewOptions["selectInTree"]>;
   private readonly workspaceState: vscode.Memento | undefined;
   private readonly treeDragPayload: NonNullable<WorkbenchGraphViewOptions["treeDragPayload"]>;
+  private readonly sourceNames: (text: string) => Promise<WorkbenchGraphSourcePreview["tokens"]>;
   private readonly configurationSubscription: vscode.Disposable;
+
+  /** The preview as the view paints it: the lines, and what the server made of them. */
+  private async presentedPreview(
+    source: Parameters<typeof sourcePreviewPresentation>[0],
+  ): Promise<WorkbenchGraphSourcePreview> {
+    const preview = sourcePreviewPresentation(source);
+    const tokens = await this.sourceNames(preview.lines.map((line) => line.text).join("\n"));
+    return tokens && tokens.length > 0 ? { ...preview, tokens } : preview;
+  }
 
   constructor(options: WorkbenchGraphViewOptions) {
     this.index = options.index;
+    this.sourceNames = options.sourceNames ?? (async () => undefined);
     this.openDefinition = options.openDefinition;
     this.showActions = options.showActions;
     this.selectInTree = options.selectInTree ?? (async () => undefined);
@@ -389,7 +403,7 @@ export class WorkbenchGraphView implements vscode.Disposable {
         this.sourceVisible = false;
         this.sourcePinned = false;
       }
-      const preview = sourcePreview ? sourcePreviewPresentation(sourcePreview) : null;
+      const preview = sourcePreview ? await this.presentedPreview(sourcePreview) : null;
       const session = this.createSession(this.session?.breadcrumbs ?? [], this.session?.schemaHint);
       this.session = session;
       const refreshMessage: WorkbenchGraphHostMessage = {
@@ -452,7 +466,7 @@ export class WorkbenchGraphView implements vscode.Disposable {
         if (shown && this.sourceVisible && sourcePreview) {
           await this.panel.post({
             type: "cockpitPreview",
-            preview: sourcePreviewPresentation(sourcePreview),
+            preview: await this.presentedPreview(sourcePreview),
             pinned: this.sourcePinned,
           });
         }
@@ -526,7 +540,7 @@ export class WorkbenchGraphView implements vscode.Disposable {
         this.sourceVisible = false;
         this.sourcePinned = false;
       }
-      const preview = sourcePreview ? sourcePreviewPresentation(sourcePreview) : null;
+      const preview = sourcePreview ? await this.presentedPreview(sourcePreview) : null;
       const session = this.createSession(
         cockpitBreadcrumbs(currentFocus, database, this.symbols(database)),
       );
@@ -978,7 +992,7 @@ export class WorkbenchGraphView implements vscode.Disposable {
     this.previewSymbol = symbol;
     this.sourceVisible = true;
     if (symbol) this.rememberSymbols([symbol]);
-    const presentation = sourcePreviewPresentation(preview);
+    const presentation = await this.presentedPreview(preview);
     if (this.lastMessage?.type === "cockpitFocus") {
       this.lastMessage = {
         ...this.lastMessage,
@@ -1020,7 +1034,7 @@ export class WorkbenchGraphView implements vscode.Disposable {
     return {
       neighborhood,
       presentations,
-      preview: sourcePreview ? sourcePreviewPresentation(sourcePreview) : undefined,
+      preview: sourcePreview ? await this.presentedPreview(sourcePreview) : undefined,
     };
   }
 
