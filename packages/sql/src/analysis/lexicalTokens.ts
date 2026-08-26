@@ -1,5 +1,6 @@
 import { byteToCharOffsets } from "../query/analysis.js";
 import {
+  GRAMMAR_INJECTION_ROOT,
   SQL_KEYWORD_PREFIX,
   SQL_LEXICAL_KINDS,
   SQL_NAME_POSITIONS,
@@ -34,13 +35,50 @@ export function sqlLexicalTokens(tree: SyntaxTree, source: string): SqlLexicalTo
   const character = byteToCharOffsets(source);
   const lineStarts = startsOfLines(source);
   const tokens: SqlLexicalToken[] = [];
-  walk(tree.root, [], (node, ancestors) => {
-    const start = character(node.byteRange[0]);
-    const end = character(node.byteRange[1]);
-    if (end <= start) return;
-    const type = typeOf(node, ancestors, source.slice(start, end));
-    if (type) tokens.push(...placed(start, end, type, lineStarts));
-  });
+
+  const emit = (startByte: number, endByte: number, type: SqlLexicalKind) => {
+    const start = character(startByte);
+    const end = character(endByte);
+    if (end > start) tokens.push(...placed(start, end, type, lineStarts));
+  };
+
+  /*
+   * A node of the lexical map is one whole piece — until the grammar has injected a parse inside
+   * it. A dollar-quoted body carries a PL/pgSQL `source_file` under the SQL literal that holds it:
+   * the injected tree is walked like any other source, and only what it does not cover — the
+   * delimiters — stays a piece of the literal.
+   */
+  const walk = (node: SyntaxNode, ancestors: string[]): void => {
+    const mapped = SQL_LEXICAL_KINDS.get(node.kind);
+    if (mapped !== undefined) {
+      const injections = node.children.filter((child) => child.kind === GRAMMAR_INJECTION_ROOT);
+      if (injections.length === 0) {
+        emit(node.byteRange[0], node.byteRange[1], mapped);
+        return;
+      }
+      let from = node.byteRange[0];
+      for (const injection of injections) {
+        emit(from, injection.byteRange[0], mapped);
+        walk(injection, ancestors);
+        from = injection.byteRange[1];
+      }
+      emit(from, node.byteRange[1], mapped);
+      return;
+    }
+    if (node.children.length === 0) {
+      const start = character(node.byteRange[0]);
+      const end = character(node.byteRange[1]);
+      if (end <= start) return;
+      const type = typeOf(node, ancestors, source.slice(start, end));
+      if (type) tokens.push(...placed(start, end, type, lineStarts));
+      return;
+    }
+    ancestors.push(node.kind);
+    for (const child of node.children) walk(child, ancestors);
+    ancestors.pop();
+  };
+
+  walk(tree.root, []);
   return tokens.sort((a, b) => a.line - b.line || a.character - b.character);
 }
 
@@ -64,24 +102,6 @@ function typeOf(
   }
   if (node.named) return undefined;
   return PUNCTUATION.test(written) ? "punctuation" : "operator";
-}
-
-/**
- * Walks to the pieces: a node that maps to a piece is one whole, and nothing inside it is read
- * again — a comment holds no keywords and a dollar-quoted body is a string, not a statement.
- */
-function walk(
-  node: SyntaxNode,
-  ancestors: string[],
-  visit: (node: SyntaxNode, ancestors: readonly string[]) => void,
-): void {
-  if (SQL_LEXICAL_KINDS.has(node.kind) || node.children.length === 0) {
-    visit(node, ancestors);
-    return;
-  }
-  ancestors.push(node.kind);
-  for (const child of node.children) walk(child, ancestors, visit);
-  ancestors.pop();
 }
 
 /**

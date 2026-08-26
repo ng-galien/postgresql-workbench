@@ -98,6 +98,28 @@ describe("what a statement is made of", () => {
     ]);
   });
 
+  it("descends into the parse the grammar injects in a dollar-quoted body", async () => {
+    const source = [
+      "CREATE FUNCTION f(n integer) RETURNS integer LANGUAGE plpgsql AS $fn$",
+      "DECLARE",
+      "  r integer := 0;",
+      "BEGIN",
+      "  RETURN r; -- done",
+      "END;",
+      "$fn$;",
+    ].join("\n");
+    const pieces = await piecesOf(source);
+    const kinds = new Map(pieces.map((piece) => [piece.text, piece.type]));
+    expect(kinds.get("DECLARE")).toBe("keyword");
+    expect(kinds.get("BEGIN")).toBe("keyword");
+    expect(kinds.get("RETURN")).toBe("keyword");
+    expect(kinds.get("END")).toBe("keyword");
+    expect(kinds.get("-- done")).toBe("comment");
+    // The delimiters stay the literal's; the body between them belongs to its own grammar.
+    expect(kinds.get("$fn$")).toBe("string");
+    expect(pieces.filter((piece) => piece.type === "string")).toHaveLength(2);
+  });
+
   it("says nothing about a name: what a name means is the other answer", async () => {
     const pieces = await piecesOf("SELECT alpha FROM beta;");
     expect(pieces.some((piece) => piece.text === "alpha" || piece.text === "beta")).toBe(false);

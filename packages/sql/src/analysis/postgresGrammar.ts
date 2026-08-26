@@ -38,6 +38,12 @@ export const PLPGSQL_STATEMENT_KINDS: ReadonlySet<string> = new Set(
 export const PLPGSQL_BLOCK = "pl_block";
 
 /**
+ * The root a grammar plants inside another's node when it injects a parse there: a dollar-quoted
+ * body carries a whole PL/pgSQL `source_file` under the SQL literal that holds it.
+ */
+export const GRAMMAR_INJECTION_ROOT = "source_file";
+
+/**
  * The word to show for a statement: the grammar's own, without the prefix it spells it with. Only
  * where that word carries something a reader has no use for is another one chosen.
  */
@@ -81,17 +87,21 @@ export const SQL_LEXICAL_TOKEN_TYPES = [
 export type SqlLexicalKind = (typeof SQL_LEXICAL_TOKEN_TYPES)[number];
 
 /**
- * The kinds whose whole span is one piece, whatever they contain: the grammar's literals, its
- * dollar-quoted bodies, and its comments. Read rather than listed, because a list had already
- * missed two spellings of a string that nobody had thought of.
+ * The kinds that are one lexical piece, drawn from both grammars: the literals, the dollar-quoted
+ * bodies, the comments. Read rather than listed, because a list had already missed two spellings
+ * of a string that nobody had thought of. A dollar-quoted body is one piece only until the grammar
+ * injects a parse inside it — the reader descends into an injection, and only the delimiters stay
+ * the literal's.
  */
 export const SQL_LEXICAL_KINDS: ReadonlyMap<string, SqlLexicalKind> = new Map(
-  SQL_GRAMMAR_KINDS.flatMap((kind): [string, SqlLexicalKind][] => {
-    if (kind === "comment") return [[kind, "comment"]];
-    if (kind === "dollar_quoted_string") return [[kind, "string"]];
-    if (!kind.endsWith("_literal")) return [];
-    return [[kind, kind.includes("string") || kind.includes("bit") ? "string" : "number"]];
-  }),
+  [...new Set([...SQL_GRAMMAR_KINDS, ...PLPGSQL_GRAMMAR_KINDS])].flatMap(
+    (kind): [string, SqlLexicalKind][] => {
+      if (kind === "comment") return [[kind, "comment"]];
+      if (kind === "dollar_quoted_string") return [[kind, "string"]];
+      if (!kind.endsWith("_literal")) return [];
+      return [[kind, kind.includes("string") || kind.includes("bit") ? "string" : "number"]];
+    },
+  ),
 );
 
 /** What a `proc_stmt` holds. A layer walking a body meets one or the other, never both. */
