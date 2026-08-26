@@ -115,12 +115,19 @@ export class WorkbenchGraphView implements vscode.Disposable {
   private readonly sourceNames: (text: string) => Promise<WorkbenchGraphSourcePreview["tokens"]>;
   private readonly configurationSubscription: vscode.Disposable;
 
-  /** The preview as the view paints it: the lines, and what the server made of them. */
+  /**
+   * The preview as the view paints it: the lines, and what the server made of them. Colour is an
+   * ornament here, never a gate: a server that answers slowly or not at all costs the preview its
+   * names, not the Cockpit its panel — which is exactly what happened when this awaited freely.
+   */
   private async presentedPreview(
     source: Parameters<typeof sourcePreviewPresentation>[0],
   ): Promise<WorkbenchGraphSourcePreview> {
     const preview = sourcePreviewPresentation(source);
-    const tokens = await this.sourceNames(preview.lines.map((line) => line.text).join("\n"));
+    const tokens = await Promise.race([
+      this.sourceNames(preview.lines.map((line) => line.text).join("\n")).catch(() => undefined),
+      new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), 1_500)),
+    ]);
     return tokens && tokens.length > 0 ? { ...preview, tokens } : preview;
   }
 

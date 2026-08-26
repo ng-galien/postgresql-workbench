@@ -23,10 +23,7 @@ import {
 import { DebugResultStore } from "../../../packages/rows/src/capturedResults.js";
 import type { SyntaxParser } from "../../../packages/sql/src/analysis/syntaxTree.js";
 import { type FunctionDefinition, parseCall } from "../../../packages/sql/src/callParser.js";
-import {
-  POSTGRES_SOURCE_LANGUAGE_IDS,
-  postgresSourceLanguageId,
-} from "../../../packages/sql/src/text/documentLanguage.js";
+import { postgresSourceLanguageId } from "../../../packages/sql/src/text/documentLanguage.js";
 import { truncationReasonLabel } from "../../../packages/views/src/results/resultFormatting.js";
 import type { CommandCallSite, CommandFunctionDefinition } from "../codeLens/index.js";
 import {
@@ -46,12 +43,7 @@ import {
 } from "../debug/index.js";
 import { debugResultSource } from "../debug/resultSource.js";
 import { showRequirementsGuide } from "../docker/index.js";
-import {
-  createRoutineComparisonHandler,
-  LEGEND,
-  PlpgsqlInlineValuesProvider,
-  PlpgsqlSemanticTokensProvider,
-} from "../plpgsql/index.js";
+import { createRoutineComparisonHandler, PlpgsqlInlineValuesProvider } from "../plpgsql/index.js";
 import { CodeMonikerContentProvider, closePostgresqlDapTabs } from "../sources/index.js";
 import type {
   ConnectionItem,
@@ -356,17 +348,6 @@ export function registerDebugInfrastructure(
         { language: "plpgsql" },
       ],
       new PlpgsqlInlineValuesProvider(() => index.syntaxParser()),
-    ),
-    vscode.languages.registerDocumentSemanticTokensProvider(
-      [
-        ...POSTGRES_SOURCE_LANGUAGE_IDS.map((language) => ({
-          scheme: CodeMonikerContentProvider.SCHEME,
-          language,
-        })),
-        { scheme: "debug", language: "plpgsql" },
-      ],
-      new PlpgsqlSemanticTokensProvider(() => index.syntaxParser()),
-      LEGEND,
     ),
   );
   return { resultStore, resultsView, contentProvider };

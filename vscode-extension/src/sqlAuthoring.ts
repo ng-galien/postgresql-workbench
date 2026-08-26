@@ -49,6 +49,7 @@ import {
   SQL_AUTHORING_OBJECT_MIME,
   type SqlAuthoringSettings,
 } from "../../packages/sql/src/snapshot.js";
+import { POSTGRES_SOURCE_LANGUAGE_IDS } from "../../packages/sql/src/text/documentLanguage.js";
 import { canonicalSqlIdentifier } from "../../packages/sql/src/text/identifiers.js";
 import { sqlStatementSlices } from "../../packages/sql/src/text/sqlLexing.js";
 import type { ConnectionManager } from "./connection/index.js";
@@ -58,6 +59,7 @@ import {
   SQL_NOTEBOOK_TYPE,
   type SqlNotebookMetadata,
 } from "./scratchpad/index.js";
+import { CODE_MONIKER_URI_SCHEME } from "./sources/uri.js";
 
 const SQL_DOCUMENT_SELECTOR = [
   { language: "sql", scheme: "file" },
@@ -66,6 +68,16 @@ const SQL_DOCUMENT_SELECTOR = [
   { language: "plpgsql", scheme: "untitled" },
   { language: "plpgsql", scheme: "vscode-notebook-cell" },
   { language: "sql", scheme: "postgresql-workbench-data-sql" },
+  /*
+   * The virtual sources and the sources a debug session opens. Their features come from the server
+   * like every other document's: a virtual source only one shell could colour would be a capability
+   * VS Code owns, and VS Code governs nothing.
+   */
+  ...POSTGRES_SOURCE_LANGUAGE_IDS.map((language) => ({
+    language,
+    scheme: CODE_MONIKER_URI_SCHEME,
+  })),
+  { language: "plpgsql", scheme: "debug" },
 ] as const;
 const SQL_AUTHORING_LANGUAGE_STATUS_ID = "postgresql-workbench.sqlAuthoring";
 const REVEAL_SQL_REFERENCE_COMMAND = "postgresql-workbench.revealSqlReference";
@@ -359,7 +371,21 @@ export async function registerSqlAuthoring(
             token,
           )
         : client.sendRequest<SqlAuthoringComposeResult>(SQL_AUTHORING_COMPOSE_REQUEST, request),
-    ask: (sync) => createSqlAuthoringClient({ connection: client, legend, sync }),
+    /*
+     * The requests go by method name, not by passing the protocol's request objects through the
+     * LanguageClient. The bundle holds two physical copies of the protocol module — this package's
+     * and the LanguageClient's own — and jsonrpc tells parameter structures apart by identity, so
+     * a request object from the other copy is misread and never reaches the wire: the Cockpit and
+     * the Data View both waited forever on tokens that were never requested.
+     */
+    ask: (sync) =>
+      createSqlAuthoringClient({
+        connection: {
+          sendRequest: (type, params) => client.sendRequest(type.method, params),
+        },
+        legend,
+        sync,
+      }),
   };
 }
 
