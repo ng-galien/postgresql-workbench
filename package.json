@@ -31,6 +31,7 @@
     "test:dap:package": "node scripts/dap/test-package.mjs",
     "test:e2e:up": "docker compose -f docker/e2e/compose.yml up -d --build --wait",
     "test:e2e:run": "npm run build:dap && vitest run e2e/ --exclude e2e/legacy-compat.test.ts --fileParallelism=false",
+    "test:code-moniker-runtime": "vitest run e2e/code-moniker-runtime.test.ts --fileParallelism=false",
     "test:e2e:dap": "npm run build:dap && vitest run e2e/e2e.test.ts e2e/debug-lifecycle.test.ts e2e/syntax-consumers.test.ts --fileParallelism=false",
     "test:e2e:workbench": "REQUIRE_LOCAL_CODE_MONIKER=1 vitest run e2e/workbench-index.test.ts --fileParallelism=false",
     "test:e2e:lifecycle": "npm run build:dap && vitest run e2e/debug-lifecycle.test.ts --fileParallelism=false",
@@ -51,7 +52,7 @@
     "test:shell": "playwright test --config packages/shell/tests/playwright.config.ts"
   },
   "dependencies": {
-    "@code-moniker/client": "0.8.0",
+    "@code-moniker/client": "0.9.1",
     "@vscode/debugadapter": "^1.68.0",
     "@vscode/debugprotocol": "^1.68.0",
     "pg": "^8.13.1"
