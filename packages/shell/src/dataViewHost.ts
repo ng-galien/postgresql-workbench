@@ -55,7 +55,7 @@ import {
   type SqlAuthoringDragPayload,
   type SqlAuthoringSnapshot,
 } from "../../sql/src/snapshot.js";
-import { startSqlLanguageServer } from "./languageServer.js";
+import { type SqlLanguageServer, startSqlLanguageServer } from "./languageServer.js";
 
 /**
  * The Data View's Extension Host, without VS Code. Every other part is the real one: PostgreSQL
@@ -82,6 +82,11 @@ export interface DataViewDevHost {
   handle(request: DataViewRequest): Promise<void>;
   /** Puts the query back to the one the view opens with, so a scenario starts from a known state. */
   reset(): Promise<void>;
+  /**
+   * The language client this host asks the server through, for the shell's other surfaces to ask
+   * the same one: one server, one client, however many pages are looking.
+   */
+  language: SqlLanguageServer | undefined;
   dispose(): Promise<void>;
 }
 
@@ -462,6 +467,7 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
   };
 
   return {
+    language: languageServer,
     async reset() {
       edits.clear();
       hidden.clear();

@@ -54,9 +54,11 @@ export interface SqlAuthoringClientOptions {
   connection: SqlAuthoringConnection;
   /**
    * Puts this text in front of the server under this URI, whichever way the host synchronises
-   * documents: notifications it sends itself, or a document its own client already watches.
+   * documents: notifications it sends itself, or a document its own client already watches. The
+   * language id says what the document is — the server's PL/pgSQL layer is gated on it, so a
+   * routine source opened as plain `sql` loses its body's own names.
    */
-  sync(uri: string, text: string): Promise<void>;
+  sync(uri: string, text: string, languageId?: string): Promise<void>;
   /** The token kinds the server numbers against, as the initialize handshake declared them. */
   legend(): readonly string[] | Promise<readonly string[]>;
 }
@@ -65,7 +67,7 @@ export interface SqlAuthoringClient {
   /** What the server proposes at `offset` of `text`. */
   complete(uri: string, text: string, offset: number): Promise<SqlAuthoringProposal[]>;
   /** What the server makes of the names in `text`, each kind named rather than numbered. */
-  semanticTokens(uri: string, text: string): Promise<NamedSqlToken[]>;
+  semanticTokens(uri: string, text: string, languageId?: string): Promise<NamedSqlToken[]>;
 }
 
 export function createSqlAuthoringClient(options: SqlAuthoringClientOptions): SqlAuthoringClient {
@@ -78,8 +80,8 @@ export function createSqlAuthoringClient(options: SqlAuthoringClientOptions): Sq
       });
       return itemsOf(answer).map((item) => proposal(item, text, offset));
     },
-    async semanticTokens(uri, text) {
-      await options.sync(uri, text);
+    async semanticTokens(uri, text, languageId) {
+      await options.sync(uri, text, languageId);
       const answer = await options.connection.sendRequest(SemanticTokensRequest.type, {
         textDocument: { uri },
       });

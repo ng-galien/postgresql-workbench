@@ -108,7 +108,7 @@ export async function startSqlLanguageServer(options: {
   const client = createSqlAuthoringClient({
     connection,
     legend: () => legend,
-    async sync(uri, text) {
+    async sync(uri, text, languageId = "sql") {
       version += 1;
       const opened = held.has(uri);
       held.set(uri, text);
@@ -120,7 +120,7 @@ export async function startSqlLanguageServer(options: {
         return;
       }
       await connection.sendNotification(DidOpenTextDocumentNotification.type, {
-        textDocument: { uri, languageId: "sql", version, text },
+        textDocument: { uri, languageId, version, text },
       });
     },
   });

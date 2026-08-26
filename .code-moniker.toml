@@ -109,10 +109,14 @@ application rather than a test harness. No package depends on any shell.
 Every language capability — grammar vocabulary, lexical tokens, semantic names, completion — flows
 through the SQL authoring server and its one client. A view that reaches for a host API, or a shell
 that answers a language question itself, breaks the target on two of the three shells at once.
-When an editor is embedded in a view it will be Monaco, consuming the same client over the view's
-protocol; nothing may prepare for it by opening a second path. The same rule holds for the virtual
-sources: their scheme, addressing and content are the engine's (catalog), and each shell only
-serves them into its own document system.
+Each shell reaches the server through a KNOWN LSP client, never a homemade one: the extension
+through VS Code's own LanguageClient, and the web and Electron shells through Monaco — Monaco is
+the editor of the shells that are not VS Code, driven by monaco-languageclient over a transport the
+shell provides. What this project writes itself is host plumbing only: starting the server,
+carrying the transport, answering the host-bound requests. The same rule holds for the virtual
+sources: their scheme, addressing and content are the engine's (catalog), each shell serves them
+into its own document system, and their language features come from the server like every other
+document's.
 """
 
 [[views.boundaries]]

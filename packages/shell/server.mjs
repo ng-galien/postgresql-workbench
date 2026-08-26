@@ -26,7 +26,7 @@ const RELATION =
 // The repository writes `.js` in its specifiers, which Node cannot resolve to `.ts`; esbuild can.
 const OUT = new URL("../../node_modules/.pgwb-shell/", import.meta.url).pathname;
 await esbuild.build({
-  entryPoints: [new URL("src/dataViewHost.ts", import.meta.url).pathname],
+  entryPoints: [new URL("src/hosts.ts", import.meta.url).pathname],
   bundle: true,
   outfile: `${OUT}host.cjs`,
   // CommonJS, because the Code Moniker client resolves its runtime through `__filename`.
@@ -35,7 +35,7 @@ await esbuild.build({
   target: "es2022",
   packages: "external",
 });
-const { startDataViewHost } = createRequire(import.meta.url)(`${OUT}host.cjs`);
+const { startDataViewHost, startSourcesHost } = createRequire(import.meta.url)(`${OUT}host.cjs`);
 
 // The language server the shell drives: the same source the extension ships, built the same way.
 await esbuild.build({
@@ -48,11 +48,17 @@ await esbuild.build({
   packages: "external",
 });
 
-const clients = new Set();
-const emit = (response) => {
+/** One response stream per view: a page subscribes to its own, a rebuild reloads every one. */
+const channels = new Map([
+  ["data-view", new Set()],
+  ["sources", new Set()],
+]);
+const emitTo = (channel) => (response) => {
   const frame = `data: ${JSON.stringify(response)}\n\n`;
-  for (const client of clients) client.write(frame);
+  for (const client of channels.get(channel)) client.write(frame);
 };
+const emit = emitTo("data-view");
+const clients = channels.get("data-view");
 
 const host = await startDataViewHost({
   connection: CONNECTION,
@@ -80,16 +86,20 @@ const liveReload = {
         });
         return;
       }
-      for (const client of clients) client.write("event: reload\ndata: {}\n\n");
+      for (const set of channels.values())
+        for (const client of set) client.write("event: reload\ndata: {}\n\n");
       console.log("view rebuilt — reloading the page");
     });
   },
 };
 
 const bundle = await esbuild.context({
-  entryPoints: [new URL("browser/index.tsx", import.meta.url).pathname],
+  entryPoints: [
+    { in: new URL("browser/index.tsx", import.meta.url).pathname, out: "data-view" },
+    { in: new URL("browser/sources.tsx", import.meta.url).pathname, out: "sources" },
+  ],
   bundle: true,
-  outfile: `${OUT}data-view.js`,
+  outdir: OUT,
   format: "iife",
   platform: "browser",
   target: "es2022",
@@ -101,19 +111,54 @@ const bundle = await esbuild.context({
 });
 await bundle.watch();
 
-const PAGE = `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>Data View — harness</title></head>
-<body><div id="root"></div><script src="/data-view.js"></script></body></html>`;
+const page = (title, script) => `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>${title}</title></head>
+<body><div id="root"></div><script src="${script}"></script></body></html>`;
+
+/** The shell's front door: every view it manages, one link each, nothing else. */
+const MENU = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>PostgreSQL Workbench — shell</title><style>
+  body { background: #1f1f1f; color: #ccc; font-family: -apple-system, sans-serif;
+    display: grid; place-content: center; height: 100vh; margin: 0; }
+  h1 { font-size: 14px; font-weight: 600; opacity: .7; margin: 0 0 12px; }
+  a { display: block; color: #75beff; text-decoration: none; font-size: 16px;
+    padding: 8px 14px; border: 1px solid #333; border-radius: 6px; margin: 6px 0; width: 220px; }
+  a:hover { background: #2a2d2e; }
+  small { opacity: .5 }
+</style></head><body><div>
+<h1>PostgreSQL Workbench — shell</h1>
+<a href="/data-view">Data View</a>
+<a href="/cockpit">Cockpit <small>— soon</small></a>
+<a href="/sources">Sources</a>
+</div></body></html>`;
+
+const sources = await startSourcesHost({
+  connection: CONNECTION,
+  tokens: (uri, text, languageId) =>
+    host.language?.semanticTokens(uri, text, languageId) ?? Promise.resolve([]),
+  emit: emitTo("sources"),
+});
 
 createServer(async (request, response) => {
-  if (request.url === "/responses") {
+  const stream = /^\/(data-view|sources)\/responses$/.exec(request.url ?? "");
+  if (stream) {
     response.writeHead(200, {
       "content-type": "text/event-stream",
       "cache-control": "no-cache",
       connection: "keep-alive",
     });
-    clients.add(response);
-    request.on("close", () => clients.delete(response));
+    channels.get(stream[1]).add(response);
+    request.on("close", () => channels.get(stream[1]).delete(response));
+    return;
+  }
+  if (request.url === "/sources/request" && request.method === "POST") {
+    const body = await new Blob(await Array.fromAsync(request)).text();
+    response.writeHead(204).end();
+    const message = JSON.parse(body);
+    console.log(`→ ${message.type}`);
+    await sources.handle(message).catch((error) => {
+      emitTo("sources")({ type: "sources/notice", message: String(error), severity: "error" });
+    });
     return;
   }
   if (request.url === "/reset" && request.method === "POST") {
@@ -121,7 +166,7 @@ createServer(async (request, response) => {
     response.writeHead(204).end();
     return;
   }
-  if (request.url === "/request" && request.method === "POST") {
+  if (request.url === "/data-view/request" && request.method === "POST") {
     const body = await new Blob(await Array.fromAsync(request)).text();
     response.writeHead(204).end();
     const message = JSON.parse(body);
@@ -137,13 +182,25 @@ createServer(async (request, response) => {
     });
     return;
   }
-  if (request.url === "/data-view.js" || request.url === "/data-view.js.map") {
+  if (/^\/(data-view|sources)\.js(\.map)?$/.test(request.url ?? "")) {
     const { readFile } = await import("node:fs/promises");
     response.writeHead(200, { "content-type": "text/javascript" });
     response.end(await readFile(`${OUT}${request.url.slice(1)}`));
     return;
   }
-  response.writeHead(200, { "content-type": "text/html" }).end(PAGE);
+  if (request.url === "/data-view" || request.url?.startsWith("/data-view?")) {
+    response
+      .writeHead(200, { "content-type": "text/html" })
+      .end(page("Data View — shell", "/data-view.js"));
+    return;
+  }
+  if (request.url === "/sources") {
+    response
+      .writeHead(200, { "content-type": "text/html" })
+      .end(page("Sources — shell", "/sources.js"));
+    return;
+  }
+  response.writeHead(200, { "content-type": "text/html" }).end(MENU);
 }).listen(PORT, () => {
   console.log(
     `PostgreSQL Workbench shell on http://localhost:${PORT} — ${RELATION ? `${RELATION.schema}.${RELATION.name}` : "empty"} of ${CONNECTION.database}`,
@@ -151,6 +208,7 @@ createServer(async (request, response) => {
 });
 
 process.on("SIGINT", async () => {
+  await sources.dispose();
   await host.dispose();
   process.exit(0);
 });

@@ -10,7 +10,7 @@ import { ResultTable } from "../../views/testing/ResultTable.js";
 /** Opens an empty view: the shell is one running application, so each scenario starts it over. */
 export async function openEmpty(page: Page) {
   await page.request.post("/reset");
-  await page.goto("/");
+  await page.goto("/data-view");
   await expect(page.getByText("The query is empty")).toBeVisible();
 }
 
