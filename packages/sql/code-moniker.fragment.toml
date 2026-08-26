@@ -8,6 +8,8 @@ language_server_feature_target = "target ~ '**/dir:packages/dir:sql/dir:src/dir:
 language_server_owner = "source ~ '**/dir:packages/dir:sql/dir:src/dir:languageServer/**' OR source ~ '**/dir:e2e/**'"
 query_engine_source = "source ~ '**/dir:packages/dir:sql/dir:src/dir:query/**'"
 language_server_target = "target ~ '**/dir:packages/dir:sql/dir:src/dir:languageServer/**'"
+grammar_kinds_target = "kind = 'imports_symbol' AND target.segment('module') = 'grammarKinds'"
+grammar_vocabulary_owner = "source.segment('module') = 'postgresGrammar'"
 
 [[ts.refs.where]]
 id = "language-server-encapsulation-keeps-features-inside-server"
@@ -29,3 +31,10 @@ severity = "error"
 expr = "$sql_analysis_source AND $structural_edge AND ($engine_package_target OR $host_local_target) => $sql_analysis_target"
 message = "packages/sql is the leaf of the Workbench package graph: it depends on no other package, and never on the Extension Host."
 rationale = "Every other package reads SQL and PL/pgSQL through this one, and the standalone DAP executable ships it without VS Code. A dependency outward would make the leaf unusable on its own and turn the graph into a cycle."
+
+[[ts.refs.where]]
+id = "syntax-grammar-vocabulary-encapsulation-stays-in-postgres-grammar"
+severity = "error"
+expr = "$grammar_kinds_target => $grammar_vocabulary_owner"
+message = "The generated grammar kinds are read through postgresGrammar; no layer opens the raw list itself."
+rationale = "grammarKinds.ts is generated from the node-types.json of the two grammars Code Moniker runs — the complete list of what a parse can say, authored by PostgreSQL, not by this project. Four layers had each written down the part of it they needed, and every list was wrong: the debugger named two statements the grammar does not produce and missed four, coverage missed seven, the literal map missed two spellings of a string. postgresGrammar is where the few real decisions over that list live — which statements have forms, where a reserved word stands for a name — and a layer that opens the raw list starts a fifth copy of the same drift. The e2e grammar test holds the running parser against the committed list, so the seal has two sides: the list stays the grammar's, and the layers stay behind the one reading of it."

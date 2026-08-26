@@ -83,6 +83,7 @@ enable = [
   "data-view-hidden-column-ownership-stays-in-hidden-columns",
   "data-view-query-info-ownership-stays-in-state-contract",
   "data-view-edit-policy-ownership-stays-with-the-engine-and-the-grid",
+  "syntax-grammar-vocabulary-encapsulation-stays-in-postgres-grammar",
 ]
 
 [[views]]
@@ -106,9 +107,10 @@ fragment states what it may depend on.
 id = "sql-analysis"
 owns = [
   "the Code Moniker syntax boundary for SQL and PL/pgSQL",
+  "the grammar's vocabulary: generated from the grammars Code Moniker runs, read through one module",
   "SQL as text: identifiers, lexing, formatting, document language",
   "the query engine: analysis, relations, composition, join planning",
-  "the SQL authoring language server, its protocol, and the one client every surface asks it through",
+  "the SQL authoring language server, its protocol, its one token legend, and the one client every surface asks it through",
   "what a PL/pgSQL routine body's own names are: its variables, its parameters, its declared types",
 ]
 forbids = [
@@ -124,6 +126,7 @@ forbid_rules = [
   "language-server-encapsulation-keeps-features-inside-server",
   "query-engine-dependency-does-not-point-to-language-server",
   "syntax-workbench-debugger-ownership-stays-at-runtime-boundaries",
+  "syntax-grammar-vocabulary-encapsulation-stays-in-postgres-grammar",
 ]
 rationale = """
 The language server is the front door for editor features; a consumer asks it rather than importing
@@ -430,6 +433,15 @@ id = "a-move-is-not-an-indexed-edge"
 rationale = "The door that every move on a Data View's held changes goes through is held by TypeScript and by a test, not by a rule — and that is not a choice. A call to `edits.move(...)` is a method call on a field, and this index links no reference from either surface to a method of `PendingEdits`: a rule written against one reports zero violations while both hosts sit in front of it. So the six mutators are private, which makes the door the only way in and a second one a compile error rather than a review comment; the moves are named in a record over their own union, so a seventh cannot be added without being named, labelled and performed; and pendingEdits.test proves the guard by holding a transaction open and attempting all six moves against it. What the graph can see is guarded by rules instead: the policy that refuses a write, and the three builders that assemble one."
 symbols = ["ts:packages/rows/src/dataView/pendingEdits.class:PendingEdits"]
 check = "npx vitest run packages/rows/src/dataView/pendingEdits.test.ts"
+
+[[views.gotchas]]
+id = "syntax-tokens-have-one-chain-of-ownership"
+rationale = "Everything a colouring surface is told descends one chain, and each link has exactly one author. PostgreSQL authors the grammar: gram.y and kwlist.h generate tree-sitter-postgres, whose node-types.json is the complete list of what a parse can say. scripts/sql/generate-grammar-kinds.mjs reads that list from the two grammars Code Moniker actually runs — the locked SQL crate, and the vendored PL/pgSQL copy Code Moniker modifies for quoted block labels — and writes grammarKinds.ts with its provenance; the e2e grammar test parses with the real parser and refuses any kind the committed copy does not declare, both proved by planting. postgresGrammar.ts is the one reading of that list — the few real decisions over it — and a rule keeps every other layer behind it: debugger stepping, coverage labels, and the lexical layer all ask it. The server's legend is then COMPOSED, never re-spelled: it opens with the PL/pgSQL routine legend, whose tokens arrive already numbered and are pushed into the stream unchanged — correct only because that legend is this one's opening segment, which is now true by construction — and it closes with the lexical kinds, appended so an older client's numbering still holds. The views hold no list at all: they receive kinds by name, resolved against the legend the initialize handshake declared."
+symbols = [
+  "ts:packages/sql/src/analysis/postgresGrammar.function:plpgsqlStep(procedureStatement:SyntaxNode)",
+  "ts:packages/sql/src/languageServer/features/semanticTokens.const:SQL_SEMANTIC_TOKEN_TYPES",
+]
+check = "npx vitest run e2e/postgres-grammar.test.ts e2e/sql-lexical-tokens.test.ts e2e/semantic-tokens.test.ts"
 
 [[views.gotchas]]
 id = "one-language-authority-is-guarded-by-a-script"

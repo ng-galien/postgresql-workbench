@@ -64,14 +64,21 @@ export const SQL_NAME_POSITIONS: ReadonlySet<string> = new Set(
   ),
 );
 
-/** What a piece of a statement is, when it is not a name. */
-export type SqlLexicalKind =
-  | "keyword"
-  | "string"
-  | "number"
-  | "comment"
-  | "operator"
-  | "punctuation";
+/**
+ * What a piece of a statement is, when it is not a name. A tuple rather than a union, because the
+ * server's legend is built from it by position: a legend is read by number, and a list that is
+ * spelled twice is a numbering that can silently split.
+ */
+export const SQL_LEXICAL_TOKEN_TYPES = [
+  "keyword",
+  "string",
+  "number",
+  "comment",
+  "operator",
+  "punctuation",
+] as const;
+
+export type SqlLexicalKind = (typeof SQL_LEXICAL_TOKEN_TYPES)[number];
 
 /**
  * The kinds whose whole span is one piece, whatever they contain: the grammar's literals, its

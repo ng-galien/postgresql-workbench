@@ -168,6 +168,12 @@ returns undefined.
 - Biome for lint+format, Lefthook for pre-commit (biome fix → typecheck DAP + extension in parallel)
 - `npm run check:architecture` checks the package boundaries (code-moniker architecture profile) and
   runs in CI as the `Architecture` job — a boundary is not a convention here, it is a gate
+- One grammar authority: node kinds come from the generated `grammarKinds.ts` (provenance:
+  tree-sitter-postgres, itself generated from PostgreSQL's `gram.y`), read only through
+  `packages/sql/src/analysis/postgresGrammar.ts` — never write a list of node kinds by hand, and
+  re-run `scripts/sql/generate-grammar-kinds.mjs` when Code Moniker moves. The server's token
+  legend is composed from its authors (`plpgsqlTokenLegend` opens it, the lexical kinds close it),
+  never re-spelled
 - One language authority: every SQL proposal and every semantic token comes from the SQL authoring
   server, asked through the single client in `packages/sql/src/languageServer/client.ts`. Never ask
   VS Code's provider registry (`vscode.executeCompletionItemProvider`, `vscode.provideDocumentSemanticTokens`):

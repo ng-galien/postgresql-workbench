@@ -1,6 +1,7 @@
 import { SemanticTokensBuilder } from "vscode-languageserver/node";
 import type { TextDocument } from "vscode-languageserver-textdocument";
 import type { SqlLexicalToken } from "../../analysis/lexicalTokens.js";
+import { SQL_LEXICAL_TOKEN_TYPES } from "../../analysis/postgresGrammar.js";
 import type { SqlRelationMention } from "../../query/relations.js";
 import type { SqlAuthoringObject, SqlAuthoringSnapshot } from "../../snapshot.js";
 import {
@@ -8,14 +9,20 @@ import {
   POSTGRES_IDENTIFIER_PATTERN,
   splitSqlQualifiedIdentifier,
 } from "../../text/identifiers.js";
+import { TOKEN_MODIFIERS, TOKEN_TYPES } from "../../text/plpgsqlTokenLegend.js";
 import { postgresPlpgsqlRanges, scanPostgresSql } from "../../text/sqlLexing.js";
 import type { SqlAuthoringSemanticToken } from "../protocol.js";
 
+/**
+ * The one legend every token of this server is numbered against, composed from its authors rather
+ * than spelled beside them. The order is a contract twice over: a client reads kinds by position,
+ * and the PL/pgSQL routine tokens arrive already numbered against `TOKEN_TYPES` — pushed into this
+ * stream unchanged, which is only correct because that legend IS this one's opening segment. The
+ * lexical kinds close the list for the same reason in reverse: appended, so that a client holding
+ * the shorter legend of an older server still reads every name it knows at the number it knows.
+ */
 export const SQL_SEMANTIC_TOKEN_TYPES = [
-  "variable",
-  "parameter",
-  "type",
-  "function",
+  ...TOKEN_TYPES,
   "sqlSchema",
   "sqlTable",
   "sqlView",
@@ -27,19 +34,10 @@ export const SQL_SEMANTIC_TOKEN_TYPES = [
   "sqlParameter",
   "sqlType",
   "sqlWindow",
-  /*
-   * What a statement is made of, under the names. Appended rather than ordered among them: a
-   * legend is read by position, and a client that has one in hand must not find it renumbered.
-   */
-  "keyword",
-  "string",
-  "number",
-  "comment",
-  "operator",
-  "punctuation",
+  ...SQL_LEXICAL_TOKEN_TYPES,
 ] as const;
 
-export const SQL_SEMANTIC_TOKEN_MODIFIERS = ["declaration", "readonly"] as const;
+export const SQL_SEMANTIC_TOKEN_MODIFIERS = TOKEN_MODIFIERS;
 
 type SqlSemanticTokenType = (typeof SQL_SEMANTIC_TOKEN_TYPES)[number];
 
