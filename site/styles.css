@@ -315,7 +315,6 @@ h1 {
 .feature img {
   width: 100%;
   height: auto;
-  aspect-ratio: 30 / 17;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   object-fit: contain;
@@ -814,7 +813,6 @@ h1 {
 .docs-media img {
   width: 100%;
   height: auto;
-  aspect-ratio: 30 / 17;
   object-fit: contain;
 }
 

@@ -127,7 +127,9 @@ function mediaMarkup(attributes) {
     return "";
   }
   const darkClass = attributes.mediaDark ? " docs-media-dark" : "";
-  return `<figure class="docs-media${darkClass}"><img src="../assets/${escapeHtml(attributes.media)}" alt="${escapeHtml(attributes.mediaAlt ?? "PostgreSQL Workbench feature")}" width="1080" height="612" /></figure>`;
+  const width = attributes.mediaWidth ?? 1080;
+  const height = attributes.mediaHeight ?? 612;
+  return `<figure class="docs-media${darkClass}"><img src="../assets/${escapeHtml(attributes.media)}" alt="${escapeHtml(attributes.mediaAlt ?? "PostgreSQL Workbench feature")}" width="${escapeHtml(width)}" height="${escapeHtml(height)}" /></figure>`;
 }
 
 function referenceMarkup(extensionManifest) {

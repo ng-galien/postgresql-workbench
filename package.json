@@ -2,7 +2,7 @@
   "name": "postgresql-workbench",
   "version": "0.1.0",
   "private": true,
-  "description": "PostgreSQL development workbench for VS Code with SQL scratchpads, schema exploration, testing, coverage, and PL/pgSQL debugging",
+  "description": "PostgreSQL Workbench for VS Code: explore schemas, write SQL, edit data, run pgTAP tests with coverage, and debug PL/pgSQL.",
   "homepage": "https://ng-galien.github.io/postgresql-workbench/",
   "repository": {
     "type": "git",
