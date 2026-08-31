@@ -392,7 +392,15 @@ function jsonTokens(text: string): ReactNode[] {
     const start = match.index;
     if (start > at) out.push(text.slice(at, start));
     const [whole, quoted, colon] = match;
-    const shape = quoted ? (colon ? "key" : "string") : /^-?\d/u.test(whole) ? "number" : "word";
+    const shape = quoted
+      ? colon
+        ? "key"
+        : "string"
+      : /^-?\d/u.test(whole)
+        ? "number"
+        : whole === "null"
+          ? "null"
+          : "boolean";
     out.push(
       <span className={`json-${shape}`} key={`t${key}`}>
         {quoted ?? whole}

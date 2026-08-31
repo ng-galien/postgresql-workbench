@@ -17,6 +17,14 @@ export class SqlEditorPage {
     return this.page.locator(".editor-group-container.active .monaco-editor:visible").first();
   }
 
+  editorInGroup(index: number): Locator {
+    return this.page
+      .locator(".editor-group-container")
+      .nth(index)
+      .locator(".monaco-editor:visible")
+      .first();
+  }
+
   async formatDocument(): Promise<void> {
     await this.editor.click();
     await this.executeCommand("editor.action.formatDocument");

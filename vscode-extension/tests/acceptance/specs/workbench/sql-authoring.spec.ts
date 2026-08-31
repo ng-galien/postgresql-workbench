@@ -250,4 +250,39 @@ test.describe("SQL authoring", () => {
       }
     });
   });
+
+  test("routes a drop to the editor group under the pointer", async ({
+    workbench,
+    sqlEditor,
+    vscode,
+  }) => {
+    await vscode.openSqlDocument("");
+    await sqlEditor.associateDocumentAutomatically(demoAssociationText);
+    await vscode.executeCommand("workbench.action.newGroupRight");
+    await vscode.openSqlDocument("SELECT 1;");
+    await sqlEditor.associateDocumentAutomatically(demoAssociationText);
+
+    const left = sqlEditor.editorInGroup(0);
+    const right = sqlEditor.editorInGroup(1);
+    await left.click();
+    await right.click();
+
+    await workbench.tree.scrollToTop();
+    const schema = await workbench.tree.expandPath([
+      connection,
+      database,
+      SCHEMAS_TREE_ITEM,
+      /^shop$/,
+    ]);
+    const product = await workbench.tree.findChild(schema, /^product$/);
+    await workbench.dragTreeItemToTextEditor(product, left, false, false);
+
+    await left.click();
+    await expect
+      .poll(() => sqlEditor.snapshot())
+      .toMatchObject({ text: expect.stringMatching(productProjection) });
+    await right.click();
+    await expect.poll(() => sqlEditor.snapshot()).toMatchObject({ text: "SELECT 1;" });
+    await vscode.executeCommand("workbench.action.joinAllGroups", 10_000);
+  });
 });

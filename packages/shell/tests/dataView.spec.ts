@@ -407,6 +407,30 @@ test("inspects a timestamp as PostgreSQL text, not as JSON", async ({ page }) =>
   await expect(inspectorToggle).toHaveAttribute("aria-expanded", "false");
 });
 
+test("colours JSONB inspector values with the active VS Code theme", async ({ page }) => {
+  await openEmpty(page);
+  const table = await add(page, "shop.product");
+  await page.evaluate(() => {
+    const palette = document.documentElement.style;
+    palette.setProperty("--vscode-debugTokenExpression-name", "#d60000");
+    palette.setProperty("--vscode-debugTokenExpression-string", "#007a00");
+    palette.setProperty("--vscode-debugTokenExpression-number", "#004fd6");
+    palette.setProperty("--vscode-debugTokenExpression-boolean", "#a000a0");
+    palette.setProperty("--vscode-debugTokenExpression-value", "#595959");
+  });
+
+  // The second product contains every JSON value kind, including a null smoke value.
+  await table.cell(1, 8).click();
+  await table.inspect();
+  const inspector = page.getByRole("complementary", { name: "Value of attributes" });
+
+  await expect(inspector.locator(".json-key").first()).toHaveCSS("color", "rgb(214, 0, 0)");
+  await expect(inspector.locator(".json-string").first()).toHaveCSS("color", "rgb(0, 122, 0)");
+  await expect(inspector.locator(".json-number").first()).toHaveCSS("color", "rgb(0, 79, 214)");
+  await expect(inspector.locator(".json-boolean").first()).toHaveCSS("color", "rgb(160, 0, 160)");
+  await expect(inspector.locator(".json-null").first()).toHaveCSS("color", "rgb(89, 89, 89)");
+});
+
 test("opens the menu of the cell the box is on, from the keys alone", async ({ page }) => {
   await openEmpty(page);
   const table = await add(page, "shop.brand");

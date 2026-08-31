@@ -31,6 +31,10 @@ export class DataViewPage {
     return this.located(".data-view-toolbar");
   }
 
+  get surface(): Locator {
+    return this.located(".data-view");
+  }
+
   /** The line above the rows: how many there are, how to walk them, whether they may be written. */
   get rowsLine(): Locator {
     return this.located(".data-view-rows-line");

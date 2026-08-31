@@ -73,7 +73,9 @@ The following behavior is the complete contract for dragging indexed objects
 from **Schemas** into SQL. It applies to saved `.sql` and `.pgsql` files and to
 Scratchpad code cells.
 
-1. Drag exactly one object and hold <kbd>Shift</kbd> while dropping it in the editor.
+1. Place the text cursor in the Statement to change, then drag exactly one object and drop it in
+   that editor. VS Code does not expose the pointer offset for an unmodified native tree drop, so
+   composition deliberately targets the cursor position captured when the drag begins.
 2. In a Scratchpad, composition uses the Scratchpad Association shown below the
    cell. It never uses another open Connection as a fallback and does not add
    a second connection selector inside the cell.
@@ -81,10 +83,12 @@ Scratchpad code cells.
 4. Inspect and edit the generated SQL, then run it explicitly. A drop never
    executes SQL.
 
-A drop without <kbd>Shift</kbd> follows the navigation gesture and opens the object in
-the Cockpit. Schemas, extension groups, relation groups, constraints, Connection
-rows, and Scratchpad rows do not produce SQL. A relation target that resolves to
-an indexed table, view, routine, or trigger behaves like that underlying object.
+The destination owns the gesture: a SQL editor or Scratchpad composes SQL, a Data
+View extends its query, and the Cockpit focuses the object in the graph. Open the
+Cockpit explicitly from the object's **Open Graph** tree action. Schemas, extension
+groups, relation groups, constraints, Connection rows, and Scratchpad rows do not
+produce SQL. A relation target that resolves to an indexed table, view, routine, or
+trigger behaves like that underlying object.
 
 ### Behavior by dragged object
 
@@ -137,7 +141,7 @@ set-sensitive semantics, the JOIN is added without expanding the projection for
 Workbench does not infer a relationship from column names. It makes the decision
 from relation identities and foreign keys in the current indexed snapshot:
 
-1. It reads only the top-level `SELECT` under the drop cursor and resolves every
+1. It reads only the top-level `SELECT` under the prepared text cursor and resolves every
    schema-qualified relation introduced by `FROM` or `JOIN`, including its
    existing `AS` alias.
 2. It finds direct foreign keys between each resolved relation and the dropped
@@ -274,7 +278,7 @@ operations, `SELECT INTO`, `WINDOW`, `FETCH`, locking clauses, or a syntax error
 It also rejects composition when the configured syntax budget is reached; the
 warning directs the user to the SQL analysis settings.
 
-In a multi-Statement document, only the Statement under the drop cursor is
+In a multi-Statement document, only the Statement under the text cursor when the drag begins is
 validated and changed. Strings, quoted identifiers, dollar-quoted bodies, and
 comments do not create phantom relations or clause boundaries.
 

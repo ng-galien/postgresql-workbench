@@ -10,6 +10,8 @@ connection_service_target = "target.segment('module') = 'connectPostgres' AND ta
 connection_service_owner = "source.segment('module') = 'openConnections' OR source.segment('module') = 'openConnections.test'"
 scratchpad_file_source = "source.segment('module') = 'notebookFile'"
 scratchpad_runtime_target = "target.segment('module') = 'register' OR target.segment('module') = 'association' OR target.segment('module') = 'resultHost' OR target.segment('module') = 'runSelection' OR target.segment('module') = 'transactions' OR target.segment('module') = 'openConnections' OR target.segment('module') = 'offsetQuery' OR target.segment('module') = 'openRows'"
+workbench_tree_drag_source = "source.segment('module') = 'treeDragAndDrop'"
+workbench_destination_owner_target = "target ~ '**/dir:vscode-extension/dir:src/dir:cockpit/**' OR target ~ '**/dir:vscode-extension/dir:src/dir:dataView/**' OR target.segment('module') = 'sqlAuthoring'"
 
 [[ts.refs.where]]
 id = "connection-service-ownership-stays-with-connection-manager"
@@ -24,6 +26,13 @@ severity = "error"
 expr = "$scratchpad_file_source AND $structural_edge => NOT $scratchpad_runtime_target"
 message = "notebookFile owns the Scratchpad file format and its Association value objects, not connections, execution, or result-session lifecycle."
 rationale = "Reading and writing a Scratchpad must work without a live PostgreSQL Connection — a file opens before anything connects. Execution, explicit transactions and LIMIT/OFFSET result pages belong to register, association, resultHost and the row engine."
+
+[[ts.refs.where]]
+id = "workbench-ownership-keeps-tree-drag-destination-neutral"
+severity = "error"
+expr = "$workbench_tree_drag_source AND $structural_edge => NOT $workbench_destination_owner_target"
+message = "The Workbench tree publishes destination-neutral drag data; it never depends on a SQL, Data View, or Cockpit destination owner."
+rationale = "A tree drag means what its destination says: SQL editors and Scratchpads compose SQL, Data Views extend their query, and the Cockpit focuses the graph. Opening the graph is an explicit tree action, so the drag source may depend only on the neutral Workbench transport, never on a destination owner. Typed payloads carry Workbench intent; text/plain is only a readable object label for Chromium and generic editors."
 
 [[ts.refs.where]]
 id = "extension-host-composition-root-is-not-a-service-locator"

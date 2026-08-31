@@ -6,10 +6,6 @@ vi.mock("vscode", () => ({
   },
 }));
 
-vi.mock("../cockpit/dropBridge.js", () => ({
-  workbenchGraphDropUri: () => "postgresql-workbench-graph-drop:/source/test/payload",
-}));
-
 import {
   parseSqlAuthoringDrag,
   SQL_AUTHORING_OBJECT_MIME,
@@ -162,10 +158,8 @@ describe("Workbench TreeView graph dragging", () => {
       schema: "shop",
       name: "orders",
     });
-    expect(accepted.values.has("text/plain")).toBe(true);
-    expect(accepted.values.get("text/uri-list")).toBe(
-      "postgresql-workbench-graph-drop:/source/test/payload",
-    );
+    expect(accepted.values.get("text/plain")).toBe("shop.orders");
+    expect(accepted.values.has("text/uri-list")).toBe(false);
     expect(controller.activePayload(false)).toMatchObject({ symbolUri: object.symbolUri });
     expect(announce).toHaveBeenLastCalledWith(
       expect.objectContaining({ symbolUri: object.symbolUri }),
@@ -178,14 +172,52 @@ describe("Workbench TreeView graph dragging", () => {
     controller.handleDrag([{ kind: "schema", schema: "shop" } as PlpgsqlTreeItem], rejected.api);
     expect(rejected.values.has(SQL_AUTHORING_OBJECT_MIME)).toBe(false);
     expect(rejected.values.has(WORKBENCH_GRAPH_UNSUPPORTED_MIME)).toBe(true);
-    expect(rejected.values.has("text/plain")).toBe(true);
-    expect(rejected.values.get("text/uri-list")).toBe(
-      "postgresql-workbench-graph-drop:/source/test/payload",
-    );
+    expect(rejected.values.get("text/plain")).toBe("shop");
+    expect(rejected.values.has("text/uri-list")).toBe(false);
     expect(announce).toHaveBeenLastCalledWith(
       expect.objectContaining({ availability: "unsupported" }),
     );
     controller.dispose();
+    expect(announce).toHaveBeenLastCalledWith(null);
+  });
+
+  it("adds a neutral URI transport only when a Workbench destination owns the gesture", () => {
+    const controller = new WorkbenchTreeDragAndDropController(
+      undefined,
+      () => "postgresql-workbench-drag:/source/test",
+    );
+    const accepted = transfer();
+    controller.handleDrag([{ kind: "object", object } as unknown as PlpgsqlTreeItem], accepted.api);
+    expect(accepted.values.get("text/uri-list")).toBe("postgresql-workbench-drag:/source/test");
+  });
+
+  it("does not clear a newer same-object preview when an older gesture completes", () => {
+    const announce = vi.fn();
+    const handoffIds: string[] = [];
+    const controller = new WorkbenchTreeDragAndDropController(announce, (handoffId) => {
+      handoffIds.push(handoffId);
+      return `postgresql-workbench-drag:/handoff/${handoffId}`;
+    });
+    controller.handleDrag(
+      [{ kind: "object", object } as unknown as PlpgsqlTreeItem],
+      transfer().api,
+    );
+    controller.handleDrag(
+      [{ kind: "object", object } as unknown as PlpgsqlTreeItem],
+      transfer().api,
+    );
+
+    expect(handoffIds).toHaveLength(2);
+    expect(handoffIds[0]).not.toBe(handoffIds[1]);
+    controller.completeHandoff(handoffIds[0]);
+
+    expect(controller.activePayload(false)).toMatchObject({ symbolUri: object.symbolUri });
+    expect(controller.activeAuthoringPayload(false)).toMatchObject({ oid: object.oid });
+    expect(announce).not.toHaveBeenLastCalledWith(null);
+
+    controller.completeHandoff(handoffIds[1]);
+    expect(controller.activePayload(false)).toBeUndefined();
+    expect(controller.activeAuthoringPayload(false)).toBeUndefined();
     expect(announce).toHaveBeenLastCalledWith(null);
   });
 });

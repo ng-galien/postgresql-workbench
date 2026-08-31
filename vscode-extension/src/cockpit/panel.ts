@@ -24,6 +24,14 @@ export class WorkbenchGraphPanel implements vscode.Disposable {
     return this.panel?.visible ?? false;
   }
 
+  get active(): boolean {
+    return this.panel?.active ?? false;
+  }
+
+  get visibleViewColumn(): vscode.ViewColumn | undefined {
+    return this.panel?.visible ? this.panel.viewColumn : undefined;
+  }
+
   ensure(database: string): vscode.WebviewPanel {
     if (this.panel) {
       this.panel.reveal(vscode.ViewColumn.Active, false);

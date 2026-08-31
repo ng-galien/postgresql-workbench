@@ -31,6 +31,11 @@
 
   --vscode-editorWarning-foreground: #cca700;
   --vscode-editorWarning-background: #cca7001a;
+  --vscode-debugTokenExpression-name: #c586c0;
+  --vscode-debugTokenExpression-value: #cccccc;
+  --vscode-debugTokenExpression-string: #ce9178;
+  --vscode-debugTokenExpression-boolean: #4e94ce;
+  --vscode-debugTokenExpression-number: #b5cea8;
   --vscode-inputValidation-errorBackground: #5a1d1d;
   --vscode-inputValidation-errorBorder: #be1100;
   --vscode-inputValidation-errorForeground: #ffffff;
