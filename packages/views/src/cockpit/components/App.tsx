@@ -1,15 +1,22 @@
 import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
+import type { SqlEditorSurface } from "../../../../editor/src/contracts.js";
 import { readCockpitEvidence } from "../graph/evidence.js";
 import { useCockpitStore } from "../graph/store.js";
 import { requestNeighborhood } from "../graph/transport.js";
-import { post, subscribeToHost } from "../vscodeApi.js";
+import type { CockpitMessaging } from "../protocol.js";
 import { CockpitCanvas } from "./CockpitCanvas.js";
 import { CockpitEdgePopover } from "./CockpitEdgePopover.js";
 import { CockpitInspector, clampInspectorHeight, clampInspectorWidth } from "./CockpitInspector.js";
 import { CockpitToolbar } from "./CockpitToolbar.js";
 import { PerspectiveBar } from "./PerspectiveBar.js";
 
-export function App() {
+export function App({
+  messaging,
+  Editor,
+}: {
+  messaging: CockpitMessaging;
+  Editor: SqlEditorSurface;
+}) {
   const receive = useCockpitStore((state) => state.receive);
   const appearance = useCockpitStore((state) => state.appearance);
   const session = useCockpitStore((state) => state.session);
@@ -52,16 +59,16 @@ export function App() {
 
   const closePreview = useCallback(() => {
     dismissPreview();
-    post({ type: "dismissPreview" });
-  }, [dismissPreview]);
+    messaging.post({ type: "dismissPreview" });
+  }, [dismissPreview, messaging]);
 
   const setPreviewPinned = useCallback(
     (pinned: boolean) => {
       if (!preview) return;
       setSourcePinned(pinned);
-      post({ type: "pinPreview", symbolUri: preview.symbolUri, pinned });
+      messaging.post({ type: "pinPreview", symbolUri: preview.symbolUri, pinned });
     },
-    [preview, setSourcePinned],
+    [messaging, preview, setSourcePinned],
   );
 
   const resizeInspectorWidth = useCallback((width: number) => {
@@ -75,10 +82,10 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    const unsubscribe = subscribeToHost(receive);
-    post({ type: "ready" });
+    const unsubscribe = messaging.subscribe(receive);
+    messaging.post({ type: "ready" });
     return unsubscribe;
-  }, [receive]);
+  }, [messaging, receive]);
 
   useEffect(() => {
     const media = window.matchMedia("(max-width: 900px)");
@@ -115,9 +122,9 @@ export function App() {
 
   useEffect(() => {
     const listener = (event: KeyboardEvent) => {
-      if (event.altKey && event.key === "ArrowLeft") post({ type: "back" });
+      if (event.altKey && event.key === "ArrowLeft") messaging.post({ type: "back" });
       else if (event.altKey && event.key === "ArrowRight") {
-        post({ type: "forward" });
+        messaging.post({ type: "forward" });
       } else if ((event.metaKey || event.ctrlKey) && event.key.toLocaleLowerCase() === "z") {
         event.preventDefault();
         if (event.shiftKey) redo();
@@ -129,7 +136,7 @@ export function App() {
     };
     window.addEventListener("keydown", listener);
     return () => window.removeEventListener("keydown", listener);
-  }, [closePreview, inspectorOpen, redo, undo]);
+  }, [closePreview, inspectorOpen, messaging, redo, undo]);
 
   useEffect(() => {
     for (const identity of Object.keys(restoredExpansions)) {
@@ -137,9 +144,9 @@ export function App() {
       const key = `perspective:${session?.renderId ?? 0}:${identity}`;
       if (radiusRequests.current.keys.has(key)) continue;
       radiusRequests.current.keys.add(key);
-      requestNeighborhood(identity, "radius", "outgoing");
+      requestNeighborhood(messaging, identity, "radius", "outgoing");
     }
-  }, [exploration.neighborhoods, restoredExpansions, session?.renderId]);
+  }, [exploration.neighborhoods, messaging, restoredExpansions, session?.renderId]);
 
   useEffect(() => {
     const focus = exploration.focusIdentity;
@@ -154,23 +161,23 @@ export function App() {
       if (radiusRequests.current.keys.has(key)) continue;
       radiusRequests.current.keys.add(key);
       if (exploration.neighborhoods[identity]) reveal(identity, direction);
-      else requestNeighborhood(identity, "radius", direction);
+      else requestNeighborhood(messaging, identity, "radius", direction);
     }
-  }, [exploration, radius, reveal]);
+  }, [exploration, messaging, radius, reveal]);
 
   useEffect(() => {
     const enabled = (globalThis as typeof globalThis & { __PLPGSQL_GRAPH_EVIDENCE__?: boolean })
       .__PLPGSQL_GRAPH_EVIDENCE__;
     if (!enabled || !session || !evidenceKey) return;
     const timer = window.setTimeout(() => {
-      post({
+      messaging.post({
         type: "ack",
         renderId: session.renderId,
         rendered: readCockpitEvidence(),
       });
     }, 900);
     return () => window.clearTimeout(timer);
-  }, [evidenceKey, session]);
+  }, [evidenceKey, messaging, session]);
 
   if (!session) {
     return (
@@ -189,7 +196,10 @@ export function App() {
         } as CSSProperties
       }
     >
-      <CockpitToolbar onRecenter={() => setRecenterToken((value) => value + 1)} />
+      <CockpitToolbar
+        messaging={messaging}
+        onRecenter={() => setRecenterToken((value) => value + 1)}
+      />
       {error && <div className="cockpit-error">{error}</div>}
       {dropError && <div className="cockpit-error">{dropError}</div>}
       <main
@@ -208,10 +218,12 @@ export function App() {
             : undefined
         }
       >
-        <CockpitCanvas frameRequest={`${frameRequest}:${recenterToken}`} />
-        <CockpitEdgePopover />
+        <CockpitCanvas messaging={messaging} frameRequest={`${frameRequest}:${recenterToken}`} />
+        <CockpitEdgePopover messaging={messaging} />
         {inspectorOpen && (
           <CockpitInspector
+            Editor={Editor}
+            messaging={messaging}
             preview={preview}
             onClose={closePreview}
             placement={inspectorLayout === "bottom" ? "bottom" : "side"}
@@ -224,7 +236,7 @@ export function App() {
           />
         )}
       </main>
-      <PerspectiveBar />
+      <PerspectiveBar messaging={messaging} />
     </div>
   );
 }

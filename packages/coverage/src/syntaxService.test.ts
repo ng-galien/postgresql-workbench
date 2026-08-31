@@ -210,6 +210,10 @@ function tree(language: string, _source: string, root: SyntaxNode): SyntaxTree {
   return {
     file: `${language}.sql`,
     language,
+    target:
+      language === "plpgsql"
+        ? { language: "plpgsql", entryPoint: "block" }
+        : { language: "sql", entryPoint: "script" },
     focus: `${language}.sql`,
     focusLineRange: null,
     root,
@@ -232,6 +236,9 @@ function node(
   return {
     kind,
     language,
+    ...(language === "sql" || language === "plpgsql"
+      ? { languageRegion: { language, projection: { kind: "identity" as const } } }
+      : {}),
     named: true,
     error: false,
     missing: false,

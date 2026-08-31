@@ -16,19 +16,19 @@ interface RendererOutputItem {
   json(): unknown;
 }
 
-interface RendererApi {
+export interface RendererApi {
   renderOutputItem(outputItem: RendererOutputItem, element: HTMLElement): void;
   disposeOutputItem(outputId?: string): void;
 }
 
-interface RendererContext {
+export interface RendererContext {
   postMessage?(message: SqlNotebookRendererRequest): void;
   onDidReceiveMessage?(listener: (message: SqlNotebookRendererResponse) => void): {
     dispose(): void;
   };
 }
 
-export function activate(context: RendererContext = {}): RendererApi {
+export function activate(context: RendererContext = {}, hostThemeStyles = ""): RendererApi {
   const roots = new Map<string, Root>();
   const listeners = new Set<(message: SqlNotebookRendererResponse) => void>();
   const messageSubscription = context.onDidReceiveMessage?.((message) => {
@@ -54,7 +54,7 @@ export function activate(context: RendererContext = {}): RendererApi {
       shadow.replaceChildren();
 
       const style = page.createElement("style");
-      style.textContent = resultViewStylesInShadowRoot;
+      style.textContent = `${resultViewStylesInShadowRoot}\n${hostThemeStyles}`;
       const mount = page.createElement("div");
       shadow.append(style, mount);
 

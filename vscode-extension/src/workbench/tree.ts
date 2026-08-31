@@ -34,13 +34,14 @@ import {
   enrichDebugSessions,
   listDebugSessions,
 } from "../../../packages/dap/src/orphanSessions.js";
+import { postgresVisual } from "../../../packages/presentation/src/presentation.js";
 import { countLabel } from "../../../packages/rows/src/countLabel.js";
-import { postgresVisual } from "../../../packages/views/src/presentation.js";
 import type {
   ConnectionChange,
   ConnectionManager,
   DebugCapabilitySnapshot,
 } from "../connection/index.js";
+import { vscodeThemeColour } from "../presentation/vscodeTheme.js";
 import type { ScratchpadTransaction, ScratchpadTransactionManager } from "../scratchpad/index.js";
 import {
   OPEN_SQL_NOTEBOOK_COMMAND,
@@ -1329,7 +1330,7 @@ function themedIcon(id: string, color: string): vscode.ThemeIcon {
 
 function postgresThemeIcon(kind: string): vscode.ThemeIcon {
   const visual = postgresVisual(kind);
-  return themedIcon(visual.icon, visual.color);
+  return themedIcon(visual.icon, vscodeThemeColour(visual.color));
 }
 
 function objectTreeItem(

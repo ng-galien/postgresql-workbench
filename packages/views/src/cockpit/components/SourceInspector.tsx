@@ -1,33 +1,22 @@
-import { useMemo } from "react";
-import { postgresVisual } from "../../presentation.js";
-import { plainPostgresSource } from "../../source/highlight.js";
-import { PostgresSourceView } from "../../source/PostgresSourceView.js";
-import { withSemanticTokens } from "../../source/semanticTokens.js";
-import type { WorkbenchGraphSourcePreview } from "../protocol.js";
-import { post } from "../vscodeApi.js";
+import type { SqlEditorSurface } from "../../../../editor/src/contracts.js";
+import { postgresVisual } from "../../../../presentation/src/presentation.js";
+import type { CockpitMessaging, WorkbenchGraphSourcePreview } from "../protocol.js";
 
 function SourceInspector({
   preview,
+  messaging,
   onClose,
   pinned,
   onPinnedChange,
+  Editor,
 }: {
   preview: WorkbenchGraphSourcePreview;
+  messaging: CockpitMessaging;
   onClose: () => void;
   pinned: boolean;
   onPinnedChange(pinned: boolean): void;
+  Editor: SqlEditorSurface;
 }) {
-  /*
-   * The server counted lines from the top of the text it was asked about; the preview numbers its
-   * lines as the file does. The shift between the two is the first line's number.
-   */
-  const source = useMemo(() => {
-    const shift = (preview.lines[0]?.number ?? 1) - 1;
-    return withSemanticTokens(
-      plainPostgresSource(preview.lines),
-      (preview.tokens ?? []).map((token) => ({ ...token, line: token.line + shift })),
-    );
-  }, [preview.lines, preview.tokens]);
   const visual = postgresVisual(preview.kind);
   const file = preview.file.split("/").at(-1) ?? preview.file;
   return (
@@ -59,7 +48,7 @@ function SourceInspector({
             type="button"
             title="Open definition in the editor"
             aria-label="Open definition"
-            onClick={() => post({ type: "open", symbolUri: preview.symbolUri })}
+            onClick={() => messaging.post({ type: "open", symbolUri: preview.symbolUri })}
           >
             ↗
           </button>
@@ -77,7 +66,16 @@ function SourceInspector({
         lines {preview.firstLine}–{preview.lastLine}
       </div>
       <div className="source-body">
-        <PostgresSourceView source={source} />
+        <div className="source-editor postgres-editor-surface">
+          <Editor
+            uri={preview.editorUri}
+            text={preview.lines.map((line) => line.text).join("\n")}
+            languageId={preview.languageId}
+            ariaLabel="PostgreSQL source preview"
+            lineNumberStart={preview.lines[0]?.number ?? preview.firstLine}
+            readOnly
+          />
+        </div>
       </div>
     </aside>
   );

@@ -1,4 +1,4 @@
-import { sqlLexicalTokens } from "../analysis/lexicalTokens.js";
+import { postgresDocumentSyntaxFactsFromTree } from "../analysis/documentFacts.js";
 import { firstSyntaxErrorLine } from "../analysis/syntaxNodes.js";
 import type { SyntaxParser } from "../analysis/syntaxTree.js";
 import { analyzeSqlQuery } from "../query/analysis.js";
@@ -10,13 +10,10 @@ import type { SqlAuthoringSyntaxResult } from "./protocol.js";
 export interface SqlAuthoringSyntaxRequest {
   uri: string;
   source: string;
+  /** Explicit root grammar. Omission preserves the SQL behavior used by formatting/composition. */
+  language?: "sql" | "plpgsql";
   /** Offset being typed: a placeholder goes there so an unfinished statement still parses. */
   caret?: number;
-  /**
-   * Also read what the statement is made of. Asked for only where it is used — colouring — because
-   * the pieces need a parse that keeps the punctuation, and nothing else does.
-   */
-  lexical?: boolean;
 }
 
 /**
@@ -29,12 +26,29 @@ export async function answerSyntaxRequest(
   request: SqlAuthoringSyntaxRequest,
   parser: SyntaxParser,
   settings: SqlAuthoringSettings,
-  isPlpgsqlDocument?: (uri: string) => boolean,
 ): Promise<SqlAuthoringSyntaxResult> {
   const { uri, source, caret } = request;
+  if (request.language === "plpgsql") {
+    const tree = await parser.parse({
+      language: "plpgsql",
+      source,
+      uri,
+      maxDepth: settings.syntaxMaxDepth,
+      maxNodes: settings.syntaxMaxNodes,
+      namedOnly: false,
+    });
+    const facts = postgresDocumentSyntaxFactsFromTree(source, tree);
+    return {
+      hasError: tree.hasError,
+      truncated: tree.truncated,
+      facts,
+      plpgsqlBody: true,
+    };
+  }
   const {
     source: parsedSource,
     relations,
+    facts,
     caretRole,
   } = await documentRelations(parser, source, {
     uri,
@@ -50,20 +64,6 @@ export async function answerSyntaxRequest(
     namedOnly: true,
   };
   const syntax = await parser.parse({ language: "sql", ...budget });
-  const lexical = request.lexical
-    ? await sqlLexicalTokens(
-        await parser.parse({ language: "sql", ...budget, namedOnly: false }),
-        parsedSource,
-        (slice) =>
-          parser.parse({
-            language: "sql",
-            source: slice,
-            maxDepth: settings.syntaxMaxDepth,
-            maxNodes: settings.syntaxMaxNodes,
-            namedOnly: false,
-          }),
-      )
-    : undefined;
   if (!syntax.hasError || syntax.truncated) {
     // The composition engine rewrites from this analysis; it never scans the text itself.
     const analyzed = syntax.truncated
@@ -80,20 +80,16 @@ export async function answerSyntaxRequest(
       ...(analyzed?.shape === undefined ? {} : { shape: analyzed.shape }),
       relations,
       ...(caretRole === undefined ? {} : { caretRole }),
-      ...(lexical === undefined ? {} : { lexical }),
+      facts,
     };
   }
-  const plpgsqlBody =
-    isPlpgsqlDocument?.(uri) === true &&
-    !(await parser.parse({ language: "plpgsql", ...budget })).hasError;
   const errorLine = firstSyntaxErrorLine(syntax.root);
   return {
     hasError: true,
     truncated: false,
     ...(errorLine === undefined ? {} : { errorLine }),
-    ...(plpgsqlBody ? { plpgsqlBody } : {}),
     relations,
     ...(caretRole === undefined ? {} : { caretRole }),
-    ...(lexical === undefined ? {} : { lexical }),
+    facts,
   };
 }

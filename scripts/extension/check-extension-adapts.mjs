@@ -18,11 +18,16 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 
 const root = resolve("vscode-extension/src");
+const packagesRoot = resolve("packages");
 
 /** Files that adapt nothing to VS Code, and why each one is here. */
 const DECLARED = new Map([
   ["dapServer.ts", "the standalone DAP entry: it runs without VS Code, which is the point"],
   ["errorMessage.ts", "one line shared by every module; no package is reachable from all of them"],
+  [
+    "presentation/vscodeTheme.ts",
+    "the explicit projection from product visual roles to VS Code theme token names",
+  ],
   // Debt: engine code still living in the extension. Each needs a package that can hold it.
   ["cockpit/navigation.ts", "debt: where the graph has been and can go back to"],
   ["codeLens/policy.ts", "debt: what makes a call or a definition debuggable, read from the SQL"],
@@ -41,6 +46,12 @@ const DECLARED = new Map([
     "scratchpad/notebookFile.ts",
     "debt with no home: it needs catalog, dap, rows and views at once",
   ],
+  [
+    "scratchpad/notebookRenderer.ts",
+    "the VS Code notebook entrypoint that composes the host-neutral renderer with its theme adapter",
+  ],
+  ["webviews/vscodeApi.ts", "the browser adapter that acquires the ambient VS Code webview API"],
+  ["webviews/webviewPage.ts", "the VS Code webview transport and DOM composition adapter"],
 ]);
 
 function sourceFiles(directory) {
@@ -71,6 +82,19 @@ const stale = [...DECLARED.keys()].filter((name) => {
   }
 });
 
+/** Package code is reusable by Electron, the shell, or a server and cannot acquire a VS Code host. */
+function packageSourceFiles(directory) {
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) return packageSourceFiles(path);
+    return /\.(?:[cm]?js|tsx?)$/u.test(entry.name) ? [path] : [];
+  });
+}
+
+const packageHostAcquisitions = packageSourceFiles(packagesRoot)
+  .filter((path) => /\bacquireVsCodeApi\s*\(/u.test(readFileSync(path, "utf8")))
+  .map((path) => relative(packagesRoot, path));
+
 if (undeclared.length > 0) {
   process.stderr.write(
     `These adapt nothing to VS Code, so they belong in a package — or say here why they do not:\n${undeclared
@@ -85,4 +109,11 @@ if (stale.length > 0) {
       .join("")}`,
   );
 }
-process.exit(undeclared.length + stale.length > 0 ? 1 : 0);
+if (packageHostAcquisitions.length > 0) {
+  process.stderr.write(
+    `Package code must receive a typed host port and never acquire the VS Code API:\n${packageHostAcquisitions
+      .map((name) => `  ${name}\n`)
+      .join("")}`,
+  );
+}
+process.exit(undeclared.length + stale.length + packageHostAcquisitions.length > 0 ? 1 : 0);

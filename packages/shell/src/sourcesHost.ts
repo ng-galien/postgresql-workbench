@@ -5,7 +5,7 @@ import type {
   SourcesRequest,
   SourcesResponse,
 } from "../../catalog/src/sourcesProtocol.js";
-import type { NamedSqlToken } from "../../sql/src/languageServer/protocol.js";
+import { postgresSourceLanguageId } from "../../sql/src/text/documentLanguage.js";
 
 /**
  * The Sources view's host: the virtual sources the catalog projects, read in a browser.
@@ -16,17 +16,6 @@ import type { NamedSqlToken } from "../../sql/src/languageServer/protocol.js";
  * language server answers what its pieces and names are, through the client the Data View host
  * already holds.
  */
-
-/**
- * The language a virtual source opens under: what VS Code's own tabs declare for the same kind,
- * because the server's PL/pgSQL layer is gated on the id and must not care which shell asked.
- */
-const SOURCE_LANGUAGE_IDS: Readonly<Record<string, string>> = {
-  table: "postgresql-table",
-  view: "postgresql-view",
-  routine: "postgresql-function",
-  trigger: "postgresql-trigger",
-};
 
 export interface SourcesHost {
   handle(request: SourcesRequest): Promise<void>;
@@ -50,8 +39,6 @@ function listItem(document: VirtualSqlDocument): SourcesListItem {
 
 export async function startSourcesHost(options: {
   connection: { host: string; port: number; user: string; password: string; database: string };
-  /** What the server makes of a source; the Data View host lends its client. */
-  tokens(uri: string, text: string, languageId?: string): Promise<NamedSqlToken[]>;
   emit(response: SourcesResponse): void;
 }): Promise<SourcesHost> {
   const identity = {
@@ -94,22 +81,13 @@ export async function startSourcesHost(options: {
               return;
             }
             const named = listItem(document);
-            const tokens = await options
-              .tokens(
-                `sources:/${named.schema}/${encodeURIComponent(named.name)}.sql`,
-                document.content,
-                SOURCE_LANGUAGE_IDS[named.kind] ?? "sql",
-              )
-              .catch(() => []);
             options.emit({
               type: "sources/source",
               uri: document.uri,
+              editorUri: `file:///postgresql-workbench/sources/${encodeURIComponent(document.uri)}.sql`,
               title: named.schema ? `${named.schema}.${named.name}` : named.name,
-              lines: document.content.split("\n").map((text, index) => ({
-                number: index + 1,
-                text,
-              })),
-              tokens,
+              text: document.content,
+              languageId: postgresSourceLanguageId(named.kind, document.postgres?.routineKind),
             });
             return;
           }

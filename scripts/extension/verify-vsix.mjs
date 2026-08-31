@@ -205,7 +205,9 @@ try {
   }
 }
 
-process.stdout.write(`Verified launchable ${target} Code Moniker runtime in ${vsix}\n`);
+process.stdout.write(
+  `Verified launchable ${target} Code Moniker parser and PostgreSQL Workbench predictor in ${vsix}\n`,
+);
 
 async function waitForWorkspaceReady(workspaceClient, timeoutMs) {
   const deadline = Date.now() + timeoutMs;

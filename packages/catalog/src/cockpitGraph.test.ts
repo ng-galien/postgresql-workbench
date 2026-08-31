@@ -192,6 +192,7 @@ describe("SQL cockpit projection", () => {
     });
     expect(preview).toMatchObject({
       symbolUri: view.uri,
+      editorUri: `file:///postgresql-workbench/cockpit-previews/${encodeURIComponent(encodeURIComponent(view.uri))}.sql`,
       firstLine: 1,
       lastLine: 2,
       lines: [
@@ -199,6 +200,7 @@ describe("SQL cockpit projection", () => {
         { number: 2, text: "SELECT 'product'" },
       ],
     });
+    expect(preview.editorUri).not.toBe(view.file);
   });
 
   it("advertises secondary cockpit actions only for PL/pgSQL routines", () => {

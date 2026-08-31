@@ -13,11 +13,8 @@ import {
   answerSyntaxRequest,
   type SqlAuthoringSyntaxRequest,
 } from "../../packages/sql/src/languageServer/answerSyntax.js";
-import {
-  createSqlAuthoringClient,
-  type SqlAuthoringClient,
-} from "../../packages/sql/src/languageServer/client.js";
 import { sqlAuthoringEditStillApplies } from "../../packages/sql/src/languageServer/composeRequest.js";
+import { localSqlAuthoringHostServices } from "../../packages/sql/src/languageServer/hostServices.js";
 import {
   type SqlAuthoringScope,
   sqlAuthoringLanguageStatus,
@@ -26,14 +23,13 @@ import {
 import {
   SQL_AUTHORING_COMPOSE_REQUEST,
   SQL_AUTHORING_CONTEXT_REQUEST,
-  SQL_AUTHORING_PLPGSQL_TOKENS_REQUEST,
   SQL_AUTHORING_SEMANTIC_TOKENS_CHANGED,
   SQL_AUTHORING_SETTINGS_REQUEST,
   SQL_AUTHORING_SYNTAX_REQUEST,
   type SqlAuthoringComposeRequest,
   type SqlAuthoringComposeResult,
   type SqlAuthoringDocumentContext,
-  type SqlAuthoringPlpgsqlTokensResult,
+  type SqlAuthoringDocumentProjection,
   type SqlAuthoringSyntaxResult,
   sqlAuthoringContextMatchesToken,
 } from "../../packages/sql/src/languageServer/protocol.js";
@@ -53,13 +49,13 @@ import { POSTGRES_SOURCE_LANGUAGE_IDS } from "../../packages/sql/src/text/docume
 import { canonicalSqlIdentifier } from "../../packages/sql/src/text/identifiers.js";
 import { sqlStatementSlices } from "../../packages/sql/src/text/sqlLexing.js";
 import type { ConnectionManager } from "./connection/index.js";
-import { PlpgsqlSemanticTokensProvider } from "./plpgsql/index.js";
 import {
   resolveScratchpadAssociation,
   SQL_NOTEBOOK_TYPE,
   type SqlNotebookMetadata,
 } from "./scratchpad/index.js";
 import { CODE_MONIKER_URI_SCHEME } from "./sources/uri.js";
+import { SqlAuthoringWebviewServer } from "./sqlAuthoringWebview.js";
 
 const SQL_DOCUMENT_SELECTOR = [
   { language: "sql", scheme: "file" },
@@ -93,16 +89,12 @@ export interface SqlAuthoringNavigationTarget {
 
 /** The running SQL authoring server: every consumer composes through it, never through the engine. */
 export interface SqlAuthoringRegistration extends vscode.Disposable {
+  /** Authenticated loopback endpoint used only by Monaco clients inside Workbench webviews. */
+  webviewLanguageServerUrl: string;
   compose(
     request: SqlAuthoringComposeRequest,
     token?: vscode.CancellationToken,
   ): Promise<SqlAuthoringComposeResult>;
-  /**
-   * Asks the server, through the client every surface of the Workbench asks it through. The caller
-   * says only how its own documents reach the server, because that is the one thing VS Code does
-   * differently from a host that runs the server itself.
-   */
-  ask(sync: (uri: string, text: string) => Promise<void>): SqlAuthoringClient;
 }
 
 export async function registerSqlAuthoring(
@@ -111,13 +103,13 @@ export async function registerSqlAuthoring(
   index: WorkbenchIndexController,
   navigate?: (target: SqlAuthoringNavigationTarget) => Promise<boolean>,
   documentAssociation?: (uri: string) => string | undefined,
+  documentProjection?: (uri: string) => SqlAuthoringDocumentProjection | undefined,
 ): Promise<SqlAuthoringRegistration> {
   const module = context.asAbsolutePath(join("dist", "sql-authoring-server.js"));
   const serverOptions: ServerOptions = {
     run: { module, transport: TransportKind.ipc },
     debug: { module, transport: TransportKind.ipc },
   };
-  const plpgsqlSemanticTokens = new PlpgsqlSemanticTokensProvider(() => index.syntaxParser());
   const clientOptions: LanguageClientOptions = {
     documentSelector: [...SQL_DOCUMENT_SELECTOR],
     outputChannelName: "PostgreSQL Workbench SQL Authoring",
@@ -127,23 +119,6 @@ export async function registerSqlAuthoring(
     "PostgreSQL Workbench SQL Authoring",
     serverOptions,
     clientOptions,
-  );
-  const legend = () =>
-    client.initializeResult?.capabilities.semanticTokensProvider?.legend.tokenTypes ?? [];
-
-  client.onRequest(
-    SQL_AUTHORING_PLPGSQL_TOKENS_REQUEST,
-    async ({ uri }: { uri: string }): Promise<SqlAuthoringPlpgsqlTokensResult> => {
-      const document = vscode.workspace.textDocuments.find(
-        (candidate) => candidate.uri.toString() === uri,
-      );
-      if (!document) return { tokens: [] };
-      try {
-        return { tokens: await plpgsqlSemanticTokens.tokens(document) };
-      } catch {
-        return { tokens: [] };
-      }
-    },
   );
   client.onRequest<SqlAuthoringDocumentContext, never>(
     SQL_AUTHORING_CONTEXT_REQUEST,
@@ -162,15 +137,39 @@ export async function registerSqlAuthoring(
         request,
         await index.syntaxParser(),
         resolveSqlAuthoringSettings(request.uri),
-        (uri) =>
-          vscode.workspace.textDocuments.find((candidate) => candidate.uri.toString() === uri)
-            ?.languageId === "plpgsql",
       ),
   );
   client.onRequest<SqlAuthoringSettings, never>(SQL_AUTHORING_SETTINGS_REQUEST, (parameters) =>
     resolveSqlAuthoringSettings((parameters as { uri: string }).uri),
   );
   await client.start();
+
+  const webviewServer = new SqlAuthoringWebviewServer(
+    localSqlAuthoringHostServices({
+      parser: () => index.syntaxParser(),
+      documentContext: (uri) => {
+        const context = resolveDocumentContext(uri, connections, index, documentAssociation);
+        const projection = documentProjection?.(uri);
+        return context.status === "available" && projection ? { ...context, projection } : context;
+      },
+      documentSettings: resolveSqlAuthoringSettings,
+      onDidChangeContext: (listener) =>
+        vscode.Disposable.from(index.onDidChangeState(listener), connections.onChanged(listener)),
+    }),
+  );
+  let webviewLanguageServerUrl: string;
+  try {
+    await webviewServer.start();
+    const internalEditorEndpoint = vscode.Uri.parse(webviewServer.url().replace(/^ws:/u, "http:"));
+    const externalEditorEndpoint = await vscode.env.asExternalUri(internalEditorEndpoint);
+    webviewLanguageServerUrl = externalEditorEndpoint
+      .with({ scheme: externalEditorEndpoint.scheme === "https" ? "wss" : "ws" })
+      .toString();
+  } catch (error) {
+    webviewServer.dispose();
+    await client.stop();
+    throw error;
+  }
 
   const languageStatus = vscode.languages.createLanguageStatusItem(
     SQL_AUTHORING_LANGUAGE_STATUS_ID,
@@ -357,12 +356,14 @@ export async function registerSqlAuthoring(
     refreshContext,
     languageStatus,
     semanticTokenRefreshSubscriptions,
+    webviewServer,
     {
       dispose: () => void client.stop(),
     },
   );
   return {
     dispose: () => subscriptions.dispose(),
+    webviewLanguageServerUrl,
     compose: (request, token) =>
       token
         ? client.sendRequest<SqlAuthoringComposeResult>(
@@ -371,21 +372,6 @@ export async function registerSqlAuthoring(
             token,
           )
         : client.sendRequest<SqlAuthoringComposeResult>(SQL_AUTHORING_COMPOSE_REQUEST, request),
-    /*
-     * The requests go by method name, not by passing the protocol's request objects through the
-     * LanguageClient. The bundle holds two physical copies of the protocol module — this package's
-     * and the LanguageClient's own — and jsonrpc tells parameter structures apart by identity, so
-     * a request object from the other copy is misread and never reaches the wire: the Cockpit and
-     * the Data View both waited forever on tokens that were never requested.
-     */
-    ask: (sync) =>
-      createSqlAuthoringClient({
-        connection: {
-          sendRequest: (type, params) => client.sendRequest(type.method, params),
-        },
-        legend,
-        sync,
-      }),
   };
 }
 

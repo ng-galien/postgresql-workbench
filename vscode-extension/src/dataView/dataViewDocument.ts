@@ -16,12 +16,10 @@ import {
 import type {
   DataViewRequest,
   DataViewResponse,
-  DataViewSqlToken,
   DataViewState,
 } from "../../../packages/rows/src/dataView/dataViewProtocol.js";
 import { dataViewState } from "../../../packages/rows/src/dataView/dataViewState.js";
-import { dataViewFilterProposals } from "../../../packages/rows/src/dataView/filterCompletions.js";
-import { filterTokensOf } from "../../../packages/rows/src/dataView/filterTokens.js";
+import { filterDocumentProjection } from "../../../packages/rows/src/dataView/filterTokens.js";
 import { HiddenColumns } from "../../../packages/rows/src/dataView/hiddenColumns.js";
 import { initialDataViewQuery } from "../../../packages/rows/src/dataView/initialProjection.js";
 import { openDataViewResult, TableAccents } from "../../../packages/rows/src/dataView/openRows.js";
@@ -44,7 +42,7 @@ import {
 } from "../../../packages/rows/src/navigation.js";
 import type { OffsetResultSession } from "../../../packages/rows/src/offsetQuery.js";
 import type { SqlNotebookResultPayload } from "../../../packages/rows/src/resultPayload.js";
-import type { SqlAuthoringClient } from "../../../packages/sql/src/languageServer/client.js";
+import type { SqlAuthoringDocumentProjection } from "../../../packages/sql/src/languageServer/protocol.js";
 import { type QueryRewrite, SqlQueryModel } from "../../../packages/sql/src/query/model.js";
 import type {
   SqlAuthoringDragPayload,
@@ -56,7 +54,6 @@ import { configuredScratchpadStatementTimeoutMs } from "../scratchpad/scratchpad
 import { DATA_VIEW_SCRATCHES, dataViewQueryUri, dataViewScratchUri } from "./dataViewUri.js";
 import { exportAllRows, exportHeldRows, pickExportTarget } from "./exportResult.js";
 import { type DataViewHostServices, errorMessage } from "./hostServices.js";
-import { syncQueryDocument } from "./queryFileSystem.js";
 
 class LoadCancelledError extends Error {}
 
@@ -69,11 +66,6 @@ class LoadCancelledError extends Error {}
 export class DataViewDocument implements vscode.CustomDocument {
   readonly source: DataViewSource;
   readonly queryUri: vscode.Uri;
-  /** Hidden SQL document that only exists to ask the SQL authoring server for filter completions. */
-  private readonly completionUri: vscode.Uri;
-  private readonly tokensUri: vscode.Uri;
-  private readonly filterTokensUri: vscode.Uri;
-  private client?: SqlAuthoringClient;
   private readonly query: SqlQueryModel;
   private readonly edits = new PendingEdits();
   private readonly accents = new TableAccents();
@@ -109,9 +101,6 @@ export class DataViewDocument implements vscode.CustomDocument {
   ) {
     this.source = source;
     this.queryUri = dataViewQueryUri(source);
-    this.completionUri = dataViewScratchUri(source, "completion");
-    this.tokensUri = dataViewScratchUri(source, "tokens");
-    this.filterTokensUri = dataViewScratchUri(source, "filter-tokens");
     this.query = new SqlQueryModel(() => services.parser(), {
       budget: () => {
         const settings = services.authoringSettings(this.queryUri.toString());
@@ -130,6 +119,12 @@ export class DataViewDocument implements vscode.CustomDocument {
 
   /** Fires when the query draws from other relations than it did, so a tab can say the new ones. */
   readonly onDidChangeTitle = this._onDidChangeTitle.event;
+
+  authoringProjection(uri: string): SqlAuthoringDocumentProjection | undefined {
+    if (uri !== `${this.queryUri.toString()}.filter` || !this.query.analysis) return undefined;
+    const projection = filterDocumentProjection(this.query.text, this.query.analysis);
+    return projection ? { ...projection, revision: this.query.text } : undefined;
+  }
 
   get hasPendingEdits(): boolean {
     return this.edits.size > 0;
@@ -285,38 +280,6 @@ export class DataViewDocument implements vscode.CustomDocument {
         await this.compose(payload);
         return;
       }
-      case "data-view/complete": {
-        const analysis = this.query.analysis;
-        const items = analysis
-          ? await dataViewFilterProposals({
-              queryText: this.query.text,
-              analysis,
-              text: request.text,
-              offset: request.offset,
-              uri: this.completionUri.toString(),
-              ask: this.authoring(),
-            })
-          : [];
-        this.broadcast({ type: "data-view/completions", requestId: request.requestId, items });
-        return;
-      }
-      case "data-view/tokens": {
-        const of = request.of;
-        this.broadcast({
-          type: "data-view/tokens",
-          requestId: request.requestId,
-          tokens:
-            of === "query"
-              ? await this.semanticTokensOf(this.tokensUri, this.query.text)
-              : await filterTokensOf({
-                  queryText: this.query.text,
-                  analysis: this.query.analysis,
-                  text: of.filter,
-                  ask: (sql: string) => this.semanticTokensOf(this.filterTokensUri, sql),
-                }),
-        });
-        return;
-      }
       case "data-view/edit-query":
         await this.editQuery(request.clause);
         return;
@@ -377,28 +340,6 @@ export class DataViewDocument implements vscode.CustomDocument {
       this.services.queryFiles.set(scratch, text);
       await this.services.associate(scratch.toString(), source.connectionId);
     }
-  }
-
-  /**
-   * What the language server makes of the names in a SQL text, for a view to colour them with.
-   *
-   * The tokens are asked of a document holding exactly that text, so what a view shows is coloured
-   * by the same answer an editor tab would be. The legend comes back from the provider as well: a
-   * token number means nothing without it, and the kinds are the connection's to name.
-   */
-  private async semanticTokensOf(uri: vscode.Uri, sql: string): Promise<DataViewSqlToken[]> {
-    return (await this.authoring()?.semanticTokens(uri.toString(), sql)) ?? [];
-  }
-
-  /**
-   * The client this view asks the language server through, and the one way its documents reach it:
-   * a real SQL document the server's own client already watches, holding exactly this text.
-   */
-  private authoring(): SqlAuthoringClient | undefined {
-    this.client ??= this.services.askAuthoring((uri, text) =>
-      syncQueryDocument(this.services.queryFiles, uri, text),
-    );
-    return this.client;
   }
 
   private scratchUris(): vscode.Uri[] {

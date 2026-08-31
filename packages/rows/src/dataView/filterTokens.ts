@@ -1,6 +1,4 @@
 import { type SqlQueryAnalysis, setWhere } from "../../../sql/src/query/analysis.js";
-import { offsetAtPosition, positionAtOffset } from "../../../sql/src/text/positions.js";
-import type { DataViewSqlToken } from "./dataViewProtocol.js";
 
 /**
  * A condition on its own is not a statement: `brand.name LIKE 'F%'` names an alias no server can
@@ -12,57 +10,27 @@ import type { DataViewSqlToken } from "./dataViewProtocol.js";
  * found rather than guessed from what the WHERE looked like before.
  */
 const MARK = "\u0000";
+const END_MARK = "\u0001";
 
-export interface FilterDraft {
-  /** The query as it would be with this condition in its WHERE. */
-  text: string;
-  /** Where the condition starts in it. */
-  start: number;
+export interface FilterDocumentProjection {
+  prefix: string;
+  suffix: string;
 }
 
-/** The query with a condition in its WHERE, and where that condition landed. */
-export function filterDraft(
+/**
+ * Surrounding SQL for a filter document whose visible text is only the condition. Both boundaries
+ * are found in one engine rewrite, so the language server never guesses where the fragment lands.
+ */
+export function filterDocumentProjection(
   queryText: string,
   analysis: SqlQueryAnalysis,
-  condition: string,
-): FilterDraft | undefined {
-  const draft = setWhere(queryText, analysis, `${MARK}${condition || " "}`);
-  const start = draft.indexOf(MARK);
-  return start < 0 ? undefined : { text: draft.replace(MARK, ""), start };
-}
-
-/**
- * The tokens of a draft that fall inside the condition, counted from the condition's own start:
- * what the filter input needs to colour what a reader typed, and nothing about the query holding
- * it. A token straddling the edge belongs to the query, not to the condition, and is left there.
- */
-export function tokensWithinFilter(
-  tokens: readonly DataViewSqlToken[],
-  draft: FilterDraft,
-  condition: string,
-): DataViewSqlToken[] {
-  const end = draft.start + condition.length;
-  return tokens.flatMap((token) => {
-    const at = offsetAtPosition(draft.text, token);
-    if (at < draft.start || at + token.length > end) return [];
-    const { line, character } = positionAtOffset(condition, at - draft.start);
-    return [{ line, character, length: token.length, type: token.type }];
-  });
-}
-
-/**
- * The tokens of the condition being typed, asked of whoever can answer for a SQL text: the
- * extension asks a document it owns, the shell asks the language server directly. Everything
- * around that question — the draft, and carrying the answer back — is the same either way.
- */
-export async function filterTokensOf(options: {
-  queryText: string;
-  analysis: SqlQueryAnalysis | undefined;
-  text: string;
-  ask(sql: string): Promise<readonly DataViewSqlToken[]>;
-}): Promise<DataViewSqlToken[]> {
-  if (!options.analysis) return [];
-  const draft = filterDraft(options.queryText, options.analysis, options.text);
-  if (!draft) return [];
-  return tokensWithinFilter(await options.ask(draft.text), draft, options.text);
+): FilterDocumentProjection | undefined {
+  const marked = setWhere(queryText, analysis, `${MARK}${END_MARK}`);
+  const start = marked.indexOf(MARK);
+  const end = marked.indexOf(END_MARK);
+  if (start < 0 || end < start) return undefined;
+  return {
+    prefix: marked.slice(0, start),
+    suffix: marked.slice(end + END_MARK.length),
+  };
 }

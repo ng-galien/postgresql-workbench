@@ -14,6 +14,9 @@ describe("PostgreSQL source document languages", () => {
   });
 
   it("falls back safely for other SQL sources", () => {
+    expect(postgresSourceLanguageId("routine", "function")).toBe("postgresql-function");
+    expect(postgresSourceLanguageId("routine", "procedure")).toBe("postgresql-procedure");
+    expect(postgresSourceLanguageId("routine")).toBe("sql");
     expect(postgresSourceLanguageId("schema")).toBe("sql");
     expect(isPostgresSqlLanguage("typescript")).toBe(false);
   });

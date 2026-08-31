@@ -1,7 +1,9 @@
 import * as vscode from "vscode";
 import type { DataViewSource } from "../../../packages/rows/src/dataView/dataView.js";
 import type { DataViewRequest } from "../../../packages/rows/src/dataView/dataViewProtocol.js";
+import type { SqlAuthoringDocumentProjection } from "../../../packages/sql/src/languageServer/protocol.js";
 import viewBundles from "../../../packages/views/viewBundles.json" with { type: "json" };
+import { sqlEditorWebviewPage } from "../sqlEditorWebviewPage.js";
 import { webviewPage } from "../webviewPage.js";
 import { DataViewDocument } from "./dataViewDocument.js";
 import { DATA_VIEW_EDITOR_VIEW_TYPE, dataViewUri, parseDataViewUri } from "./dataViewUri.js";
@@ -69,6 +71,14 @@ export class DataViewEditorProvider
     return [...this.documents.values()];
   }
 
+  authoringProjection(uri: string): SqlAuthoringDocumentProjection | undefined {
+    for (const document of this.documents.values()) {
+      const projection = document.authoringProjection(uri);
+      if (projection) return projection;
+    }
+    return undefined;
+  }
+
   async openCustomDocument(uri: vscode.Uri): Promise<DataViewDocument> {
     const source = parseDataViewUri(uri);
     if (!source) throw new Error("This Data View link is not valid.");
@@ -103,11 +113,17 @@ export class DataViewEditorProvider
       light: vscode.Uri.joinPath(this.services.extensionUri, "icons", `${iconKind}-light.svg`),
       dark: vscode.Uri.joinPath(this.services.extensionUri, "icons", `${iconKind}-dark.svg`),
     };
+    const editor = sqlEditorWebviewPage(
+      panel.webview,
+      this.services.extensionUri,
+      this.services.sqlEditorLanguageServerUrl(),
+    );
     panel.webview.html = webviewPage({
       webview: panel.webview,
       extensionUri: this.services.extensionUri,
       title: "Data View",
       script: viewBundles.dataView.script,
+      ...editor,
     });
     const attachment = document.attach(panel.webview);
     const messages = panel.webview.onDidReceiveMessage((message: DataViewRequest) => {

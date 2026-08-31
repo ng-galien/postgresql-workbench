@@ -3,12 +3,11 @@ import { chordCap } from "../../platform.js";
 import { applySearchFacet, searchFacetSuggestions } from "../graph/searchSuggestions.js";
 import { useCockpitStore } from "../graph/store.js";
 import { focusSymbol } from "../graph/transport.js";
-import type { WorkbenchGraphSearchResult } from "../protocol.js";
-import { post } from "../vscodeApi.js";
+import type { CockpitMessaging, WorkbenchGraphSearchResult } from "../protocol.js";
 
 let searchSequence = 0;
 
-export function CockpitSearch() {
+export function CockpitSearch({ messaging }: { messaging: CockpitMessaging }) {
   const results = useCockpitStore((state) => state.searchResults);
   const resultQuery = useCockpitStore((state) => state.searchQuery);
   const facets = useCockpitStore((state) => state.session?.searchFacets) ?? {
@@ -37,10 +36,10 @@ export function CockpitSearch() {
   useEffect(() => {
     const timer = window.setTimeout(() => {
       const next = ++searchSequence;
-      post({ type: "search", requestId: next, query });
+      messaging.post({ type: "search", requestId: next, query });
     }, 120);
     return () => window.clearTimeout(timer);
-  }, [query]);
+  }, [messaging, query]);
 
   const suggestions = searchFacetSuggestions(query, facets);
   const visibleResults = suggestions.length === 0 && resultQuery === query.trim() ? results : [];
@@ -62,7 +61,7 @@ export function CockpitSearch() {
     }
     setOpen(false);
     setQuery("");
-    focusSymbol(result.symbolUri);
+    focusSymbol(messaging, result.symbolUri);
   };
   const chooseActive = () => {
     const suggestion = suggestions[active];

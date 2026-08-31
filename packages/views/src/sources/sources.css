@@ -8,7 +8,7 @@
   width: 300px;
   flex: none;
   overflow-y: auto;
-  border-right: 1px solid var(--vscode-panel-border, #2a2a2a);
+  border-right: 1px solid var(--pgw-divider);
   padding: 4px;
 }
 
@@ -20,8 +20,8 @@
   padding: 3px 6px;
   border: none;
   background: transparent;
-  color: var(--vscode-foreground);
-  font-family: var(--vscode-editor-font-family, monospace);
+  color: var(--pgw-text);
+  font-family: var(--pgw-code-font-family);
   font-size: 12px;
   text-align: left;
   cursor: pointer;
@@ -29,11 +29,11 @@
 }
 
 .sources-item:hover {
-  background: var(--vscode-list-hoverBackground, #2a2d2e);
+  background: var(--pgw-hover-background);
 }
 
 .sources-item.open {
-  background: var(--vscode-list-activeSelectionBackground, #094771);
+  background: var(--pgw-selection-background);
 }
 
 .sources-kind {
@@ -50,8 +50,12 @@
 }
 
 .sources-reader {
+  display: flex;
+  flex-direction: column;
   flex: 1;
-  overflow: auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
   padding: 8px 12px;
 }
 
@@ -59,7 +63,7 @@
   margin: 0 0 8px;
   font-size: 13px;
   font-weight: 600;
-  font-family: var(--vscode-editor-font-family, monospace);
+  font-family: var(--pgw-code-font-family);
 }
 
 .sources-empty,
@@ -69,5 +73,9 @@
 }
 
 .sources-notice {
-  color: var(--vscode-errorForeground, #f48771);
+  color: var(--pgw-error);
+}
+
+.sources-editor {
+  flex: 1;
 }

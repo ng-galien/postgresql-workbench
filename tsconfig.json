@@ -13,5 +13,5 @@
     "sourceMap": true
   },
   "include": ["packages/*/src/**/*"],
-  "exclude": ["node_modules", "dist", "packages/views"]
+  "exclude": ["node_modules", "dist", "packages/editor", "packages/shell", "packages/views"]
 }

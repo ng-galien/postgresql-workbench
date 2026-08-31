@@ -25,12 +25,12 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 
-const SERVER = "packages/sql/src/languageServer/server.ts";
+const REMOTE_HOST_CLIENT = "packages/sql/src/languageServer/hostServices.ts";
 
 /** Every host that must be able to answer the server on its own. */
 const HOSTS = [
-  { name: "The Extension Host", path: "vscode-extension/src/sqlAuthoring.ts" },
-  { name: "The composition shell", path: "packages/shell/src/languageServer.ts" },
+  { name: "The Extension Host", path: "vscode-extension/src/sqlAuthoring.ts", kind: "remote" },
+  { name: "The composition shell", path: "packages/shell/src/dataViewHost.ts", kind: "local" },
 ];
 
 /**
@@ -53,26 +53,55 @@ const root = resolve(".");
 const read = (path) => readFileSync(resolve(root, path), "utf8");
 const failures = [];
 
+const predictiveCodeMonikerCoupling = [
+  "createCodeMonikerSyntaxExpectationProvider",
+  "client.syntax.expect",
+  "client.syntaxExpectationProvider",
+  "syntaxExpectationProvider()",
+  "SQL_AUTHORING_EXPECTED_SYNTAX_REQUEST",
+];
+for (const directory of ["packages", "vscode-extension/src", "e2e"]) {
+  for (const file of sources(directory)) {
+    for (const coupling of predictiveCodeMonikerCoupling) {
+      if (!file.text.includes(coupling)) continue;
+      failures.push(
+        `${file.name} contains ${coupling}. Code Moniker owns parsing and regions, never PostgreSQL completion prediction.`,
+      );
+    }
+  }
+}
+
 /*
  * The questions the server sends back to whoever hosts it, read from the server itself rather than
  * from the protocol: the protocol also declares what a host sends inward, and a host owes no answer
- * to a question it is the one asking.
+ * to a question it is the one asking. The transport-free server delegates these calls to its
+ * injected host-services port; this file is the remote implementation of that port.
  */
 const questions = [
   ...new Set(
-    [...read(SERVER).matchAll(/connection\.sendRequest(?:<[^>]*>)?\(\s*(SQL_AUTHORING_\w+)/gu)].map(
-      (match) => match[1],
-    ),
+    [
+      ...read(REMOTE_HOST_CLIENT).matchAll(
+        /connection\.sendRequest(?:<[^>]*>)?\(\s*(SQL_AUTHORING_\w+)/gu,
+      ),
+    ].map((match) => match[1]),
   ),
 ];
 
 if (questions.length === 0) {
   failures.push(
-    `${SERVER} sends no request to its host. If that changed, this check now guards nothing: point it at where the server asks.`,
+    `${REMOTE_HOST_CLIENT} sends no request to its host. If that changed, this check now guards nothing: point it at the remote host-services adapter.`,
   );
 }
 
 for (const host of HOSTS) {
+  if (host.kind === "local") {
+    if (!read(host.path).includes("localSqlAuthoringHostServices(")) {
+      failures.push(
+        `${host.name} does not construct the autonomous local SQL authoring host services in ${host.path}.`,
+      );
+    }
+    continue;
+  }
   const answered = new Set(
     [...read(host.path).matchAll(/onRequest(?:<[^>]*>)?\(\s*(SQL_AUTHORING_\w+)/gu)].map(
       (match) => match[1],

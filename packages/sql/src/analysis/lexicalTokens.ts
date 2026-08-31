@@ -1,14 +1,12 @@
-import { byteToCharOffsets } from "../query/analysis.js";
 import {
   anonymousKind,
-  GRAMMAR_INJECTION_ROOT,
-  PLPGSQL_EMBEDDED_SQL_KINDS,
+  postgresLexicalKind,
   SQL_KEYWORD_PREFIX,
-  SQL_LEXICAL_KINDS,
   SQL_NAME_POSITIONS,
   type SqlLexicalKind,
 } from "./postgresGrammar.js";
-import type { SyntaxNode, SyntaxTree } from "./syntaxTree.js";
+import type { SyntaxLanguage, SyntaxNode, SyntaxTree } from "./syntaxTree.js";
+import { byteToUtf16Offsets } from "./textOffsets.js";
 
 /**
  * Placing what a statement is made of, read from the parse and from nothing else.
@@ -21,10 +19,9 @@ import type { SyntaxNode, SyntaxTree } from "./syntaxTree.js";
  * separates and which computes — is a single named decision. Nothing here reads the text to decide
  * what the text is.
  *
- * Where a grammar stops, the reading does not: a dollar-quoted body carries an injected PL/pgSQL
- * tree and the reader descends into it, and the PL/pgSQL grammar keeps its embedded SQL opaque —
- * a body's UPDATE is one leaf to it — so those slices are handed back to the SQL grammar and the
- * answer is walked the same way, however deep the nesting goes.
+ * A dollar-quoted body carries a parser-proven injected region and the reader descends into it.
+ * Where the syntax port exposes no region, this layer leaves the gap visible; it never reparses a
+ * hand-selected node or guesses another language from text.
  */
 
 /** One piece of a statement, placed as the language server counts: zero-based, in UTF-16 units. */
@@ -35,18 +32,12 @@ export interface SqlLexicalToken {
   type: SqlLexicalKind;
 }
 
-/** Parses one embedded slice with the SQL grammar; the host's parser, handed in by the caller. */
-export type EmbeddedSqlParse = (source: string) => Promise<SyntaxTree>;
-
 /** Every piece of a parsed statement, in the order a reader reads them. */
-export async function sqlLexicalTokens(
-  tree: SyntaxTree,
-  source: string,
-  parseEmbedded?: EmbeddedSqlParse,
-): Promise<SqlLexicalToken[]> {
-  const character = byteToCharOffsets(source);
+export function sqlLexicalTokens(tree: SyntaxTree, source: string): SqlLexicalToken[] {
+  const character = byteToUtf16Offsets(source);
   const lineStarts = startsOfLines(source);
   const tokens: SqlLexicalToken[] = [];
+  const rootLanguage = syntaxLanguage(tree.language);
 
   const emit = (startByte: number, endByte: number, type: SqlLexicalKind) => {
     const start = character(startByte);
@@ -54,39 +45,33 @@ export async function sqlLexicalTokens(
     if (end > start) tokens.push(...placed(start, end, type, lineStarts));
   };
 
-  // `shift` places a reparsed slice back where it was cut from: an embedded parse counts its
-  // bytes from its own start, and every piece it yields belongs at the slice's place in the whole.
-  const walk = async (node: SyntaxNode, ancestors: string[], shift: number): Promise<void> => {
-    const from = node.byteRange[0] + shift;
-    const to = node.byteRange[1] + shift;
-    const mapped = SQL_LEXICAL_KINDS.get(node.kind);
+  const walk = (node: SyntaxNode, language: SyntaxLanguage, ancestors: string[]): void => {
+    const nodeLanguage = node.languageRegion?.language ?? language;
+    const from = node.byteRange[0];
+    const to = node.byteRange[1];
+    const mapped = postgresLexicalKind(nodeLanguage, node.kind);
     if (mapped !== undefined) {
-      const injections = node.children.filter((child) => child.kind === GRAMMAR_INJECTION_ROOT);
+      const injections = node.children.filter((child) => child.languageRegion !== undefined);
       let cursor = from;
       for (const injection of injections) {
-        emit(cursor, injection.byteRange[0] + shift, mapped);
-        await walk(injection, ancestors, shift);
-        cursor = injection.byteRange[1] + shift;
+        emit(cursor, injection.byteRange[0], mapped);
+        walk(injection, nodeLanguage, ancestors);
+        cursor = injection.byteRange[1];
       }
       emit(cursor, to, mapped);
       return;
     }
-    if (PLPGSQL_EMBEDDED_SQL_KINDS.has(node.kind) && parseEmbedded && to > from) {
-      const embedded = await parseEmbedded(sliceByBytes(source, from, to));
-      await walk(embedded.root, [], from);
-      return;
-    }
     if (node.children.length === 0) {
-      const type = leafKind(node, ancestors);
+      const type = leafKind(nodeLanguage, node, ancestors);
       if (type) emit(from, to, type);
       return;
     }
     ancestors.push(node.kind);
-    for (const child of node.children) await walk(child, ancestors, shift);
+    for (const child of node.children) walk(child, nodeLanguage, ancestors);
     ancestors.pop();
   };
 
-  await walk(tree.root, [], 0);
+  walk(tree.root, rootLanguage, []);
   return tokens.sort((a, b) => a.line - b.line || a.character - b.character);
 }
 
@@ -94,17 +79,23 @@ export async function sqlLexicalTokens(
  * What a leaf is, by its kind alone. A keyword standing where a name stands is left to the names
  * layer, an identifier is always the names layer's, and an anonymous kind is the split's.
  */
-function leafKind(node: SyntaxNode, ancestors: readonly string[]): SqlLexicalKind | undefined {
+function leafKind(
+  language: SyntaxLanguage,
+  node: SyntaxNode,
+  ancestors: readonly string[],
+): SqlLexicalKind | undefined {
   if (node.kind.startsWith(SQL_KEYWORD_PREFIX)) {
-    return ancestors.some((kind) => SQL_NAME_POSITIONS.has(kind)) ? undefined : "keyword";
+    return language === "sql" && ancestors.some((kind) => SQL_NAME_POSITIONS.has(kind))
+      ? undefined
+      : "keyword";
   }
   if (node.named) return undefined;
   return anonymousKind(node.kind);
 }
 
-/** The characters whose bytes span `[from, to)` of the source's UTF-8 form. */
-function sliceByBytes(source: string, from: number, to: number): string {
-  return Buffer.from(source, "utf8").subarray(from, to).toString("utf8");
+function syntaxLanguage(language: string): SyntaxLanguage {
+  if (language === "sql" || language === "plpgsql") return language;
+  throw new Error(`Unsupported PostgreSQL document language: ${language}`);
 }
 
 /**

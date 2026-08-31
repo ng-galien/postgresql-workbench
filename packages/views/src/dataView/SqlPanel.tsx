@@ -1,11 +1,6 @@
-import { useMemo } from "react";
+import type { SqlEditorSurface } from "../../../editor/src/contracts.js";
 import { useClipboardCopy } from "../clipboardCopy.js";
 import { IconButton } from "../results/IconButton.js";
-import { plainPostgresSource, postgresSourceLines } from "../source/highlight.js";
-import { PostgresSourceView } from "../source/PostgresSourceView.js";
-import { withSemanticTokens } from "../source/semanticTokens.js";
-import type { DataViewMessaging } from "./DataViewApp.js";
-import { useSqlNames } from "./useSqlNames.js";
 
 /**
  * The SQL the view is running, read in the view. It opens and closes where the reader is, instead
@@ -19,17 +14,16 @@ import { useSqlNames } from "./useSqlNames.js";
  * have moved on since it asked.
  */
 export function SqlPanel({
+  uri,
   sql,
-  messaging,
+  Editor,
   onClose,
 }: {
+  uri: string;
   sql: string;
-  messaging: DataViewMessaging;
+  Editor: SqlEditorSurface;
   onClose: () => void;
 }) {
-  const source = useMemo(() => plainPostgresSource(postgresSourceLines(sql)), [sql]);
-  const named = useSqlNames(messaging, sql, "query");
-  const painted = useMemo(() => withSemanticTokens(source, named), [source, named]);
   const clipboard = useClipboardCopy();
 
   return (
@@ -50,7 +44,9 @@ export function SqlPanel({
         </span>
       </header>
       <div className="data-view-sql-body">
-        <PostgresSourceView source={painted} />
+        <div className="data-view-sql-editor postgres-editor-surface">
+          <Editor uri={uri} text={sql} languageId="sql" ariaLabel="Query SQL" readOnly />
+        </div>
       </div>
     </section>
   );

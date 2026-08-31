@@ -57,6 +57,7 @@ packages/              # The engine, one package per subject; boundaries enforce
     languageServer/     # Completion, semantic tokens, diagnostics — the front door
   catalog/             # PostgreSQL catalog projection, DDL sync, Cockpit graph
   rows/                # Reading and editing relation rows: editability, edits, Data View engine
+  presentation/        # Host-neutral visual roles, default theme, PostgreSQL identities
   views/               # The React views: result grid, Data View, Cockpit, debug results
   coverage/            # pgTAP coverage analysis and instrumentation
   dap/                 # @ng-galien/postgresql-dap — its own version and release tag

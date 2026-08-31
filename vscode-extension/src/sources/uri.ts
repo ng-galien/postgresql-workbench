@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import {
   type PostgresSourcePresentationInput,
   postgresSourcePresentation,
-} from "../../../packages/views/src/presentation.js";
+} from "../../../packages/presentation/src/presentation.js";
 
 export const CODE_MONIKER_URI_SCHEME = "code+moniker";
 

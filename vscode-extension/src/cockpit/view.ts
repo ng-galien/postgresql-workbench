@@ -70,8 +70,10 @@ export interface WorkbenchGraphViewOptions {
   workspaceState?: vscode.Memento;
   collectRenderEvidence?: boolean;
   treeDragPayload?: (consume: boolean) => WorkbenchGraphDragPayload | undefined;
-  /** What the SQL authoring server makes of a preview's source; absent while it is starting. */
-  sourceNames?: (text: string) => Promise<WorkbenchGraphSourcePreview["tokens"]>;
+  sourceEditor?: (
+    symbolUri: string,
+  ) => Pick<WorkbenchGraphSourcePreview, "editorUri" | "languageId"> | undefined;
+  sqlEditorLanguageServerUrl(): string;
 }
 
 // Explicit debt exception: this host controller still coordinates navigation/session state,
@@ -112,28 +114,21 @@ export class WorkbenchGraphView implements vscode.Disposable {
   private readonly selectInTree: NonNullable<WorkbenchGraphViewOptions["selectInTree"]>;
   private readonly workspaceState: vscode.Memento | undefined;
   private readonly treeDragPayload: NonNullable<WorkbenchGraphViewOptions["treeDragPayload"]>;
-  private readonly sourceNames: (text: string) => Promise<WorkbenchGraphSourcePreview["tokens"]>;
+  private readonly sourceEditor: NonNullable<WorkbenchGraphViewOptions["sourceEditor"]>;
   private readonly configurationSubscription: vscode.Disposable;
 
-  /**
-   * The preview as the view paints it: the lines, and what the server made of them. Colour is an
-   * ornament here, never a gate: a server that answers slowly or not at all costs the preview its
-   * names, not the Cockpit its panel — which is exactly what happened when this awaited freely.
-   */
-  private async presentedPreview(
+  /** The preview projected onto the document identity its embedded editor opens. */
+  private presentedPreview(
     source: Parameters<typeof sourcePreviewPresentation>[0],
-  ): Promise<WorkbenchGraphSourcePreview> {
+  ): WorkbenchGraphSourcePreview {
     const preview = sourcePreviewPresentation(source);
-    const tokens = await Promise.race([
-      this.sourceNames(preview.lines.map((line) => line.text).join("\n")).catch(() => undefined),
-      new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), 1_500)),
-    ]);
-    return tokens && tokens.length > 0 ? { ...preview, tokens } : preview;
+    const editor = this.sourceEditor(preview.symbolUri);
+    return editor ? { ...preview, ...editor } : preview;
   }
 
   constructor(options: WorkbenchGraphViewOptions) {
     this.index = options.index;
-    this.sourceNames = options.sourceNames ?? (async () => undefined);
+    this.sourceEditor = options.sourceEditor ?? (() => undefined);
     this.openDefinition = options.openDefinition;
     this.showActions = options.showActions;
     this.selectInTree = options.selectInTree ?? (async () => undefined);
@@ -143,6 +138,7 @@ export class WorkbenchGraphView implements vscode.Disposable {
       options.extensionUri,
       (message) => this.receive(message),
       () => this.reset(),
+      options.sqlEditorLanguageServerUrl,
       options.collectRenderEvidence ?? false,
     );
     this.configurationSubscription = vscode.workspace.onDidChangeConfiguration((event) => {

@@ -2,13 +2,18 @@ import { Fragment } from "react";
 import { relationClass, relationLabel } from "../graph/relationPresentation.js";
 import { useCockpitStore } from "../graph/store.js";
 import { focusSymbol } from "../graph/transport.js";
-import type { CockpitDirection } from "../protocol.js";
-import { post } from "../vscodeApi.js";
+import type { CockpitDirection, CockpitMessaging } from "../protocol.js";
 import { CockpitSearch } from "./CockpitSearch.js";
 
 const RELATIONS = ["calls", "reads", "writes", "references", "uses_type"];
 
-export function CockpitToolbar({ onRecenter }: { onRecenter: () => void }) {
+export function CockpitToolbar({
+  messaging,
+  onRecenter,
+}: {
+  messaging: CockpitMessaging;
+  onRecenter: () => void;
+}) {
   const session = useCockpitStore((state) => state.session);
   const relationFilters = useCockpitStore((state) => state.relationFilters);
   const toggleRelation = useCockpitStore((state) => state.toggleRelation);
@@ -34,7 +39,7 @@ export function CockpitToolbar({ onRecenter }: { onRecenter: () => void }) {
             type="button"
             title="Back (Alt+Left)"
             disabled={!session?.canBack}
-            onClick={() => post({ type: "back" })}
+            onClick={() => messaging.post({ type: "back" })}
           >
             ←
           </button>
@@ -42,7 +47,7 @@ export function CockpitToolbar({ onRecenter }: { onRecenter: () => void }) {
             type="button"
             title="Forward (Alt+Right)"
             disabled={!session?.canForward}
-            onClick={() => post({ type: "forward" })}
+            onClick={() => messaging.post({ type: "forward" })}
           >
             →
           </button>
@@ -51,13 +56,13 @@ export function CockpitToolbar({ onRecenter }: { onRecenter: () => void }) {
           {session?.breadcrumbs.map((step, index) => (
             <Fragment key={step.prefix}>
               {index > 0 && <span>›</span>}
-              <button type="button" onClick={() => focusSymbol(step.prefix)}>
+              <button type="button" onClick={() => focusSymbol(messaging, step.prefix)}>
                 {step.label}
               </button>
             </Fragment>
           ))}
         </nav>
-        <CockpitSearch />
+        <CockpitSearch messaging={messaging} />
         <RadiusControl direction="incoming" value={radius.incoming} setValue={setRadius} />
         <RadiusControl direction="outgoing" value={radius.outgoing} setValue={setRadius} />
         <span className="cockpit-counts">

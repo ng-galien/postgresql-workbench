@@ -11,7 +11,6 @@ import { composeIntoDataViewQuery, dataViewAdditions } from "../../rows/src/data
 import { conditionForCell, withCondition } from "../../rows/src/dataView/cellFilter.js";
 import {
   type DataViewAddition,
-  type DataViewCompletion,
   type DataViewProjection,
   type DataViewSource,
   dataViewRelationOwning,
@@ -20,12 +19,10 @@ import {
 import type {
   DataViewRequest,
   DataViewResponse,
-  DataViewSqlToken,
   DataViewState,
 } from "../../rows/src/dataView/dataViewProtocol.js";
 import { dataViewState } from "../../rows/src/dataView/dataViewState.js";
-import { dataViewFilterProposals } from "../../rows/src/dataView/filterCompletions.js";
-import { filterTokensOf } from "../../rows/src/dataView/filterTokens.js";
+import { filterDocumentProjection } from "../../rows/src/dataView/filterTokens.js";
 import { HiddenColumns } from "../../rows/src/dataView/hiddenColumns.js";
 import { initialDataViewQuery } from "../../rows/src/dataView/initialProjection.js";
 import { openDataViewResult, TableAccents } from "../../rows/src/dataView/openRows.js";
@@ -47,7 +44,10 @@ import { navigationReadsPostgres } from "../../rows/src/navigation.js";
 import type { OffsetResultSession } from "../../rows/src/offsetQuery.js";
 import { createCodeMonikerSyntaxParser } from "../../sql/src/analysis/codeMonikerSyntax.js";
 import type { SyntaxParser } from "../../sql/src/analysis/syntaxTree.js";
-import type { SqlQueryAnalysis } from "../../sql/src/query/analysis.js";
+import {
+  localSqlAuthoringHostServices,
+  type SqlAuthoringHostServices,
+} from "../../sql/src/languageServer/hostServices.js";
 import { composePostgresSql } from "../../sql/src/query/composition.js";
 import { type QueryRewrite, SqlQueryModel } from "../../sql/src/query/model.js";
 import {
@@ -55,7 +55,6 @@ import {
   type SqlAuthoringDragPayload,
   type SqlAuthoringSnapshot,
 } from "../../sql/src/snapshot.js";
-import { type SqlLanguageServer, startSqlLanguageServer } from "./languageServer.js";
 
 /**
  * The Data View's Extension Host, without VS Code. Every other part is the real one: PostgreSQL
@@ -68,8 +67,8 @@ export interface DataViewHostOptions {
   connection: { host: string; port: number; user: string; password: string; database: string };
   /** The relation the view opens on. Without one it opens empty, and composition starts there. */
   relation?: { schema: string; name: string };
-  /** The bundled SQL authoring server; without one the WHERE input falls back to its own columns. */
-  languageServerPath?: string;
+  /** Optional staged Code Moniker runtime used by the development shell. */
+  codeMonikerRuntimePath?: string;
   /** Whether identity and relationship columns start hidden. The product reads this from settings. */
   hideKeyColumns?: boolean;
   /** Optional harness latency used to make transient navigation states observable in UI tests. */
@@ -82,11 +81,8 @@ export interface DataViewDevHost {
   handle(request: DataViewRequest): Promise<void>;
   /** Puts the query back to the one the view opens with, so a scenario starts from a known state. */
   reset(): Promise<void>;
-  /**
-   * The language client this host asks the server through, for the shell's other surfaces to ask
-   * the same one: one server, one client, however many pages are looking.
-   */
-  language: SqlLanguageServer | undefined;
+  /** Services each browser LSP session receives; the WebSocket transport remains outside. */
+  authoring: SqlAuthoringHostServices;
   dispose(): Promise<void>;
 }
 
@@ -101,6 +97,7 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
   const session: LocalCodeMonikerSession = await ensureLocalCodeMonikerWorkspace({
     workspaceRoots: [process.cwd()],
     clientName: "postgresql-workbench-data-view-dev",
+    ...(options.codeMonikerRuntimePath ? { runtimePath: options.codeMonikerRuntimePath } : {}),
   });
   const parser: SyntaxParser = createCodeMonikerSyntaxParser(session.client);
 
@@ -125,15 +122,6 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
   let client = await connect(true);
   const snapshot = await readSnapshot(client, connectionId, connection.database);
 
-  // The real completions come from the language server; it has no parser, and answers back here.
-  const languageServer = options.languageServerPath
-    ? await startSqlLanguageServer({
-        serverPath: options.languageServerPath,
-        parser,
-        snapshot: () => snapshot,
-      })
-    : undefined;
-
   const source: DataViewSource = relation
     ? {
         kind: "relation",
@@ -145,8 +133,8 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
       }
     : { kind: "sql", connectionId, database: connection.database, sql: "", label: "" };
   const queryUri = relation
-    ? `data-view:/${relation.schema}.${relation.name}.sql`
-    : "data-view:/query.sql";
+    ? `file:///postgresql-workbench/data-view/${encodeURIComponent(`${relation.schema}.${relation.name}`)}.sql`
+    : "file:///postgresql-workbench/data-view/query.sql";
   const query = new SqlQueryModel(async () => parser);
   const initialText = relation
     ? await initialDataViewQuery(source, snapshot, DEFAULT_SQL_AUTHORING_SETTINGS, async () =>
@@ -154,6 +142,34 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
       )
     : "";
   await query.setText(initialText);
+  let queryContextRevision = 1;
+  const contextListeners = new Set<() => void>();
+  const changedAuthoringContext = () => {
+    queryContextRevision += 1;
+    for (const listener of contextListeners) listener();
+  };
+  const filterUri = `${queryUri}.filter`;
+  const authoring = localSqlAuthoringHostServices({
+    parser: async () => parser,
+    documentContext(uri) {
+      const projection =
+        uri === filterUri && query.analysis
+          ? filterDocumentProjection(query.text, query.analysis)
+          : undefined;
+      return {
+        status: "available",
+        snapshot,
+        ...(projection
+          ? { projection: { ...projection, revision: String(queryContextRevision) } }
+          : {}),
+      };
+    },
+    documentSettings: () => DEFAULT_SQL_AUTHORING_SETTINGS,
+    onDidChangeContext(listener) {
+      contextListeners.add(listener);
+      return { dispose: () => contextListeners.delete(listener) };
+    },
+  });
 
   const accents = new TableAccents();
   const hidden = new HiddenColumns();
@@ -410,31 +426,9 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
       return;
     }
     await query.setText(outcome.text);
+    changedAuthoringContext();
     await load();
   };
-
-  /**
-   * The typed condition lands in a copy of the query that carries the real FROM clause, so the
-   * server proposes against the relations the query names — the same trick the extension plays
-   * with a hidden document, without a hidden document.
-   */
-  const filterProposals = async (
-    analysis: SqlQueryAnalysis,
-    text: string,
-    offset: number,
-  ): Promise<DataViewCompletion[]> =>
-    dataViewFilterProposals({
-      queryText: query.text,
-      analysis,
-      text,
-      offset,
-      uri: `${queryUri}.filter`,
-      ask: languageServer,
-    });
-
-  /** What the server makes of the names in a SQL text; nothing at all when no server answers. */
-  const askTokens = async (uri: string, sql: string): Promise<DataViewSqlToken[]> =>
-    (await languageServer?.semanticTokens(uri, sql)) ?? [];
 
   const compose = async (addition: DataViewAddition, relationChoice?: number) => {
     const outcome = await composeIntoDataViewQuery({
@@ -463,15 +457,17 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
       return;
     }
     await query.setText(outcome.text);
+    changedAuthoringContext();
     await load();
   };
 
   return {
-    language: languageServer,
+    authoring,
     async reset() {
       edits.clear();
       hidden.clear();
       await query.setText(initialText);
+      changedAuthoringContext();
       await load();
     },
     async handle(request) {
@@ -554,32 +550,6 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
           await rewrite(
             query.filtered(withCondition(query.whereText() ?? "", written.condition), 2),
           );
-          return;
-        }
-        case "data-view/tokens": {
-          const of = request.of;
-          emit({
-            type: "data-view/tokens",
-            requestId: request.requestId,
-            tokens:
-              of === "query"
-                ? await askTokens(queryUri, query.text)
-                : await filterTokensOf({
-                    queryText: query.text,
-                    analysis: query.analysis,
-                    text: of.filter,
-                    ask: (sql) => askTokens(`${queryUri}.filter-tokens`, sql),
-                  }),
-          });
-          return;
-        }
-        case "data-view/complete": {
-          const analysis = query.analysis;
-          emit({
-            type: "data-view/completions",
-            requestId: request.requestId,
-            items: analysis ? await filterProposals(analysis, request.text, request.offset) : [],
-          });
           return;
         }
         case "data-view/navigate": {
@@ -677,7 +647,7 @@ export async function startDataViewHost(options: DataViewHostOptions): Promise<D
       }
     },
     async dispose() {
-      await languageServer?.dispose().catch(() => {});
+      contextListeners.clear();
       await state.session?.close?.().catch(() => {});
       await client.end().catch(() => {});
       await session.dispose?.().catch(() => {});

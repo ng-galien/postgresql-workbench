@@ -1,12 +1,10 @@
 import type { DebugResultCell } from "../../../dap/src/debugger/launch/index.js";
-import type { NamedSqlToken } from "../../../sql/src/languageServer/protocol.js";
 import type { DataViewExportChoice, DataViewExportScope } from "../export.js";
 import type { FollowLinkRequest } from "../followLink.js";
 import type { ResultNavigationCommand } from "../navigation.js";
 import type { SqlNotebookResultPayload } from "../resultPayload.js";
 import type {
   DataViewAddition,
-  DataViewCompletion,
   DataViewEdit,
   DataViewEditability,
   DataViewProjection,
@@ -68,7 +66,6 @@ export type DataViewRequest =
   | { type: "data-view/filter"; text: string }
   /** Filter on what a cell holds: the host writes the condition, so the reader reads it. */
   | { type: "data-view/filter-cell"; ordinal: number; value: string | null; negate: boolean }
-  | { type: "data-view/complete"; requestId: number; text: string; offset: number }
   | { type: "data-view/edit-query"; clause?: "select" }
   | { type: "data-view/apply-query" }
   /** Everything a reader can do to what is waiting to be written; the row engine names them. */
@@ -104,19 +101,7 @@ export type DataViewRequest =
       scope: DataViewExportScope;
       selected?: { from: number; to: number; ordinals: number[] };
     }
-  | { type: "data-view/open-sql" }
-  /**
-   * Colour some SQL the way the editor colours it: the query as it stands, or a condition being
-   * typed — which the host asks about as part of the query, since a condition alone names aliases
-   * nothing could resolve.
-   */
-  | { type: "data-view/tokens"; requestId: number; of: "query" | { filter: string } };
-
-/**
- * One semantic token of a SQL statement, as the language server reads it. The host resolves the
- * kind against the server's legend before sending it, so nothing downstream holds a legend.
- */
-export type DataViewSqlToken = NamedSqlToken;
+  | { type: "data-view/open-sql" };
 
 export type DataViewResponse =
   | { type: "data-view/state"; state: DataViewState }
@@ -130,11 +115,5 @@ export type DataViewResponse =
       title: string;
       choices: Array<{ index: number; label: string; description: string }>;
     }
-  | { type: "data-view/completions"; requestId: number; items: DataViewCompletion[] }
-  /**
-   * What the language server makes of the SQL it was asked about: one token per name it
-   * recognised, carrying the kind it is — a table, a column, an alias.
-   */
-  | { type: "data-view/tokens"; requestId: number; tokens: DataViewSqlToken[] }
   | { type: "data-view/progress"; loadedRowCount: number }
   | { type: "data-view/notice"; message: string; severity: "info" | "error" };

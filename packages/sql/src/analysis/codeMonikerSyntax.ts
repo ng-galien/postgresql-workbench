@@ -1,4 +1,6 @@
 import type {
+  SyntaxLanguage,
+  SyntaxLanguageRegion,
   SyntaxNode,
   SyntaxParseRequest,
   SyntaxParser,
@@ -14,6 +16,8 @@ export interface CodeMonikerSyntaxPoint {
 export interface CodeMonikerSyntaxNode {
   kind: string;
   language?: string | null;
+  entry_point?: "script" | "statement" | "expression" | "block" | null;
+  has_error?: boolean | null;
   named: boolean;
   error: boolean;
   missing: boolean;
@@ -61,18 +65,26 @@ export function createCodeMonikerSyntaxParser(client: CodeMonikerSyntaxClient): 
         },
         "syntax_tree",
       );
-      return mapSyntaxTree(result);
+      return mapSyntaxTree(result, request.language);
     },
   };
 }
 
-function mapSyntaxTree(tree: CodeMonikerSyntaxTree): SyntaxTree {
+function mapSyntaxTree(tree: CodeMonikerSyntaxTree, requestedLanguage: SyntaxLanguage): SyntaxTree {
+  const language = syntaxLanguage(tree.language, "syntax tree");
+  if (language !== requestedLanguage) {
+    throw new Error(`Code Moniker returned ${language} for a ${requestedLanguage} parse request`);
+  }
   return {
     file: tree.file,
-    language: tree.language,
+    language,
+    target:
+      language === "sql"
+        ? { language: "sql", entryPoint: "script" }
+        : { language: "plpgsql", entryPoint: "block" },
     focus: tree.focus,
     focusLineRange: tree.focus_line_range,
-    root: mapSyntaxNode(tree.root),
+    root: mapSyntaxNode(tree.root, true),
     emittedNodes: tree.emitted_nodes,
     totalNodes: tree.total_nodes,
     maxDepth: tree.max_depth,
@@ -81,10 +93,17 @@ function mapSyntaxTree(tree: CodeMonikerSyntaxTree): SyntaxTree {
   };
 }
 
-function mapSyntaxNode(node: CodeMonikerSyntaxNode): SyntaxNode {
+function mapSyntaxNode(node: CodeMonikerSyntaxNode, documentRoot = false): SyntaxNode {
+  const injectedLanguage =
+    documentRoot || node.language == null ? undefined : supportedSyntaxLanguage(node.language);
+  const languageRegion =
+    injectedLanguage === undefined
+      ? undefined
+      : mapLanguageRegion(injectedLanguage, node.entry_point, node.has_error);
   return {
     kind: node.kind,
     language: node.language ?? null,
+    ...(languageRegion === undefined ? {} : { languageRegion }),
     named: node.named,
     error: node.error,
     missing: node.missing,
@@ -92,8 +111,43 @@ function mapSyntaxNode(node: CodeMonikerSyntaxNode): SyntaxNode {
     start: mapSyntaxPoint(node.start),
     end: mapSyntaxPoint(node.end),
     text: node.text,
-    children: node.children.map(mapSyntaxNode),
+    children: node.children.map((child) => mapSyntaxNode(child)),
   };
+}
+
+function mapLanguageRegion(
+  language: SyntaxLanguage,
+  entryPoint: CodeMonikerSyntaxNode["entry_point"],
+  hasError: CodeMonikerSyntaxNode["has_error"],
+): SyntaxLanguageRegion {
+  if (language === "plpgsql") {
+    return {
+      language,
+      ...(entryPoint === "block" ? { entryPoint } : {}),
+      ...(typeof hasError === "boolean" ? { hasError } : {}),
+      projection: { kind: "identity" },
+    };
+  }
+  return {
+    language,
+    ...(entryPoint === "script" || entryPoint === "statement" || entryPoint === "expression"
+      ? { entryPoint }
+      : {}),
+    ...(typeof hasError === "boolean" ? { hasError } : {}),
+    projection: { kind: "identity" },
+  };
+}
+
+function supportedSyntaxLanguage(language: string): SyntaxLanguage | undefined {
+  return language === "sql" || language === "plpgsql" ? language : undefined;
+}
+
+function syntaxLanguage(language: string, subject: string): SyntaxLanguage {
+  const supported = supportedSyntaxLanguage(language);
+  if (supported === undefined) {
+    throw new Error(`Unsupported ${subject} language: ${language}`);
+  }
+  return supported;
 }
 
 function mapSyntaxPoint(point: CodeMonikerSyntaxPoint): SyntaxPoint {

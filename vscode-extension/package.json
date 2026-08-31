@@ -214,45 +214,6 @@
         }
       }
     ],
-    "grammars": [
-      {
-        "language": "plpgsql",
-        "scopeName": "source.plpgsql",
-        "path": "./syntaxes/plpgsql.tmLanguage.json"
-      },
-      {
-        "language": "postgresql-table",
-        "scopeName": "source.plpgsql",
-        "path": "./syntaxes/plpgsql.tmLanguage.json"
-      },
-      {
-        "language": "postgresql-view",
-        "scopeName": "source.plpgsql",
-        "path": "./syntaxes/plpgsql.tmLanguage.json"
-      },
-      {
-        "language": "postgresql-function",
-        "scopeName": "source.plpgsql",
-        "path": "./syntaxes/plpgsql.tmLanguage.json"
-      },
-      {
-        "language": "postgresql-procedure",
-        "scopeName": "source.plpgsql",
-        "path": "./syntaxes/plpgsql.tmLanguage.json"
-      },
-      {
-        "language": "postgresql-trigger",
-        "scopeName": "source.plpgsql",
-        "path": "./syntaxes/plpgsql.tmLanguage.json"
-      },
-      {
-        "scopeName": "source.plpgsql",
-        "injectTo": [
-          "source.sql"
-        ],
-        "path": "./syntaxes/plpgsql.tmLanguage.json"
-      }
-    ],
     "semanticTokenTypes": [
       {
         "id": "sqlSchema",

@@ -8,10 +8,10 @@ import {
   notebookErrorPayload,
   sqlFailurePayload,
 } from "../../../rows/src/resultPayload.js";
+import type { ViewMessaging } from "../messaging.js";
 import { ResultGrid } from "../results/ResultGrid.js";
 import { resultRowSummary, truncationNotices } from "../results/resultFormatting.js";
 import { SqlErrorView } from "../results/SqlErrorView.js";
-import type { WebviewMessaging } from "../webviewPage.js";
 import type { DebugResultsRequest, DebugResultsResponse } from "./protocol.js";
 
 /**
@@ -144,7 +144,7 @@ function historyState(item: DebugResultSummary): string {
 
 /** Subscribes the view to the Extension Host and announces it is ready to receive a state. */
 export function useDebugResultsState(
-  messaging: WebviewMessaging<DebugResultsRequest, DebugResultsResponse>,
+  messaging: ViewMessaging<DebugResultsRequest, DebugResultsResponse>,
 ): DebugResultViewState {
   const [state, setState] = useState<DebugResultViewState>({ results: [] });
   useEffect(() => {

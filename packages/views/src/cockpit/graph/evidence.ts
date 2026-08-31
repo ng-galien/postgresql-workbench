@@ -23,11 +23,12 @@ export function readCockpitEvidence(viewport?: {
   );
   const input = document.querySelector<HTMLInputElement>(".cockpit-search input");
   const previewElement = document.querySelector<HTMLElement>("[data-graph-preview]");
-  const sourceLines = previewElement
-    ? [...previewElement.querySelectorAll<HTMLElement>(".postgres-source-line")]
+  const editor = previewElement?.querySelector<HTMLElement>(".monaco-editor");
+  const sourceLines = editor
+    ? [...editor.querySelectorAll<HTMLElement>(".view-lines > .view-line")]
     : [];
   const sourceLineRects = sourceLines.map((line) => line.getBoundingClientRect());
-  const sourceCode = previewElement?.querySelector<HTMLElement>(".postgres-source-line-code");
+  const editorBackground = editor?.querySelector<HTMLElement>(".monaco-editor-background");
   return {
     cards,
     edges,
@@ -37,16 +38,22 @@ export function readCockpitEvidence(viewport?: {
           symbolUri: previewElement.dataset.graphPreview ?? "",
           title: previewElement.dataset.graphPreviewTitle ?? "",
           lines: Number(previewElement.dataset.graphPreviewLines ?? 0),
-          text: sourceLines
-            .map((line) => line.querySelector(".postgres-source-line-code")?.textContent ?? "")
-            .join("\n"),
-          highlightedTokens: previewElement.querySelectorAll(".postgres-source-token").length,
+          text: sourceLines.map((line) => line.innerText).join("\n"),
+          highlightedTokens: sourceLines.reduce(
+            (count, line) =>
+              count +
+              [...line.querySelectorAll<HTMLElement>("span")].filter(
+                (span) =>
+                  span.children.length === 0 && /(?:^|\s)mtk\d+(?:\s|$)/u.test(span.className),
+              ).length,
+            0,
+          ),
           renderedLines: sourceLines.length,
           maxVerticalGap: maximumVerticalGap(sourceLineRects),
           backgroundMatchesEditor:
-            sourceCode !== null &&
-            sourceCode !== undefined &&
-            getComputedStyle(sourceCode).backgroundColor ===
+            editorBackground !== null &&
+            editorBackground !== undefined &&
+            getComputedStyle(editorBackground).backgroundColor ===
               getComputedStyle(document.body).backgroundColor,
         }
       : undefined,

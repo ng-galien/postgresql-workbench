@@ -15,12 +15,9 @@ vi.mock("vscode", () => ({
 }));
 
 import { TOKEN_MODIFIERS, TOKEN_TYPES } from "../text/plpgsqlTokenLegend.js";
-import {
-  SQL_SEMANTIC_TOKEN_MODIFIERS,
-  SQL_SEMANTIC_TOKEN_TYPES,
-} from "./features/semanticTokens.js";
 import { sqlAuthoringLanguageStatus, sqlAuthoringRejectionAction } from "./languageStatus.js";
-import { formatSkippedMessage, wantsPlpgsqlSemanticTokens } from "./policy.js";
+import { SQL_SEMANTIC_TOKEN_MODIFIERS, SQL_SEMANTIC_TOKEN_TYPES } from "./legend.js";
+import { formatSkippedMessage, postgresAuthoringDocumentLanguage } from "./policy.js";
 import { decodeSemanticTokenData } from "./protocol.js";
 
 describe("SQL authoring server policy", () => {
@@ -37,10 +34,11 @@ describe("SQL authoring server policy", () => {
     ]);
   });
 
-  it("requests PL/pgSQL tokens only for .pgsql files", () => {
-    expect(wantsPlpgsqlSemanticTokens("file:///a.pgsql", "plpgsql")).toBe(true);
-    expect(wantsPlpgsqlSemanticTokens("file:///a.sql", "sql")).toBe(false);
-    expect(wantsPlpgsqlSemanticTokens("vscode-notebook-cell:///a#x", "plpgsql")).toBe(false);
+  it("keeps bare PL/pgSQL roots distinct from SQL wrappers with injected bodies", () => {
+    expect(postgresAuthoringDocumentLanguage("plpgsql")).toBe("plpgsql");
+    expect(postgresAuthoringDocumentLanguage("sql")).toBe("sql");
+    expect(postgresAuthoringDocumentLanguage("postgresql-function")).toBe("sql");
+    expect(postgresAuthoringDocumentLanguage("postgresql-procedure")).toBe("sql");
   });
 
   it("explains why Format Document was skipped", () => {

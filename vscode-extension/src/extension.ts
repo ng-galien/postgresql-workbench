@@ -34,11 +34,7 @@ import { CallSiteConnectionStore, ConnectionManager } from "./connection/index.j
 import { registerConnectionCommands } from "./connection/registerCommands.js";
 import { openCoverageClient, PgTapTestController } from "./coverage/index.js";
 import { DataViewEditorProvider } from "./dataView/dataViewEditorProvider.js";
-import {
-  DATA_VIEW_QUERY_SCHEME,
-  DataViewQueryFileSystem,
-  syncQueryDocument,
-} from "./dataView/queryFileSystem.js";
+import { DataViewQueryFileSystem } from "./dataView/queryFileSystem.js";
 import { registerDataViewQueryLens } from "./dataView/queryLens.js";
 import {
   debugLaunchToken,
@@ -225,12 +221,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
     status: "rejected",
     message: "The SQL authoring server is still starting.",
   });
-  // Nothing to ask until the server is up; a surface then falls back to what it can answer alone.
-  let askSqlAuthoring: SqlAuthoringRegistration["ask"] | undefined;
+  let sqlEditorLanguageServerUrl: string | undefined;
+  const requireSqlEditorLanguageServerUrl = () => {
+    if (!sqlEditorLanguageServerUrl) {
+      throw new Error("The SQL authoring server is not available for embedded editors.");
+    }
+    return sqlEditorLanguageServerUrl;
+  };
   const dataViews = new DataViewEditorProvider({
     parser: () => workbenchIndex.syntaxParser(),
     compose: (request) => composeSqlAuthoring(request),
-    askAuthoring: (sync) => askSqlAuthoring?.(sync),
     authoringSnapshot: (connectionId, database) =>
       workbenchIndex.sqlAuthoringSnapshot({ connectionId, database }),
     authoringSettings: (uri) => resolveSqlAuthoringSettings(uri),
@@ -263,6 +263,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
     },
     output: out,
     extensionUri: context.extensionUri,
+    sqlEditorLanguageServerUrl: requireSqlEditorLanguageServerUrl,
   });
   context.subscriptions.push(dataViews, dataViews.register(), registerDataViewQueryLens());
   const scratchpads = registerSqlNotebook(
@@ -320,12 +321,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
     workspaceState: context.workspaceState,
     collectRenderEvidence: context.extensionMode === vscode.ExtensionMode.Test,
     treeDragPayload: (consume) => workbenchTreeDragAndDrop.activePayload(consume),
-    sourceNames: async (text) => {
-      const client = askSqlAuthoring?.((uri, sql) =>
-        syncQueryDocument(dataViewQueryFiles, uri, sql),
-      );
-      return client?.semanticTokens(`${DATA_VIEW_QUERY_SCHEME}:/cockpit/preview.sql`, text);
+    sourceEditor: (symbolUri) => {
+      const uri = workbenchSourceUris.documentUri(symbolUri);
+      const descriptor = uri ? workbenchSourceUris.sourceDescriptorForDocumentUri(uri) : undefined;
+      return uri && descriptor
+        ? {
+            // The Cockpit Monaco model contains a bounded preview, so it must not reuse the URI
+            // of the complete virtual source document. The identity query remains resolvable.
+            editorUri: uri.with({ fragment: "cockpit-source-preview" }).toString(),
+            languageId: descriptor.plpgsql ? "plpgsql" : "sql",
+          }
+        : undefined;
     },
+    sqlEditorLanguageServerUrl: requireSqlEditorLanguageServerUrl,
   });
   context.subscriptions.push(workbenchTreeDragAndDrop, workbenchGraph);
   registerWorkbenchGraphDropBridge(context, workbenchGraph);
@@ -584,10 +592,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
           workbenchTree,
           graphTreeSync,
         ),
-      (uri) => callSiteConnections.getDocument(uri),
+      (uri) =>
+        callSiteConnections.getDocument(uri) ??
+        workbenchSourceUris.sourceDescriptorForDocumentUri(vscode.Uri.parse(uri))?.connectionId,
+      (uri) => dataViews.authoringProjection(uri),
     );
     composeSqlAuthoring = (request, token) => authoring.compose(request, token);
-    askSqlAuthoring = (sync) => authoring.ask(sync);
+    sqlEditorLanguageServerUrl = authoring.webviewLanguageServerUrl;
     context.subscriptions.push(authoring);
   } catch (error) {
     out.appendLine(

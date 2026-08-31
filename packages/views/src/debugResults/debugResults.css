@@ -2,7 +2,7 @@
   display: flex;
   flex-direction: column;
   height: 100%;
-  color: var(--vscode-foreground);
+  color: var(--pgw-text);
 }
 
 .debug-results-bar {
@@ -10,15 +10,15 @@
   gap: 6px;
   align-items: center;
   padding: 6px 8px;
-  border-bottom: 1px solid var(--vscode-panel-border);
+  border-bottom: 1px solid var(--pgw-divider);
 }
 
 .debug-results-history {
   flex: 1;
   min-width: 0;
-  color: var(--vscode-dropdown-foreground);
-  background: var(--vscode-dropdown-background);
-  border: 1px solid var(--vscode-dropdown-border);
+  color: var(--pgw-select-text);
+  background: var(--pgw-select-background);
+  border: 1px solid var(--pgw-select-border);
 }
 
 /*
@@ -26,5 +26,5 @@
  * result wears the plain badge. The three names are the contract the acceptance suite reads.
  */
 .status-pending {
-  color: var(--vscode-charts-blue);
+  color: var(--pgw-accent-blue);
 }

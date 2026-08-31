@@ -5,10 +5,10 @@ body,
   margin: 0;
   padding: 0;
   overflow: hidden;
-  color: var(--vscode-foreground);
-  background: var(--vscode-editor-background);
-  font-family: var(--vscode-font-family);
-  font-size: var(--vscode-font-size);
+  color: var(--pgw-text);
+  background: var(--pgw-canvas-background);
+  font-family: var(--pgw-ui-font-family);
+  font-size: var(--pgw-ui-font-size);
 }
 
 .data-view {
@@ -24,7 +24,7 @@ body,
 
 .data-view-status {
   padding: 12px;
-  color: var(--vscode-descriptionForeground);
+  color: var(--pgw-text-muted);
 }
 
 /* Toolbar: one wrapping row of groups; nothing is ever clipped. */
@@ -37,8 +37,8 @@ body,
   gap: 4px 12px;
   min-height: 30px;
   padding: 3px 8px;
-  background: var(--vscode-editorWidget-background);
-  border-bottom: 1px solid var(--vscode-panel-border);
+  background: var(--pgw-floating-background);
+  border-bottom: 1px solid var(--pgw-divider);
 }
 
 .toolbar-group {
@@ -71,7 +71,7 @@ body,
 .toolbar-side > .toolbar-group + .toolbar-group {
   padding-left: 10px;
   /* The panel border is too faint to separate controls that sit shoulder to shoulder. */
-  border-left: 1px solid color-mix(in srgb, var(--vscode-foreground) 20%, transparent);
+  border-left: 1px solid color-mix(in srgb, var(--pgw-text) 20%, transparent);
 }
 
 .toolbar-identity {
@@ -93,7 +93,7 @@ body,
   gap: 4px 6px;
   min-height: 32px;
   padding: 4px 8px;
-  border-bottom: 1px solid var(--vscode-panel-border);
+  border-bottom: 1px solid var(--pgw-divider);
 }
 
 .data-view-title {
@@ -106,14 +106,14 @@ body,
 
 .data-view-association {
   overflow: hidden;
-  color: var(--vscode-descriptionForeground);
+  color: var(--pgw-text-muted);
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 12px;
 }
 
 .data-view-clause:focus-visible {
-  outline: 1px solid var(--vscode-focusBorder);
+  outline: 1px solid var(--pgw-focus);
   outline-offset: -1px;
 }
 
@@ -126,17 +126,16 @@ body,
   height: 24px;
   max-width: 48ch;
   padding: 0 6px;
-  color: var(--vscode-foreground);
+  color: var(--pgw-text);
   background: color-mix(
     in srgb,
-    var(--column-accent, var(--vscode-focusBorder)) 8%,
-    var(--vscode-editor-background)
+    var(--column-accent, var(--pgw-focus)) 8%,
+    var(--pgw-canvas-background)
   );
-  border: 1px solid
-    color-mix(in srgb, var(--column-accent, var(--vscode-focusBorder)) 35%, transparent);
+  border: 1px solid color-mix(in srgb, var(--column-accent, var(--pgw-focus)) 35%, transparent);
   border-radius: 6px;
   cursor: pointer;
-  font-family: var(--vscode-editor-font-family);
+  font-family: var(--pgw-code-font-family);
   font-size: 12px;
 }
 
@@ -145,15 +144,15 @@ body,
 }
 
 .data-view-clause.drag-over {
-  box-shadow: inset 3px 0 var(--vscode-focusBorder);
+  box-shadow: inset 3px 0 var(--pgw-focus);
 }
 
 .data-view-clause:hover {
-  background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
+  background: var(--pgw-toolbar-hover-background);
 }
 
 .data-view-clause.active {
-  color: var(--vscode-foreground);
+  color: var(--pgw-text);
 }
 
 .data-view-clause-text {
@@ -167,18 +166,18 @@ body,
   align-items: center;
   gap: 3px;
   padding: 0 4px;
-  color: var(--vscode-descriptionForeground);
+  color: var(--pgw-text-muted);
   font-size: 12px;
 }
 
 .toolbar-edit-count.pending {
-  color: var(--vscode-gitDecoration-modifiedResourceForeground, var(--vscode-foreground));
+  color: var(--pgw-modified);
 }
 
 /* Messages */
 
 .data-view-info {
-  color: var(--vscode-descriptionForeground);
+  color: var(--pgw-text-muted);
 }
 
 .result-message,
@@ -189,22 +188,22 @@ body,
 .result-message {
   margin: 0;
   padding: 4px 10px;
-  border-bottom: 1px solid var(--vscode-panel-border);
+  border-bottom: 1px solid var(--pgw-divider);
 }
 
 .result-error {
-  color: var(--vscode-errorForeground);
+  color: var(--pgw-error);
 }
 
 .result-progress {
   margin: 0;
   padding: 4px 10px;
-  color: var(--vscode-descriptionForeground);
+  color: var(--pgw-text-muted);
 }
 
 .result-empty {
   padding: 12px;
-  color: var(--vscode-descriptionForeground);
+  color: var(--pgw-text-muted);
 }
 
 /*
@@ -222,12 +221,13 @@ body,
  */
 .data-view-sql {
   display: flex;
-  flex: 0 1 auto;
+  /* The grid may scroll, but it must not collapse the editor to its title bar. */
+  flex: 0 0 auto;
   flex-direction: column;
   min-height: 0;
   max-height: min(45vh, 360px);
-  background: var(--vscode-editor-background);
-  border-bottom: 1px solid var(--vscode-panel-border);
+  background: var(--pgw-canvas-background);
+  border-bottom: 1px solid var(--pgw-divider);
 }
 
 /* The same bar every other line of the view has, so the panel belongs to what surrounds it. */
@@ -238,17 +238,17 @@ body,
   gap: 6px;
   min-height: 30px;
   padding: 2px 6px 2px 10px;
-  background: var(--vscode-editorWidget-background);
-  border-bottom: 1px solid var(--vscode-panel-border);
+  background: var(--pgw-floating-background);
+  border-bottom: 1px solid var(--pgw-divider);
 }
 
 .data-view-sql-bar > .codicon {
-  color: var(--vscode-descriptionForeground);
+  color: var(--pgw-text-muted);
   font-size: 13px;
 }
 
 .data-view-sql-title {
-  color: var(--vscode-descriptionForeground);
+  color: var(--pgw-text-muted);
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
@@ -266,12 +266,9 @@ body,
   scrollbar-gutter: stable;
 }
 
-/*
- * A statement is a dozen lines, not a file: it needs air around it, not the margin a source page
- * leaves for what follows it.
- */
-.data-view-sql .postgres-source-view {
-  padding: 6px 0 8px;
+.data-view-sql-editor {
+  width: 100%;
+  height: min(30vh, 240px);
 }
 
 /* Grid fills the remaining height */
@@ -306,9 +303,9 @@ body,
   margin: 0;
   padding: 6px 10px;
   overflow: auto;
-  border-top: 1px solid var(--vscode-panel-border);
-  font-family: var(--vscode-editor-font-family);
-  font-size: var(--vscode-editor-font-size);
+  border-top: 1px solid var(--pgw-divider);
+  font-family: var(--pgw-code-font-family);
+  font-size: var(--pgw-code-font-size);
 }
 
 /* Filter input with completions */
@@ -320,7 +317,7 @@ body,
   gap: 8px;
   min-height: 32px;
   padding: 4px 8px;
-  border-bottom: 1px solid var(--vscode-panel-border);
+  border-bottom: 1px solid var(--pgw-divider);
 }
 
 /*
@@ -341,7 +338,7 @@ body,
 
 .data-view-clause-mark {
   flex: 0 0 auto;
-  color: var(--vscode-descriptionForeground);
+  color: var(--pgw-text-muted);
 }
 
 /*
@@ -356,8 +353,8 @@ body,
   gap: 8px;
   min-height: 30px;
   padding: 2px 8px 2px 10px;
-  border-bottom: 1px solid var(--vscode-panel-border);
-  background: var(--vscode-editor-background);
+  border-bottom: 1px solid var(--pgw-divider);
+  background: var(--pgw-canvas-background);
 }
 
 .data-view-rows-spacer {
@@ -367,7 +364,7 @@ body,
 /* What is said about the result but not between its arrows, so nothing there changes width. */
 .data-view-rows-mark {
   flex: none;
-  color: var(--vscode-descriptionForeground);
+  color: var(--pgw-text-muted);
 }
 
 .data-view-order {
@@ -381,8 +378,8 @@ body,
   min-width: 0;
   min-height: 24px;
   padding: 0;
-  color: var(--vscode-descriptionForeground);
-  font-family: var(--vscode-editor-font-family);
+  color: var(--pgw-text-muted);
+  font-family: var(--pgw-code-font-family);
   font-size: 12px;
 }
 
@@ -395,8 +392,8 @@ body,
 .data-view-order-rank {
   min-width: 1.4em;
   padding: 0 4px;
-  color: var(--vscode-editor-background);
-  background: var(--column-accent, var(--vscode-badge-background));
+  color: var(--pgw-canvas-background);
+  background: var(--column-accent, var(--pgw-badge-background));
   border-radius: 4px;
   text-align: center;
   font-size: 10px;
@@ -429,7 +426,7 @@ body,
 }
 
 .data-view-clause-action:hover {
-  background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
+  background: var(--pgw-toolbar-hover-background);
 }
 
 /*
@@ -451,11 +448,11 @@ body,
 }
 
 .data-view-clause-turn:hover {
-  background: color-mix(in srgb, var(--column-accent, var(--vscode-focusBorder)) 22%, transparent);
+  background: color-mix(in srgb, var(--column-accent, var(--pgw-focus)) 22%, transparent);
 }
 
 .data-view-clause-turn:focus-visible {
-  outline: 1px solid var(--vscode-focusBorder);
+  outline: 1px solid var(--pgw-focus);
   outline-offset: -1px;
 }
 
@@ -478,7 +475,7 @@ body,
   border: 1px solid transparent;
   border-radius: 4px;
   background: transparent;
-  color: var(--vscode-descriptionForeground);
+  color: var(--pgw-text-muted);
   cursor: pointer;
   font: inherit;
   font-size: 9px;
@@ -494,28 +491,20 @@ body,
 }
 
 .data-view-clause-nulls:hover {
-  border-color: color-mix(
-    in srgb,
-    var(--column-accent, var(--vscode-focusBorder)) 45%,
-    transparent
-  );
-  background: color-mix(in srgb, var(--column-accent, var(--vscode-focusBorder)) 16%, transparent);
+  border-color: color-mix(in srgb, var(--column-accent, var(--pgw-focus)) 45%, transparent);
+  background: color-mix(in srgb, var(--column-accent, var(--pgw-focus)) 16%, transparent);
 }
 
 .data-view-clause-nulls:focus-visible {
-  outline: 1px solid var(--vscode-focusBorder);
+  outline: 1px solid var(--pgw-focus);
   outline-offset: -1px;
 }
 
 /* Asked for rather than inherited: it stops being a whisper and takes a border of its own. */
 .data-view-clause-nulls.overridden {
-  border-color: color-mix(
-    in srgb,
-    var(--column-accent, var(--vscode-focusBorder)) 55%,
-    transparent
-  );
-  background: color-mix(in srgb, var(--column-accent, var(--vscode-focusBorder)) 18%, transparent);
-  color: var(--vscode-foreground);
+  border-color: color-mix(in srgb, var(--column-accent, var(--pgw-focus)) 55%, transparent);
+  background: color-mix(in srgb, var(--column-accent, var(--pgw-focus)) 18%, transparent);
+  color: var(--pgw-text);
   opacity: 1;
 }
 
@@ -534,7 +523,7 @@ body,
   min-width: 0;
   align-items: flex-start;
   gap: 6px;
-  color: var(--vscode-input-foreground);
+  color: var(--pgw-field-text);
 }
 
 /*
@@ -546,15 +535,14 @@ body,
 .data-view-query-line .filter-input {
   min-height: 24px;
   padding: 0 4px 0 8px;
-  color: var(--vscode-input-foreground);
-  background: var(--vscode-input-background);
-  border: 1px solid
-    var(--vscode-input-border, color-mix(in srgb, var(--vscode-foreground) 22%, transparent));
+  color: var(--pgw-field-text);
+  background: var(--pgw-field-background);
+  border: 1px solid var(--pgw-field-border, color-mix(in srgb, var(--pgw-text) 22%, transparent));
   border-radius: 6px;
 }
 
 .data-view-query-line .filter-input:focus-within {
-  border-color: var(--vscode-focusBorder);
+  border-color: var(--pgw-focus);
 }
 
 /*
@@ -563,7 +551,7 @@ body,
  * empties it, and two buttons for one field is one too many.
  */
 .data-view-query-line .filter-input.dirty {
-  border-color: var(--postgres-field-unapplied, var(--vscode-focusBorder));
+  border-color: var(--pgw-field-pending-accent);
 }
 .filter-input > .codicon-filter {
   margin-top: 4px;
@@ -579,8 +567,8 @@ body,
   display: flex;
   flex: 1 1 auto;
   min-width: 0;
-  font-family: var(--vscode-editor-font-family);
-  font-size: var(--vscode-editor-font-size);
+  font-family: var(--pgw-code-font-family);
+  font-size: var(--pgw-code-font-size);
   line-height: 18px;
 }
 
@@ -593,95 +581,20 @@ body,
   white-space: pre;
 }
 
-.filter-highlight {
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-  color: var(--vscode-input-foreground);
-  pointer-events: none;
+.filter-input-monaco .filter-field {
+  height: calc(var(--filter-editor-lines, 1) * 18px + 6px);
+  min-height: 24px;
+  max-height: 114px;
 }
 
-.filter-highlight-line {
-  min-height: 18px;
+.filter-input-monaco .filter-field > * {
+  padding: 0;
+  white-space: normal;
 }
 
-.filter-textarea {
-  position: relative;
-  flex: 1 1 auto;
-  min-width: 0;
-  min-height: 22px;
-  /* The letters are the paint's; the field keeps the caret, the selection and the placeholder. */
-  color: transparent;
-  caret-color: var(--vscode-input-foreground);
+.filter-input-monaco .monaco-editor,
+.filter-input-monaco .monaco-editor .margin {
   background: transparent;
-  border: 0;
-  outline: none;
-  resize: none;
-  overflow-x: hidden;
-}
-
-.filter-textarea::placeholder {
-  color: var(--vscode-input-placeholderForeground);
-}
-
-.filter-completions {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  z-index: 12;
-  min-width: 260px;
-  max-width: 100%;
-  max-height: 260px;
-  margin: 2px 0 0;
-  padding: 2px 0;
-  overflow-y: auto;
-  list-style: none;
-  color: var(--vscode-editorSuggestWidget-foreground, var(--vscode-foreground));
-  background: var(--vscode-editorSuggestWidget-background, var(--vscode-editorWidget-background));
-  border: 1px solid var(--vscode-editorSuggestWidget-border, var(--vscode-panel-border));
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
-  font-family: var(--vscode-editor-font-family);
-  font-size: var(--vscode-editor-font-size);
-}
-
-.filter-completion {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  width: 100%;
-  padding: 2px 8px;
-  color: inherit;
-  text-align: left;
-  background: transparent;
-  border: 0;
-  cursor: pointer;
-  font: inherit;
-  white-space: nowrap;
-}
-
-.filter-completion.selected,
-.filter-completion:hover {
-  color: var(
-    --vscode-editorSuggestWidget-selectedForeground,
-    var(--vscode-list-activeSelectionForeground)
-  );
-  background: var(
-    --vscode-editorSuggestWidget-selectedBackground,
-    var(--vscode-list-activeSelectionBackground)
-  );
-}
-
-.filter-completion-kind {
-  min-width: 5ch;
-  color: var(--vscode-descriptionForeground);
-  font-size: 10px;
-  text-transform: lowercase;
-}
-
-.filter-completion-detail {
-  overflow: hidden;
-  color: var(--vscode-descriptionForeground);
-  text-overflow: ellipsis;
 }
 
 /* Fixed status line: always present, never changes the layout above it */
@@ -693,14 +606,14 @@ body,
   height: 22px;
   padding: 0 10px;
   overflow: hidden;
-  color: var(--vscode-descriptionForeground);
-  background: var(--vscode-editorWidget-background);
-  border-top: 1px solid var(--vscode-panel-border);
+  color: var(--pgw-text-muted);
+  background: var(--pgw-floating-background);
+  border-top: 1px solid var(--pgw-divider);
   font-size: 12px;
 }
 
 .data-view-statusline.error {
-  color: var(--vscode-errorForeground);
+  color: var(--pgw-error);
 }
 
 .data-view-statusline-text {
@@ -728,16 +641,16 @@ body,
   max-width: 40ch;
   padding: 0 2px 0 8px;
   overflow: hidden;
-  color: var(--vscode-foreground);
+  color: var(--pgw-text);
   background: color-mix(
     in srgb,
     var(--column-accent, currentColor) 10%,
-    var(--vscode-editor-background)
+    var(--pgw-canvas-background)
   );
   border: 1px solid color-mix(in srgb, var(--column-accent, currentColor) 45%, transparent);
   border-radius: 6px;
   cursor: default;
-  font-family: var(--vscode-editor-font-family);
+  font-family: var(--pgw-code-font-family);
   font-size: 12px;
   white-space: nowrap;
 }
@@ -747,7 +660,7 @@ body,
 }
 
 .data-view-table-badge.drag-over {
-  box-shadow: inset 3px 0 var(--vscode-focusBorder);
+  box-shadow: inset 3px 0 var(--pgw-focus);
 }
 
 .data-view-table-swatch {
@@ -759,7 +672,7 @@ body,
 }
 
 .data-view-table-schema {
-  color: var(--vscode-descriptionForeground);
+  color: var(--pgw-text-muted);
 }
 
 .data-view-table-name {
@@ -770,15 +683,15 @@ body,
 
 .data-view-table-badge .data-view-clause-action {
   margin-left: 2px;
-  color: var(--vscode-descriptionForeground);
+  color: var(--pgw-text-muted);
 }
 
 .data-view-table-badge .data-view-clause-action:hover {
-  color: var(--vscode-foreground);
+  color: var(--pgw-text);
 }
 
 .data-view.drop-active {
-  box-shadow: inset 0 0 0 2px var(--vscode-focusBorder);
+  box-shadow: inset 0 0 0 2px var(--pgw-focus);
 }
 
 /*
@@ -797,7 +710,7 @@ body,
 }
 
 .pending-edit + .pending-edit:not(.continues) {
-  border-top: 1px solid color-mix(in srgb, var(--vscode-foreground) 12%, transparent);
+  border-top: 1px solid color-mix(in srgb, var(--pgw-text) 12%, transparent);
 }
 
 .pending-edit.continues {
@@ -808,13 +721,13 @@ body,
   flex: 0 0 auto;
   margin-top: 0.15em;
   font-size: 12px;
-  color: var(--vscode-descriptionForeground);
+  color: var(--pgw-text-muted);
   opacity: 0.7;
 }
 
 /* A row leaving is the one change that cannot be read back afterwards, so it is the one in colour. */
 .pending-edit.delete .pending-edit-mark {
-  color: var(--vscode-errorForeground, var(--vscode-descriptionForeground));
+  color: var(--pgw-error);
   opacity: 1;
 }
 
@@ -831,7 +744,7 @@ body,
 
 .pending-edit-target {
   overflow: hidden;
-  color: var(--vscode-descriptionForeground);
+  color: var(--pgw-text-muted);
   font-size: 0.9em;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -851,7 +764,7 @@ body,
 
 .pending-edit-original {
   overflow: hidden;
-  color: var(--vscode-descriptionForeground);
+  color: var(--pgw-text-muted);
   text-decoration: line-through;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -861,32 +774,32 @@ body,
   flex: 0 0 auto;
   align-self: center;
   font-size: 12px;
-  color: var(--vscode-descriptionForeground);
+  color: var(--pgw-text-muted);
   opacity: 0.7;
 }
 
 /* The value that will be written carries the weight; the one it replaces is struck through. */
 .pending-edit-value {
   overflow: hidden;
-  color: var(--vscode-foreground);
+  color: var(--pgw-text);
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .pending-edit-removal {
-  color: var(--vscode-errorForeground, var(--vscode-foreground));
+  color: var(--pgw-error);
 }
 
 /* The mark already says a row is arriving; saying it again in colour says nothing more. */
 .pending-edit-insertion {
-  color: var(--vscode-foreground);
+  color: var(--pgw-text);
 }
 
 /* What the table will answer for, said beside what the reader filled in rather than left unsaid. */
 .pending-edit-left {
   overflow: hidden;
-  color: var(--vscode-descriptionForeground);
+  color: var(--pgw-text-muted);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -900,13 +813,13 @@ body,
   flex: 0 0 auto;
   align-items: center;
   padding: 3px 8px;
-  border-bottom: 1px solid var(--vscode-panel-border);
-  background: var(--vscode-editor-background);
+  border-bottom: 1px solid var(--pgw-divider);
+  background: var(--pgw-canvas-background);
   gap: 8px;
 }
 
 .edit-bar-selection {
-  color: var(--vscode-descriptionForeground);
+  color: var(--pgw-text-muted);
 }
 
 /*
@@ -919,12 +832,12 @@ body,
   align-items: flex-start;
   gap: 8px;
   padding: 8px 10px;
-  border-bottom: 1px solid var(--vscode-inputValidation-errorBorder, var(--vscode-errorForeground));
+  border-bottom: 1px solid var(--pgw-field-error-border);
   background: var(
-    --vscode-inputValidation-errorBackground,
-    color-mix(in srgb, var(--vscode-errorForeground) 22%, var(--vscode-editor-background))
+    --pgw-field-error-background,
+    color-mix(in srgb, var(--pgw-error) 22%, var(--pgw-canvas-background))
   );
-  color: var(--vscode-inputValidation-errorForeground, var(--vscode-foreground));
+  color: var(--pgw-field-error-text);
   font-size: 0.95em;
   line-height: 1.45;
 }
@@ -932,7 +845,7 @@ body,
 .data-view-alert .codicon-error {
   flex: none;
   margin-top: 0.1em;
-  color: var(--vscode-errorForeground);
+  color: var(--pgw-error);
 }
 
 .data-view-alert-text {
@@ -962,7 +875,7 @@ body,
 .edit-bar-divider {
   width: 1px;
   height: 1.2em;
-  background: color-mix(in srgb, var(--vscode-foreground) 20%, transparent);
+  background: color-mix(in srgb, var(--pgw-text) 20%, transparent);
 }
 
 .data-view-rows-divider {
@@ -984,7 +897,7 @@ body,
   border: 1px solid transparent;
   border-radius: 3px;
   background: none;
-  color: var(--vscode-foreground);
+  color: var(--pgw-text);
   cursor: pointer;
   font: inherit;
   gap: 5px;
@@ -996,25 +909,25 @@ body,
 }
 
 .edit-bar-button:hover:not(:disabled) {
-  border-color: var(--vscode-panel-border);
-  background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
+  border-color: var(--pgw-divider);
+  background: var(--pgw-toolbar-hover-background);
 }
 
 .edit-bar-button:focus-visible {
-  outline: 1px solid var(--vscode-focusBorder);
+  outline: 1px solid var(--pgw-focus);
   outline-offset: -1px;
 }
 
 .edit-bar-button:disabled {
-  color: var(--vscode-disabledForeground, var(--vscode-descriptionForeground));
+  color: var(--pgw-text-disabled);
   cursor: default;
   opacity: 0.6;
 }
 
 /* What a press cannot be taken back from says so on approach, not at rest. */
 .edit-bar-button.remove:hover:not(:disabled) {
-  border-color: var(--vscode-errorForeground);
-  color: var(--vscode-errorForeground);
+  border-color: var(--pgw-error);
+  color: var(--pgw-error);
 }
 
 /* Changes waiting to be written are worth reading, so the count carries the weight, not a colour. */
@@ -1025,8 +938,8 @@ body,
 
 .edit-bar-button.apply.ready {
   border-color: transparent;
-  background: var(--vscode-button-background);
-  color: var(--vscode-button-foreground);
+  background: var(--pgw-action-background);
+  color: var(--pgw-action-text);
 }
 
 .edit-bar-button.apply.ready .codicon {
@@ -1034,7 +947,7 @@ body,
 }
 
 .edit-bar-button.apply.ready:hover:not(:disabled) {
-  background: var(--vscode-button-hoverBackground, var(--vscode-button-background));
+  background: var(--pgw-action-hover-background);
   border-color: transparent;
 }
 

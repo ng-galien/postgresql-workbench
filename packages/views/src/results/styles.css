@@ -8,11 +8,11 @@
 
 .sql-result {
   overflow: hidden;
-  color: var(--vscode-foreground);
-  background: var(--vscode-editor-background);
-  border: 1px solid var(--vscode-panel-border);
+  color: var(--pgw-text);
+  background: var(--pgw-canvas-background);
+  border: 1px solid var(--pgw-divider);
   border-radius: 4px;
-  font-family: var(--vscode-font-family);
+  font-family: var(--pgw-ui-font-family);
 }
 
 .result-toolbar {
@@ -23,8 +23,8 @@
   justify-content: space-between;
   gap: 12px;
   padding: 5px 8px;
-  background: var(--vscode-editorWidget-background);
-  border-bottom: 1px solid var(--vscode-panel-border);
+  background: var(--pgw-floating-background);
+  border-bottom: 1px solid var(--pgw-divider);
 }
 
 .result-summary {
@@ -32,40 +32,40 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
-  color: var(--vscode-descriptionForeground);
+  color: var(--pgw-text-muted);
   font-size: 12px;
 }
 
 .result-badge {
   padding: 2px 6px;
-  color: var(--vscode-badge-foreground);
-  background: var(--vscode-badge-background);
+  color: var(--pgw-badge-text);
+  background: var(--pgw-badge-background);
   border-radius: 8px;
 }
 
 .result-binding {
-  color: var(--vscode-descriptionForeground);
+  color: var(--pgw-text-muted);
 }
 
 .result-duration {
-  color: var(--vscode-descriptionForeground);
+  color: var(--pgw-text-muted);
   font-size: 10px;
   opacity: 0.75;
 }
 
 .result-warning-badge {
-  color: var(--vscode-editorWarning-foreground);
-  background: var(--vscode-editorWarning-background);
+  color: var(--pgw-warning);
+  background: var(--pgw-warning-background);
 }
 
 .result-error-badge {
-  color: var(--vscode-errorForeground);
-  background: var(--vscode-inputValidation-errorBackground);
-  border: 1px solid var(--vscode-inputValidation-errorBorder);
+  color: var(--pgw-error);
+  background: var(--pgw-field-error-background);
+  border: 1px solid var(--pgw-field-error-border);
 }
 
 .sql-error {
-  border-color: var(--vscode-inputValidation-errorBorder, var(--vscode-errorForeground));
+  border-color: var(--pgw-field-error-border);
 }
 
 .sql-error-body {
@@ -81,18 +81,18 @@
 }
 
 .sql-error-message {
-  color: var(--vscode-errorForeground);
+  color: var(--pgw-error);
   font-weight: 600;
 }
 
 .sql-error-location {
-  color: var(--vscode-descriptionForeground);
+  color: var(--pgw-text-muted);
 }
 
 .result-button:focus-visible,
 .column-sort:focus-visible,
 .cell-value:focus-visible {
-  outline: 1px solid var(--vscode-focusBorder);
+  outline: 1px solid var(--pgw-focus);
   outline-offset: -1px;
 }
 
@@ -112,8 +112,8 @@
   align-items: center;
   gap: 5px;
   padding: 3px 7px;
-  color: var(--vscode-button-secondaryForeground);
-  background: var(--vscode-button-secondaryBackground);
+  color: var(--pgw-secondary-action-text);
+  background: var(--pgw-secondary-action-background);
   border: 1px solid transparent;
   border-radius: 2px;
   cursor: pointer;
@@ -126,7 +126,7 @@
 }
 
 .result-button:hover:not(:disabled) {
-  background: var(--vscode-button-secondaryHoverBackground);
+  background: var(--pgw-secondary-action-hover-background);
 }
 
 .result-button:disabled {
@@ -135,12 +135,12 @@
 }
 
 .result-button-primary {
-  color: var(--vscode-button-foreground);
-  background: var(--vscode-button-background);
+  color: var(--pgw-action-text);
+  background: var(--pgw-action-background);
 }
 
 .result-button-primary:hover:not(:disabled) {
-  background: var(--vscode-button-hoverBackground);
+  background: var(--pgw-action-hover-background);
 }
 
 .result-scroller-frame {
@@ -177,10 +177,10 @@
   height: min(15em, calc(100% - 24px));
   max-height: min(15em, calc(100% - 24px));
   flex-direction: column;
-  border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
+  border: 1px solid var(--pgw-floating-border);
   border-radius: 5px;
-  background: var(--vscode-editorWidget-background);
-  box-shadow: 0 4px 16px rgb(0 0 0 / 45%);
+  background: var(--pgw-floating-background);
+  box-shadow: 0 4px 16px var(--pgw-shadow-high);
 }
 
 /*
@@ -198,20 +198,20 @@
   border: 0;
   background: transparent;
   color: inherit;
-  border-top: 2px solid color-mix(in srgb, var(--vscode-foreground) 35%, transparent);
-  border-left: 2px solid color-mix(in srgb, var(--vscode-foreground) 35%, transparent);
+  border-top: 2px solid color-mix(in srgb, var(--pgw-text) 35%, transparent);
+  border-left: 2px solid color-mix(in srgb, var(--pgw-text) 35%, transparent);
   border-top-left-radius: 5px;
   cursor: nwse-resize;
   touch-action: none;
 }
 
 .cell-inspector-grip:hover {
-  border-color: var(--vscode-focusBorder);
+  border-color: var(--pgw-focus);
 }
 
 .cell-inspector-grip:focus-visible,
 .cell-inspector-move:focus-visible {
-  outline: 1px solid var(--vscode-focusBorder);
+  outline: 1px solid var(--pgw-focus);
   outline-offset: 1px;
   opacity: 1;
 }
@@ -220,7 +220,7 @@
   display: block;
   max-width: 100%;
   /* Kept crisp: a thumbnail out of a database is usually small, and smoothing it hides its pixels. */
-  border: 1px solid var(--vscode-panel-border);
+  border: 1px solid var(--pgw-divider);
   image-rendering: pixelated;
 }
 
@@ -229,7 +229,7 @@
   align-items: baseline;
   gap: 6px;
   padding: 5px 4px 5px 10px;
-  border-bottom: 1px solid var(--vscode-panel-border);
+  border-bottom: 1px solid var(--pgw-divider);
 }
 
 .cell-inspector-column {
@@ -241,7 +241,7 @@
 
 .cell-inspector-type {
   flex: none;
-  color: var(--vscode-descriptionForeground);
+  color: var(--pgw-text-muted);
   font-size: 0.85em;
 }
 
@@ -267,7 +267,7 @@
 }
 
 .cell-inspector-move:hover {
-  background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
+  background: var(--pgw-toolbar-hover-background);
   opacity: 1;
 }
 
@@ -289,7 +289,7 @@
 }
 
 .cell-inspector-action:hover {
-  background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
+  background: var(--pgw-toolbar-hover-background);
   opacity: 1;
 }
 
@@ -305,7 +305,7 @@
 .cell-inspector-text,
 .cell-inspector-hex {
   margin: 0;
-  font-family: var(--vscode-editor-font-family, monospace);
+  font-family: var(--pgw-code-font-family, monospace);
   font-size: 0.92em;
   line-height: 1.5;
   /* A document keeps its shape; a sentence wraps rather than running off the side. */
@@ -314,7 +314,7 @@
 }
 
 .cell-inspector-hex {
-  color: var(--vscode-descriptionForeground);
+  color: var(--pgw-text-muted);
 }
 
 /*
@@ -322,24 +322,24 @@
  * colours, so a reader's theme decides what a string looks like here as everywhere else.
  */
 .json-key {
-  color: var(--vscode-symbolIcon-propertyForeground, var(--vscode-charts-blue));
+  color: var(--pgw-data-property);
 }
 
 .json-string {
-  color: var(--vscode-charts-orange, var(--vscode-debugTokenExpression-string));
+  color: var(--pgw-data-string);
 }
 
 .json-number {
-  color: var(--vscode-charts-green, var(--vscode-debugTokenExpression-number));
+  color: var(--pgw-data-number);
 }
 
 .json-word {
-  color: var(--vscode-charts-purple, var(--vscode-debugTokenExpression-boolean));
+  color: var(--pgw-data-literal);
 }
 
 .cell-inspector-count {
   margin: 0 0 6px;
-  color: var(--vscode-descriptionForeground);
+  color: var(--pgw-text-muted);
   font-size: 0.9em;
 }
 
@@ -355,19 +355,19 @@
 
 .cell-inspector-null {
   margin: 0;
-  color: var(--vscode-descriptionForeground);
+  color: var(--pgw-text-muted);
   font-style: italic;
 }
 
 .cell-inspector-link {
-  color: var(--vscode-textLink-foreground);
+  color: var(--pgw-link);
   overflow-wrap: anywhere;
 }
 
 .cell-inspector-foot {
   padding: 5px 10px;
-  border-top: 1px solid var(--vscode-panel-border);
-  color: var(--vscode-descriptionForeground);
+  border-top: 1px solid var(--pgw-divider);
+  color: var(--pgw-text-muted);
   font-size: 0.88em;
 }
 
@@ -395,9 +395,7 @@
 
 /*
  * Every scrollbar of every pane these views draw, in one place: the colours are the views' own
- * names, valued by whoever hosts them. A host that says nothing falls back to the editor's own
- * slider colours where they reach — a notebook renderer mounts into a shadow root that inherits
- * them — and to a neutral grey where nothing does.
+ * names, valued by the product theme and optionally overridden by the host.
  */
 ::-webkit-scrollbar-track,
 ::-webkit-scrollbar-corner {
@@ -405,33 +403,24 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(
-    --postgres-scroll-thumb,
-    var(--vscode-scrollbarSlider-background, rgba(121, 121, 121, 0.4))
-  );
+  background: var(--pgw-scrollbar);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(
-    --postgres-scroll-thumb-hover,
-    var(--vscode-scrollbarSlider-hoverBackground, rgba(100, 100, 100, 0.7))
-  );
+  background: var(--pgw-scrollbar-hover);
 }
 
 ::-webkit-scrollbar-thumb:active {
-  background: var(
-    --postgres-scroll-thumb-active,
-    var(--vscode-scrollbarSlider-activeBackground, rgba(191, 191, 191, 0.4))
-  );
+  background: var(--pgw-scrollbar-active);
 }
 
 .result-scrollbar {
   position: relative;
   min-height: 28px;
   touch-action: none;
-  background: var(--vscode-editor-background);
-  border-left: 1px solid var(--vscode-panel-border);
-  border-right: 1px solid var(--vscode-panel-border);
+  background: var(--pgw-canvas-background);
+  border-left: 1px solid var(--pgw-divider);
+  border-right: 1px solid var(--pgw-divider);
   cursor: pointer;
 }
 
@@ -442,7 +431,7 @@
 
 .result-scrollbar:focus-visible,
 .result-scroller:focus-visible {
-  outline: 1px solid var(--vscode-focusBorder);
+  outline: 1px solid var(--pgw-focus);
   outline-offset: -1px;
 }
 
@@ -453,23 +442,23 @@
   left: 2px;
   height: var(--result-scroll-thumb-height);
   min-height: 24px;
-  background: var(--vscode-scrollbarSlider-activeBackground, rgba(80, 80, 80, 0.9));
-  border: 1px solid var(--vscode-focusBorder);
+  background: var(--pgw-scrollbar-active);
+  border: 1px solid var(--pgw-focus);
   border-radius: 5px;
   opacity: 1;
 }
 
 .result-scrollbar:hover .result-scroll-thumb,
 .result-scrollbar:active .result-scroll-thumb {
-  background: var(--vscode-scrollbarSlider-activeBackground);
+  background: var(--pgw-scrollbar-active);
 }
 
 table {
   table-layout: fixed;
   border-spacing: 0;
   border-collapse: separate;
-  font-family: var(--vscode-editor-font-family);
-  font-size: var(--vscode-editor-font-size);
+  font-family: var(--pgw-code-font-family);
+  font-size: var(--pgw-code-font-size);
 }
 
 th,
@@ -479,8 +468,8 @@ td {
   text-align: left;
   text-overflow: ellipsis;
   white-space: pre;
-  border-right: 1px solid var(--vscode-panel-border);
-  border-bottom: 1px solid var(--vscode-panel-border);
+  border-right: 1px solid var(--pgw-divider);
+  border-bottom: 1px solid var(--pgw-divider);
 }
 
 /*
@@ -492,11 +481,11 @@ thead th {
   position: sticky;
   top: 0;
   z-index: 2;
-  background: var(--vscode-editorGroupHeader-tabsBackground);
+  background: var(--pgw-header-background);
 }
 
 th {
-  background: var(--vscode-editorGroupHeader-tabsBackground);
+  background: var(--pgw-header-background);
 }
 
 .column-sort {
@@ -512,7 +501,7 @@ th {
 }
 
 .column-sort:hover {
-  background: var(--vscode-list-hoverBackground);
+  background: var(--pgw-hover-background);
 }
 
 /*
@@ -521,7 +510,7 @@ th {
  */
 thead th.in-selection .column-sort:hover,
 thead th.at-cursor .column-sort:hover {
-  background: color-mix(in srgb, var(--vscode-foreground) 10%, transparent);
+  background: color-mix(in srgb, var(--pgw-text) 10%, transparent);
 }
 
 .column-heading {
@@ -538,22 +527,22 @@ thead th.at-cursor .column-sort:hover {
 
 .column-sort small {
   margin-top: 1px;
-  color: var(--vscode-descriptionForeground);
+  color: var(--pgw-text-muted);
   font-weight: normal;
 }
 
 .sort-indicator {
-  color: var(--vscode-descriptionForeground);
+  color: var(--pgw-text-muted);
   font-size: 11px;
 }
 
 th[aria-sort="ascending"] .sort-indicator,
 th[aria-sort="descending"] .sort-indicator {
-  color: var(--vscode-textLink-foreground);
+  color: var(--pgw-link);
 }
 
 tbody tr:hover {
-  background: var(--vscode-list-hoverBackground);
+  background: var(--pgw-hover-background);
 }
 
 tbody tr:not(.result-spacer) {
@@ -573,7 +562,7 @@ td.number {
 }
 
 td.null {
-  color: var(--vscode-descriptionForeground);
+  color: var(--pgw-text-muted);
   font-style: italic;
 }
 
@@ -601,7 +590,7 @@ td.null {
  * not offer the hand a link offers — that hand promises a plain click would go somewhere.
  */
 .cell-value.cell-link {
-  color: var(--vscode-textLink-foreground, var(--vscode-charts-blue));
+  color: var(--pgw-link);
   text-decoration: none;
   cursor: inherit;
 }
@@ -612,15 +601,15 @@ td.null {
 }
 
 td.truncated {
-  box-shadow: inset -3px 0 var(--vscode-editorWarning-foreground);
+  box-shadow: inset -3px 0 var(--pgw-warning);
 }
 
 .sort-notice {
   padding: 4px 8px;
   margin: 0;
-  color: var(--vscode-descriptionForeground);
-  background: var(--vscode-editorWidget-background);
-  border-top: 1px solid var(--vscode-panel-border);
+  color: var(--pgw-text-muted);
+  background: var(--pgw-floating-background);
+  border-top: 1px solid var(--pgw-divider);
   font-size: 11px;
 }
 
@@ -629,18 +618,18 @@ td.truncated {
   padding: 9px 10px;
   margin: 0;
   overflow: auto;
-  color: var(--vscode-foreground);
+  color: var(--pgw-text);
   overflow-wrap: anywhere;
   white-space: pre-wrap;
-  background: var(--vscode-textCodeBlock-background);
-  border-top: 1px solid var(--vscode-panel-border);
-  font-family: var(--vscode-editor-font-family);
+  background: var(--pgw-code-block-background);
+  border-top: 1px solid var(--pgw-divider);
+  font-family: var(--pgw-code-font-family);
 }
 
 .result-empty {
   padding: 18px 10px;
   margin: 0;
-  color: var(--vscode-descriptionForeground);
+  color: var(--pgw-text-muted);
   text-align: center;
 }
 
@@ -648,21 +637,21 @@ td.truncated {
 .result-message {
   padding: 5px 8px;
   margin: 0;
-  background: var(--vscode-editorWidget-background);
-  border-bottom: 1px solid var(--vscode-panel-border);
+  background: var(--pgw-floating-background);
+  border-bottom: 1px solid var(--pgw-divider);
   font-size: 11px;
 }
 
 .result-progress {
-  color: var(--vscode-descriptionForeground);
+  color: var(--pgw-text-muted);
 }
 
 .result-error {
-  color: var(--vscode-errorForeground);
+  color: var(--pgw-error);
 }
 
 .result-warning {
-  color: var(--vscode-editorWarning-foreground);
+  color: var(--pgw-warning);
 }
 
 .sr-only {
@@ -681,11 +670,11 @@ td.truncated {
 /* Editable grids (Data View) */
 
 table.editable td.read-only .cell-value {
-  color: var(--vscode-disabledForeground, var(--vscode-descriptionForeground));
+  color: var(--pgw-text-disabled);
 }
 
 table.editable th.read-only .column-title {
-  color: var(--vscode-descriptionForeground);
+  color: var(--pgw-text-muted);
 }
 
 table.editable td:not(.read-only) {
@@ -693,8 +682,8 @@ table.editable td:not(.read-only) {
 }
 
 td.edited {
-  background: var(--vscode-diffEditor-insertedTextBackground, rgba(155, 185, 85, 0.2));
-  box-shadow: inset 3px 0 var(--vscode-gitDecoration-modifiedResourceForeground, #e2c08d);
+  background: var(--pgw-diff-inserted-background);
+  box-shadow: inset 3px 0 var(--pgw-modified);
 }
 
 td.editing {
@@ -714,20 +703,20 @@ td.editing {
   align-items: stretch;
   height: 27px;
   min-width: max-content;
-  outline: 1px solid var(--vscode-focusBorder);
+  outline: 1px solid var(--pgw-focus);
   outline-offset: -1px;
-  background: var(--vscode-input-background);
+  background: var(--pgw-field-background);
 }
 
 .cell-editor.invalid {
-  outline-color: var(--vscode-inputValidation-errorBorder);
+  outline-color: var(--pgw-field-error-border);
 }
 
 .cell-editor-input {
   flex: 1 1 auto;
   min-width: 0;
   padding: 4px 6px;
-  color: var(--vscode-input-foreground);
+  color: var(--pgw-field-text);
   background: transparent;
   border: 0;
   font: inherit;
@@ -747,14 +736,14 @@ td.editing {
   flex: 0 0 auto;
   display: flex;
   flex-direction: column;
-  border-left: 1px solid var(--vscode-panel-border);
+  border-left: 1px solid var(--pgw-divider);
 }
 
 .cell-editor-empty {
   flex: 1 1 0;
   min-height: 0;
   padding: 0 5px;
-  color: var(--vscode-descriptionForeground);
+  color: var(--pgw-text-muted);
   background: transparent;
   border: 0;
   cursor: pointer;
@@ -765,24 +754,24 @@ td.editing {
 }
 
 .cell-editor-empties > .cell-editor-empty + .cell-editor-empty {
-  border-top: 1px solid var(--vscode-panel-border);
+  border-top: 1px solid var(--pgw-divider);
 }
 
 .cell-editor-empty:hover {
-  color: var(--vscode-foreground);
-  background: var(--vscode-list-hoverBackground);
+  color: var(--pgw-text);
+  background: var(--pgw-hover-background);
 }
 
 /* The state the cell is in right now, so the reader can read it off the editor and not guess. */
 .cell-editor-empty[aria-pressed="true"] {
-  color: var(--vscode-foreground);
-  background: var(--vscode-list-activeSelectionBackground);
+  color: var(--pgw-text);
+  background: var(--pgw-selection-background);
 }
 
 /* Column layout controls (Data View) */
 
 th.drag-over {
-  box-shadow: inset 3px 0 var(--vscode-focusBorder);
+  box-shadow: inset 3px 0 var(--pgw-focus);
 }
 
 th[draggable="true"] .column-sort {
@@ -800,7 +789,7 @@ th[draggable="true"] .column-sort {
   top: 4px;
   right: 2px;
   padding: 0 4px;
-  color: var(--vscode-descriptionForeground);
+  color: var(--pgw-text-muted);
   background: transparent;
   border: 0;
   cursor: pointer;
@@ -835,7 +824,7 @@ th:hover .column-menu-button,
   right: 2px;
   bottom: 4px;
   width: 2px;
-  background: var(--vscode-focusBorder);
+  background: var(--pgw-focus);
   border-radius: 1px;
   opacity: 0;
   content: "";
@@ -869,40 +858,40 @@ th:hover > .column-resize::after,
   align-items: center;
   gap: 4px;
   padding: 3px 4px 3px 8px;
-  color: var(--vscode-editorWidget-foreground, inherit);
-  background: var(--vscode-editorWidget-background);
-  border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
+  color: var(--pgw-floating-text);
+  background: var(--pgw-floating-background);
+  border: 1px solid var(--pgw-floating-border);
   border-radius: 4px;
-  box-shadow: 0 2px 8px var(--vscode-widget-shadow, rgb(0 0 0 / 25%));
+  box-shadow: 0 2px 8px var(--pgw-shadow-low);
 }
 
 .grid-finder > .codicon-search {
-  color: var(--vscode-descriptionForeground);
+  color: var(--pgw-text-muted);
 }
 
 .grid-finder-field {
   width: 18ch;
   padding: 2px 6px;
-  color: var(--vscode-input-foreground);
-  background: var(--vscode-input-background);
+  color: var(--pgw-field-text);
+  background: var(--pgw-field-background);
   border: 1px solid transparent;
   border-radius: 3px;
   font: inherit;
 }
 
 .grid-finder-field:focus {
-  border-color: var(--vscode-focusBorder);
+  border-color: var(--pgw-focus);
   outline: none;
 }
 
 /* Nothing found is worth saying in the field itself: that is where the reader is looking. */
 .grid-finder-field.empty-handed {
-  border-color: var(--vscode-inputValidation-errorBorder, var(--vscode-errorForeground));
+  border-color: var(--pgw-field-error-border);
 }
 
 .grid-finder-count {
   min-width: 8ch;
-  color: var(--vscode-descriptionForeground);
+  color: var(--pgw-text-muted);
   text-align: center;
   font-variant-numeric: tabular-nums;
 }
@@ -912,11 +901,11 @@ th:hover > .column-resize::after,
  * needs no mark of its own — it only needs to be the stronger of the two.
  */
 td.match {
-  background: var(--vscode-editor-findMatchHighlightBackground, rgb(234 92 0 / 33%));
+  background: var(--pgw-find-match-highlight-background);
 }
 
 td.match.anchor {
-  background: var(--vscode-editor-findMatchBackground, rgb(234 92 0 / 66%));
+  background: var(--pgw-find-match-background);
 }
 
 /*
@@ -930,7 +919,7 @@ th {
 }
 
 th.drag-over {
-  box-shadow: inset 3px 0 var(--vscode-focusBorder);
+  box-shadow: inset 3px 0 var(--pgw-focus);
 }
 
 /*
@@ -944,9 +933,9 @@ td.row-gutter {
   width: max(2.8em, calc(var(--row-number-width, 2ch) + 1.4em));
   min-width: max(2.8em, calc(var(--row-number-width, 2ch) + 1.4em));
   padding: 0 0.55em 0 0;
-  border-right: 1px solid var(--vscode-panel-border);
-  background: var(--vscode-editorWidget-background);
-  color: var(--vscode-descriptionForeground);
+  border-right: 1px solid var(--pgw-divider);
+  background: var(--pgw-floating-background);
+  color: var(--pgw-text-muted);
   cursor: default;
   font-size: 0.92em;
   font-weight: 400;
@@ -955,7 +944,7 @@ td.row-gutter {
 }
 
 th.row-gutter.selected {
-  color: var(--vscode-foreground);
+  color: var(--pgw-text);
 }
 
 .row-gutter-number {
@@ -976,7 +965,7 @@ th.row-gutter.selected .row-gutter-number {
   line-height: 1;
   /* Smaller than the body text, and as faint as the numbers it stands in for: a mark, not a badge. */
   font-size: 11px;
-  color: var(--vscode-descriptionForeground);
+  color: var(--pgw-text-muted);
   opacity: 0.6;
 }
 
@@ -988,14 +977,14 @@ th.row-gutter.in-selection .row-gutter-state {
 /* A row waiting to go is struck through until the change is applied, which is what it is. */
 tr.removed td,
 tr.removed th {
-  color: var(--vscode-descriptionForeground);
+  color: var(--pgw-text-muted);
   text-decoration: line-through;
   text-decoration-thickness: 1px;
 }
 
 /* A row waiting to be written is tinted, not coloured: it is neither an error nor a selection. */
 tr.added td {
-  background: color-mix(in srgb, var(--vscode-foreground) 6%, transparent);
+  background: color-mix(in srgb, var(--pgw-text) 6%, transparent);
 }
 
 /*
@@ -1005,11 +994,11 @@ tr.added td {
  */
 td.selected,
 tr.row-selected td {
-  background: color-mix(in srgb, var(--vscode-focusBorder) 26%, transparent);
+  background: color-mix(in srgb, var(--pgw-focus) 26%, transparent);
 }
 
 td.anchor {
-  box-shadow: inset 0 0 0 2px var(--vscode-focusBorder);
+  box-shadow: inset 0 0 0 2px var(--pgw-focus);
 }
 
 /*
@@ -1024,13 +1013,9 @@ td.anchor {
  * the selection speaks on the bottom edge instead, where nothing else is speaking.
  */
 thead th.in-selection {
-  border-bottom-color: color-mix(in srgb, var(--vscode-focusBorder) 60%, transparent);
-  background: color-mix(
-    in srgb,
-    var(--vscode-foreground) 12%,
-    var(--vscode-editorWidget-background)
-  );
-  color: var(--vscode-foreground);
+  border-bottom-color: color-mix(in srgb, var(--pgw-focus) 60%, transparent);
+  background: color-mix(in srgb, var(--pgw-text) 12%, var(--pgw-floating-background));
+  color: var(--pgw-text);
 }
 
 /*
@@ -1039,32 +1024,20 @@ thead th.in-selection {
  * take: both are drawn, one on each edge.
  */
 thead th.at-cursor {
-  border-bottom: 2px solid var(--vscode-focusBorder);
-  background: color-mix(
-    in srgb,
-    var(--vscode-foreground) 22%,
-    var(--vscode-editorWidget-background)
-  );
+  border-bottom: 2px solid var(--pgw-focus);
+  background: color-mix(in srgb, var(--pgw-text) 22%, var(--pgw-floating-background));
 }
 
 /* The gutter, at two strengths: rows the selection passes through, and rows wholly selected. */
 th.row-gutter.in-selection {
-  background: color-mix(
-    in srgb,
-    var(--vscode-focusBorder) 26%,
-    var(--vscode-editorWidget-background)
-  );
-  color: var(--vscode-foreground);
+  background: color-mix(in srgb, var(--pgw-focus) 26%, var(--pgw-floating-background));
+  color: var(--pgw-text);
 }
 
 tr.row-selected th.row-gutter,
 th.row-gutter.selected {
-  background: color-mix(
-    in srgb,
-    var(--vscode-focusBorder) 45%,
-    var(--vscode-editorWidget-background)
-  );
-  color: var(--vscode-foreground);
+  background: color-mix(in srgb, var(--pgw-focus) 45%, var(--pgw-floating-background));
+  color: var(--pgw-text);
 }
 
 th.row-gutter.in-selection .row-gutter-number,
@@ -1089,7 +1062,7 @@ th.row-gutter.selected .row-gutter-number {
 }
 
 tr.row-selected td:first-of-type {
-  box-shadow: inset 2px 0 0 var(--vscode-focusBorder);
+  box-shadow: inset 2px 0 0 var(--pgw-focus);
 }
 
 /*
@@ -1116,13 +1089,13 @@ tr.row-selected td:first-of-type {
   margin: 0;
   padding: 4px 0;
   overflow-y: auto;
-  color: var(--vscode-menu-foreground, var(--vscode-foreground));
-  background: var(--vscode-menu-background, var(--vscode-editorWidget-background));
-  border: 1px solid var(--vscode-menu-border, var(--vscode-panel-border));
+  color: var(--pgw-menu-text);
+  background: var(--pgw-menu-background);
+  border: 1px solid var(--pgw-menu-border);
   border-radius: 6px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
-  font-family: var(--vscode-font-family);
-  font-size: var(--vscode-font-size);
+  box-shadow: 0 4px 16px var(--pgw-shadow-medium);
+  font-family: var(--pgw-ui-font-family);
+  font-size: var(--pgw-ui-font-size);
 }
 
 .menu-item {
@@ -1140,7 +1113,7 @@ tr.row-selected td:first-of-type {
 }
 
 .menu-item:disabled {
-  color: var(--vscode-disabledForeground);
+  color: var(--pgw-text-disabled);
   cursor: default;
 }
 
@@ -1152,22 +1125,22 @@ tr.row-selected td:first-of-type {
 .menu-item:hover:not(:disabled),
 .menu-item:focus-visible,
 .menu-item.highlighted {
-  color: var(--vscode-menu-selectionForeground, var(--vscode-list-activeSelectionForeground));
-  background: var(--vscode-menu-selectionBackground, var(--vscode-list-activeSelectionBackground));
+  color: var(--pgw-menu-selection-text);
+  background: var(--pgw-menu-selection-background);
   outline: none;
 }
 
 /* What is being turned on and off is named the way the grid names it: in the editor's face. */
 .menu-item[role="menuitemcheckbox"] {
-  font-family: var(--vscode-editor-font-family);
+  font-family: var(--pgw-code-font-family);
 }
 
 .menu-item .codicon-pass-filled {
-  color: var(--menu-accent, var(--vscode-textLink-foreground));
+  color: var(--menu-accent, var(--pgw-link));
 }
 
 .menu-item .codicon-circle-large-outline {
-  color: var(--vscode-descriptionForeground);
+  color: var(--pgw-text-muted);
 }
 
 /* A proposal: what it is called, and under it what it is — two lines beside one pictogram. */
@@ -1185,18 +1158,18 @@ tr.row-selected td:first-of-type {
 .menu-item.detailed .codicon {
   grid-row: 1 / span 2;
   margin-top: 2px;
-  color: var(--menu-accent, var(--vscode-icon-foreground, var(--vscode-foreground)));
+  color: var(--menu-accent, var(--pgw-icon));
 }
 
 .menu-item.detailed .menu-label {
-  font-family: var(--vscode-editor-font-family);
+  font-family: var(--pgw-code-font-family);
   font-weight: 600;
   white-space: normal;
   word-break: break-word;
 }
 
 .menu-detail {
-  color: var(--vscode-descriptionForeground);
+  color: var(--pgw-text-muted);
   font-size: 0.9em;
   line-height: 15px;
   white-space: normal;
@@ -1222,7 +1195,7 @@ tr.row-selected td:first-of-type {
 
 .menu-group + .menu-group {
   margin-top: 4px;
-  border-top: 1px solid var(--vscode-panel-border);
+  border-top: 1px solid var(--pgw-divider);
 }
 
 /*
@@ -1244,7 +1217,7 @@ tr.row-selected td:first-of-type {
   border: 0;
   border-radius: 3px;
   background: transparent;
-  color: var(--vscode-descriptionForeground);
+  color: var(--pgw-text-muted);
   cursor: pointer;
   font-size: 13px;
   opacity: 0.45;
@@ -1258,8 +1231,8 @@ tr.row-selected td:first-of-type {
 
 .menu-note-dismiss:hover,
 .menu-note-dismiss:focus-visible {
-  color: var(--vscode-foreground);
-  background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
+  color: var(--pgw-text);
+  background: var(--pgw-toolbar-hover-background);
 }
 
 .menu-heading {
@@ -1267,8 +1240,8 @@ tr.row-selected td:first-of-type {
   align-items: center;
   gap: 8px;
   padding: 6px 14px 4px;
-  color: var(--vscode-foreground);
-  font-family: var(--vscode-editor-font-family);
+  color: var(--pgw-text);
+  font-family: var(--pgw-code-font-family);
   font-size: 0.92em;
   font-weight: 600;
   letter-spacing: 0.01em;
@@ -1293,20 +1266,20 @@ tr.row-selected td:first-of-type {
 .menu-header :is(input, textarea) {
   width: 100%;
   padding: 6px 10px;
-  color: var(--vscode-input-foreground);
-  background: var(--vscode-input-background);
-  border: 1px solid var(--vscode-input-border, var(--vscode-panel-border));
+  color: var(--pgw-field-text);
+  background: var(--pgw-field-background);
+  border: 1px solid var(--pgw-field-border);
   border-radius: 6px;
   font: inherit;
 }
 
 .menu-header :is(input, textarea):focus {
-  outline: 1px solid var(--vscode-focusBorder);
+  outline: 1px solid var(--pgw-focus);
   outline-offset: -1px;
 }
 
 .menu-separator {
   margin: 4px 0;
   border: 0;
-  border-top: 1px solid var(--vscode-menu-separatorBackground, var(--vscode-panel-border));
+  border-top: 1px solid var(--pgw-menu-separator);
 }

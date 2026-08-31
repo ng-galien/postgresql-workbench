@@ -63,6 +63,7 @@ describe("createCodeMonikerSyntaxParser", () => {
     expect(result).toEqual({
       file: "routine.plpgsql",
       language: "plpgsql",
+      target: { language: "plpgsql", entryPoint: "block" },
       focus: "routine.plpgsql",
       focusLineRange: null,
       root: {
@@ -146,5 +147,57 @@ describe("createCodeMonikerSyntaxParser", () => {
     );
     expect(result.language).toBe("sql");
     expect(result.hasError).toBe(false);
+  });
+
+  it("maps only nested parser language roots to explicit Workbench region facts", async () => {
+    const queryData = vi.fn().mockResolvedValue({
+      file: "routine.sql",
+      language: "sql",
+      focus: "routine.sql",
+      focus_line_range: null,
+      root: {
+        kind: "source_file",
+        language: "sql",
+        named: true,
+        error: false,
+        missing: false,
+        byte_range: [0, 8],
+        start: { line: 1, column: 0 },
+        end: { line: 1, column: 8 },
+        text: null,
+        children: [
+          {
+            kind: "source_file",
+            language: "plpgsql",
+            entry_point: "block",
+            has_error: false,
+            named: true,
+            error: false,
+            missing: false,
+            byte_range: [2, 6],
+            start: { line: 1, column: 2 },
+            end: { line: 1, column: 6 },
+            text: null,
+            children: [],
+          },
+        ],
+      },
+      emitted_nodes: 2,
+      total_nodes: 2,
+      max_depth: 32,
+      truncated: false,
+      has_error: false,
+    });
+    const parser = createCodeMonikerSyntaxParser({ queryData });
+
+    const result = await parser.parse({ language: "sql", source: "01234567" });
+
+    expect(result.root.languageRegion).toBeUndefined();
+    expect(result.root.children[0].languageRegion).toEqual({
+      language: "plpgsql",
+      entryPoint: "block",
+      hasError: false,
+      projection: { kind: "identity" },
+    });
   });
 });

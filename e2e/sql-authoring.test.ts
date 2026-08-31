@@ -2,18 +2,23 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { TextDocument } from "vscode-languageserver-textdocument";
 import { ensureLocalCodeMonikerWorkspace } from "../packages/catalog/src/localCodeMoniker.js";
 import { createCodeMonikerSyntaxParser } from "../packages/sql/src/analysis/codeMonikerSyntax.js";
+import type { PostgresSyntaxExpectationProvider } from "../packages/sql/src/analysis/syntaxExpectations.js";
 import type { SyntaxParser } from "../packages/sql/src/analysis/syntaxTree.js";
+import { postgresSyntaxExpectationProvider } from "../packages/sql/src/authoring/postgresSyntaxPredictor.js";
+import { answerSyntaxRequest } from "../packages/sql/src/languageServer/answerSyntax.js";
+import { planSqlAuthoringCompletionRequest } from "../packages/sql/src/languageServer/completionRequest.js";
 import {
   composeSqlAuthoringRequest,
   sqlAuthoringEditStillApplies,
 } from "../packages/sql/src/languageServer/composeRequest.js";
-import { postgresCompletions } from "../packages/sql/src/languageServer/features/completion.js";
+import { projectedSqlDocument } from "../packages/sql/src/languageServer/documentProjection.js";
+import { postgresCompletionList } from "../packages/sql/src/languageServer/features/completion.js";
 import type { SqlAuthoringDocumentContext } from "../packages/sql/src/languageServer/protocol.js";
 import { analyzeSqlQuery } from "../packages/sql/src/query/analysis.js";
 import { composePostgresSql } from "../packages/sql/src/query/composition.js";
-import { documentRelations } from "../packages/sql/src/query/relations.js";
 import {
   parseSqlAuthoringDrag,
   type SqlAuthoringSnapshot,
@@ -101,12 +106,19 @@ const snapshot: SqlAuthoringSnapshot = {
 };
 
 describe("SQL authoring language contracts", async () => {
-  let codeMoniker: { parser: SyntaxParser; dispose(): Promise<void> };
+  let codeMoniker: {
+    parser: SyntaxParser;
+    dispose(): Promise<void>;
+  };
+  const expectations: PostgresSyntaxExpectationProvider = postgresSyntaxExpectationProvider;
 
   beforeAll(async () => {
     // Parsing needs no index: an empty workspace answers immediately, the repository does not.
     const workspace = await mkdtemp(join(tmpdir(), "sql-authoring-"));
     const session = await ensureLocalCodeMonikerWorkspace({
+      ...(process.env.CODE_MONIKER_RUNTIME
+        ? { runtimePath: process.env.CODE_MONIKER_RUNTIME }
+        : {}),
       workspaceRoots: [workspace],
       clientName: "postgresql-workbench-sql-authoring",
     });
@@ -140,29 +152,28 @@ describe("SQL authoring language contracts", async () => {
     );
   }
 
-  /** Completes as the server does: the Host parses with a placeholder at the caret first. */
+  /** Completes through the same syntax-expectation port and autonomous planner as the server. */
   async function complete(
     source: string,
     offset: number,
     completionSnapshot: SqlAuthoringSnapshot = snapshot,
   ) {
-    const statement = sqlStatementAtOffset(source, offset);
-    const caret = offset - statement.start;
-    const { relations, caretRole } = await documentRelations(codeMoniker.parser, statement.text, {
-      uri: "file:///completion.sql",
-      maxDepth: 1_024,
-      maxNodes: 100_000,
-      caret,
-    });
-    const analyzed = await analyzeSqlQuery(statement.text, codeMoniker.parser);
-    return postgresCompletions(
-      source,
-      offset,
-      completionSnapshot,
-      relations,
-      caretRole,
-      analyzed.shape,
+    const uri = "file:///completion.sql";
+    const settings = {
+      syntaxMaxDepth: 1_024,
+      syntaxMaxNodes: 100_000,
+      tabSize: 2,
+      aliasStyle: "fullName" as const,
+    };
+    const completion = await planSqlAuthoringCompletionRequest(
+      { uri, source, language: "sql", offset, snapshot: completionSnapshot, limit: 200 },
+      {
+        syntax: (request) => answerSyntaxRequest(request, codeMoniker.parser, settings),
+      },
+      expectations,
     );
+    const document = TextDocument.create("file:///completion.sql", "sql", 1, source);
+    return postgresCompletionList(completion, projectedSqlDocument(document)).items;
   }
 
   it("round-trips only a current TreeView SQL drag payload", async () => {
@@ -438,24 +449,43 @@ describe("SQL authoring language contracts", async () => {
   it("completes schema objects and alias columns from one bounded snapshot", async () => {
     const schemaItems = await complete("SELECT * FROM shop.pro", 22, snapshot);
     expect(schemaItems).toContainEqual(
-      expect.objectContaining({ label: "product", insertText: "product" }),
+      expect.objectContaining({
+        label: "product",
+        textEdit: expect.objectContaining({ newText: "product" }),
+      }),
     );
     const aliasItems = await complete("SELECT p. FROM shop.product AS p", 9, snapshot);
     expect(aliasItems).toContainEqual(
-      expect.objectContaining({ label: "name", insertText: "name" }),
+      expect.objectContaining({
+        label: "name",
+        textEdit: expect.objectContaining({ newText: "name" }),
+      }),
     );
     expect(aliasItems.length).toBeLessThanOrEqual(200);
     const routineItems = await complete("SELECT find", 11, snapshot);
     expect(routineItems).toContainEqual(
       expect.objectContaining({
         label: "find_product",
-        insertText: "shop.find_product($" + "{1:p_id})",
+        textEdit: expect.objectContaining({ newText: "shop.find_product($" + "{1:p_id})" }),
       }),
     );
     const nested = "WITH x AS (SELECT * FROM shop.product AS p) SELECT p.";
     expect(await complete(nested, nested.length, snapshot)).toHaveLength(0);
     const schemaNamedCte = "WITH shop AS (SELECT 1) SELECT shop.";
-    expect(await complete(schemaNamedCte, schemaNamedCte.length, snapshot)).toHaveLength(0);
+    const schemaNamedCteItems = await complete(schemaNamedCte, schemaNamedCte.length, snapshot);
+    expect(schemaNamedCteItems).not.toContainEqual(expect.objectContaining({ label: "name" }));
+    expect(schemaNamedCteItems).toContainEqual(expect.objectContaining({ label: "find_product" }));
+  });
+
+  it("completes a qualified column at the end of a WHERE prefix", async () => {
+    const source = "SELECT * FROM shop.product AS product WHERE product.";
+
+    expect(await complete(source, source.length, snapshot)).toContainEqual(
+      expect.objectContaining({
+        label: "id",
+        textEdit: expect.objectContaining({ newText: "id" }),
+      }),
+    );
   });
 
   it("completes indexed objects inside an anonymous PL/pgSQL DO block", async () => {
@@ -470,7 +500,10 @@ describe("SQL authoring language contracts", async () => {
     ].join("\n");
     const relationCursor = relationSource.indexOf("shop.pro") + "shop.pro".length;
     expect(await complete(relationSource, relationCursor, snapshot)).toContainEqual(
-      expect.objectContaining({ label: "product", insertText: "product" }),
+      expect.objectContaining({
+        label: "product",
+        textEdit: expect.objectContaining({ newText: "product" }),
+      }),
     );
 
     const routineSource = [
@@ -484,6 +517,32 @@ describe("SQL authoring language contracts", async () => {
     expect(await complete(routineSource, routineCursor, snapshot)).toContainEqual(
       expect.objectContaining({ label: "find_product" }),
     );
+  });
+
+  it("completes an alias through the parser-proven SQL region nested in PL/pgSQL", async () => {
+    const source =
+      "CREATE FUNCTION f() RETURNS SETOF shop.product LANGUAGE plpgsql AS $$ BEGIN RETURN QUERY SELECT p. FROM shop.product AS p; END $$;";
+    const caret = source.indexOf("SELECT p.") + "SELECT p.".length;
+
+    const items = await complete(source, caret, snapshot);
+
+    expect(items).toContainEqual(
+      expect.objectContaining({
+        label: "id",
+        textEdit: expect.objectContaining({ newText: "id" }),
+      }),
+    );
+  });
+
+  it("rejects alias projection when the same nested SQL region remains invalid", async () => {
+    const source =
+      "CREATE FUNCTION f() RETURNS SETOF shop.product LANGUAGE plpgsql AS $$ BEGIN RETURN QUERY SELECT p. + FROM shop.product AS p; END $$;";
+    const caret = source.indexOf("SELECT p.") + "SELECT p.".length;
+
+    const items = await complete(source, caret, snapshot);
+
+    expect(items).not.toContainEqual(expect.objectContaining({ label: "id" }));
+    expect(items).not.toContainEqual(expect.objectContaining({ label: "name" }));
   });
 
   it("filters a large schema before applying the completion bound", async () => {
@@ -515,7 +574,7 @@ describe("SQL authoring language contracts", async () => {
     const productItems = await complete(cteAfter, cteAfter.indexOf("p.") + 2, snapshot);
     expect(productItems).toContainEqual(expect.objectContaining({ label: "name" }));
 
-    const reusedAlias = "SELECT p. FROM shop.product AS p; SELECT p. FROM shop.order_line AS p;";
+    const reusedAlias = "SELECT p.id FROM shop.product AS p; SELECT p. FROM shop.order_line AS p;";
     const secondCursor = reusedAlias.lastIndexOf("SELECT p.") + "SELECT p.".length;
     const orderLineItems = await complete(reusedAlias, secondCursor, snapshot);
     expect(orderLineItems).toContainEqual(expect.objectContaining({ label: "product_id" }));
@@ -542,7 +601,10 @@ describe("SQL authoring language contracts", async () => {
     const aliasNamedLikeSchema = "SELECT * FROM shop.product AS shop JOIN shop.";
     const schemaItems = await complete(aliasNamedLikeSchema, aliasNamedLikeSchema.length, snapshot);
     expect(schemaItems).toContainEqual(
-      expect.objectContaining({ label: "customer", insertText: "customer" }),
+      expect.objectContaining({
+        label: "customer",
+        textEdit: expect.objectContaining({ newText: "customer" }),
+      }),
     );
     expect(schemaItems).not.toContainEqual(expect.objectContaining({ label: "name" }));
   });
@@ -737,7 +799,10 @@ SELECT broken FROM;`;
     const keywordSnapshot = { ...snapshot, objects: [...snapshot.objects, keywordTable] };
     const source = "SELECT * FROM shop.us";
     expect(await complete(source, source.length, keywordSnapshot)).toContainEqual(
-      expect.objectContaining({ label: "user", insertText: '"user"' }),
+      expect.objectContaining({
+        label: "user",
+        textEdit: expect.objectContaining({ newText: '"user"' }),
+      }),
     );
 
     const projection = await compose(
@@ -1551,13 +1616,23 @@ SELECT broken FROM;`;
       completionSource.indexOf("SELECT P.") + "SELECT P.".length,
       snapshot,
     );
-    expect(items).toContainEqual(expect.objectContaining({ label: "name", insertText: "name" }));
+    expect(items).toContainEqual(
+      expect.objectContaining({
+        label: "name",
+        textEdit: expect.objectContaining({ newText: "name" }),
+      }),
+    );
     const generalItems = await complete(
       "SELECT  FROM Shop.Product AS P;",
       "SELECT ".length,
       snapshot,
     );
-    expect(generalItems).toContainEqual(expect.objectContaining({ label: "P", insertText: "P." }));
+    expect(generalItems).toContainEqual(
+      expect.objectContaining({
+        label: "P",
+        textEdit: expect.objectContaining({ newText: "P." }),
+      }),
+    );
 
     const quotedAliasSource = 'SELECT "P.A". FROM shop.product AS "P.A";';
     const quotedAliasItems = await complete(

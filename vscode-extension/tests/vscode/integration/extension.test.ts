@@ -1,14 +1,7 @@
 import * as assert from "node:assert";
 import * as vscode from "vscode";
 import { analyzePlpgsqlDocument } from "../../../../packages/sql/src/routines/documentAnalysis.js";
-import {
-  TOKEN_MODIFIERS,
-  TOKEN_TYPES,
-} from "../../../../packages/sql/src/text/plpgsqlTokenLegend.js";
-import {
-  PlpgsqlInlineValuesProvider,
-  PlpgsqlSemanticTokensProvider,
-} from "../../../src/plpgsql/index.js";
+import { PlpgsqlInlineValuesProvider } from "../../../src/plpgsql/index.js";
 import { CodeMonikerContentProvider } from "../../../src/sources/index.js";
 import { EXT_ID } from "./testUtils.js";
 
@@ -91,63 +84,6 @@ suite("Inline values", () => {
     assert.deepStrictEqual(
       lookups.map((value) => value.variableName),
       ["counter", "result"],
-    );
-  });
-});
-
-suite("Semantic tokens", () => {
-  test("marks declarations on the body-relative declaration line", async function () {
-    this.timeout(60_000);
-
-    const provider = new PlpgsqlSemanticTokensProvider(extensionSyntaxParser);
-    // pg_get_functiondef layout: LANGUAGE in the header, body opens on line 3
-    const lines = [
-      "CREATE OR REPLACE FUNCTION public.demo(counter integer)",
-      " RETURNS integer",
-      " LANGUAGE plpgsql",
-      "AS $function$",
-      "DECLARE",
-      "  result integer;",
-      "BEGIN",
-      "  SELECT counter::integer INTO result;",
-      "  RETURN result;",
-      "END;",
-      "$function$",
-    ];
-    const document = {
-      uri: { toString: () => "test://semantic-tokens.sql" },
-      version: 1,
-      getText: () => lines.join("\n"),
-    } as unknown as vscode.TextDocument;
-
-    const tokens = await provider.provideDocumentSemanticTokens(document);
-    assert.ok(tokens, "Expected semantic tokens");
-
-    // Decode [deltaLine, deltaStart, length, tokenType, tokenModifiers] runs
-    const decoded: { line: number; char: number; length: number; type: string; mods: number }[] =
-      [];
-    let line = 0;
-    let char = 0;
-    for (let i = 0; i < tokens.data.length; i += 5) {
-      line += tokens.data[i];
-      char = tokens.data[i] === 0 ? char + tokens.data[i + 1] : tokens.data[i + 1];
-      decoded.push({
-        line,
-        char,
-        length: tokens.data[i + 2],
-        type: TOKEN_TYPES[tokens.data[i + 3]],
-        mods: tokens.data[i + 4],
-      });
-    }
-
-    const declBit = 1 << TOKEN_MODIFIERS.indexOf("declaration");
-    const declarations = decoded.filter(
-      (t) => t.type === "variable" && (t.mods & declBit) !== 0 && t.length === "result".length,
-    );
-    assert.deepStrictEqual(
-      declarations.map((t) => ({ line: t.line, char: t.char })),
-      [{ line: 5, char: 2 }],
-      "Declaration token should land on the 'result integer;' line",
     );
   });
 });

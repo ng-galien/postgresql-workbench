@@ -1,4 +1,3 @@
-import type { SqlAuthoringProposal } from "../../../sql/src/languageServer/client.js";
 import type { DataViewDeleteRule } from "./editability.js";
 /**
  * What a Data View is: where its rows come from, how they are projected, sorted, and filtered,
@@ -195,13 +194,6 @@ export interface DataViewProjection {
   /** Per projected column, the index in `tables` (undefined for computed values). */
   columnTable: (number | undefined)[];
 }
-
-/**
- * One proposal for the filter input. It is the shape the SQL authoring client answers with: the
- * server is the only thing that proposes anything here, so the view shows what it said rather than
- * a copy of it under another name.
- */
-export type DataViewCompletion = SqlAuthoringProposal;
 
 /** One thing the composition engine can add to the query. */
 export interface DataViewAddition {

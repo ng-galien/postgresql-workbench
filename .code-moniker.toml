@@ -19,9 +19,11 @@ components = [
   "daemon",
   "debugger",
   "ddl-sync",
+  "editor",
   "extension-host",
   "language-server",
   "query-engine",
+  "presentation",
   "result",
   "scratchpad",
   "sql-analysis",
@@ -75,7 +77,9 @@ enable = [
   "coverage-dependency-is-limited-to-sql-analysis",
   "debugger-dependency-is-limited-to-sql-analysis",
   "result-dependency-is-limited-to-sql-analysis-and-debugger",
-  "webview-dependency-is-limited-to-catalog-debugger-and-result",
+  "presentation-dependency-is-leaf",
+  "editor-dependency-is-limited-to-sql-analysis-and-presentation",
+  "webview-dependency-is-limited-to-catalog-debugger-result-presentation-and-editor",
   "workbench-composition-root-stays-independent-of-extension-host",
   "result-row-update-builder-encapsulation-stays-in-result-engine",
   "data-view-result-protocol-ownership-stays-in-result-engine",
@@ -92,10 +96,13 @@ title = "PostgreSQL Workbench boundaries"
 scope = "."
 intent = "Review ownership and dependency direction before changing a package boundary, the extension's activation, PostgreSQL Connections, the Workbench Index, the Cockpit, Scratchpads, or DDL synchronization."
 summary = """
-One engine, three shells. Six packages are the engine: packages/sql is the leaf — it reads SQL and
+One engine, three shells. Eight packages are the engine: packages/sql is the syntax leaf — it reads SQL and
 PL/pgSQL and answers editor questions through its language server. packages/catalog says what a
 database contains and keeps the Workbench Index of it. packages/dap debugs PL/pgSQL. packages/rows
-reads and edits result rows. packages/coverage maps executed lines back to source. packages/views
+reads and edits result rows. packages/coverage maps executed lines back to source.
+packages/presentation owns the host-neutral visual vocabulary and default theme. packages/editor
+owns the host-neutral Monaco surface and connects it to the SQL authoring server through the
+official Monaco language-client stack. packages/views
 renders what the others produce — React views that reach whatever hosts them only through the typed
 protocol each view declares, because the same views must run under three shells: a VS Code webview,
 a plain web page served by packages/shell, and the Electron application that shell grows into.
@@ -310,25 +317,62 @@ rules = [
 ]
 
 [[views.boundaries]]
+id = "presentation"
+owns = [
+  "the typed visual roles shared by every rendered surface",
+  "the complete default Workbench theme",
+  "PostgreSQL visual identities independent of any host theme API",
+]
+forbids = [
+  "depending on another product package or a host",
+  "naming VS Code, Monaco, Electron, CSS framework, or transport concepts",
+  "consumer-specific theme projections",
+]
+forbid_rules = ["ts.refs.presentation.presentation-dependency-is-leaf"]
+rationale = "A view names the role a visual value plays and a host may override that role. The shared vocabulary and its working defaults therefore precede every renderer; VS Code token names belong to the extension adapter, while future Monaco and Electron adapters consume the same roles without changing them."
+symbols = [
+  "ts:packages/presentation/src/roles.const:WORKBENCH_THEME_ROLES",
+  "ts:packages/presentation/src/presentation.function:postgresVisual",
+]
+rules = ["ts.refs.presentation.presentation-dependency-is-leaf"]
+
+[[views.boundaries]]
+id = "editor"
+owns = [
+  "the host-neutral Monaco editor surface consumed by every non-VS-Code renderer",
+  "the official Monaco language-client integration with the SQL authoring server",
+  "Monaco workers, editor lifecycle, models, and theme projection from presentation roles",
+]
+forbids = [
+  "depending on views, shell, Electron, or the VS Code Extension Host",
+  "implementing SQL or PL/pgSQL parsing, colouring, completion, or LSP transport semantics locally",
+  "depending on any product package other than sql and presentation",
+]
+forbid_rules = ["ts.refs.editor.editor-dependency-is-limited-to-sql-analysis-and-presentation"]
+rationale = "Monaco is reusable infrastructure, not a view and not a shell. It consumes the SQL authoring and presentation contracts, while views embed it and shells provide transport. Keeping that direction explicit prevents an editor convenience from pulling host state or feature policy back into the engine."
+symbols = ["ts:packages/editor/src/MonacoSqlEditor.function:MonacoSqlEditor"]
+rules = ["ts.refs.editor.editor-dependency-is-limited-to-sql-analysis-and-presentation"]
+
+[[views.boundaries]]
 id = "webview-rendering"
 owns = [
   "the React result grid, its navigation, and the three views that nest it",
   "the Cockpit graph and its interaction state",
-  "the shared PostgreSQL visual identities",
+  "generic navigation structures supplied with routes by their host",
 ]
 forbids = [
   "depending on the Extension Host",
-  "depending on any package other than catalog, dap and rows",
+  "depending on any package other than catalog, dap, rows, presentation and editor",
   "PostgreSQL transport, Code Moniker sessions, or VS Code state",
   "declaring the protocol it speaks: the Data View's belongs to the engine",
 ]
-forbid_rules = ["ts.refs.views.webview-dependency-is-limited-to-catalog-debugger-and-result"]
-rationale = "A webview is a separate runtime, and for these views it is three runtimes: a VS Code webview, the composition shell's browser page, and the Electron renderer to come. The views render values and post messages; connections, sessions and command execution stay in whichever host is present and cross the boundary through the protocol each view declares. Measured against that, August 2026: the second grammar the views ran — Shiki over a TextMate file read from the extension's directory — is gone, and every colour on every source surface, the Cockpit preview included, is a kind of the language server's one legend, named by the view and valued by the host. What remains off the single path is the editor side: the semantic-tokens provider the extension still registers directly with VS Code for virtual and debug sources, which the move of those sources onto the LSP will retire."
+forbid_rules = ["ts.refs.views.webview-dependency-is-limited-to-catalog-debugger-result-presentation-and-editor"]
+rationale = "A webview is a separate runtime, and for these views it is three runtimes: a VS Code webview, the composition shell's browser page, and the Electron renderer to come. The views render values and post messages; connections, sessions and command execution stay in whichever host is present and cross the boundary through the protocol each view declares. Measured against that, August 2026: the second grammar the views ran — Shiki over a TextMate file read from the extension's directory — is gone, and every colour on every source surface, the Cockpit preview included, is a kind of the language server's one legend, named by the view and valued by the host. SQL and PL/pgSQL editor features now cross the same host-neutral LSP boundary; browser packages may not register parallel Monaco providers."
 symbols = [
   "ts:packages/views/src/cockpit/graph/store.interface:CockpitStore",
-  "ts:packages/views/src/presentation.function:postgresVisual",
+  "ts:packages/views/src/navigation/WorkbenchNavigation.function:WorkbenchNavigation",
 ]
-rules = ["ts.refs.views.webview-dependency-is-limited-to-catalog-debugger-and-result"]
+rules = ["ts.refs.views.webview-dependency-is-limited-to-catalog-debugger-result-presentation-and-editor"]
 
 [[views.boundaries]]
 id = "activation"

@@ -2,6 +2,7 @@
 import { createServer } from "node:http";
 import { createRequire } from "node:module";
 import * as esbuild from "esbuild";
+import { WebSocketServer } from "ws";
 
 /**
  * Serves the Data View in a browser and bridges it to the real Extension Host logic: the page
@@ -35,22 +36,14 @@ await esbuild.build({
   target: "es2022",
   packages: "external",
 });
-const { startDataViewHost, startSourcesHost } = createRequire(import.meta.url)(`${OUT}host.cjs`);
-
-// The language server the shell drives: the same source the extension ships, built the same way.
-await esbuild.build({
-  entryPoints: [new URL("../sql/src/languageServer/server.ts", import.meta.url).pathname],
-  bundle: true,
-  outfile: `${OUT}sql-authoring-server.cjs`,
-  format: "cjs",
-  platform: "node",
-  target: "es2022",
-  packages: "external",
-});
+const nodeRequire = createRequire(import.meta.url);
+const { startCockpitHost, startDataViewHost, startSourcesHost, startSqlLanguageServerSession } =
+  nodeRequire(`${OUT}host.cjs`);
 
 /** One response stream per view: a page subscribes to its own, a rebuild reloads every one. */
 const channels = new Map([
   ["data-view", new Set()],
+  ["cockpit", new Set()],
   ["sources", new Set()],
 ]);
 const emitTo = (channel) => (response) => {
@@ -58,12 +51,13 @@ const emitTo = (channel) => (response) => {
   for (const client of channels.get(channel)) client.write(frame);
 };
 const emit = emitTo("data-view");
-const clients = channels.get("data-view");
 
 const host = await startDataViewHost({
   connection: CONNECTION,
   ...(RELATION ? { relation: RELATION } : {}),
-  languageServerPath: `${OUT}sql-authoring-server.cjs`,
+  ...(process.env.PGWB_CODE_MONIKER_RUNTIME
+    ? { codeMonikerRuntimePath: process.env.PGWB_CODE_MONIKER_RUNTIME }
+    : {}),
   navigationDelayMs: Number(process.env.PGWB_NAVIGATION_DELAY_MS ?? 0),
   emit,
 });
@@ -97,6 +91,7 @@ const bundle = await esbuild.context({
   entryPoints: [
     { in: new URL("browser/index.tsx", import.meta.url).pathname, out: "data-view" },
     { in: new URL("browser/sources.tsx", import.meta.url).pathname, out: "sources" },
+    { in: new URL("browser/cockpit.tsx", import.meta.url).pathname, out: "cockpit" },
   ],
   bundle: true,
   outdir: OUT,
@@ -111,36 +106,40 @@ const bundle = await esbuild.context({
 });
 await bundle.watch();
 
+const editorWorker = await esbuild.context({
+  entryPoints: [
+    {
+      in: nodeRequire.resolve("@codingame/monaco-vscode-editor-api/esm/vs/editor/editor.worker.js"),
+      out: "editor.worker",
+    },
+  ],
+  bundle: true,
+  outdir: OUT,
+  format: "esm",
+  platform: "browser",
+  target: "es2022",
+});
+await editorWorker.watch();
+
+/** The HTTP shell serves resources and routes; React owns every visible application surface. */
 const page = (title, script) => `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>${title}</title></head>
 <body><div id="root"></div><script src="${script}"></script></body></html>`;
 
-/** The shell's front door: every view it manages, one link each, nothing else. */
-const MENU = `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>PostgreSQL Workbench — shell</title><style>
-  body { background: #1f1f1f; color: #ccc; font-family: -apple-system, sans-serif;
-    display: grid; place-content: center; height: 100vh; margin: 0; }
-  h1 { font-size: 14px; font-weight: 600; opacity: .7; margin: 0 0 12px; }
-  a { display: block; color: #75beff; text-decoration: none; font-size: 16px;
-    padding: 8px 14px; border: 1px solid #333; border-radius: 6px; margin: 6px 0; width: 220px; }
-  a:hover { background: #2a2d2e; }
-  small { opacity: .5 }
-</style></head><body><div>
-<h1>PostgreSQL Workbench — shell</h1>
-<a href="/data-view">Data View</a>
-<a href="/cockpit">Cockpit <small>— soon</small></a>
-<a href="/sources">Sources</a>
-</div></body></html>`;
-
 const sources = await startSourcesHost({
   connection: CONNECTION,
-  tokens: (uri, text, languageId) =>
-    host.language?.semanticTokens(uri, text, languageId) ?? Promise.resolve([]),
   emit: emitTo("sources"),
 });
+const cockpit = await startCockpitHost({
+  connection: CONNECTION,
+  ...(process.env.PGWB_CODE_MONIKER_RUNTIME
+    ? { codeMonikerRuntimePath: process.env.PGWB_CODE_MONIKER_RUNTIME }
+    : {}),
+  emit: emitTo("cockpit"),
+});
 
-createServer(async (request, response) => {
-  const stream = /^\/(data-view|sources)\/responses$/.exec(request.url ?? "");
+const httpServer = createServer(async (request, response) => {
+  const stream = /^\/(data-view|cockpit|sources)\/responses$/.exec(request.url ?? "");
   if (stream) {
     response.writeHead(200, {
       "content-type": "text/event-stream",
@@ -149,6 +148,18 @@ createServer(async (request, response) => {
     });
     channels.get(stream[1]).add(response);
     request.on("close", () => channels.get(stream[1]).delete(response));
+    response.flushHeaders();
+    response.write(": connected\n\n");
+    return;
+  }
+  if (request.url === "/cockpit/request" && request.method === "POST") {
+    const body = await new Blob(await Array.fromAsync(request)).text();
+    response.writeHead(204).end();
+    const message = JSON.parse(body);
+    console.log(`→ ${message.type}`);
+    await cockpit.handle(message).catch((error) => {
+      emitTo("cockpit")({ type: "scopeError", message: String(error) });
+    });
     return;
   }
   if (request.url === "/sources/request" && request.method === "POST") {
@@ -182,10 +193,16 @@ createServer(async (request, response) => {
     });
     return;
   }
-  if (/^\/(data-view|sources)\.js(\.map)?$/.test(request.url ?? "")) {
+  if (/^\/(data-view|sources|cockpit)\.js(\.map)?$/.test(request.url ?? "")) {
     const { readFile } = await import("node:fs/promises");
     response.writeHead(200, { "content-type": "text/javascript" });
     response.end(await readFile(`${OUT}${request.url.slice(1)}`));
+    return;
+  }
+  if (request.url === "/editor.worker.js") {
+    const { readFile } = await import("node:fs/promises");
+    response.writeHead(200, { "content-type": "text/javascript" });
+    response.end(await readFile(`${OUT}editor.worker.js`));
     return;
   }
   if (request.url === "/data-view" || request.url?.startsWith("/data-view?")) {
@@ -194,21 +211,49 @@ createServer(async (request, response) => {
       .end(page("Data View — shell", "/data-view.js"));
     return;
   }
-  if (request.url === "/sources") {
+  if (request.url === "/sources" || request.url?.startsWith("/sources?")) {
     response
       .writeHead(200, { "content-type": "text/html" })
       .end(page("Sources — shell", "/sources.js"));
     return;
   }
-  response.writeHead(200, { "content-type": "text/html" }).end(MENU);
-}).listen(PORT, () => {
+  if (request.url === "/cockpit" || request.url?.startsWith("/cockpit?")) {
+    response
+      .writeHead(200, { "content-type": "text/html" })
+      .end(page("Cockpit — shell", "/cockpit.js"));
+    return;
+  }
+  response.writeHead(302, { location: "/data-view" }).end();
+});
+
+const languageServerSockets = new WebSocketServer({ noServer: true });
+httpServer.on("upgrade", (request, socket, head) => {
+  if (request.url !== "/sql-language-server") {
+    socket.destroy();
+    return;
+  }
+  languageServerSockets.handleUpgrade(request, socket, head, (webSocket) => {
+    startSqlLanguageServerSession(webSocket, host.authoring);
+  });
+});
+
+httpServer.listen(PORT, () => {
   console.log(
     `PostgreSQL Workbench shell on http://localhost:${PORT} — ${RELATION ? `${RELATION.schema}.${RELATION.name}` : "empty"} of ${CONNECTION.database}`,
   );
 });
 
-process.on("SIGINT", async () => {
-  await sources.dispose();
-  await host.dispose();
+let shuttingDown = false;
+async function shutdown() {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  for (const socket of languageServerSockets.clients) socket.terminate();
+  httpServer.closeAllConnections();
+  await Promise.allSettled([cockpit.dispose(), sources.dispose(), host.dispose()]);
+  await bundle.dispose();
+  await editorWorker.dispose();
   process.exit(0);
-});
+}
+
+process.on("SIGINT", shutdown);
+process.on("SIGTERM", shutdown);

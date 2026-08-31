@@ -1,0 +1,13 @@
+fragment = "presentation"
+enabled = true
+
+[aliases]
+presentation_source = "source ~ '**/dir:packages/dir:presentation/**'"
+presentation_target = "target ~ '**/dir:packages/dir:presentation/**'"
+
+[[ts.refs.where]]
+id = "presentation-dependency-is-leaf"
+severity = "error"
+expr = "$presentation_source AND $structural_edge AND ($engine_package_target OR $host_local_target) => $presentation_target"
+message = "packages/presentation owns the host-neutral visual vocabulary and depends on no product package or host."
+rationale = "Themes and visual identities must be reusable by every renderer. A dependency on a view, editor, or host would make the shared vocabulary conditional on the consumer it is meant to free from."

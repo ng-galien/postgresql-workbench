@@ -221,6 +221,7 @@ function syntaxTree(root: SyntaxNode): SyntaxTree {
   return {
     file: "test.sql",
     language: "test",
+    target: { language: "sql", entryPoint: "script" },
     focus: "test.sql",
     focusLineRange: null,
     root,

@@ -113,7 +113,8 @@ function embeddedPlpgsqlBody(
       node.kind === "dollar_quoted_string" &&
       findNodes(
         node,
-        (candidate) => candidate.kind === "source_file" && candidate.language === "plpgsql",
+        (candidate) =>
+          candidate.kind === "source_file" && candidate.languageRegion?.language === "plpgsql",
       ).length === 1,
   );
   if (containers.length !== 1) return undefined;

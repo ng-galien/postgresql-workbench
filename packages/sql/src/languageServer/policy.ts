@@ -1,7 +1,4 @@
-import {
-  POSTGRES_SOURCE_LANGUAGE_IDS,
-  type PostgresSourceLanguageId,
-} from "../text/documentLanguage.js";
+import type { SyntaxLanguage } from "../analysis/syntaxTree.js";
 import type { SqlAuthoringSyntaxResult } from "./protocol.js";
 
 export const SQL_AUTHORING_SYNTAX_SETTINGS =
@@ -21,12 +18,7 @@ export function formatSkippedMessage(syntax: SqlAuthoringSyntaxResult): string |
     : `Format skipped: the SQL contains a syntax error at line ${syntax.errorLine}.`;
 }
 
-/**
- * PL/pgSQL syntax-tree tokens complement indexed SQL tokens for the documents whose body IS
- * PL/pgSQL: `.pgsql` files, the virtual sources the catalog projects (their language ids say what
- * they are, whatever shell serves them), and the sources a debug session opens.
- */
-export function wantsPlpgsqlSemanticTokens(uri: string, languageId: string): boolean {
-  if (POSTGRES_SOURCE_LANGUAGE_IDS.includes(languageId as PostgresSourceLanguageId)) return true;
-  return languageId === "plpgsql" && (uri.startsWith("file:") || uri.startsWith("debug:"));
+/** The LSP document's root grammar. Virtual PostgreSQL sources are SQL wrappers with injections. */
+export function postgresAuthoringDocumentLanguage(languageId: string): SyntaxLanguage {
+  return languageId === "plpgsql" ? "plpgsql" : "sql";
 }

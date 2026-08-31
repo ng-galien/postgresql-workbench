@@ -311,6 +311,9 @@ function isCodeMonikerSyntaxNode(value: unknown): value is CodeMonikerSyntaxTree
     (value.language === undefined ||
       value.language === null ||
       typeof value.language === "string") &&
+    (value.has_error === undefined ||
+      value.has_error === null ||
+      typeof value.has_error === "boolean") &&
     typeof value.named === "boolean" &&
     typeof value.error === "boolean" &&
     typeof value.missing === "boolean" &&

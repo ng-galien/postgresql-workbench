@@ -106,16 +106,18 @@ class FakeCatalogClient implements CatalogQueryClient {
               schema_name: "public",
               object_name: "extension_probe",
               identity_arguments: "",
+              routine_kind: "procedure",
               extension_name: this.extensionName,
               definition:
-                "CREATE OR REPLACE FUNCTION public.extension_probe() RETURNS boolean " +
-                "LANGUAGE sql AS $function$ SELECT true $function$",
+                "CREATE OR REPLACE PROCEDURE public.extension_probe() " +
+                "LANGUAGE sql AS $procedure$ SELECT true $procedure$",
             },
             {
               oid: this.routineOid,
               schema_name: "app",
               object_name: "find_account",
               identity_arguments: "p_id bigint",
+              routine_kind: "function",
               definition:
                 "CREATE OR REPLACE FUNCTION app.find_account(p_id bigint)\n" +
                 "RETURNS bigint\nLANGUAGE sql\nAS $function$ SELECT id FROM app.account WHERE id = p_id $function$",
@@ -192,10 +194,12 @@ describe("readPostgresCatalog", () => {
     const routine = first.sourceSet.documents.find((document) => document.postgres?.oid === 40);
     expect(routine?.uri).toMatch(/\/routine\/find_account\(p_id%20bigint\)\.sql$/);
     expect(routine?.content).toMatch(/\$function\$;\n$/);
+    expect(routine?.postgres?.routineKind).toBe("function");
     const extensionRoutine = first.sourceSet.documents.find(
       (document) => document.postgres?.oid === 41,
     );
     expect(extensionRoutine?.uri).toMatch(/\/routine\/extension_probe\(\)\.sql$/);
+    expect(extensionRoutine?.postgres?.routineKind).toBe("procedure");
     expect(extensionRoutine).toBeDefined();
     expect(first.origins.get(extensionRoutine!.uri)).toEqual({
       kind: "extension",

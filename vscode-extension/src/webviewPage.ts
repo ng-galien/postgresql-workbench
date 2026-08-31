@@ -1,36 +1,6 @@
 import { randomBytes } from "node:crypto";
 import * as vscode from "vscode";
-
-/**
- * What the views' own colour names are worth under VS Code.
- *
- * A view names the colours it paints with and knows nothing about themes; saying what those names
- * are worth here is adapting the engine to VS Code, which is this extension's whole job. The
- * editor takes semantic colours from theme rules a webview cannot read, so they are mapped onto
- * the symbol and chart colours it does hand us — the ones the outline and the suggest widget
- * already use — and a relation reads in a view close to how it reads in a tab. What matters as
- * much as the family is that they stay apart: an alias standing for a relation must not be the
- * colour of a column of it, or a reader cannot see which is which.
- */
-const VIEW_COLOUR_NAMES = `:root {
-  --postgres-name-schema: var(--vscode-descriptionForeground);
-  --postgres-name-relation: var(--vscode-symbolIcon-classForeground);
-  --postgres-name-alias: var(--vscode-charts-green);
-  --postgres-name-column: var(--vscode-symbolIcon-fieldForeground);
-  --postgres-name-routine: var(--vscode-symbolIcon-functionForeground);
-  --postgres-name-parameter: var(--vscode-charts-yellow);
-  --postgres-name-type: var(--vscode-symbolIcon-interfaceForeground);
-  --postgres-lex-keyword: var(--vscode-symbolIcon-keywordForeground);
-  --postgres-lex-string: var(--vscode-symbolIcon-stringForeground);
-  --postgres-lex-number: var(--vscode-symbolIcon-numberForeground);
-  --postgres-lex-comment: var(--vscode-descriptionForeground);
-  --postgres-lex-operator: var(--vscode-symbolIcon-operatorForeground);
-  --postgres-lex-punctuation: var(--vscode-editor-foreground);
-  --postgres-field-unapplied: var(--vscode-inputValidation-warningBorder, var(--vscode-focusBorder));
-  --postgres-scroll-thumb: var(--vscode-scrollbarSlider-background);
-  --postgres-scroll-thumb-hover: var(--vscode-scrollbarSlider-hoverBackground);
-  --postgres-scroll-thumb-active: var(--vscode-scrollbarSlider-activeBackground);
-}`;
+import { vscodeThemeOverrides } from "./presentation/vscodeTheme.js";
 
 /**
  * The HTML shell every Workbench webview loads: a fresh nonce, a Content Security Policy that
@@ -74,7 +44,7 @@ export function webviewPage(options: {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Content-Security-Policy" content="${csp}">${styleLink}
-  <style>${VIEW_COLOUR_NAMES}</style>
+  <style>${vscodeThemeOverrides()}</style>
   <title>${title}</title>
 </head>
 <body>

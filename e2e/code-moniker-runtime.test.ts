@@ -8,6 +8,10 @@ import {
   type LocalCodeMonikerSession,
 } from "../packages/catalog/src/localCodeMoniker.js";
 import { createCodeMonikerSyntaxParser } from "../packages/sql/src/analysis/codeMonikerSyntax.js";
+import {
+  postgresCaretShape,
+  postgresDocumentShape,
+} from "../packages/sql/src/analysis/documentShape.js";
 import { StatelessCodeMonikerSyntaxRuntime } from "../packages/sql/src/localCodeMonikerSyntax.js";
 
 const runtimePath = resolve(
@@ -78,6 +82,103 @@ describe.skipIf(!localArtifactsAvailable)("local Code Moniker runtime contract",
 
       expect(plpgsql).toMatchObject({ language: "plpgsql", hasError: false });
       expect(sql).toMatchObject({ language: "sql", hasError: false });
+    } finally {
+      await runtime.dispose();
+    }
+  });
+
+  it("proves SQL and PL/pgSQL routine-body regions through the real syntax port", async () => {
+    const source = `CREATE FUNCTION public.sql_body() RETURNS integer
+LANGUAGE sql AS $sql$ SELECT 1; $sql$;
+
+CREATE FUNCTION public.plpgsql_body() RETURNS integer
+LANGUAGE plpgsql AS $plpgsql$ BEGIN RETURN 1; END; $plpgsql$;`;
+    const runtime = new StatelessCodeMonikerSyntaxRuntime({ runtimePath });
+    try {
+      const parser = await runtime.parser();
+      const syntax = await parser.parse({ language: "sql", source, uri: "routines.sql" });
+      const shape = postgresDocumentShape(source, syntax);
+
+      expect(shape.root.children.map(({ language }) => language)).toEqual(["sql", "plpgsql"]);
+      expect(shape.root.children.map(({ analysisSource }) => analysisSource)).toEqual([
+        "SELECT 1; ",
+        "BEGIN RETURN 1; END; ",
+      ]);
+      for (const region of shape.root.children) {
+        expect(source.slice(region.sourceRange.start, region.sourceRange.end)).toBe(
+          region.analysisSource,
+        );
+      }
+      expect(postgresCaretShape(shape, source.indexOf("SELECT 1"))?.language).toBe("sql");
+      expect(postgresCaretShape(shape, source.indexOf("BEGIN RETURN"))?.language).toBe("plpgsql");
+      const sqlClosingDelimiter = source.indexOf("$sql$", source.indexOf("$sql$") + 1);
+      expect(postgresCaretShape(shape, sqlClosingDelimiter)).toMatchObject({
+        language: "sql",
+        status: "projected",
+        analysisOffset: "SELECT 1; ".length,
+      });
+    } finally {
+      await runtime.dispose();
+    }
+  });
+
+  it("proves DO and nested SQL regions through the real syntax port", async () => {
+    const source = `CREATE FUNCTION public.nested_sql() RETURNS integer
+LANGUAGE plpgsql AS $plpgsql$ BEGIN RETURN (SELECT 1); END; $plpgsql$;
+DO $body$ BEGIN PERFORM 1; END; $body$;`;
+    const runtime = new StatelessCodeMonikerSyntaxRuntime({ runtimePath });
+    try {
+      const parser = await runtime.parser();
+      const syntax = await parser.parse({ language: "sql", source, uri: "block.sql" });
+      const shape = postgresDocumentShape(source, syntax);
+
+      expect(shape.root.children).toHaveLength(2);
+      expect(shape.root.children.map(({ language }) => language)).toEqual(["plpgsql", "plpgsql"]);
+      expect(shape.root.children.map(({ target }) => target)).toEqual([
+        { status: "available", target: { language: "plpgsql", entryPoint: "block" } },
+        { status: "available", target: { language: "plpgsql", entryPoint: "block" } },
+      ]);
+      expect(shape.root.children[0].children).toContainEqual(
+        expect.objectContaining({
+          language: "sql",
+          kind: "embedded-sql",
+          target: {
+            status: "available",
+            target: { language: "sql", entryPoint: "expression" },
+          },
+        }),
+      );
+      expect(postgresCaretShape(shape, source.indexOf("SELECT 1"))?.language).toBe("sql");
+      expect(postgresCaretShape(shape, source.indexOf("PERFORM"))?.language).toBe("plpgsql");
+      expect(
+        postgresCaretShape(shape, source.indexOf("PERFORM 1") + "PERFORM ".length)?.language,
+      ).toBe("sql");
+    } finally {
+      await runtime.dispose();
+    }
+  });
+
+  it("projects the unique caret position of an empty SQL routine body", async () => {
+    const source =
+      "CREATE FUNCTION public.empty_body() RETURNS void LANGUAGE sql AS $empty$$empty$;";
+    const runtime = new StatelessCodeMonikerSyntaxRuntime({ runtimePath });
+    try {
+      const parser = await runtime.parser();
+      const syntax = await parser.parse({ language: "sql", source, uri: "empty-routine.sql" });
+      const shape = postgresDocumentShape(source, syntax);
+      const bodyOffset = source.indexOf("$empty$") + "$empty$".length;
+
+      expect(shape.root.children).toHaveLength(1);
+      expect(shape.root.children[0]).toMatchObject({
+        language: "sql",
+        analysisSource: "",
+        sourceRange: { start: bodyOffset, end: bodyOffset },
+      });
+      expect(postgresCaretShape(shape, bodyOffset)).toMatchObject({
+        language: "sql",
+        status: "projected",
+        analysisOffset: 0,
+      });
     } finally {
       await runtime.dispose();
     }

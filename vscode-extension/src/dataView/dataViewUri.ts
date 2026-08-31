@@ -48,17 +48,13 @@ export function dataViewQueryUri(source: DataViewSource): vscode.Uri {
  */
 export function dataViewScratchUri(source: DataViewSource, purpose: DataViewScratch): vscode.Uri {
   const query = dataViewQueryUri(source);
-  return query.with({ path: query.path.replace(/\.sql$/u, `.${purpose}.sql`) });
+  return vscode.Uri.parse(`${query.toString()}.${purpose}`);
 }
 
-export type DataViewScratch = "completion" | "tokens" | "filter-tokens";
+export type DataViewScratch = "filter";
 
 /** Every scratch document of a Data View, for opening and for letting go of all of them. */
-export const DATA_VIEW_SCRATCHES: readonly DataViewScratch[] = [
-  "completion",
-  "tokens",
-  "filter-tokens",
-];
+export const DATA_VIEW_SCRATCHES: readonly DataViewScratch[] = ["filter"];
 
 export function parseDataViewUri(uri: vscode.Uri): DataViewSource | undefined {
   if (uri.scheme !== DATA_VIEW_URI_SCHEME) return undefined;

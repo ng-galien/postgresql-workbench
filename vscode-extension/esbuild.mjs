@@ -6,11 +6,13 @@ import {
   rmSync,
   writeFileSync,
 } from "fs";
+import { createRequire } from "module";
 import { dirname, resolve, sep } from "path";
 import viewBundles from "../packages/views/viewBundles.json" with { type: "json" };
 
 const production = process.argv.includes("--production");
 const watch = process.argv.includes("--watch");
+const nodeRequire = createRequire(import.meta.url);
 
 function mitLicense(copyright) {
   return `The MIT License (MIT)
@@ -86,16 +88,21 @@ const sqlAuthoringConnectionConfig = {
  * `styles: "inlined"` turns CSS and fonts into strings the bundle injects into the shadow root it
  * renders in; `styles: "linked"` leaves esbuild to emit the sibling .css the page shell links.
  */
-function viewConfig(bundle) {
+function viewConfig(bundle, entry) {
   return {
-    entryPoints: [`../packages/views/${bundle.entry}`],
+    entryPoints: [entry],
     bundle: true,
     outfile: `dist/${bundle.script}`,
     format: bundle.format ?? "iife",
     platform: "browser",
     target: "es2022",
     jsx: "automatic",
-    ...(bundle.styles === "inlined" ? { loader: { ".css": "text", ".ttf": "dataurl" } } : {}),
+    loader: {
+      ".ttf": "dataurl",
+      ".svg": "dataurl",
+      ".png": "dataurl",
+      ...(bundle.styles === "inlined" ? { ".css": "text" } : {}),
+    },
     define: { "process.env.NODE_ENV": '"production"' },
     sourcemap: !production,
     minify: production,
@@ -104,16 +111,35 @@ function viewConfig(bundle) {
 }
 
 /** @type {import('esbuild').BuildOptions} */
-const graphWebviewConfig = viewConfig(viewBundles.cockpitGraph);
+const graphWebviewConfig = viewConfig(viewBundles.cockpitGraph, "src/cockpit/webview.tsx");
 
 /** @type {import('esbuild').BuildOptions} */
-const sqlNotebookRendererConfig = viewConfig(viewBundles.notebookResults);
+const sqlNotebookRendererConfig = viewConfig(
+  viewBundles.notebookResults,
+  "src/scratchpad/notebookRenderer.ts",
+);
 
 /** @type {import('esbuild').BuildOptions} */
-const dataViewWebviewConfig = viewConfig(viewBundles.dataView);
+const dataViewWebviewConfig = viewConfig(viewBundles.dataView, "src/dataView/webview.tsx");
 
 /** @type {import('esbuild').BuildOptions} */
-const debugResultsWebviewConfig = viewConfig(viewBundles.debugResults);
+const debugResultsWebviewConfig = viewConfig(
+  viewBundles.debugResults,
+  "src/debug/resultsWebview.tsx",
+);
+
+/** @type {import('esbuild').BuildOptions} */
+const editorWorkerConfig = {
+  entryPoints: [nodeRequire.resolve("@codingame/monaco-vscode-editor-api/esm/vs/editor/editor.worker.js")],
+  bundle: true,
+  outfile: "dist/editor.worker.js",
+  format: "esm",
+  platform: "browser",
+  target: "es2022",
+  sourcemap: !production,
+  minify: production,
+  metafile: true,
+};
 
 function packageRootForInput(input) {
   let current = dirname(resolve(input));
@@ -197,8 +223,8 @@ function generateThirdPartyNotices(metafiles) {
   });
   const header = `# Third-Party Notices
 
-This file is generated from the exact esbuild inputs bundled in the extension.
-It includes the complete license files shipped by each bundled npm package.
+This file is generated from the exact bundled inputs in the extension.
+It includes the complete license files shipped by each bundled npm package and native runtime.
 
 `;
   writeFileSync(resolve("THIRD_PARTY_NOTICES.md"), `${header}${sections.join("\n\n")}\n`);
@@ -214,6 +240,7 @@ async function main() {
     const notebookRendererCtx = await esbuild.context(sqlNotebookRendererConfig);
     const dataViewCtx = await esbuild.context(dataViewWebviewConfig);
     const debugResultsCtx = await esbuild.context(debugResultsWebviewConfig);
+    const editorWorkerCtx = await esbuild.context(editorWorkerConfig);
     await Promise.all([
       extCtx.watch(),
       dapCtx.watch(),
@@ -222,6 +249,7 @@ async function main() {
       notebookRendererCtx.watch(),
       dataViewCtx.watch(),
       debugResultsCtx.watch(),
+      editorWorkerCtx.watch(),
     ]);
     console.log("Watching for changes...");
   } else {
@@ -234,6 +262,7 @@ async function main() {
       esbuild.build(sqlNotebookRendererConfig),
       esbuild.build(dataViewWebviewConfig),
       esbuild.build(debugResultsWebviewConfig),
+      esbuild.build(editorWorkerConfig),
     ]);
     generateThirdPartyNotices(results.map((result) => result.metafile));
     console.log("Build complete.");

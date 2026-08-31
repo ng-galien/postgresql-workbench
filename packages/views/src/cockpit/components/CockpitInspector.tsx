@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useRef } from "react";
+import type { SqlEditorSurface } from "../../../../editor/src/contracts.js";
 import { useCockpitStore } from "../graph/store.js";
-import type { WorkbenchGraphSourcePreview } from "../protocol.js";
+import type { CockpitMessaging, WorkbenchGraphSourcePreview } from "../protocol.js";
 import { SourceInspector } from "./SourceInspector.js";
 import { VisiblePathPicker } from "./VisiblePathPicker.js";
 
 interface CockpitInspectorProps {
+  Editor: SqlEditorSurface;
+  messaging: CockpitMessaging;
   preview: WorkbenchGraphSourcePreview;
   onClose(): void;
   placement: "side" | "bottom";
@@ -28,6 +31,8 @@ export function clampInspectorHeight(height: number, availableHeight: number): n
 // create independent positional collaborators.
 // code-moniker: ignore[code-single-responsibility-flags-long-parameter-lists]
 export function CockpitInspector({
+  Editor,
+  messaging,
   preview,
   onClose,
   placement,
@@ -61,6 +66,8 @@ export function CockpitInspector({
         onResizeHeight={onResizeHeight}
       />
       <SourceInspector
+        Editor={Editor}
+        messaging={messaging}
         preview={preview}
         onClose={onClose}
         pinned={pinned}

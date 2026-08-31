@@ -1,15 +1,19 @@
 import { createRoot } from "react-dom/client";
+import editorStyles from "../../editor/src/editor.css";
+import { MonacoSqlEditor } from "../../editor/src/MonacoSqlEditor.js";
+import { SqlEditorRuntime } from "../../editor/src/runtime.js";
 import type {
   DataViewRequest,
   DataViewResponse,
 } from "../../rows/src/dataView/dataViewProtocol.js";
 import { DataViewApp, type DataViewMessaging } from "../../views/src/dataView/DataViewApp.js";
 import dataViewStyles from "../../views/src/dataView/dataView.css";
+import navigationStyles from "../../views/src/navigation/workbenchNavigation.css";
 import modalStyles from "../../views/src/results/modal.css";
 import { resultViewStyles } from "../../views/src/results/resultStyles.js";
-import { postgresSourceStyles } from "../../views/src/source/sourceStyles.js";
-import { pageBridge, preparePage } from "./bridge.js";
-import vscodeTheme from "./vscodeTheme.css";
+import { languageServerUrl, pageBridge, preparePage } from "./bridge.js";
+import { ShellPage } from "./ShellPage.js";
+import shellPageStyles from "./shellPage.css";
 
 /**
  * The Data View, in a browser, driven by the real Extension Host logic running behind an HTTP
@@ -39,6 +43,13 @@ const messaging: DataViewMessaging = {
 };
 
 const container = preparePage(
-  `${vscodeTheme}\n${resultViewStyles}\n${postgresSourceStyles}\n${modalStyles}\n${dataViewStyles}`,
+  `${navigationStyles}\n${shellPageStyles}\n${resultViewStyles}\n${editorStyles}\n${modalStyles}\n${dataViewStyles}`,
 );
-if (container) createRoot(container).render(<DataViewApp messaging={messaging} />);
+if (container)
+  createRoot(container).render(
+    <SqlEditorRuntime languageServerUrl={languageServerUrl()} editorWorkerUrl="/editor.worker.js">
+      <ShellPage active="data-view">
+        <DataViewApp messaging={messaging} Editor={MonacoSqlEditor} />
+      </ShellPage>
+    </SqlEditorRuntime>,
+  );

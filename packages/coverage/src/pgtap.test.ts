@@ -16,6 +16,10 @@ const invalidSyntaxParser: SyntaxParser = {
     return {
       file: request.uri ?? "test.sql",
       language: request.language,
+      target:
+        request.language === "sql"
+          ? { language: "sql", entryPoint: "script" }
+          : { language: "plpgsql", entryPoint: "block" },
       focus: request.uri ?? "test.sql",
       focusLineRange: null,
       root: {

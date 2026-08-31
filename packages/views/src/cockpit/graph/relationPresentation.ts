@@ -19,13 +19,13 @@ const RELATION_LABELS: Record<string, string> = {
 };
 
 const RELATION_COLORS: Record<string, string> = {
-  writes: "var(--vscode-charts-orange)",
-  reads: "var(--vscode-charts-blue)",
-  calls: "var(--vscode-charts-green)",
-  triggers: "var(--vscode-charts-yellow)",
-  foreign_key: "var(--vscode-charts-purple)",
-  references: "var(--vscode-charts-purple)",
-  uses_type: "var(--vscode-charts-cyan)",
+  writes: "var(--pgw-accent-orange)",
+  reads: "var(--pgw-accent-blue)",
+  calls: "var(--pgw-accent-green)",
+  triggers: "var(--pgw-accent-yellow)",
+  foreign_key: "var(--pgw-accent-purple)",
+  references: "var(--pgw-accent-purple)",
+  uses_type: "var(--pgw-accent-cyan)",
 };
 
 export function primaryRelationKind(kinds: readonly string[]): string {

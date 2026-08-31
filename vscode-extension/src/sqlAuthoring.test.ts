@@ -132,6 +132,9 @@ describe("SQL authoring navigation references", async () => {
   beforeAll(async () => {
     const workspace = await mkdtemp(join(tmpdir(), "sql-references-"));
     const session = await ensureLocalCodeMonikerWorkspace({
+      ...(process.env.CODE_MONIKER_RUNTIME
+        ? { runtimePath: process.env.CODE_MONIKER_RUNTIME }
+        : {}),
       workspaceRoots: [workspace],
       clientName: "postgresql-workbench-sql-references",
     });

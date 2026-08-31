@@ -1,22 +1,26 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import type {
   SourcesListItem,
   SourcesRequest,
   SourcesResponse,
 } from "../../../catalog/src/sourcesProtocol.js";
-import { plainPostgresSource } from "../source/highlight.js";
-import { PostgresSourceView } from "../source/PostgresSourceView.js";
-import { withSemanticTokens } from "../source/semanticTokens.js";
-import type { WebviewMessaging } from "../webviewPage.js";
+import type { SqlEditorSurface } from "../../../editor/src/contracts.js";
+import type { ViewMessaging } from "../messaging.js";
 
-export type SourcesMessaging = WebviewMessaging<SourcesRequest, SourcesResponse>;
+export type SourcesMessaging = ViewMessaging<SourcesRequest, SourcesResponse>;
 
 /**
  * The virtual sources, read in a browser: the list the catalog projects on one side, and on the
  * other the source a reader picked, coloured by the language server's one stream — the same
  * documents and the same colours every shell shows, with nothing decided in this view.
  */
-export function SourcesApp({ messaging }: { messaging: SourcesMessaging }) {
+export function SourcesApp({
+  messaging,
+  Editor,
+}: {
+  messaging: SourcesMessaging;
+  Editor: SqlEditorSurface;
+}) {
   const [items, setItems] = useState<SourcesListItem[]>([]);
   const [opened, setOpened] = useState<
     Extract<SourcesResponse, { type: "sources/source" }> | undefined
@@ -36,11 +40,10 @@ export function SourcesApp({ messaging }: { messaging: SourcesMessaging }) {
     return stop;
   }, [messaging]);
 
-  const painted = useMemo(
-    () =>
-      opened ? withSemanticTokens(plainPostgresSource(opened.lines), opened.tokens) : undefined,
-    [opened],
-  );
+  useEffect(() => {
+    const first = items[0];
+    if (!opened && first) messaging.post({ type: "sources/open", uri: first.uri });
+  }, [items, messaging, opened]);
 
   return (
     <main className="sources">
@@ -62,10 +65,18 @@ export function SourcesApp({ messaging }: { messaging: SourcesMessaging }) {
       </nav>
       <section className="sources-reader" aria-label="Source">
         {notice ? <p className="sources-notice">{notice}</p> : null}
-        {painted && opened ? (
+        {opened ? (
           <>
             <h1 className="sources-title">{opened.title}</h1>
-            <PostgresSourceView source={painted} />
+            <div className="sources-editor postgres-editor-surface">
+              <Editor
+                uri={opened.editorUri}
+                text={opened.text}
+                languageId={opened.languageId}
+                ariaLabel="PostgreSQL source code"
+                readOnly
+              />
+            </div>
           </>
         ) : (
           <p className="sources-empty">Pick a source on the left.</p>
