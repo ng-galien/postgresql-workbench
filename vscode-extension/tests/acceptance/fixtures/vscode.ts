@@ -251,6 +251,8 @@ export interface VSCodeInstance {
       | "postgresql-workbench.openDataView"
       | "editor.action.formatDocument"
       | "workbench.action.files.saveAll"
+      | "workbench.action.joinAllGroups"
+      | "workbench.action.newGroupRight"
       | "workbench.action.debug.continue"
       | "workbench.action.debug.start"
       | "postgresql-workbench.acceptance.startDebugConfiguration"

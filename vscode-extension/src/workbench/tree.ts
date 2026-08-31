@@ -1304,7 +1304,8 @@ function synchronizeTreeItem(current: PlpgsqlTreeItem, replacement: PlpgsqlTreeI
   Object.assign(current, replacement);
 }
 
-export const SOURCES_DRAG_HINT = "Shift+drop into SQL composes; drop opens the Cockpit.";
+export const SOURCES_DRAG_HINT =
+  "Drop into SQL or a Data View to compose; drop into the Cockpit to explore the graph.";
 
 /** Appends the drag hint to the hover tooltip while keeping the accessible name unchanged. */
 function applyDragHint(item: vscode.TreeItem, tooltip: string): void {

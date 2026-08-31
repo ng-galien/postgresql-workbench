@@ -44,7 +44,9 @@ import {
   DEFAULT_SQL_AUTHORING_SETTINGS,
   parseSqlAuthoringDrag,
   SQL_AUTHORING_OBJECT_MIME,
+  type SqlAuthoringDragPayload,
   type SqlAuthoringSettings,
+  serializeSqlAuthoringDrag,
 } from "../../packages/sql/src/snapshot.js";
 import { canonicalSqlIdentifier } from "../../packages/sql/src/text/identifiers.js";
 import { sqlStatementSlices } from "../../packages/sql/src/text/sqlLexing.js";
@@ -82,6 +84,11 @@ export interface SqlAuthoringRegistration extends vscode.Disposable {
     request: SqlAuthoringComposeRequest,
     token?: vscode.CancellationToken,
   ): Promise<SqlAuthoringComposeResult>;
+  composeIntoDocument(
+    uri: vscode.Uri,
+    offset: number,
+    payload: SqlAuthoringDragPayload,
+  ): Promise<boolean>;
 }
 
 export async function registerSqlAuthoring(
@@ -177,93 +184,97 @@ export async function registerSqlAuthoring(
   };
   updateLanguageStatus();
 
+  const provideSqlDropEdit = async (
+    document: vscode.TextDocument,
+    position: vscode.Position,
+    transfer: vscode.DataTransfer,
+    token: vscode.CancellationToken,
+  ): Promise<vscode.DocumentDropEdit | undefined> => {
+    const item = transfer.get(SQL_AUTHORING_OBJECT_MIME);
+    if (!item) return undefined;
+    const payload = parseSqlAuthoringDrag(await item.asString());
+    if (!payload || token.isCancellationRequested) return undefined;
+    let request: SqlAuthoringComposeRequest = {
+      uri: document.uri.toString(),
+      text: document.getText(),
+      offset: document.offsetAt(position),
+      payload,
+    };
+    let result = await client.sendRequest<SqlAuthoringComposeResult>(
+      SQL_AUTHORING_COMPOSE_REQUEST,
+      request,
+      token,
+    );
+    if (token.isCancellationRequested) return undefined;
+    if (result.status === "ambiguous") {
+      const current = resolveDocumentContext(
+        document.uri.toString(),
+        connections,
+        index,
+        documentAssociation,
+      );
+      if (!sqlAuthoringContextMatchesToken(current, result.snapshot)) {
+        void vscode.window.showWarningMessage(
+          "The Workbench Index changed while composing SQL. Retry the drop on the fresh snapshot.",
+        );
+        return unchangedDropEdit("Leave stale SQL composition unchanged");
+      }
+      const selected = await vscode.window.showQuickPick(
+        result.choices.map((choice) => ({ ...choice, detail: choice.description })),
+        {
+          title: result.title ?? "Choose the foreign key for this JOIN",
+          placeHolder: result.placeHolder ?? "No JOIN is added until you choose",
+        },
+      );
+      if (!selected) return unchangedDropEdit("Leave SQL unchanged");
+      request = { ...request, relationChoice: selected.index };
+      result = await client.sendRequest<SqlAuthoringComposeResult>(
+        SQL_AUTHORING_COMPOSE_REQUEST,
+        request,
+        token,
+      );
+    }
+    if (result.status === "rejected") {
+      const documentUri = document.uri.toString();
+      const action = sqlAuthoringRejectionAction(
+        result.reason,
+        documentUri,
+        sqlAuthoringScope(documentUri),
+      );
+      void vscode.window
+        .showWarningMessage(result.message, ...(action ? [action.title] : []))
+        .then((choice) => {
+          if (action && choice === action.title) {
+            void vscode.commands.executeCommand(action.command, ...(action.arguments ?? []));
+          }
+        });
+      return unchangedDropEdit("Leave unsupported SQL unchanged");
+    }
+    if (result.status !== "edit") return unchangedDropEdit("Leave SQL unchanged");
+    const current = resolveDocumentContext(
+      document.uri.toString(),
+      connections,
+      index,
+      documentAssociation,
+    );
+    if (!sqlAuthoringEditStillApplies(result, current, request.text, document.getText())) {
+      void vscode.window.showWarningMessage(
+        "The Workbench Index or SQL document changed while composing. Retry the drop.",
+      );
+      return unchangedDropEdit("Leave changed SQL unchanged");
+    }
+    const edit = new vscode.DocumentDropEdit("", result.title);
+    edit.additionalEdit = new vscode.WorkspaceEdit();
+    edit.additionalEdit.replace(
+      document.uri,
+      new vscode.Range(document.positionAt(0), document.positionAt(document.getText().length)),
+      result.text,
+    );
+    return edit;
+  };
   const dropProvider = vscode.languages.registerDocumentDropEditProvider(
     [...SQL_DOCUMENT_SELECTOR] satisfies vscode.DocumentSelector,
-    {
-      async provideDocumentDropEdits(document, position, transfer, token) {
-        const item = transfer.get(SQL_AUTHORING_OBJECT_MIME);
-        if (!item) return undefined;
-        const payload = parseSqlAuthoringDrag(await item.asString());
-        if (!payload || token.isCancellationRequested) return undefined;
-        let request: SqlAuthoringComposeRequest = {
-          uri: document.uri.toString(),
-          text: document.getText(),
-          offset: document.offsetAt(position),
-          payload,
-        };
-        let result = await client.sendRequest<SqlAuthoringComposeResult>(
-          SQL_AUTHORING_COMPOSE_REQUEST,
-          request,
-          token,
-        );
-        if (token.isCancellationRequested) return undefined;
-        if (result.status === "ambiguous") {
-          const current = resolveDocumentContext(
-            document.uri.toString(),
-            connections,
-            index,
-            documentAssociation,
-          );
-          if (!sqlAuthoringContextMatchesToken(current, result.snapshot)) {
-            void vscode.window.showWarningMessage(
-              "The Workbench Index changed while composing SQL. Retry the drop on the fresh snapshot.",
-            );
-            return unchangedDropEdit("Leave stale SQL composition unchanged");
-          }
-          const selected = await vscode.window.showQuickPick(
-            result.choices.map((choice) => ({ ...choice, detail: choice.description })),
-            {
-              title: result.title ?? "Choose the foreign key for this JOIN",
-              placeHolder: result.placeHolder ?? "No JOIN is added until you choose",
-            },
-          );
-          if (!selected) return unchangedDropEdit("Leave SQL unchanged");
-          request = { ...request, relationChoice: selected.index };
-          result = await client.sendRequest<SqlAuthoringComposeResult>(
-            SQL_AUTHORING_COMPOSE_REQUEST,
-            request,
-            token,
-          );
-        }
-        if (result.status === "rejected") {
-          const documentUri = document.uri.toString();
-          const action = sqlAuthoringRejectionAction(
-            result.reason,
-            documentUri,
-            sqlAuthoringScope(documentUri),
-          );
-          void vscode.window
-            .showWarningMessage(result.message, ...(action ? [action.title] : []))
-            .then((choice) => {
-              if (action && choice === action.title) {
-                void vscode.commands.executeCommand(action.command, ...(action.arguments ?? []));
-              }
-            });
-          return unchangedDropEdit("Leave unsupported SQL unchanged");
-        }
-        if (result.status !== "edit") return unchangedDropEdit("Leave SQL unchanged");
-        const current = resolveDocumentContext(
-          document.uri.toString(),
-          connections,
-          index,
-          documentAssociation,
-        );
-        if (!sqlAuthoringEditStillApplies(result, current, request.text, document.getText())) {
-          void vscode.window.showWarningMessage(
-            "The Workbench Index or SQL document changed while composing. Retry the drop.",
-          );
-          return unchangedDropEdit("Leave changed SQL unchanged");
-        }
-        const edit = new vscode.DocumentDropEdit("", result.title);
-        edit.additionalEdit = new vscode.WorkspaceEdit();
-        edit.additionalEdit.replace(
-          document.uri,
-          new vscode.Range(document.positionAt(0), document.positionAt(document.getText().length)),
-          result.text,
-        );
-        return edit;
-      },
-    },
+    { provideDocumentDropEdits: provideSqlDropEdit },
     { dropMimeTypes: [SQL_AUTHORING_OBJECT_MIME] },
   );
 
@@ -349,6 +360,29 @@ export async function registerSqlAuthoring(
             token,
           )
         : client.sendRequest<SqlAuthoringComposeResult>(SQL_AUTHORING_COMPOSE_REQUEST, request),
+    composeIntoDocument: async (uri, offset, payload) => {
+      const document =
+        vscode.workspace.textDocuments.find(
+          (candidate) => candidate.uri.toString() === uri.toString(),
+        ) ?? (await vscode.workspace.openTextDocument(uri));
+      const transfer = new vscode.DataTransfer();
+      transfer.set(
+        SQL_AUTHORING_OBJECT_MIME,
+        new vscode.DataTransferItem(serializeSqlAuthoringDrag(payload)),
+      );
+      const tokenSource = new vscode.CancellationTokenSource();
+      try {
+        const edit = await provideSqlDropEdit(
+          document,
+          document.positionAt(Math.max(0, Math.min(offset, document.getText().length))),
+          transfer,
+          tokenSource.token,
+        );
+        return edit?.additionalEdit ? vscode.workspace.applyEdit(edit.additionalEdit) : false;
+      } finally {
+        tokenSource.dispose();
+      }
+    },
   };
 }
 

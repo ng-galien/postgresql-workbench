@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+## [1.4.2] - 2026-08-31
+
+- Replaced the Shift-modified database-tree drag with one native drag whose
+  outcome belongs to the editor group under the pointer: SQL editors and
+  Scratchpads compose at their prepared cursor, Data Views extend their query,
+  and an open Cockpit focuses the dropped object
+- Kept opening the Cockpit explicit through the Graph action beside Data View
+  and Source, so dropping an object no longer opens the graph by default
+- Made the cross-editor drag handoff immutable and gesture-specific, preserving
+  the actual destination group across delayed VS Code tab events and successive
+  drags of the same PostgreSQL object
+- Recoloured JSON and JSONB values in the cell inspector with VS Code's
+  theme-provided name, string, number, boolean, and value colours, falling back
+  to the editor foreground instead of chart colours that could become hard to
+  read on light themes
+
 ## [1.4.1] - 2026-08-26
 
 - Restored Workbench indexing on Windows by adopting Code Moniker 0.9.1, which

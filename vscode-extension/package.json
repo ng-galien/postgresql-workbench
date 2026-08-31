@@ -1,7 +1,7 @@
 {
   "name": "postgresql-workbench",
   "displayName": "PostgreSQL Workbench",
-  "version": "1.4.1",
+  "version": "1.4.2",
   "description": "PostgreSQL Workbench for VS Code: explore schemas, write SQL, edit data, run pgTAP tests with coverage, and debug PL/pgSQL.",
   "publisher": "ng-galien",
   "author": {
@@ -756,12 +756,17 @@
         {
           "command": "postgresql-workbench.openDatabaseObject",
           "when": "view == postgresql-workbench-connections && (viewItem == postgresql-workbench-function || viewItem == postgresql-workbench-function-debuggable || viewItem == postgresql-workbench-table || viewItem == postgresql-workbench-view || viewItem == postgresql-workbench-procedure || viewItem == postgresql-workbench-trigger || viewItem == postgresql-workbench-relation-target)",
+          "group": "inline@3"
+        },
+        {
+          "command": "postgresql-workbench.openObjectGraph",
+          "when": "view == postgresql-workbench-connections && (viewItem == postgresql-workbench-function || viewItem == postgresql-workbench-function-debuggable || viewItem == postgresql-workbench-table || viewItem == postgresql-workbench-view || viewItem == postgresql-workbench-procedure || viewItem == postgresql-workbench-trigger || viewItem == postgresql-workbench-relation-target)",
           "group": "inline@2"
         },
         {
           "command": "postgresql-workbench.openDataView",
           "when": "view == postgresql-workbench-connections && (viewItem == postgresql-workbench-table || viewItem == postgresql-workbench-view)",
-          "group": "inline@3"
+          "group": "inline@1"
         },
         {
           "command": "postgresql-workbench.openDataView",
@@ -975,6 +980,12 @@
         "title": "Open Definition",
         "category": "PostgreSQL Workbench",
         "icon": "$(go-to-file)"
+      },
+      {
+        "command": "postgresql-workbench.openObjectGraph",
+        "title": "Open Graph",
+        "category": "PostgreSQL Workbench",
+        "icon": "$(type-hierarchy)"
       },
       {
         "command": "postgresql-workbench.openDataView",
@@ -1565,7 +1576,7 @@
           {
             "id": "authorSql",
             "title": "Author SQL from Sources",
-            "description": "Open a `.sql` file or a Scratchpad cell and pick its connection once. Every non-empty PostgreSQL Statement gets a **Run SQL** CodeLens, **Format Document** uppercases keywords and indents with two spaces, and completion suggests indexed schemas, tables, views, columns, functions, and procedures.\n\nDrag one object from **Schemas** into the editor and hold **Shift** while dropping it to compose SQL: a `SELECT` for a table or view, a `JOIN` when a foreign key connects it to the query under the cursor, a call for a function or procedure, or a DML harness for a trigger. A drop without Shift opens the object in the Cockpit. Composed SQL is never executed automatically.\n\n[Open a SQL File](command:workbench.action.files.openFile)",
+            "description": "Open a `.sql` file or a Scratchpad cell and pick its connection once. Every non-empty PostgreSQL Statement gets a **Run SQL** CodeLens, **Format Document** uppercases keywords and indents with two spaces, and completion suggests indexed schemas, tables, views, columns, functions, and procedures.\n\nDrag one object from **Schemas** into a SQL editor or Scratchpad to compose SQL: a `SELECT` for a table or view, a `JOIN` when a foreign key connects it to the query under the cursor, a call for a function or procedure, or a DML harness for a trigger. Drop into a Data View to extend its query, or into the Cockpit to focus the graph. Composed SQL is never executed automatically.\n\n[Open a SQL File](command:workbench.action.files.openFile)",
             "completionEvents": [
               "onCommand:workbench.action.files.openFile"
             ]

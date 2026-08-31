@@ -318,23 +318,28 @@
 }
 
 /*
- * The document, coloured the way the editor colours one. The names are the workbench's own token
- * colours, so a reader's theme decides what a string looks like here as everywhere else.
+ * JSON is text, not a chart. Debug token expressions are VS Code's themeable colours for names
+ * and typed values in compact structured data. A theme that omits one falls back to the editor's
+ * foreground, which preserves contrast instead of borrowing an unrelated chart or icon colour.
  */
 .json-key {
-  color: var(--vscode-symbolIcon-propertyForeground, var(--vscode-charts-blue));
+  color: var(--vscode-debugTokenExpression-name, var(--vscode-editor-foreground));
 }
 
 .json-string {
-  color: var(--vscode-charts-orange, var(--vscode-debugTokenExpression-string));
+  color: var(--vscode-debugTokenExpression-string, var(--vscode-editor-foreground));
 }
 
 .json-number {
-  color: var(--vscode-charts-green, var(--vscode-debugTokenExpression-number));
+  color: var(--vscode-debugTokenExpression-number, var(--vscode-editor-foreground));
 }
 
-.json-word {
-  color: var(--vscode-charts-purple, var(--vscode-debugTokenExpression-boolean));
+.json-boolean {
+  color: var(--vscode-debugTokenExpression-boolean, var(--vscode-editor-foreground));
+}
+
+.json-null {
+  color: var(--vscode-debugTokenExpression-value, var(--vscode-editor-foreground));
 }
 
 .cell-inspector-count {

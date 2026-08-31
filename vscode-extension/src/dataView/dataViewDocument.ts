@@ -585,6 +585,12 @@ export class DataViewDocument implements vscode.CustomDocument {
     return items;
   }
 
+  /** Receives the same typed tree payload when VS Code terminates the native drop on its overlay. */
+  async acceptTreeDrop(payload: SqlAuthoringDragPayload): Promise<void> {
+    await this.ensureInitialized();
+    await this.compose(payload);
+  }
+
   private async compose(
     payload: SqlAuthoringDragPayload,
     addition?: DataViewAddition,

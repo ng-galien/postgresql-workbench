@@ -20,7 +20,7 @@ import type { DebugResultStore } from "../../packages/rows/src/capturedResults.j
 import { planSqlResultExecution } from "../../packages/sql/src/analysis/sqlStatements.js";
 import { POSTGRES_SOURCE_LANGUAGE_IDS } from "../../packages/sql/src/text/documentLanguage.js";
 import { createAcceptanceProbes, registerAcceptanceControl } from "./acceptanceControl.js";
-import { registerWorkbenchGraphDropBridge, WorkbenchGraphView } from "./cockpit/index.js";
+import { WorkbenchGraphView } from "./cockpit/index.js";
 import { registerGraphWorkbenchCommands } from "./cockpit/registerCommands.js";
 import { WorkbenchGraphTreeSync } from "./cockpit/treeSync.js";
 import {
@@ -63,9 +63,12 @@ import {
 import {
   FunctionItem,
   type PlpgsqlTreeItem,
+  registerWorkbenchDragTransport,
+  type WorkbenchDropDestination,
   WorkbenchSourceUris,
   WorkbenchTreeDragAndDropController,
   WorkbenchTreeProvider,
+  workbenchDragUri,
 } from "./workbench/index.js";
 import { registerSqlWorkbenchCommands } from "./workbench/registerCommands.js";
 
@@ -221,6 +224,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
     status: "rejected",
     message: "The SQL authoring server is still starting.",
   });
+  let composeSqlDrop: SqlAuthoringRegistration["composeIntoDocument"] = async () => false;
   const dataViews = new DataViewEditorProvider({
     parser: () => workbenchIndex.syntaxParser(),
     compose: (request) => composeSqlAuthoring(request),
@@ -298,8 +302,57 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
   let treeProvider: WorkbenchTreeProvider;
   let connectionTreeProvider: WorkbenchTreeProvider;
   let graphTreeSync: WorkbenchGraphTreeSync;
-  const workbenchTreeDragAndDrop = new WorkbenchTreeDragAndDropController((payload) =>
-    workbenchGraph.previewTreeDrop(payload),
+  const workbenchTreeDragAndDrop = new WorkbenchTreeDragAndDropController(
+    (payload) => workbenchGraph.previewTreeDrop(payload),
+    (handoffId, graphPayload, authoringPayload) => {
+      const byColumn = new Map<vscode.ViewColumn, WorkbenchDropDestination>();
+      for (const editor of vscode.window.visibleTextEditors) {
+        if (
+          editor.viewColumn === undefined ||
+          (editor.document.languageId !== "sql" && editor.document.languageId !== "plpgsql") ||
+          !["file", "untitled", "vscode-notebook-cell"].includes(editor.document.uri.scheme)
+        ) {
+          continue;
+        }
+        byColumn.set(editor.viewColumn, {
+          kind: "sql",
+          uri: editor.document.uri,
+          offset: editor.document.offsetAt(editor.selection.active),
+        });
+      }
+      for (const notebookEditor of vscode.window.visibleNotebookEditors) {
+        if (
+          notebookEditor.viewColumn === undefined ||
+          byColumn.has(notebookEditor.viewColumn) ||
+          notebookEditor.selection.start >= notebookEditor.notebook.cellCount
+        ) {
+          continue;
+        }
+        const document = notebookEditor.notebook.cellAt(notebookEditor.selection.start).document;
+        if (document.languageId === "sql" || document.languageId === "plpgsql") {
+          byColumn.set(notebookEditor.viewColumn, {
+            kind: "sql",
+            uri: document.uri,
+            offset: document.getText().length,
+          });
+        }
+      }
+      for (const destination of dataViews.visibleDestinations()) {
+        byColumn.set(destination.viewColumn, { kind: "data-view", uri: destination.uri });
+      }
+      const graphViewColumn = workbenchGraph.visibleViewColumn;
+      if (graphViewColumn !== undefined) byColumn.set(graphViewColumn, { kind: "cockpit" });
+      if (byColumn.size === 0) return undefined;
+      return workbenchDragUri({
+        id: handoffId,
+        graphPayload,
+        ...(authoringPayload ? { authoringPayload } : {}),
+        destinations: [...byColumn].map(([viewColumn, destination]) => ({
+          viewColumn,
+          destination,
+        })),
+      });
+    },
   );
   const workbenchGraph = new WorkbenchGraphView({
     extensionUri: context.extensionUri,
@@ -314,8 +367,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
     collectRenderEvidence: context.extensionMode === vscode.ExtensionMode.Test,
     treeDragPayload: (consume) => workbenchTreeDragAndDrop.activePayload(consume),
   });
+  registerWorkbenchDragTransport(context, {
+    acceptCockpitDrop: (payload) => workbenchGraph.acceptTransportedTreeDrop(payload),
+    acceptDataViewDrop: (uri, payload) => dataViews.acceptTreeDrop(uri, payload),
+    acceptSqlDrop: (uri, offset, payload) => composeSqlDrop(uri, offset, payload),
+    completeHandoff: (handoffId) => workbenchTreeDragAndDrop.completeHandoff(handoffId),
+    revealCockpit: () => workbenchGraph.reveal(),
+    log: (message) => out.appendLine(message),
+  });
   context.subscriptions.push(workbenchTreeDragAndDrop, workbenchGraph);
-  registerWorkbenchGraphDropBridge(context, workbenchGraph);
   const coverageTests = new PgTapTestController({
     connections: cm,
     output: out,
@@ -574,6 +634,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
       (uri) => callSiteConnections.getDocument(uri),
     );
     composeSqlAuthoring = (request, token) => authoring.compose(request, token);
+    composeSqlDrop = (uri, offset, payload) => authoring.composeIntoDocument(uri, offset, payload);
     context.subscriptions.push(authoring);
   } catch (error) {
     out.appendLine(

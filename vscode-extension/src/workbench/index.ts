@@ -9,6 +9,11 @@
  * Nothing else under `workbench/` may be imported from outside.
  */
 
+export {
+  registerWorkbenchDragTransport,
+  type WorkbenchDropDestination,
+  workbenchDragUri,
+} from "./dragTransport.js";
 export { WorkbenchSourceUris } from "./sourceUris.js";
 export {
   ConnectionItem,

@@ -42,5 +42,10 @@ test.describe("Data View", () => {
     await expect(dataView.rowsLine).toBeVisible();
     await expect(dataView.rowCount).toHaveText(/^\d/u);
     await expect(dataView.gutter.first()).toHaveText("1");
+
+    const product = await workbench.tree.findChild(schema, /^product$/);
+    await workbench.dragTreeItemToDataView(product, dataView.surface);
+    await expect(dataView.tableBadges).toHaveCount(2, { timeout: 5_000 });
+    await expect(dataView.tableBadges).toContainText(["brand", "product"]);
   });
 });
