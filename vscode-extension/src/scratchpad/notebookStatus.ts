@@ -1,13 +1,13 @@
 import * as vscode from "vscode";
 import type { ScratchpadAssociationSnapshot } from "../../../packages/rows/src/resultPayload.js";
-import type { ConnectionManager } from "../connection/index.js";
 import {
   normalizeMetadata,
   resolveScratchpadAssociation,
   scratchpadCellExecutionIntent,
   scratchpadExecutionMode,
   scratchpadStatementTimeoutMs,
-} from "./notebookFile.js";
+} from "../../../packages/scratchpad/src/notebookFile.js";
+import type { ConnectionManager } from "../connection/index.js";
 import { formatStatementTimeout } from "./notebookOutput.js";
 import {
   CHANGE_SQL_NOTEBOOK_CONNECTION_COMMAND,

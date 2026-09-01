@@ -84,6 +84,18 @@ const sqlAuthoringConnectionConfig = {
 };
 
 /**
+ * One physical React per page. The view sources resolve the workspace copy while extension
+ * sources resolve this package's own, and jsonrpc taught this bundle what two copies of one
+ * module do: hooks read a null dispatcher and the webview dies before it draws.
+ */
+const VIEW_REACT_ALIASES = Object.fromEntries(
+  ["react", "react-dom"].map((name) => [
+    name,
+    dirname(nodeRequire.resolve(`${name}/package.json`)),
+  ]),
+);
+
+/**
  * A view bundle, from the one record that also tells the Extension Host which file to load.
  * `styles: "inlined"` turns CSS and fonts into strings the bundle injects into the shadow root it
  * renders in; `styles: "linked"` leaves esbuild to emit the sibling .css the page shell links.
@@ -97,6 +109,7 @@ function viewConfig(bundle, entry) {
     platform: "browser",
     target: "es2022",
     jsx: "automatic",
+    alias: VIEW_REACT_ALIASES,
     loader: {
       ".ttf": "dataurl",
       ".svg": "dataurl",

@@ -1,4 +1,4 @@
-import type { CoverageResult } from "../../../packages/coverage/src/index.js";
+import type { CoverageResult } from "./model.js";
 
 export interface MappedBranchCoverage {
   line: number;

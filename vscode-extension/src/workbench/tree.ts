@@ -36,6 +36,11 @@ import {
 } from "../../../packages/dap/src/orphanSessions.js";
 import { postgresVisual } from "../../../packages/presentation/src/presentation.js";
 import { countLabel } from "../../../packages/rows/src/countLabel.js";
+import {
+  resolveScratchpadAssociation,
+  type ScratchpadAssociation,
+  scratchpadExecutionMode,
+} from "../../../packages/scratchpad/src/notebookFile.js";
 import type {
   ConnectionChange,
   ConnectionManager,
@@ -45,11 +50,8 @@ import { vscodeThemeColour } from "../presentation/vscodeTheme.js";
 import type { ScratchpadTransaction, ScratchpadTransactionManager } from "../scratchpad/index.js";
 import {
   OPEN_SQL_NOTEBOOK_COMMAND,
-  resolveScratchpadAssociation,
-  type ScratchpadAssociation,
   type SqlNotebookEntry,
   type SqlNotebookWorkspace,
-  scratchpadExecutionMode,
   sqlNotebookDisplayName,
 } from "../scratchpad/index.js";
 

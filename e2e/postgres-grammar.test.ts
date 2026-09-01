@@ -76,6 +76,8 @@ CREATE TABLE t (id bigint PRIMARY KEY, at timestamptz DEFAULT now());`;
 function namedKindsIn(root: SyntaxNode): Set<string> {
   const kinds = new Set<string>();
   const walk = (node: SyntaxNode) => {
+    // An injected region is another grammar's vocabulary; its kinds are that grammar's to declare.
+    if (node !== root && node.languageRegion !== undefined) return;
     if (node.named) kinds.add(node.kind);
     for (const child of node.children) walk(child);
   };

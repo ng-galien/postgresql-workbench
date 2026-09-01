@@ -9,7 +9,17 @@ import { postgresDocumentSyntaxFacts } from "../packages/sql/src/analysis/docume
 import type { SyntaxParser } from "../packages/sql/src/analysis/syntaxTree.js";
 import { postgresSemanticTokens } from "../packages/sql/src/languageServer/features/semanticTokens.js";
 import { SQL_SEMANTIC_TOKEN_TYPES } from "../packages/sql/src/languageServer/legend.js";
+import { postgresAuthoringDocumentLanguage } from "../packages/sql/src/languageServer/policy.js";
 import type { SqlAuthoringSnapshot } from "../packages/sql/src/snapshot.js";
+
+const NOTEBOOK_SHAPED_SCRIPT = [
+  "SELECT address.id, address.city FROM shop.address AS address;",
+  "DO $workbench$",
+  "BEGIN",
+  "  CALL shop.reprice_order((SELECT sales_order.id FROM shop.sales_order));",
+  "END",
+  "$workbench$;",
+].join("\n");
 
 describe("SQL authoring semantic tokens", () => {
   let parser: SyntaxParser;
@@ -36,7 +46,11 @@ describe("SQL authoring semantic tokens", () => {
   async function tokensOf(document: TextDocument, tokenSnapshot = snapshot) {
     const source = document.getText();
     const budget = { uri: document.uri, maxDepth: 1_024, maxNodes: 100_000 };
-    const facts = await postgresDocumentSyntaxFacts(parser, { language: "sql", source, ...budget });
+    const facts = await postgresDocumentSyntaxFacts(parser, {
+      language: postgresAuthoringDocumentLanguage(document.languageId, document.uri),
+      source,
+      ...budget,
+    });
     return postgresSemanticTokens(document, tokenSnapshot, facts.names, facts.lexical);
   }
 
@@ -142,7 +156,7 @@ describe("SQL authoring semantic tokens", () => {
     );
   });
 
-  it.fails("keeps routines, relations, columns, variables, and types semantic inside a DO block once its region is exposed", async () => {
+  it("keeps routines, relations, columns, variables, and types semantic inside a DO block", async () => {
     const source = [
       "DO $workbench$",
       "DECLARE",
@@ -160,8 +174,83 @@ describe("SQL authoring semantic tokens", () => {
         ["address", "sqlTable"],
         ["id", "sqlColumn"],
         ["reprice_order", "sqlProcedure"],
-        ["int4", "sqlType"],
+        ["int4", "type"],
         ["v_address_id", "variable"],
+      ]),
+    );
+  });
+
+  it("colours the same SQL identically in a file, a notebook cell, and a Data View document", async () => {
+    const families: Array<[string, string]> = [
+      ["file:///query.sql", "sql"],
+      ["vscode-notebook-cell:/scratch.pgsql-notebook#ch0001", "plpgsql"],
+      ["postgresql-workbench-data-sql:/localhost/demo/shop.brand.sql", "sql"],
+    ];
+    const streams = await Promise.all(
+      families.map(async ([uri, languageId]) => {
+        const document = TextDocument.create(
+          uri,
+          postgresAuthoringDocumentLanguage(languageId, uri),
+          1,
+          NOTEBOOK_SHAPED_SCRIPT,
+        );
+        return decode(document, await tokensOf(document));
+      }),
+    );
+    expect(streams[0]).toEqual(
+      expect.arrayContaining([
+        ["address", "sqlTable"],
+        ["city", "sqlColumn"],
+        ["reprice_order", "sqlProcedure"],
+        ["sales_order", "sqlTable"],
+      ]),
+    );
+    expect(streams[1]).toEqual(streams[0]);
+    expect(streams[2]).toEqual(streams[0]);
+  });
+
+  it("keeps a CREATE PROCEDURE semantic from its signature through its body", async () => {
+    const source = [
+      "CREATE OR REPLACE PROCEDURE shop.reprice_order(IN p_order_id bigint)",
+      "LANGUAGE plpgsql AS $procedure$",
+      "DECLARE",
+      "  total numeric := 0;",
+      "BEGIN",
+      "  SELECT sum(sales_order.id) INTO total FROM shop.sales_order WHERE sales_order.customer_id = p_order_id;",
+      "END",
+      "$procedure$;",
+    ].join("\n");
+    const document = TextDocument.create("file:///procedure.sql", "sql", 1, source);
+    const tokens = decode(document, await tokensOf(document));
+
+    expect(tokens).toEqual(
+      expect.arrayContaining([
+        ["shop", "sqlSchema"],
+        ["reprice_order", "sqlProcedure"],
+        ["p_order_id", "parameter"],
+        ["total", "variable"],
+        ["sales_order", "sqlTable"],
+        ["customer_id", "sqlColumn"],
+      ]),
+    );
+    expect(
+      tokens.filter(([text, type]) => text === "p_order_id" && type === "parameter"),
+    ).toHaveLength(2);
+  });
+
+  it("keeps a CREATE TRIGGER semantic: its table and its routine are the catalog's", async () => {
+    const source =
+      "CREATE TRIGGER address_audit AFTER INSERT ON shop.address FOR EACH ROW EXECUTE FUNCTION shop.customer_revenue();";
+    const document = TextDocument.create("file:///trigger.sql", "sql", 1, source);
+    const tokens = decode(document, await tokensOf(document));
+
+    expect(tokens).toEqual(
+      expect.arrayContaining([
+        ["CREATE", "keyword"],
+        ["TRIGGER", "keyword"],
+        ["shop", "sqlSchema"],
+        ["address", "sqlTable"],
+        ["customer_revenue", "sqlFunction"],
       ]),
     );
   });

@@ -66,10 +66,10 @@ enable = [
   "workbench-daemon-lifecycle-stays-at-runtime-boundaries",
   "extension-host-composition-root-is-not-a-service-locator",
   "extension-host-workbench-encapsulation-does-not-re-export-engine",
-  "ddl-sync-single-responsibility-excludes-runtime-orchestration",
   "connection-service-ownership-stays-with-connection-manager",
-  "scratchpad-single-responsibility-keeps-files-passive",
   # declared by the package fragments
+  "ddl-sync-single-responsibility-excludes-runtime-orchestration",
+  "scratchpad-single-responsibility-keeps-files-passive",
   "language-server-encapsulation-keeps-features-inside-server",
   "query-engine-dependency-does-not-point-to-language-server",
   "sql-analysis-dependency-stays-inside-sql-analysis",
@@ -88,6 +88,8 @@ enable = [
   "data-view-query-info-ownership-stays-in-state-contract",
   "data-view-edit-policy-ownership-stays-with-the-engine-and-the-grid",
   "syntax-grammar-vocabulary-encapsulation-stays-in-postgres-grammar",
+  "scratchpad-depends-on-engine-only",
+  "coverage-encapsulation-consumers-enter-through-the-index",
 ]
 
 [[views]]
@@ -150,6 +152,8 @@ forbid_rules = [
   "query-engine-dependency-does-not-point-to-language-server",
   "syntax-workbench-debugger-ownership-stays-at-runtime-boundaries",
   "syntax-grammar-vocabulary-encapsulation-stays-in-postgres-grammar",
+  "scratchpad-depends-on-engine-only",
+  "coverage-encapsulation-consumers-enter-through-the-index",
 ]
 rationale = """
 The language server is the front door for editor features; a consumer asks it rather than importing
@@ -198,7 +202,6 @@ forbids = [
 ]
 forbid_rules = [
   "ts.refs.catalog.catalog-dependency-is-limited-to-sql-analysis",
-  "ddl-sync-single-responsibility-excludes-runtime-orchestration",
   "workbench-daemon-lifecycle-stays-at-runtime-boundaries",
 ]
 rationale = "The catalog answers what a database contains; rows, coverage, debugging and rendering consume that answer. postgresDdlSync builds SQL and coalesces notifications deterministically, while ddlSync owns LISTEN state and refresh coordination. The virtual sources are the engine's: the code+moniker:// scheme, the resource index behind it and the canonical symbol addressing all live here, so a shell serves those documents into its own document system — VS Code through a content provider, Electron through its own — without owning what they say. VS Code is one integration modality; it governs nothing, and a virtual source only it can open is a regression against every other shell."
@@ -394,18 +397,21 @@ Activation chooses implementations and binds commands; feature state stays in th
 defines its lifecycle. The extension adapts the engine to VS Code and holds nothing else, because
 the same engine is meant to run under a host that is not VS Code at all.
 
-Measured against that, August 2026. Five modules that never mentioned VS Code — 731 lines — moved
-to the packages their own imports named, and the package rules now keep them there. The re-exports
-that made engine code look like extension code are gone, and a rule holds that one.
+Measured against that, September 2026. The pure modules moved to the packages their own imports
+named — the notebook file format seeded packages/scratchpad, debuggability joined the dap launch
+contract, associations and the connection registry joined catalog, the coverage report shapes
+joined coverage, graph navigation joined the views — and the package rules now keep each of them
+there. The re-exports that made engine code look like extension code are gone, and a rule holds
+that one.
 
-What is left is named and guarded rather than enforced by a rule, because neither fact lives in the
-reference graph. Twelve files still adapt nothing to VS Code, and
-scripts/extension/check-extension-adapts.mjs lists each with its reason: two are legitimate — the
-standalone DAP entry and one line shared by every module — and ten are engine code awaiting a
-package. Two of those ten have no home the graph allows at all:
-debug/launchConfiguration needs the saved connections and the SQL call parser together, and no
-package may depend on both catalog and sql; scratchpad/notebookFile needs catalog, dap, rows and
-views at once. The guard fails on a new one, and on an entry that has started adapting something.
+What is left is named and guarded rather than enforced by a rule, because neither fact lives in
+the reference graph. scripts/extension/check-extension-adapts.mjs lists each remaining file with
+its reason: the adapters that are legitimately VS Code's — the DAP entry, the shared error line,
+the theme projection, the webview transport and its API shim, the notebook renderer entry — and
+two debts still awaiting a home: coverage/client leans on the ConnectionManager, and
+debug/launchConfiguration needs the saved connections and the SQL call parser together while no
+package may depend on both catalog and sql. The guard fails on a new one, and on an entry that
+has started adapting something.
 
 A command is registered in a module's registerCommands. No reference rule can hold that: `vscode`
 is an ambient module, `registerCommand` has no indexed symbol, and a rule written against it reports
@@ -451,9 +457,9 @@ forbids = [
   "reusing the shared interactive client for notebook execution",
 ]
 forbid_rules = ["scratchpad-single-responsibility-keeps-files-passive"]
-rationale = "A Scratchpad opens before anything connects, so reading and writing one must not need a live Connection. Execution, explicit transactions and LIMIT/OFFSET paging belong to register, association, resultHost and the shared row engine."
+rationale = "A Scratchpad opens before anything connects, so reading and writing one must not need a live Connection. Execution, explicit transactions and LIMIT/OFFSET paging belong to the registerCommands host module, resultHost and the shared row engine."
 symbols = [
-  "ts:vscode-extension/src/scratchpad/notebookFile.interface:SqlNotebookFile",
+  "ts:packages/scratchpad/src/notebookFile.interface:SqlNotebookFile",
   "ts:vscode-extension/src/scratchpad/workspace.class:SqlNotebookWorkspace",
   "ts:vscode-extension/src/scratchpad/resultHost.class:SqlNotebookResultHost",
 ]

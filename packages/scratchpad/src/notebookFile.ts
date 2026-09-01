@@ -1,14 +1,11 @@
-import {
-  type ConnectionConfig,
-  getConnectionName,
-} from "../../../packages/catalog/src/savedConnection.js";
-import type { DebugResult } from "../../../packages/dap/src/debugger/launch/index.js";
+import { type ConnectionConfig, getConnectionName } from "../../catalog/src/savedConnection.js";
+import type { DebugResult } from "../../dap/src/debugger/launch/index.js";
 import type {
   ScratchpadAssociationSnapshot,
   SqlCommandReportOperation,
   SqlCommandReportPayload,
   SqlNotebookResultPayload,
-} from "../../../packages/rows/src/resultPayload.js";
+} from "../../rows/src/resultPayload.js";
 
 export const SQL_NOTEBOOK_TYPE = "postgresql-workbench-sql";
 export const SQL_NOTEBOOK_EXTENSION = ".pgsql-notebook";

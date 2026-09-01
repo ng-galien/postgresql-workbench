@@ -8,6 +8,11 @@ import {
 } from "vscode-languageclient/node";
 import type { WorkbenchIndexController } from "../../packages/catalog/src/indexController.js";
 import { getConnectionName } from "../../packages/catalog/src/savedConnection.js";
+import {
+  resolveScratchpadAssociation,
+  SQL_NOTEBOOK_TYPE,
+  type SqlNotebookMetadata,
+} from "../../packages/scratchpad/src/notebookFile.js";
 import type { SyntaxParser } from "../../packages/sql/src/analysis/syntaxTree.js";
 import {
   answerSyntaxRequest,
@@ -45,15 +50,13 @@ import {
   SQL_AUTHORING_OBJECT_MIME,
   type SqlAuthoringSettings,
 } from "../../packages/sql/src/snapshot.js";
-import { POSTGRES_SOURCE_LANGUAGE_IDS } from "../../packages/sql/src/text/documentLanguage.js";
+import {
+  NOTEBOOK_CELL_URI_SCHEME,
+  POSTGRES_SOURCE_LANGUAGE_IDS,
+} from "../../packages/sql/src/text/documentLanguage.js";
 import { canonicalSqlIdentifier } from "../../packages/sql/src/text/identifiers.js";
 import { sqlStatementSlices } from "../../packages/sql/src/text/sqlLexing.js";
 import type { ConnectionManager } from "./connection/index.js";
-import {
-  resolveScratchpadAssociation,
-  SQL_NOTEBOOK_TYPE,
-  type SqlNotebookMetadata,
-} from "./scratchpad/index.js";
 import { CODE_MONIKER_URI_SCHEME } from "./sources/uri.js";
 import { SqlAuthoringWebviewServer } from "./sqlAuthoringWebview.js";
 
@@ -62,7 +65,8 @@ const SQL_DOCUMENT_SELECTOR = [
   { language: "plpgsql", scheme: "file" },
   { language: "sql", scheme: "untitled" },
   { language: "plpgsql", scheme: "untitled" },
-  { language: "plpgsql", scheme: "vscode-notebook-cell" },
+  { language: "plpgsql", scheme: NOTEBOOK_CELL_URI_SCHEME },
+  { language: "sql", scheme: NOTEBOOK_CELL_URI_SCHEME },
   { language: "sql", scheme: "postgresql-workbench-data-sql" },
   /*
    * The virtual sources and the sources a debug session opens. Their features come from the server

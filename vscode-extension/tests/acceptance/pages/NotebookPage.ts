@@ -153,8 +153,17 @@ export class NotebookPage {
       }
       await this.page.waitForTimeout(50);
     }
+    const rendered: string[] = [];
+    for (const frame of this.page.frames()) {
+      const regions = frame.getByRole("region", { name: /^PostgreSQL /u });
+      for (const text of await regions.allTextContents().catch(() => [])) {
+        rendered.push(text.slice(0, 200));
+      }
+    }
     throw new Error(
-      `No visible PostgreSQL query result rendered ${String(expectedText)} within 10000 ms`,
+      `No visible PostgreSQL query result rendered ${String(expectedText)} within 10000 ms; rendered regions: ${
+        rendered.join(" | ") || "<none>"
+      }`,
     );
   }
 

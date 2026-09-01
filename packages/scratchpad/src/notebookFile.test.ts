@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { DebugResult } from "../../../packages/dap/src/debugger/launch/index.js";
+import type { DebugResult } from "../../dap/src/debugger/launch/index.js";
 import {
   emptySqlNotebook,
   nextSqlNotebookName,

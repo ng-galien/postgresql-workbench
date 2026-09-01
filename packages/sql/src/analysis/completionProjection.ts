@@ -7,8 +7,6 @@ import {
 } from "./postgresSyntax.js";
 import type {
   AvailablePostgresSqlSyntaxExpectation,
-  AvailablePostgresSyntaxExpectation,
-  PostgresSyntaxAuthority,
   PostgresSyntaxExpectationResult,
   PostgresSyntaxIdentifier,
 } from "./syntaxExpectations.js";
@@ -26,12 +24,6 @@ export type PostgresCompletionFactsProvenance =
       qualifier: readonly PostgresSyntaxIdentifier[];
       repairedDocumentRange: PostgresShapeRange;
       offsetMapping: "identity";
-    }
-  | {
-      kind: "grammar-proven-prefix-without-active-region-names";
-      regionId: string;
-      analysisIdentity: PostgresAnalysisIdentity;
-      authority: PostgresSyntaxAuthority;
     };
 
 /** Facts consumed only while planning one completion response, with their parse provenance. */
@@ -60,10 +52,17 @@ export function originalPostgresCompletionSyntaxFacts(
 }
 
 /**
- * Projects only the parser-recovery ambiguity created by an unfinished qualified reference
- * (`p.`). The grammar provider proves an identifier slot and the exact scanner-classified
- * qualifier; this code replaces that qualified prefix with one equal-width neutral identifier and
- * asks the official parser again. Equal width keeps every parser range and region identity stable.
+ * The facts a completion may stand on while the document is mid-edit. Robust completion never
+ * demands a valid document; this composes the canonical techniques for living without one:
+ *
+ * - The LR automaton parses the prefix alone and names what may stand at the caret — the
+ *   expectation. A proven prefix is the admissibility test for everything else.
+ * - The official parser's error recovery still classifies the rest of the statement, so a FROM
+ *   clause keeps its relations and aliases while the line being typed is broken. When the prefix
+ *   is attested, those recovered names stand; only an unproven prefix withholds them.
+ * - An unfinished qualified reference (`p.`) is repaired with one equal-width neutral identifier
+ *   and reparsed — equal width keeps every parser range and region identity stable — so a clean
+ *   reparse can restore exact facts.
  */
 export async function postgresCompletionSyntaxFacts(
   source: string,
@@ -72,14 +71,10 @@ export async function postgresCompletionSyntaxFacts(
   expectation: PostgresSyntaxExpectationResult,
   parse: (projectedSource: string) => Promise<PostgresCompletionProjectionParseResult>,
 ): Promise<PostgresCompletionSyntaxFacts | undefined> {
-  // An incomplete document is normal while authoring, but names recovered from its erroneous
-  // active region are not evidence. A matching parser prediction proves the prefix at the caret,
-  // so grammar/catalog proposals may still use the document shape while active-region names are
-  // withheld. A successful projection below may restore them only after an error-free reparse.
   const fallback =
-    region.hasError === false
+    region.hasError === false || expectation.status === "available"
       ? originalPostgresCompletionSyntaxFacts(original, region)
-      : grammarProvenPrefixFacts(original, region, expectation);
+      : undefined;
   const repair = qualifiedReferenceProjection(source, region, expectation);
   if (repair === undefined) return fallback;
 
@@ -125,32 +120,6 @@ export async function postgresCompletionSyntaxFacts(
       qualifier: repair.qualifier,
       repairedDocumentRange: repair.repairedDocumentRange,
       offsetMapping: "identity",
-    },
-  };
-}
-
-function grammarProvenPrefixFacts(
-  original: PostgresDocumentSyntaxFacts,
-  region: PostgresLanguageRegionShape,
-  expectation: PostgresSyntaxExpectationResult,
-): PostgresCompletionSyntaxFacts | undefined {
-  if (!availableExpectationMatchesRegion(region, expectation)) return undefined;
-  return {
-    document: {
-      ...original,
-      scopes: original.scopes.filter(
-        (scope) =>
-          scope.regionId !== region.id ||
-          (scope.id === region.id && scope.kind === "language-region"),
-      ),
-      lexical: original.lexical.filter((fact) => fact.regionId !== region.id),
-      names: original.names.filter((fact) => fact.regionId !== region.id),
-    },
-    provenance: {
-      kind: "grammar-proven-prefix-without-active-region-names",
-      regionId: region.id,
-      analysisIdentity: expectation.analysisIdentity,
-      authority: expectation.authority,
     },
   };
 }
@@ -256,20 +225,6 @@ function sameExpectationRegion(
     region.analysisIdentity?.algorithm === expectation.analysisIdentity.algorithm &&
     region.analysisIdentity.value === expectation.analysisIdentity.value &&
     region.analysisIdentity.length === expectation.analysisIdentity.length
-  );
-}
-
-function availableExpectationMatchesRegion(
-  region: PostgresLanguageRegionShape,
-  expectation: PostgresSyntaxExpectationResult,
-): expectation is AvailablePostgresSyntaxExpectation {
-  return (
-    expectation.status === "available" &&
-    region.id === expectation.regionId &&
-    region.target.status === "available" &&
-    region.target.target.language === expectation.target.language &&
-    region.target.target.entryPoint === expectation.target.entryPoint &&
-    sameIdentity(region.analysisIdentity, expectation.analysisIdentity)
   );
 }
 

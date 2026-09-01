@@ -122,8 +122,7 @@ describe("postgresCompletionSyntaxFacts", () => {
         facts: embeddedSqlFacts(repairedSource, { start: sqlStart, end: sqlEnd }, true),
       }),
     );
-    expect(rejected?.provenance.kind).toBe("grammar-proven-prefix-without-active-region-names");
-    expect(rejected?.document.names).toEqual([]);
+    expect(rejected?.provenance.kind).toBe("original-document");
   });
 
   it("fails closed when source and parser-proven region facts are stale", async () => {
@@ -171,7 +170,7 @@ describe("postgresCompletionSyntaxFacts", () => {
     expect(result).toBeUndefined();
   });
 
-  it("keeps a grammar-proven incomplete prefix but removes names recovered from its active region", async () => {
+  it("stands recovered names on an attested prefix without a local reparse", async () => {
     const source = "SELECT shop.find";
     const original = facts(source, [relationFact("shop", "find", "f", source.length)]);
     original.shape.root.hasError = true;
@@ -210,10 +209,7 @@ describe("postgresCompletionSyntaxFacts", () => {
       },
     );
 
-    expect(result?.provenance.kind).toBe("grammar-proven-prefix-without-active-region-names");
-    expect(result?.document.names).toEqual([]);
-    expect(result?.document.scopes).toEqual([original.scopes[0]]);
-    expect(result?.document.lexical).toEqual([]);
+    expect(result?.provenance.kind).toBe("original-document");
   });
 });
 

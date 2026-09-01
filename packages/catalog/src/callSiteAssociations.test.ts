@@ -3,7 +3,7 @@ import {
   type CallSiteConnectionReference,
   type CallSiteConnectionState,
   CallSiteConnectionStore,
-} from "./associations.js";
+} from "./callSiteAssociations.js";
 
 class MemoryState implements CallSiteConnectionState {
   private readonly values = new Map<string, unknown>();

@@ -4,7 +4,7 @@ import type { DataViewRequest } from "../../../packages/rows/src/dataView/dataVi
 import type { SqlAuthoringDocumentProjection } from "../../../packages/sql/src/languageServer/protocol.js";
 import viewBundles from "../../../packages/views/viewBundles.json" with { type: "json" };
 import { sqlEditorWebviewPage } from "../sqlEditorWebviewPage.js";
-import { webviewPage } from "../webviewPage.js";
+import { webviewShell } from "../webviewShell.js";
 import { DataViewDocument } from "./dataViewDocument.js";
 import { DATA_VIEW_EDITOR_VIEW_TYPE, dataViewUri, parseDataViewUri } from "./dataViewUri.js";
 import { type DataViewHostServices, errorMessage } from "./hostServices.js";
@@ -118,7 +118,7 @@ export class DataViewEditorProvider
       this.services.extensionUri,
       this.services.sqlEditorLanguageServerUrl(),
     );
-    panel.webview.html = webviewPage({
+    panel.webview.html = webviewShell({
       webview: panel.webview,
       extensionUri: this.services.extensionUri,
       title: "Data View",

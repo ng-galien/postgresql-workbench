@@ -1,4 +1,4 @@
-import type { PgTapSourceRoutine } from "../../../packages/coverage/src/index.js";
+import type { PgTapSourceRoutine } from "./pgtap.js";
 
 export function coverageRoutineName(routine: PgTapSourceRoutine): string {
   return `${routine.schema}.${routine.name}(${routine.identityArguments})`;

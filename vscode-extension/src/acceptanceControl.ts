@@ -88,6 +88,8 @@ export interface AcceptanceControlOptions {
   resetWorkbench(): Promise<void> | void;
 }
 
+const outputDecoder = new TextDecoder();
+
 /**
  * The probes an acceptance run reads. Activation builds the pieces in order, so each probe starts
  * as a harmless default and is replaced once the piece it inspects exists.
@@ -158,6 +160,9 @@ export function registerAcceptanceControl(
                 languageId: cell.document.languageId,
                 outputs: cell.outputs.flatMap((output) => output.items.map((item) => item.mime)),
                 outputGroups: cell.outputs.map((output) => output.items.map((item) => item.mime)),
+                outputPreviews: cell.outputs.map((output) =>
+                  output.items.map((item) => outputDecoder.decode(item.data).slice(0, 400)),
+                ),
                 text: cell.document.getText(),
               })),
               notebookType: notebook.notebookType,

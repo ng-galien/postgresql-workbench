@@ -1,6 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import * as vscode from "vscode";
+import { CallSiteConnectionStore } from "../../packages/catalog/src/callSiteAssociations.js";
 import { WorkbenchDdlSyncController } from "../../packages/catalog/src/ddlSync.js";
 import { WorkbenchIndexController } from "../../packages/catalog/src/indexController.js";
 import {
@@ -16,6 +17,11 @@ import {
 import { getConnectionName } from "../../packages/catalog/src/savedConnection.js";
 import type { DebugSessionStatus } from "../../packages/dap/src/debugger/launch/index.js";
 import { DebugSessionController } from "../../packages/dap/src/debugger/launch/sessionController.js";
+import {
+  debuggableSqlCall,
+  debuggableSqlDefinition,
+  type SqlDebugAvailability,
+} from "../../packages/dap/src/debugger/launch/sqlDebugAvailability.js";
 import type { DebugResultStore } from "../../packages/rows/src/capturedResults.js";
 import { planSqlResultExecution } from "../../packages/sql/src/analysis/sqlStatements.js";
 import { POSTGRES_SOURCE_LANGUAGE_IDS } from "../../packages/sql/src/text/documentLanguage.js";
@@ -23,15 +29,8 @@ import { createAcceptanceProbes, registerAcceptanceControl } from "./acceptanceC
 import { registerWorkbenchGraphDropBridge, WorkbenchGraphView } from "./cockpit/index.js";
 import { registerGraphWorkbenchCommands } from "./cockpit/registerCommands.js";
 import { WorkbenchGraphTreeSync } from "./cockpit/treeSync.js";
-import {
-  debuggableSqlCall,
-  debuggableSqlDefinition,
-  PlpgsqlDiagnosticsProvider,
-  SqlCodeLensProvider,
-  type SqlDebugAvailability,
-} from "./codeLens/index.js";
-import { CallSiteConnectionStore, ConnectionManager } from "./connection/index.js";
-import { registerConnectionCommands } from "./connection/registerCommands.js";
+import { PlpgsqlDiagnosticsProvider, SqlCodeLensProvider } from "./codeLens/index.js";
+import { ConnectionManager, registerConnectionCommands } from "./connection/index.js";
 import { openCoverageClient, PgTapTestController } from "./coverage/index.js";
 import { DataViewEditorProvider } from "./dataView/dataViewEditorProvider.js";
 import { DataViewQueryFileSystem } from "./dataView/queryFileSystem.js";
@@ -70,6 +69,22 @@ import {
 import { registerSqlWorkbenchCommands } from "./workbench/registerCommands.js";
 
 const out = vscode.window.createOutputChannel("PostgreSQL Workbench");
+const OUTPUT_TAIL_LIMIT = 200;
+
+/**
+ * The last lines the extension told its reader, kept for the acceptance state capture: a journey
+ * that fails on a silent branch reads what the product logged instead of guessing at it. The
+ * capture only exists under the acceptance harness, so production installs never pay for it.
+ */
+const outputTail: string[] = [];
+if (process.env.POSTGRESQL_WORKBENCH_ACCEPTANCE_CONTROL_FILE) {
+  const originalAppendLine = out.appendLine.bind(out);
+  out.appendLine = (value: string) => {
+    outputTail.push(value);
+    if (outputTail.length > OUTPUT_TAIL_LIMIT) outputTail.shift();
+    originalAppendLine(value);
+  };
+}
 
 /** Surface returned by activate() — consumed by integration tests. */
 export interface PlpgsqlExtensionApi {
@@ -206,6 +221,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
     },
     schemaSync: workbenchDdlSync.diagnosticStates(),
     index: workbenchIndex.acceptanceSnapshot(),
+    recentOutput: [...outputTail],
   });
   let debugScratchpadSql: ScratchpadDebugger = async () => ({
     started: false,

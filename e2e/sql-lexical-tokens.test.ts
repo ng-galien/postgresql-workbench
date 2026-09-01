@@ -120,7 +120,7 @@ describe("what a statement is made of", () => {
     expect(pieces.filter((piece) => piece.type === "string")).toHaveLength(2);
   });
 
-  it.fails("reads SQL regions nested in PL/pgSQL when the syntax port exposes them", async () => {
+  it("reads SQL regions nested in PL/pgSQL through the syntax port", async () => {
     const source = [
       "CREATE FUNCTION shop.reprice(p_order_id bigint) RETURNS void LANGUAGE plpgsql AS $fn$",
       "BEGIN",
@@ -140,7 +140,7 @@ describe("what a statement is made of", () => {
     expect(kinds.get("=")).toBe("operator");
   });
 
-  it.fails("covers every piece once all nested language regions are exposed", async () => {
+  it("covers every piece across every nested language region", async () => {
     /*
      * The completeness proof. Every non-blank byte of the corpus must be covered by a lexical
      * piece or stand where a name stands — an identifier, or a keyword in a name position, both

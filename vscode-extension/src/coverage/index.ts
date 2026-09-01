@@ -4,6 +4,5 @@
  * else under `coverage/` is internal.
  */
 export { openCoverageClient } from "./client.js";
-export { mapPlpgsqlBodyLineToSource } from "./mapToSource.js";
 export type { PgTapCoverageSnapshot } from "./runProfile.js";
 export { PgTapTestController } from "./testController.js";

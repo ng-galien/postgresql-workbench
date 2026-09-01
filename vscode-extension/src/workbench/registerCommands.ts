@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import type { CallSiteConnectionStore } from "../../../packages/catalog/src/callSiteAssociations.js";
 import type { WorkbenchIndexController } from "../../../packages/catalog/src/indexController.js";
 import type {
   WorkbenchObjectAction,
@@ -27,7 +28,7 @@ import type {
   DocumentConnectionTarget,
   SqlCodeLensProvider,
 } from "../codeLens/index.js";
-import type { CallSiteConnectionStore, ConnectionManager } from "../connection/index.js";
+import type { ConnectionManager } from "../connection/index.js";
 import type { PgTapTestController } from "../coverage/index.js";
 import { openCoverageClient } from "../coverage/index.js";
 import type { DataViewEditorProvider } from "../dataView/dataViewEditorProvider.js";

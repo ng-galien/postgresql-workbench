@@ -1,4 +1,4 @@
-import type { CoverageExecutionSnapshot } from "../../../packages/coverage/src/index.js";
+import type { CoverageExecutionSnapshot } from "./runner.js";
 
 export type IndexedCoverageSnapshot = Map<number, Map<string, number>>;
 

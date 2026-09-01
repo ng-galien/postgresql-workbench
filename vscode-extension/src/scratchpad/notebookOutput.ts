@@ -7,10 +7,10 @@ import {
   type SqlStatementResultPayload,
   sqlFailurePayload,
 } from "../../../packages/rows/src/resultPayload.js";
+import { SQL_NOTEBOOK_RESULT_MIME } from "../../../packages/scratchpad/src/notebookFile.js";
 import type { SqlExecutionPlan } from "../../../packages/sql/src/analysis/sqlStatements.js";
 import { statementResultSummary } from "../../../packages/views/src/results/statementResult.js";
 import { errorMessage } from "../errorMessage.js";
-import { SQL_NOTEBOOK_RESULT_MIME } from "./notebookFile.js";
 
 /**
  * What a cell shows when its SQL did not run: the payload the renderer draws, and the one line of

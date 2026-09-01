@@ -42,6 +42,8 @@ END;
         language: "plpgsql",
         source: body,
         uri: "coverage.plpgsql",
+        maxDepth: 1_024,
+        maxNodes: 100_000,
       },
     ]);
     expect(analysis.diagnostics).toEqual([]);

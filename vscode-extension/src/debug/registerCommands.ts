@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import type { CallSiteConnectionStore } from "../../../packages/catalog/src/callSiteAssociations.js";
 import type { WorkbenchIndexController } from "../../../packages/catalog/src/indexController.js";
 import { getConnectionName } from "../../../packages/catalog/src/savedConnection.js";
 import type {
@@ -26,11 +27,7 @@ import { type FunctionDefinition, parseCall } from "../../../packages/sql/src/ca
 import { postgresSourceLanguageId } from "../../../packages/sql/src/text/documentLanguage.js";
 import { truncationReasonLabel } from "../../../packages/views/src/results/resultFormatting.js";
 import type { CommandCallSite, CommandFunctionDefinition } from "../codeLens/index.js";
-import {
-  type CallSiteConnectionStore,
-  type ConnectionManager,
-  ConnectionStore,
-} from "../connection/index.js";
+import { type ConnectionManager, ConnectionStore } from "../connection/index.js";
 import {
   buildRoutineArgs,
   buildRoutineTarget,

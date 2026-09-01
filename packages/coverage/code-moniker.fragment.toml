@@ -5,9 +5,17 @@ enabled = true
 coverage_source = "source ~ '**/dir:packages/dir:coverage/**'"
 coverage_sql_analysis_target = "target ~ '**/dir:packages/dir:coverage/**' OR target ~ '**/dir:packages/dir:sql/**'"
 
+coverage_module_target = "target ~ '**/dir:packages/dir:coverage/**' AND NOT target.segment('module') = 'index'"
 [[ts.refs.where]]
 id = "coverage-dependency-is-limited-to-sql-analysis"
 severity = "error"
 expr = "$coverage_source AND $structural_edge AND ($engine_package_target OR $host_local_target) => $coverage_sql_analysis_target"
 message = "packages/coverage instruments PL/pgSQL through the SQL analysis layer; it depends on that package and nothing else."
 rationale = "Coverage maps executed lines back to source. It needs the syntax layer and nothing the Workbench builds on top of it."
+
+[[ts.refs.where]]
+id = "coverage-encapsulation-consumers-enter-through-the-index"
+severity = "error"
+expr = "$structural_edge AND $coverage_module_target => $coverage_source"
+message = "packages/coverage is consumed through its index; only the package itself reads behind the door."
+rationale = "Coverage is the one package with a declared public surface, and every consumer already enters through it. An unguarded door regresses on the first deep import - and the door only stays honest while it lists exactly what consumers use."

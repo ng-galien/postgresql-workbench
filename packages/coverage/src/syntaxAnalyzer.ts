@@ -1,3 +1,7 @@
+import {
+  DEFAULT_SYNTAX_MAX_DEPTH,
+  DEFAULT_SYNTAX_MAX_NODES,
+} from "../../sql/src/analysis/codeMonikerSyntax.js";
 import { plpgsqlStatementName, plpgsqlStep } from "../../sql/src/analysis/postgresGrammar.js";
 import {
   directSyntaxChild as directChild,
@@ -37,6 +41,8 @@ export async function analyzeCoverageWithSyntaxParser(
       language: "plpgsql",
       source,
       uri: "coverage.plpgsql",
+      maxDepth: DEFAULT_SYNTAX_MAX_DEPTH,
+      maxNodes: DEFAULT_SYNTAX_MAX_NODES,
     });
     return analyzeCoverageSyntax(source, syntax);
   } catch (error) {

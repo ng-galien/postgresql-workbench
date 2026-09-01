@@ -51,6 +51,6 @@ test.describe("Data View", () => {
      * plain: nothing here failed, because nothing here looked.
      */
     await dataView.openSqlPanel();
-    await expect(dataView.sqlKeywords.first()).toBeVisible({ timeout: 10_000 });
+    await expect(dataView.sqlColouredTokens.first()).toBeVisible({ timeout: 10_000 });
   });
 });

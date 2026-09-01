@@ -18,7 +18,7 @@ describe("PostgreSQL keyword authority", () => {
       sourceUrl: "https://github.com/postgres/postgres/blob/REL_18_4/src/include/parser/kwlist.h",
       sourceSha256: "fdcdf3694513cba63b4016f63032472b686e381bb35f17c5d645bc2f6f1dac16",
       grammarPackage: "tree-sitter-postgres@1.2.4",
-      runtimePackage: "@code-moniker/client@0.9.1",
+      runtimePackage: "@code-moniker/client@0.9.2",
     });
     expect(PLPGSQL_KEYWORD_SOURCES).toMatchObject({
       postgresVersion: "18.4",

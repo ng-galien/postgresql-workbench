@@ -48,6 +48,14 @@ export interface CodeMonikerSyntaxClient {
   ): Promise<CodeMonikerSyntaxTree>;
 }
 
+/**
+ * The provider inlines its language injections into the tree — a routine body, and the SQL
+ * regions inside it — so a whole routine reads deeper and larger than the budgets that fit an
+ * injection-less parse. The defaults match the SQL authoring server's own.
+ */
+export const DEFAULT_SYNTAX_MAX_DEPTH = 1_024;
+export const DEFAULT_SYNTAX_MAX_NODES = 100_000;
+
 export function createCodeMonikerSyntaxParser(client: CodeMonikerSyntaxClient): SyntaxParser {
   return {
     async parse(request: SyntaxParseRequest): Promise<SyntaxTree> {
@@ -57,8 +65,8 @@ export function createCodeMonikerSyntaxParser(client: CodeMonikerSyntaxClient): 
           language: request.language,
           source: request.source,
           ...(request.uri === undefined ? {} : { uri: request.uri }),
-          max_depth: request.maxDepth ?? 32,
-          max_nodes: request.maxNodes ?? 2_000,
+          max_depth: request.maxDepth ?? DEFAULT_SYNTAX_MAX_DEPTH,
+          max_nodes: request.maxNodes ?? DEFAULT_SYNTAX_MAX_NODES,
           named_only: request.namedOnly ?? false,
           include_text: false,
           max_text_chars: 0,

@@ -36,8 +36,12 @@ export class DataViewPage {
     return this.located(".data-view-sql");
   }
 
-  get sqlKeywords(): Locator {
-    return this.located(".data-view-sql .postgres-token-keyword");
+  /**
+   * Pieces Monaco painted with something other than its default class. Without the server's
+   * stream every token wears the default, so one departure proves the whole chain answered.
+   */
+  get sqlColouredTokens(): Locator {
+    return this.located('.data-view-sql [class^="mtk"]:not(.mtk1)');
   }
 
   async openSqlPanel(): Promise<void> {

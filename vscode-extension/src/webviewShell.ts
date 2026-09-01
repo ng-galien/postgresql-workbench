@@ -7,7 +7,7 @@ import { vscodeThemeOverrides } from "./presentation/vscodeTheme.js";
  * admits only that nonce, and the `#root` its bundle mounts into. One place, so a policy is
  * written — and fixed — once for the Data View, the debugger output and the Cockpit graph.
  */
-export function webviewPage(options: {
+export function webviewShell(options: {
   webview: vscode.Webview;
   extensionUri: vscode.Uri;
   title: string;

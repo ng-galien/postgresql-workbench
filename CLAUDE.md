@@ -130,7 +130,7 @@ The `vscode-extension/` is a full-featured VS Code extension:
 - esbuild bundles extension.ts and the extension-specific dapServer.ts entry; the latter reuses the shared stdio DAP host without importing the standalone CLI entry
 - Imports from ../packages/ work via esbuild (not tsc rootDir — removed)
 - The extension adapts the engine to VS Code and holds nothing else; the views name their
-  colours `--postgres-*` and `webviewPage.ts` says what those names are worth
+  colours `--postgres-*` and `webviewShell.ts` says what those names are worth
 
 ## Testing
 

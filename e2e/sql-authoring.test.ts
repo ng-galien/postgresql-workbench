@@ -519,6 +519,29 @@ describe("SQL authoring language contracts", async () => {
     );
   });
 
+  it("offers whole-statement scaffolds where the grammar opens a statement, never inside an expression", async () => {
+    const statements = await complete("", 0);
+    const scaffold = statements.find((item) => item.label === "SELECT … FROM …;");
+    expect(scaffold?.insertTextFormat).toBe(2);
+    expect(
+      scaffold?.textEdit && "newText" in scaffold.textEdit ? scaffold.textEdit.newText : "",
+    ).toBe("SELECT ${1:columns}\nFROM ${2:relation};");
+    expect(statements.some((item) => item.label === "UPDATE … SET … WHERE …;")).toBe(true);
+
+    const expressionSource = [
+      "DO $workbench$",
+      "DECLARE",
+      "  v_id integer := (SELECT",
+      "BEGIN",
+      "  NULL;",
+      "END",
+      "$workbench$;",
+    ].join("\n");
+    const expressionCaret = expressionSource.indexOf("(SELECT") + "(SELECT".length;
+    const inExpression = await complete(expressionSource, expressionCaret);
+    expect(inExpression.some((item) => item.label.includes("…"))).toBe(false);
+  });
+
   it("completes an alias through the parser-proven SQL region nested in PL/pgSQL", async () => {
     const source =
       "CREATE FUNCTION f() RETURNS SETOF shop.product LANGUAGE plpgsql AS $$ BEGIN RETURN QUERY SELECT p. FROM shop.product AS p; END $$;";
@@ -534,7 +557,7 @@ describe("SQL authoring language contracts", async () => {
     );
   });
 
-  it("rejects alias projection when the same nested SQL region remains invalid", async () => {
+  it("rejects alias projection when recovery cannot see the region's relations", async () => {
     const source =
       "CREATE FUNCTION f() RETURNS SETOF shop.product LANGUAGE plpgsql AS $$ BEGIN RETURN QUERY SELECT p. + FROM shop.product AS p; END $$;";
     const caret = source.indexOf("SELECT p.") + "SELECT p.".length;
@@ -543,6 +566,25 @@ describe("SQL authoring language contracts", async () => {
 
     expect(items).not.toContainEqual(expect.objectContaining({ label: "id" }));
     expect(items).not.toContainEqual(expect.objectContaining({ label: "name" }));
+  });
+
+  it("proposes the statement's aliases on a bare fragment in a broken select list", async () => {
+    const source = [
+      "SELECT",
+      "  product_category.product_id,",
+      "  pro",
+      "  warehouse.id",
+      "FROM",
+      "  shop.product_category AS product_category",
+      "  JOIN shop.product AS product ON product_category.product_id = product.id",
+      "  LEFT JOIN shop.warehouse AS warehouse ON product.id = warehouse.id;",
+    ].join("\n");
+    const caret = source.indexOf("  pro\n") + "  pro".length;
+
+    const items = await complete(source, caret, snapshot);
+
+    expect(items).toContainEqual(expect.objectContaining({ label: "product" }));
+    expect(items).toContainEqual(expect.objectContaining({ label: "product_category" }));
   });
 
   it("filters a large schema before applying the completion bound", async () => {

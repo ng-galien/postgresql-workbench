@@ -35,6 +35,7 @@ import { quoteSqlIdentifierIfNeeded } from "../text/identifiers.js";
 
 export type PostgresAuthoringProposalKind =
   | "keyword"
+  | "scaffold"
   | "schema"
   | "relation"
   | "column"
@@ -53,6 +54,11 @@ export type PostgresAuthoringInsertion =
       kind: "call";
       callee: string;
       arguments: readonly { placeholder: string }[];
+    }
+  | {
+      /** A complete statement skeleton, written as an LSP snippet with its tab stops. */
+      kind: "scaffold";
+      snippet: string;
     };
 
 interface SnapshotProvenance {
@@ -80,6 +86,12 @@ interface LocalFactProvenance {
 export type PostgresAuthoringProposalSource =
   | {
       kind: "grammar-terminal";
+      language: "sql";
+      keyword: PostgresSqlKeywordLabel;
+      authority: PostgresSyntaxAuthority;
+    }
+  | {
+      kind: "grammar-scaffold";
       language: "sql";
       keyword: PostgresSqlKeywordLabel;
       authority: PostgresSyntaxAuthority;
@@ -254,6 +266,35 @@ function isSqlExpectation(
   return expectation.target.language === "sql";
 }
 
+/**
+ * Whole-statement skeletons, each offered only where the grammar expects its opening keyword and
+ * the region holds statements — an expression position gets the keyword alone.
+ */
+const SQL_STATEMENT_SCAFFOLDS: ReadonlyMap<string, { label: string; snippet: string }> = new Map([
+  ["SELECT", { label: "SELECT … FROM …;", snippet: "SELECT ${1:columns}\nFROM ${2:relation};" }],
+  [
+    "INSERT",
+    {
+      label: "INSERT INTO … VALUES …;",
+      snippet: "INSERT INTO ${1:relation} (${2:columns})\nVALUES (${3:values});",
+    },
+  ],
+  [
+    "UPDATE",
+    {
+      label: "UPDATE … SET … WHERE …;",
+      snippet: "UPDATE ${1:relation}\nSET ${2:column} = ${3:value}\nWHERE ${4:condition};",
+    },
+  ],
+  [
+    "DELETE",
+    {
+      label: "DELETE FROM … WHERE …;",
+      snippet: "DELETE FROM ${1:relation}\nWHERE ${2:condition};",
+    },
+  ],
+]);
+
 function planSqlCompletion(
   expectation: AvailablePostgresSqlSyntaxExpectation,
   request: PostgresCompletionPlanRequest,
@@ -262,6 +303,28 @@ function planSqlCompletion(
   const semantic = expectation.slots
     .flatMap((slot) => resolveSqlSlot(slot, request, context))
     .filter((proposal) => matchesFragment(proposal.label, expectation.fragment));
+  const scaffolds =
+    expectation.target.entryPoint === "expression"
+      ? []
+      : expectation.keywords.flatMap((keyword): PostgresAuthoringProposal[] => {
+          const scaffold = SQL_STATEMENT_SCAFFOLDS.get(keyword.label);
+          if (!scaffold || !matchesFragment(keyword.label, expectation.fragment)) return [];
+          return [
+            {
+              kind: "scaffold",
+              label: scaffold.label,
+              insertion: { kind: "scaffold", snippet: scaffold.snippet },
+              documentReplacementRange: context.documentReplacementRange,
+              source: {
+                kind: "grammar-scaffold",
+                language: "sql",
+                keyword: keyword.label,
+                authority: expectation.authority,
+              },
+              rankGroup: 2,
+            },
+          ];
+        });
   const grammar = expectation.keywords
     .filter((keyword) => matchesFragment(keyword.label, expectation.fragment))
     .map(
@@ -279,7 +342,7 @@ function planSqlCompletion(
         rankGroup: 2,
       }),
     );
-  return [...semantic, ...grammar];
+  return [...semantic, ...scaffolds, ...grammar];
 }
 
 function planPlpgsqlCompletion(

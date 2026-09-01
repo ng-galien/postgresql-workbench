@@ -1,9 +1,6 @@
-import { canonicalSqlTypeName } from "../../../packages/sql/src/analysis/syntaxNodes.js";
-import type { FunctionDefinition, ParsedCallSite } from "../../../packages/sql/src/callParser.js";
-import type {
-  SqlAuthoringObject,
-  SqlAuthoringSnapshot,
-} from "../../../packages/sql/src/snapshot.js";
+import { canonicalSqlTypeName } from "../../../../sql/src/analysis/syntaxNodes.js";
+import type { FunctionDefinition, ParsedCallSite } from "../../../../sql/src/callParser.js";
+import type { SqlAuthoringObject, SqlAuthoringSnapshot } from "../../../../sql/src/snapshot.js";
 
 /** Debug eligibility of one analyzed SQL entry point, with the single blocking cause. */
 export type SqlDebugAvailability =
@@ -19,13 +16,6 @@ export type SqlDebugUnavailableReason =
   | "Several overloads match"
   | "Not a PL/pgSQL routine"
   | "Call depends on a row value or parameter";
-
-/** Data View query documents carry their own lens (Apply to Data View). */
-const DATA_VIEW_QUERY_URI_SCHEME = "postgresql-workbench-data-sql";
-
-export function shouldProvideSqlCodeLenses(uriScheme: string): boolean {
-  return uriScheme !== "vscode-notebook-cell" && uriScheme !== DATA_VIEW_QUERY_URI_SCHEME;
-}
 
 function unavailable(reason: SqlDebugUnavailableReason): SqlDebugAvailability {
   return { status: "unavailable", reason };
@@ -82,18 +72,4 @@ export function debuggableSqlDefinition(
         ),
     ),
   );
-}
-
-export function hasDebuggableSqlCall(
-  snapshot: SqlAuthoringSnapshot | undefined,
-  call: ParsedCallSite,
-): boolean {
-  return debuggableSqlCall(snapshot, call).status === "available";
-}
-
-export function hasDebuggableSqlDefinition(
-  snapshot: SqlAuthoringSnapshot | undefined,
-  definition: FunctionDefinition,
-): boolean {
-  return debuggableSqlDefinition(snapshot, definition).status === "available";
 }

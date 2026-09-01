@@ -27,6 +27,7 @@ import {
   workbenchObjectFromSymbol,
 } from "../../../packages/catalog/src/objectModel.js";
 import type { WorkbenchGraphDragPayload } from "../../../packages/views/src/cockpit/dragAndDrop.js";
+import { GraphNavigation } from "../../../packages/views/src/cockpit/graph/navigation.js";
 import type {
   CockpitNeighborhood,
   CockpitPerspective,
@@ -42,7 +43,6 @@ import type {
   WorkbenchGraphWebviewMessage,
 } from "../../../packages/views/src/cockpit/protocol.js";
 import { DEFAULT_WORKBENCH_GRAPH_APPEARANCE } from "../../../packages/views/src/cockpit/protocol.js";
-import { GraphNavigation } from "./navigation.js";
 import { WorkbenchGraphPanel } from "./panel.js";
 
 type WorkbenchSnapshot = Pick<

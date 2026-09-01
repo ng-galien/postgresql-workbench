@@ -210,3 +210,71 @@ suite("Virtual source editing", () => {
     }
   });
 });
+
+// ============================================================
+suite("Scratchpad SQL authoring", () => {
+  async function openScratchCell(text: string): Promise<vscode.NotebookCell> {
+    const extension = vscode.extensions.getExtension(EXT_ID)!;
+    if (!extension.isActive) await extension.activate();
+    const notebook = await vscode.workspace.openNotebookDocument(
+      "postgresql-workbench-sql",
+      new vscode.NotebookData([
+        new vscode.NotebookCellData(vscode.NotebookCellKind.Code, text, "plpgsql"),
+      ]),
+    );
+    await vscode.window.showNotebookDocument(notebook);
+    return notebook.cellAt(0);
+  }
+
+  async function pollUntil<T>(
+    fetch: () => Thenable<T>,
+    accept: (value: T) => boolean,
+    timeoutMs = 30_000,
+  ): Promise<T> {
+    const deadline = Date.now() + timeoutMs;
+    let value = await fetch();
+    while (!accept(value) && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      value = await fetch();
+    }
+    return value;
+  }
+
+  test("a notebook cell is coloured by the SQL authoring server", async function () {
+    this.timeout(60_000);
+    const cell = await openScratchCell("SELECT 1 FROM information_schema.tables;");
+    const tokens = await pollUntil(
+      () =>
+        vscode.commands.executeCommand<vscode.SemanticTokens>(
+          "vscode.provideDocumentSemanticTokens",
+          cell.document.uri,
+        ),
+      (value) => (value?.data.length ?? 0) > 0,
+    );
+    assert.ok(
+      tokens && tokens.data.length > 0,
+      "The server's one stream never coloured the notebook cell",
+    );
+  });
+
+  test("a notebook cell completes through the SQL authoring server", async function () {
+    this.timeout(60_000);
+    const cell = await openScratchCell("SEL");
+    const proposals = await pollUntil(
+      () =>
+        vscode.commands.executeCommand<vscode.CompletionList>(
+          "vscode.executeCompletionItemProvider",
+          cell.document.uri,
+          new vscode.Position(0, 3),
+        ),
+      (value) => (value?.items.length ?? 0) > 0,
+    );
+    const labels = (proposals?.items ?? []).map((item) =>
+      typeof item.label === "string" ? item.label : item.label.label,
+    );
+    assert.ok(
+      labels.some((label) => label.toUpperCase() === "SELECT"),
+      `The server never proposed SELECT for a notebook cell; got [${labels.slice(0, 8).join(", ")}]`,
+    );
+  });
+});

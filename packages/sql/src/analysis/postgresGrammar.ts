@@ -90,6 +90,11 @@ const PLPGSQL_ANY_IDENTIFIER = verifiedGrammarKinds(
   "PL/pgSQL",
   "any_identifier",
 );
+const PLPGSQL_FOR_VARIABLE = verifiedGrammarKinds(
+  PLPGSQL_GRAMMAR_KINDS,
+  "PL/pgSQL",
+  "for_variable",
+);
 const SQL_ROUTINE_ARGUMENT = verifiedGrammarKinds(SQL_GRAMMAR_KINDS, "SQL", "func_arg");
 const SQL_ROUTINE_ARGUMENT_NAME = verifiedGrammarKinds(SQL_GRAMMAR_KINDS, "SQL", "param_name");
 const SQL_ROUTINE_DECLARATION = verifiedGrammarKinds(
@@ -97,6 +102,10 @@ const SQL_ROUTINE_DECLARATION = verifiedGrammarKinds(
   "SQL",
   "CreateFunctionStmt",
 );
+const SQL_ROUTINE_NAME = verifiedGrammarKinds(SQL_GRAMMAR_KINDS, "SQL", "func_name");
+const SQL_PROCEDURE_KEYWORD = verifiedGrammarKinds(SQL_GRAMMAR_KINDS, "SQL", "kw_procedure");
+const SQL_TRIGGER_DECLARATION = verifiedGrammarKinds(SQL_GRAMMAR_KINDS, "SQL", "CreateTrigStmt");
+const SQL_QUALIFIED_NAME = verifiedGrammarKinds(SQL_GRAMMAR_KINDS, "SQL", "qualified_name");
 
 export interface PlpgsqlVariableDeclarationSyntax {
   name: SyntaxNode;
@@ -146,6 +155,51 @@ export function isSqlRoutineArgumentName(
     parent !== undefined &&
     SQL_ROUTINE_ARGUMENT.has(parent.kind)
   );
+}
+
+export interface SqlDeclaredNameSyntax {
+  role: "relation" | "routine";
+  invocation?: "function" | "procedure";
+}
+
+/**
+ * A name a declaring statement binds, read from its grammar position: the routine a CREATE
+ * FUNCTION or PROCEDURE defines, and the table and routine a CREATE TRIGGER wires together.
+ * A call's `func_name` sits under `func_application` and never matches here.
+ */
+export function sqlDeclaredName(
+  node: SyntaxNode,
+  parent: SyntaxNode | undefined,
+): SqlDeclaredNameSyntax | undefined {
+  if (parent === undefined) return undefined;
+  if (SQL_ROUTINE_NAME.has(node.kind)) {
+    if (SQL_ROUTINE_DECLARATION.has(parent.kind)) {
+      return {
+        role: "routine",
+        invocation: sqlRoutineDeclarationIsProcedure(parent) ? "procedure" : "function",
+      };
+    }
+    if (SQL_TRIGGER_DECLARATION.has(parent.kind))
+      return { role: "routine", invocation: "function" };
+  }
+  if (SQL_QUALIFIED_NAME.has(node.kind) && SQL_TRIGGER_DECLARATION.has(parent.kind)) {
+    return { role: "relation" };
+  }
+  return undefined;
+}
+
+/** Whether a routine declaration defines a procedure rather than a function. */
+function sqlRoutineDeclarationIsProcedure(declaration: SyntaxNode): boolean {
+  return declaration.children.some((child) => SQL_PROCEDURE_KEYWORD.has(child.kind));
+}
+
+/**
+ * The variables a PL/pgSQL FOR statement declares for its own loop: the grammar's `for_variable`
+ * list. FOREACH targets are references to already-declared variables and stay out.
+ */
+export function plpgsqlLoopVariableNames(node: SyntaxNode): SyntaxNode[] {
+  if (!PLPGSQL_FOR_VARIABLE.has(node.kind)) return [];
+  return node.children.filter((child) => PLPGSQL_ANY_IDENTIFIER.has(child.kind));
 }
 
 /** The CREATE FUNCTION/PROCEDURE node that owns a routine argument, if there is one. */

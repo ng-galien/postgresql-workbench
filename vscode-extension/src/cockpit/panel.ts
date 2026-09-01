@@ -5,7 +5,7 @@ import type {
 } from "../../../packages/views/src/cockpit/protocol.js";
 import viewBundles from "../../../packages/views/viewBundles.json" with { type: "json" };
 import { sqlEditorWebviewPage } from "../sqlEditorWebviewPage.js";
-import { webviewPage } from "../webviewPage.js";
+import { webviewShell } from "../webviewShell.js";
 
 export class WorkbenchGraphPanel implements vscode.Disposable {
   private panel?: vscode.WebviewPanel;
@@ -84,7 +84,7 @@ function graphHtml(
   languageServerUrl: string,
 ): string {
   const editor = sqlEditorWebviewPage(webview, extensionUri, languageServerUrl);
-  return webviewPage({
+  return webviewShell({
     webview,
     extensionUri,
     title: "PostgreSQL Graph",

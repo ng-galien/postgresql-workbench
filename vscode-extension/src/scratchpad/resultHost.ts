@@ -14,6 +14,10 @@ import type {
   SqlNotebookResultPayload,
 } from "../../../packages/rows/src/resultPayload.js";
 import {
+  associationFingerprint,
+  SQL_NOTEBOOK_RENDERER_ID,
+} from "../../../packages/scratchpad/src/notebookFile.js";
+import {
   isSqlResultExportFormat,
   type SqlNotebookRendererRequest,
   type SqlNotebookRendererResponse,
@@ -25,7 +29,6 @@ import {
 import { sortedResultRowOrder } from "../../../packages/views/src/results/resultFormatting.js";
 import { exportAllRows, pickExportTarget } from "../dataView/exportResult.js";
 import { followLinkFromView } from "../followLink.js";
-import { associationFingerprint, SQL_NOTEBOOK_RENDERER_ID } from "./notebookFile.js";
 
 interface HostedResultSession {
   resultId: string;

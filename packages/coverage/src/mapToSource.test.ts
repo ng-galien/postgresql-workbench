@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { CoverageResult } from "../../../packages/coverage/src/index.js";
 import { mapCoverageToSource, mapPlpgsqlBodyLineToSource } from "./mapToSource.js";
+import type { CoverageResult } from "./model.js";
 
 describe("native coverage source mapping", () => {
   it("maps body-relative statements and decision branches to DDL lines", () => {

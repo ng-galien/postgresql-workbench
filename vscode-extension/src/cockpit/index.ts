@@ -5,7 +5,6 @@
  * This file is the module's public surface.
  */
 export { registerWorkbenchGraphDropBridge, workbenchGraphDropUri } from "./dropBridge.js";
-export { GraphNavigation, type GraphNavigationSnapshot } from "./navigation.js";
 export { WorkbenchGraphPanel } from "./panel.js";
 export { WorkbenchGraphTreeSync } from "./treeSync.js";
 export { WorkbenchGraphView } from "./view.js";

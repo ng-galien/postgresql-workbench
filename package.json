@@ -52,7 +52,7 @@
     "test:shell": "playwright test --config packages/shell/tests/playwright.config.ts"
   },
   "dependencies": {
-    "@code-moniker/client": "0.9.1",
+    "@code-moniker/client": "0.9.2",
     "@codingame/monaco-vscode-editor-api": "25.1.2",
     "@codingame/monaco-vscode-files-service-override": "25.1.2",
     "@typefox/monaco-editor-react": "7.7.0",

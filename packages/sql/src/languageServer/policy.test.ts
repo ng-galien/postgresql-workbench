@@ -94,3 +94,18 @@ describe("SQL authoring server policy", () => {
     ).toBeUndefined();
   });
 });
+
+describe("notebook cells parse as SQL scripts", () => {
+  it("roots a plpgsql notebook cell in the SQL grammar", () => {
+    expect(
+      postgresAuthoringDocumentLanguage(
+        "plpgsql",
+        "vscode-notebook-cell:/scratch.pgsql-notebook#ch0001",
+      ),
+    ).toBe("sql");
+  });
+
+  it("keeps a bare plpgsql document on the PL/pgSQL root", () => {
+    expect(postgresAuthoringDocumentLanguage("plpgsql", "file:///body.plpgsql")).toBe("plpgsql");
+  });
+});

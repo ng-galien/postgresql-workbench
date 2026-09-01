@@ -228,6 +228,14 @@ test.describe("SQL authoring", () => {
         ],
       });
 
+    await test.step("complete an aliased column inside a notebook cell", async () => {
+      const aliased = await notebook.addCodeCell();
+      await notebook.typeInCell(aliased, "SELECT * FROM shop.product AS product WHERE product.");
+      await notebook.requestCompletion(aliased);
+      await expect(notebook.suggestion(/^id$/)).toBeVisible({ timeout: 5_000 });
+      await notebook.dismissCompletion();
+    });
+
     await test.step("keep completion on the Association when another Connection is connected", async () => {
       try {
         await workbench.tree.scrollToTop();

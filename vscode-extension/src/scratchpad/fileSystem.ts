@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { SQL_NOTEBOOK_EXTENSION } from "./notebookFile.js";
+import { SQL_NOTEBOOK_EXTENSION } from "../../../packages/scratchpad/src/notebookFile.js";
 
 export const SQL_NOTEBOOK_SCHEME = "postgresql-workbench";
 

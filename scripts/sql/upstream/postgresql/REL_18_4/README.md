@@ -9,7 +9,7 @@ keyword sources at `REL_18_4`:
 
 - PostgreSQL source tag: `REL_18_4`
 - SQL syntax authority: the pinned PostgreSQL predictor reports `REL_18_4`
-- Runtime owning that grammar in this repository: `@code-moniker/client@0.9.1`
+- Runtime owning that grammar in this repository: `@code-moniker/client@0.9.2`
 - License: [PostgreSQL License](https://www.postgresql.org/about/licence/); the source files retain their copyright headers
 
 The repository generator reads these inputs into two typed catalogs. SQL and

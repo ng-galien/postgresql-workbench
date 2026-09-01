@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  hasDebuggableSqlCall,
-  hasDebuggableSqlDefinition,
-  shouldProvideSqlCodeLenses,
-} from "./policy.js";
+import { debuggableSqlCall, debuggableSqlDefinition } from "./sqlDebugAvailability.js";
 
 const snapshot = {
   status: "available" as const,
@@ -64,18 +60,10 @@ const snapshot = {
   ],
 };
 
-describe("SQL CodeLens policy", () => {
-  it("leaves Scratchpad connection ownership to the NotebookBinding", () => {
-    expect(shouldProvideSqlCodeLenses("vscode-notebook-cell")).toBe(false);
-  });
-
-  it.each(["file", "untitled", "code+moniker"])("keeps CodeLens in %s editors", (scheme) => {
-    expect(shouldProvideSqlCodeLenses(scheme)).toBe(true);
-  });
-
+describe("SQL debug availability", () => {
   it("offers Debug only for one resolved PL/pgSQL call target", () => {
     expect(
-      hasDebuggableSqlCall(snapshot, {
+      debuggableSqlCall(snapshot, {
         schema: "playground",
         routine: "fib",
         args: ["10"],
@@ -84,9 +72,9 @@ describe("SQL CodeLens policy", () => {
         line: 1,
         kind: "select",
       }),
-    ).toBe(true);
+    ).toMatchObject({ status: "available" });
     expect(
-      hasDebuggableSqlCall(snapshot, {
+      debuggableSqlCall(snapshot, {
         schema: "pg_catalog",
         routine: "now",
         args: [],
@@ -95,33 +83,33 @@ describe("SQL CodeLens policy", () => {
         line: 1,
         kind: "select",
       }),
-    ).toBe(false);
+    ).toMatchObject({ status: "unavailable" });
   });
 
   it("offers definition Debug only for the exact indexed PL/pgSQL overload", () => {
     expect(
-      hasDebuggableSqlDefinition(snapshot, {
+      debuggableSqlDefinition(snapshot, {
         schema: "playground",
         name: "fib",
         params: [{ name: "n", type: "integer", mode: "in" }],
         line: 1,
         kind: "function",
       }),
-    ).toBe(true);
+    ).toMatchObject({ status: "available" });
     expect(
-      hasDebuggableSqlDefinition(snapshot, {
+      debuggableSqlDefinition(snapshot, {
         schema: "playground",
         name: "fib",
         params: [],
         line: 1,
         kind: "function",
       }),
-    ).toBe(false);
+    ).toMatchObject({ status: "unavailable" });
   });
 
   it("does not guess a PL/pgSQL overload from name and arity alone", () => {
     expect(
-      hasDebuggableSqlCall(snapshot, {
+      debuggableSqlCall(snapshot, {
         schema: "playground",
         routine: "mixed",
         args: ["'text'"],
@@ -130,7 +118,7 @@ describe("SQL CodeLens policy", () => {
         line: 1,
         kind: "select",
       }),
-    ).toBe(false);
+    ).toMatchObject({ status: "unavailable" });
   });
 
   it("does not guess a schema for an unqualified routine definition", () => {
@@ -147,13 +135,13 @@ describe("SQL CodeLens policy", () => {
       ],
     };
     expect(
-      hasDebuggableSqlDefinition(ambiguousSnapshot, {
+      debuggableSqlDefinition(ambiguousSnapshot, {
         schema: null,
         name: "fib",
         params: [{ name: "n", type: "integer", mode: "in" }],
         line: 1,
         kind: "function",
       }),
-    ).toBe(false);
+    ).toMatchObject({ status: "unavailable" });
   });
 });

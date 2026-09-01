@@ -1,15 +1,16 @@
 import * as vscode from "vscode";
+import type {
+  SqlDebugAvailability,
+  SqlDebugUnavailableReason,
+} from "../../../packages/dap/src/debugger/launch/sqlDebugAvailability.js";
 import { UnusableSyntaxTreeError } from "../../../packages/sql/src/analysis/syntaxNodes.js";
 import type { SyntaxParser } from "../../../packages/sql/src/analysis/syntaxTree.js";
 import type { FunctionDefinition, ParsedCallSite } from "../../../packages/sql/src/callParser.js";
 import { parseSqlFileStrict } from "../../../packages/sql/src/callParser.js";
+import { NOTEBOOK_CELL_URI_SCHEME } from "../../../packages/sql/src/text/documentLanguage.js";
 import { sqlStatementSlices } from "../../../packages/sql/src/text/sqlLexing.js";
+import { DATA_VIEW_QUERY_SCHEME } from "../dataView/queryFileSystem.js";
 import { CODE_MONIKER_URI_SCHEME } from "../sources/index.js";
-import {
-  type SqlDebugAvailability,
-  type SqlDebugUnavailableReason,
-  shouldProvideSqlCodeLenses,
-} from "./policy.js";
 
 export interface CommandFunctionDefinition extends FunctionDefinition {
   connectionId?: string;
@@ -61,6 +62,14 @@ const NO_CONNECTIONS: CodeLensConnections = {
   debugDefinitionAvailability: () => UNAVAILABLE_INDEX,
   canDeployManagedRoutine: () => false,
 };
+
+/**
+ * Which VS Code editors carry SQL lenses: notebook cells run through their own toolbar, and a
+ * Data View query document carries its own lens (Apply to Data View).
+ */
+export function shouldProvideSqlCodeLenses(uriScheme: string): boolean {
+  return uriScheme !== NOTEBOOK_CELL_URI_SCHEME && uriScheme !== DATA_VIEW_QUERY_SCHEME;
+}
 
 /** Statement-level causes worth a lens; index state is reported once on the connection lens. */
 const STATEMENT_UNAVAILABLE_REASONS = new Set<SqlDebugUnavailableReason>([

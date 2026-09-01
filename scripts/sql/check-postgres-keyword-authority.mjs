@@ -117,10 +117,16 @@ for (const file of sourceFiles(["packages", "vscode-extension/src"])) {
     );
   }
   if (/^packages\/(?:editor|shell|views)\//u.test(file.name)) {
+    const fileSystemProviderImport =
+      /import\s*\{[^}]*\bregisterCustomProvider\b[^}]*\}\s*from\s*"@codingame\/monaco-vscode-files-service-override"/u.test(
+        file.text,
+      );
     for (const match of file.text.matchAll(
       /\b(?:register[A-Z][A-Za-z0-9]*Provider[A-Za-z0-9]*|set(?:Monarch)?TokensProvider)\s*\(/gu,
     )) {
       const localProvider = match[0].replace(/\s*\($/u, "");
+      // The files-service registration serves documents to Monaco; it answers no language question.
+      if (localProvider === "registerCustomProvider" && fileSystemProviderImport) continue;
       failures.push(
         `${file.name} calls ${localProvider}, a parallel Monaco language provider. SQL and PL/pgSQL features must come from the SQL authoring LSP client.`,
       );

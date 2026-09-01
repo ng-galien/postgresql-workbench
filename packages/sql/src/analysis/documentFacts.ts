@@ -8,7 +8,9 @@ import {
 import { sqlLexicalTokens } from "./lexicalTokens.js";
 import {
   isSqlRoutineArgumentName,
+  plpgsqlLoopVariableNames,
   plpgsqlVariableDeclaration,
+  sqlDeclaredName,
   sqlRoutineDeclarationOwner,
 } from "./postgresGrammar.js";
 import { directSyntaxChild, findSyntaxNode, syntaxNodeText } from "./syntaxNodes.js";
@@ -378,6 +380,26 @@ export function postgresDocumentSyntaxFactsFromTree(
           });
         }
       }
+      const declared = sqlDeclaredName(node, ancestors.at(-1));
+      if (declared) {
+        const parts = nameParts(node, source, utf16Offset);
+        if (parts.length > 0) {
+          const factRange = partsRange(parts);
+          const visibility = occurrenceVisibility(scopeId, factRange);
+          names.push(
+            declared.role === "routine"
+              ? {
+                  ...base,
+                  role: "routine",
+                  invocation: declared.invocation ?? "function",
+                  parts,
+                  range: factRange,
+                  visibility,
+                }
+              : { ...base, role: "relation", parts, range: factRange, visibility },
+          );
+        }
+      }
       if (isSqlRoutineArgumentName(node, ancestors.at(-1))) {
         const routine = sqlRoutineDeclarationOwner(ancestors);
         const body = routine
@@ -400,6 +422,28 @@ export function postgresDocumentSyntaxFactsFromTree(
         }
       }
     } else {
+      const loopOwner = ancestors.at(-1);
+      if (loopOwner) {
+        const loopRange = nodeRange(loopOwner, utf16Offset);
+        for (const name of plpgsqlLoopVariableNames(node)) {
+          const parts = nameParts(name, source, utf16Offset);
+          if (parts.length === 0) continue;
+          const binding: PostgresBindingFact = {
+            regionId,
+            language,
+            scopeId,
+            role: "binding",
+            bindingKind: "variable",
+            use: "declaration",
+            readonly: false,
+            parts,
+            range: partsRange(parts),
+            visibility: [{ scopeId, range: loopRange }],
+          };
+          names.push(binding);
+          bindingDeclarations.push(binding);
+        }
+      }
       const declaration = plpgsqlVariableDeclaration(node);
       if (declaration) {
         const parts = nameParts(declaration.name, source, utf16Offset);

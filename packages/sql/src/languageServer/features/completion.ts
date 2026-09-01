@@ -66,6 +66,9 @@ function completionInsertion(proposal: PostgresAuthoringProposal): {
   if (proposal.insertion.kind === "text") {
     return { text: proposal.insertion.text, snippet: false };
   }
+  if (proposal.insertion.kind === "scaffold") {
+    return { text: proposal.insertion.snippet, snippet: true };
+  }
   const argumentsText = proposal.insertion.arguments
     .map((argument, index) => `\${${index + 1}:${escapeSnippetPlaceholder(argument.placeholder)}}`)
     .join(", ");
@@ -80,6 +83,8 @@ function completionItemKind(proposal: PostgresAuthoringProposal): CompletionItem
   switch (proposal.kind) {
     case "keyword":
       return CompletionItemKind.Keyword;
+    case "scaffold":
+      return CompletionItemKind.Snippet;
     case "schema":
       return CompletionItemKind.Module;
     case "relation":

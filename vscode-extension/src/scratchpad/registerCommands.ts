@@ -27,13 +27,6 @@ import {
   sqlFailurePayload,
 } from "../../../packages/rows/src/resultPayload.js";
 import { executeSqlSelection } from "../../../packages/rows/src/runSelection.js";
-import type {
-  SqlExecutionPlan,
-  SqlExecutionStatement,
-} from "../../../packages/sql/src/analysis/sqlStatements.js";
-import type { ConnectionManager } from "../connection/index.js";
-import { errorMessage } from "../errorMessage.js";
-import { SQL_NOTEBOOK_SCHEME, SqlNotebookFileSystemProvider } from "./fileSystem.js";
 import {
   associationFingerprint,
   associationSnapshot,
@@ -55,7 +48,14 @@ import {
   serializeSqlNotebookFile,
   sqlNotebookCommandReportPayload,
   sqlNotebookResultPayload,
-} from "./notebookFile.js";
+} from "../../../packages/scratchpad/src/notebookFile.js";
+import type {
+  SqlExecutionPlan,
+  SqlExecutionStatement,
+} from "../../../packages/sql/src/analysis/sqlStatements.js";
+import type { ConnectionManager } from "../connection/index.js";
+import { errorMessage } from "../errorMessage.js";
+import { SQL_NOTEBOOK_SCHEME, SqlNotebookFileSystemProvider } from "./fileSystem.js";
 import {
   errorOutput,
   executionCancelledPayload,

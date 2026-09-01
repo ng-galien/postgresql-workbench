@@ -24,7 +24,8 @@ import {
 import type { PgTapCoverageSnapshot } from "../src/coverage/index.js";
 import type { DataViewDocument } from "../src/dataView/dataViewDocument.js";
 import type { PlpgsqlExtensionApi } from "../src/extension.js";
-import { NEW_SQL_NOTEBOOK_COMMAND, SQL_NOTEBOOK_RESULT_MIME } from "../src/scratchpad/index.js";
+import { SQL_NOTEBOOK_RESULT_MIME } from "../../packages/scratchpad/src/notebookFile.js";
+import { NEW_SQL_NOTEBOOK_COMMAND } from "../src/scratchpad/index.js";
 
 const SCENE = process.env.POSTGRESQL_WORKBENCH_SHOWCASE_SCENE;
 const CONTROL_DIR = process.env.POSTGRESQL_WORKBENCH_SHOWCASE_CONTROL_DIR;

@@ -142,7 +142,12 @@ export class DebuggerPage {
 
   async expectActiveRoutineSource(sourceTab: RegExp, routineSource: RegExp): Promise<void> {
     const tab = this.page.getByRole("tab", { name: sourceTab });
-    await expect(tab).toBeVisible({ timeout: 10_000 });
+    try {
+      await expect(tab).toBeVisible({ timeout: 10_000 });
+    } catch {
+      const names = await this.page.getByRole("tab").allTextContents();
+      throw new Error(`No tab matches ${sourceTab}; open tabs: ${names.join(" | ")}`);
+    }
     await expect(tab).toHaveAttribute("aria-selected", "true", { timeout: 10_000 });
     await expect(
       this.activeEditor().locator(".view-line").filter({ hasText: routineSource }).first(),
@@ -225,9 +230,15 @@ export class DebuggerPage {
   }
 
   async expectNoErrorNotification(): Promise<void> {
-    await expect(this.page.locator(".notification-toast:visible .codicon-error")).toHaveCount(0, {
-      timeout: 5_000,
+    const errors = this.page.locator(".notification-toast:visible", {
+      has: this.page.locator(".codicon-error"),
     });
+    try {
+      await expect(errors).toHaveCount(0, { timeout: 5_000 });
+    } catch {
+      const texts = await errors.allTextContents();
+      throw new Error(`An error notification appeared: ${texts.join(" | ")}`);
+    }
   }
 
   async expectNoCoverageDecorations(): Promise<void> {

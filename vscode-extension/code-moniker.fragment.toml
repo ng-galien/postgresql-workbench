@@ -8,8 +8,6 @@ extension_host_source = "source ~ '**/dir:vscode-extension/**'"
 workbench_engine_target = "target ~ '**/dir:packages/**'"
 connection_service_target = "target.segment('module') = 'connectPostgres' AND target.segment('path') = 'ConnectionService'"
 connection_service_owner = "source.segment('module') = 'openConnections' OR source.segment('module') = 'openConnections.test'"
-scratchpad_file_source = "source.segment('module') = 'notebookFile'"
-scratchpad_runtime_target = "target.segment('module') = 'register' OR target.segment('module') = 'association' OR target.segment('module') = 'resultHost' OR target.segment('module') = 'runSelection' OR target.segment('module') = 'transactions' OR target.segment('module') = 'openConnections' OR target.segment('module') = 'offsetQuery' OR target.segment('module') = 'openRows'"
 
 [[ts.refs.where]]
 id = "connection-service-ownership-stays-with-connection-manager"
@@ -17,13 +15,6 @@ severity = "error"
 expr = "$connection_service_target => $connection_service_owner"
 message = "Consume PostgreSQL transport through ConnectionManager; ConnectionService is its private construction adapter."
 rationale = "ConnectionManager owns the open Connections, the connection events, the reconnect state and the dedicated-client factory. A feature controller building its own ConnectionService would create a second connection lifecycle nothing reconnects or disposes."
-
-[[ts.refs.where]]
-id = "scratchpad-single-responsibility-keeps-files-passive"
-severity = "error"
-expr = "$scratchpad_file_source AND $structural_edge => NOT $scratchpad_runtime_target"
-message = "notebookFile owns the Scratchpad file format and its Association value objects, not connections, execution, or result-session lifecycle."
-rationale = "Reading and writing a Scratchpad must work without a live PostgreSQL Connection — a file opens before anything connects. Execution, explicit transactions and LIMIT/OFFSET result pages belong to register, association, resultHost and the row engine."
 
 [[ts.refs.where]]
 id = "extension-host-composition-root-is-not-a-service-locator"

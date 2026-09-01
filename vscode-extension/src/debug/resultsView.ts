@@ -6,7 +6,7 @@ import type {
 } from "../../../packages/views/src/debugResults/protocol.js";
 import viewBundles from "../../../packages/views/viewBundles.json" with { type: "json" };
 import { followLinkFromView } from "../followLink.js";
-import { webviewPage } from "../webviewPage.js";
+import { webviewShell } from "../webviewShell.js";
 
 export const DEBUG_RESULTS_VIEW_ID = "postgresql-workbench-results";
 const DEBUG_RESULTS_CONTAINER_COMMAND =
@@ -29,7 +29,7 @@ export class DebugResultsViewProvider implements vscode.WebviewViewProvider, vsc
       enableScripts: true,
       localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, "dist")],
     };
-    view.webview.html = webviewPage({
+    view.webview.html = webviewShell({
       webview: view.webview,
       extensionUri: this.extensionUri,
       title: "Debug results",

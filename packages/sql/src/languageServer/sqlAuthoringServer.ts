@@ -80,7 +80,7 @@ export function startSqlAuthoringServer(
       {
         uri: params.textDocument.uri,
         source: analysisSource,
-        language: postgresAuthoringDocumentLanguage(visible.languageId),
+        language: postgresAuthoringDocumentLanguage(visible.languageId, visible.uri),
         offset: analysisOffset,
         snapshot: context.snapshot,
         limit: 200,
@@ -102,7 +102,7 @@ export function startSqlAuthoringServer(
     const syntax = await host.syntax({
       uri: document.uri,
       source,
-      language: postgresAuthoringDocumentLanguage(document.languageId),
+      language: postgresAuthoringDocumentLanguage(document.languageId, document.uri),
     });
     const skipped = formatSkippedMessage(syntax);
     if (skipped) {
@@ -136,7 +136,7 @@ export function startSqlAuthoringServer(
     const syntax = await host.syntax({
       uri: visible.uri,
       source: analysis.getText(),
-      language: postgresAuthoringDocumentLanguage(visible.languageId),
+      language: postgresAuthoringDocumentLanguage(visible.languageId, visible.uri),
     });
     const semantic = postgresSemanticTokens(
       analysis,

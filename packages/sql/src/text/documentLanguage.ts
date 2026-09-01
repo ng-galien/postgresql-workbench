@@ -1,3 +1,6 @@
+/** VS Code's scheme for the text document behind each notebook cell. */
+export const NOTEBOOK_CELL_URI_SCHEME = "vscode-notebook-cell";
+
 export const POSTGRES_SOURCE_LANGUAGE_IDS = [
   "postgresql-table",
   "postgresql-view",
