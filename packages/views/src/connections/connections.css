@@ -1685,15 +1685,6 @@
   font-size: 11px;
 }
 
-.connections-page.connections-standalone {
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr);
-}
-
-.connections-standalone .connections-sidebar {
-  display: none;
-}
-
 .connections-settings-layout {
   display: grid;
   min-width: 0;

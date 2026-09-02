@@ -347,14 +347,8 @@ export function ConnectionsApp({
     ? connections.find((connection) => connection.id === contextMenu.connectionId)
     : undefined;
 
-  const standalone =
-    dockerSetupOpen || appSettingsOpen || adding || (selected !== undefined && settingsOpen);
   return (
-    <div
-      className={`connections-page ${sidebarCollapsed ? "connections-sidebar-collapsed" : ""} ${
-        standalone ? "connections-standalone" : ""
-      }`}
-    >
+    <div className={`connections-page ${sidebarCollapsed ? "connections-sidebar-collapsed" : ""}`}>
       <aside className="connections-sidebar" aria-label="Saved Connections">
         <header className="connections-sidebar-header">
           <div className="connections-sidebar-heading">

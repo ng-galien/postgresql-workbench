@@ -37,6 +37,7 @@ export class ConnectionsPanel implements vscode.Disposable {
   private panel?: vscode.WebviewPanel;
   private readonly passwordKnown = new Map<string, boolean>();
   private postStateQueued = false;
+  private postStateSequence = 0;
   private readonly subscriptions: readonly { dispose(): void }[];
 
   constructor(
@@ -98,7 +99,9 @@ export class ConnectionsPanel implements vscode.Disposable {
       await this.save(message.draft, message.originalId, message.connect);
     else if (message.type === "delete") {
       this.passwordKnown.delete(message.id);
-      await this.connections.removeConnectionConfiguration(message.id);
+      if (await this.connections.removeConnectionConfiguration(message.id)) {
+        await this.postState();
+      }
     } else if (message.type === "connect" || message.type === "disconnect") {
       await this.changeConnection(message.type, message.id);
     } else if (message.type === "inspect") {
@@ -307,6 +310,7 @@ export class ConnectionsPanel implements vscode.Disposable {
 
   private async postState(): Promise<void> {
     if (!this.panel) return;
+    const sequence = ++this.postStateSequence;
     const configs = this.connections.store.getAll();
     const summaries: ConnectionSummary[] = await Promise.all(
       configs.map(async (config) => {
@@ -359,7 +363,9 @@ export class ConnectionsPanel implements vscode.Disposable {
         };
       }),
     );
-    this.post({ type: "state", connections: summaries });
+    if (sequence === this.postStateSequence) {
+      this.post({ type: "state", connections: summaries });
+    }
   }
 
   /** Bursts of host events collapse into one summary build per tick. */

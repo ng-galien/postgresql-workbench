@@ -65,4 +65,8 @@ export class ConnectionsPage {
     const connection = this.listedConnection(frame, text);
     await connection.locator("..").getByRole("button", { name: "Settings", exact: true }).click();
   }
+
+  async openDangerZone(frame: Frame): Promise<void> {
+    await frame.getByRole("button", { name: "Danger zone", exact: true }).click();
+  }
 }

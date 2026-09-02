@@ -64,6 +64,7 @@ test.describe("Connections page", () => {
     });
 
     await test.step("delete it after confirming on the page", async () => {
+      await connectionsPage.openDangerZone(frame);
       await frame.getByRole("button", { name: "Delete Connection", exact: true }).click();
       await frame.getByRole("button", { name: "Delete", exact: true }).click();
       await expect(connectionsPage.listedConnection(frame, url)).toHaveCount(0, {

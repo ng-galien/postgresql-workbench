@@ -316,12 +316,8 @@ export class ConnectionManager implements vscode.Disposable {
           async (_progress, token) => {
             let client: Client;
             const connectPromise = this.service.connectClient({
-              host: connection.host,
-              port: connection.port,
-              database: connection.database,
-              user: connection.user,
-              password,
-              ssl: connection.ssl,
+              ...dedicatedConnectParams(connection, password),
+              applicationName: "postgresql-workbench:connection",
             });
             let cancellation: vscode.Disposable | undefined;
             try {
