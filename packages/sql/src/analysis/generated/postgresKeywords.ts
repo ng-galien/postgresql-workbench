@@ -8,7 +8,7 @@ export const POSTGRES_SQL_KEYWORD_SOURCE = {
   sourceUrl: "https://github.com/postgres/postgres/blob/REL_18_4/src/include/parser/kwlist.h",
   sourceSha256: "fdcdf3694513cba63b4016f63032472b686e381bb35f17c5d645bc2f6f1dac16",
   grammarPackage: "tree-sitter-postgres@1.2.4",
-  runtimePackage: "@code-moniker/client@0.9.2",
+  runtimePackage: "@code-moniker/client@0.10.1",
 } as const;
 
 export const PLPGSQL_KEYWORD_SOURCES = {
@@ -23,7 +23,7 @@ export const PLPGSQL_KEYWORD_SOURCES = {
     sourceSha256: "9c137b1d9e88934aabe57305d933ed7b72144bfed98679b2a7058e4527b7a03c",
   },
   grammarPackage: "tree-sitter-postgres@1.2.4 (Code Moniker vendored PL/pgSQL grammar)",
-  runtimePackage: "@code-moniker/client@0.9.2",
+  runtimePackage: "@code-moniker/client@0.10.1",
 } as const;
 
 export const GENERATED_POSTGRES_SQL_KEYWORDS = [

@@ -93,6 +93,7 @@ describe("Workbench tree model", () => {
           .map(({ command, group }) => [command, group]),
       ),
     ).toEqual({
+      "postgresql-workbench.manageConnections": "navigation@0",
       "postgresql-workbench.pickConnection": "navigation",
       "postgresql-workbench.openDatabaseGraph": "navigation@1",
       "postgresql-workbench.searchDatabaseObjects": "navigation@2",

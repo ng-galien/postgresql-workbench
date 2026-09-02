@@ -1,4 +1,6 @@
-import { resolve } from "node:path";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { Client, type ClientConfig } from "pg";
 import {
   ensureLocalCodeMonikerWorkspace,
@@ -13,6 +15,30 @@ export interface CodeMonikerTestRuntime {
   sourceUris(connection: ClientConfig): Promise<Record<string, string>>;
   dapEnvironment(): NodeJS.ProcessEnv;
   dispose(): Promise<void>;
+}
+
+export interface TempWorkspaceParser {
+  parser: SyntaxParser;
+  dispose(): Promise<void>;
+}
+
+/** A parser on an empty throwaway workspace: parsing needs no index, and no repository scan. */
+export async function tempWorkspaceParser(clientName: string): Promise<TempWorkspaceParser> {
+  const workspace = await mkdtemp(join(tmpdir(), `${clientName}-`));
+  const session = await ensureLocalCodeMonikerWorkspace({
+    ...(process.env.CODE_MONIKER_RUNTIME
+      ? { runtimePath: resolve(process.env.CODE_MONIKER_RUNTIME) }
+      : {}),
+    workspaceRoots: [workspace],
+    clientName,
+  });
+  return {
+    parser: createCodeMonikerSyntaxParser(session.client),
+    dispose: async () => {
+      await session.dispose();
+      await rm(workspace, { force: true, recursive: true });
+    },
+  };
 }
 
 export async function startCodeMonikerTestRuntime(): Promise<CodeMonikerTestRuntime> {

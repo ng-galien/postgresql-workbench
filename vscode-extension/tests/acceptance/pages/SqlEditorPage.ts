@@ -47,6 +47,22 @@ export class SqlEditorPage {
     await expect(widget).toHaveCount(0, { timeout: 5_000 });
   }
 
+  /** Rests the pointer on the first exact occurrence of the word until the hover shows. */
+  async showHover(word: string): Promise<Locator> {
+    const target = this.editor.getByText(word, { exact: true }).first();
+    const hover = this.editor.locator(".monaco-hover:visible").first();
+    await expect(async () => {
+      await target.hover();
+      await expect(hover).toBeVisible({ timeout: 1_000 });
+    }).toPass({ timeout: 10_000 });
+    return hover;
+  }
+
+  async dismissHover(): Promise<void> {
+    await this.page.keyboard.press("Escape");
+    await expect(this.editor.locator(".monaco-hover:visible")).toHaveCount(0, { timeout: 5_000 });
+  }
+
   snapshot(): Promise<ActiveTextEditorSnapshot | undefined> {
     return this.inspectActiveTextEditor();
   }

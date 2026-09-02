@@ -16,7 +16,7 @@ export interface DebugLaunchArguments extends LaunchTargetArguments {
   database: string;
   user: string;
   password: string;
-  ssl?: boolean | "require" | "prefer" | "disable";
+  ssl?: boolean | "disable" | "allow" | "prefer" | "require" | "verify-ca" | "verify-full";
 }
 
 export interface DebugLaunchHooks {
@@ -52,7 +52,8 @@ export class DebugLaunchError extends Error {
 }
 
 function postgresConfig(args: DebugLaunchArguments): ClientConfig {
-  const useSsl = args.ssl === true || args.ssl === "require" || args.ssl === "prefer";
+  const useSsl = args.ssl !== undefined && args.ssl !== false && args.ssl !== "disable";
+  const verifySsl = args.ssl === "verify-ca" || args.ssl === "verify-full";
   return {
     host: args.host,
     port: args.port,
@@ -60,7 +61,7 @@ function postgresConfig(args: DebugLaunchArguments): ClientConfig {
     user: args.user,
     password: args.password ?? "",
     connectionTimeoutMillis: 10_000,
-    ...(useSsl ? { ssl: { rejectUnauthorized: false } } : {}),
+    ...(useSsl ? { ssl: { rejectUnauthorized: verifySsl } } : {}),
   };
 }
 

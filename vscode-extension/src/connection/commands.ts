@@ -350,6 +350,7 @@ function editedConnection(
     database,
     user,
     ssl,
+    ...(connection.tuning ? { tuning: connection.tuning } : {}),
     schemaSync: connection.schemaSync,
   };
 }
@@ -387,14 +388,21 @@ function parseConnectionString(input: string): ConnectionInput | undefined {
       database: url.pathname.replace(/^\//, "") || "postgres",
       user: decodeURIComponent(url.username) || "postgres",
       password: decodeURIComponent(url.password),
-      ssl: sslMode === "require" ? "require" : sslMode === "prefer" ? "prefer" : undefined,
+      ssl:
+        sslMode === "allow" ||
+        sslMode === "prefer" ||
+        sslMode === "require" ||
+        sslMode === "verify-ca" ||
+        sslMode === "verify-full"
+          ? sslMode
+          : undefined,
     };
   } catch {
     return undefined;
   }
 }
 
-interface ExternalConnection extends ConnectionInput {
+export interface ExternalConnection extends ConnectionInput {
   id: string;
   name: string;
 }
@@ -443,7 +451,7 @@ function connectionQuickPickItems(
   return items;
 }
 
-function loadSqlToolsConnections(): ExternalConnection[] {
+export function loadSqlToolsConnections(): ExternalConnection[] {
   const config = vscode.workspace.getConfiguration("sqltools");
   const raw: {
     name?: string;
@@ -473,7 +481,7 @@ function loadSqlToolsConnections(): ExternalConnection[] {
     });
 }
 
-function loadPgsqlConnections(): ExternalConnection[] {
+export function loadPgsqlConnections(): ExternalConnection[] {
   const config = vscode.workspace.getConfiguration("pgsql");
   const raw: {
     server?: string;

@@ -4,9 +4,25 @@ import type {
   DebugResultsRequest,
   DebugResultsResponse,
 } from "../../../packages/views/src/debugResults/protocol.js";
+import {
+  type HeldResult,
+  inspectedResponse,
+  isSqlResultExportRequest,
+  isSqlResultInspectRequest,
+  isSqlResultPreviewRequest,
+  previewedResponse,
+} from "../../../packages/views/src/results/heldResult.js";
+import type {
+  SqlResultExportRequest,
+  SqlResultInspectRequest,
+  SqlResultPreviewRequest,
+} from "../../../packages/views/src/results/payload.js";
 import viewBundles from "../../../packages/views/viewBundles.json" with { type: "json" };
 import { followLinkFromView } from "../followLink.js";
+import { answerExport } from "../results/heldResult.js";
 import { webviewShell } from "../webviewShell.js";
+
+const MISSING_CAPTURE = "This debug result is no longer captured. Run the debug call again.";
 
 export const DEBUG_RESULTS_VIEW_ID = "postgresql-workbench-results";
 const DEBUG_RESULTS_CONTAINER_COMMAND =
@@ -40,6 +56,9 @@ export class DebugResultsViewProvider implements vscode.WebviewViewProvider, vsc
       else if (message.type === "select") this.store.select(message.id);
       else if (message.type === "copy") await this.copySelection(view.webview);
       else if (message.type === "openSource") await this.openSelectedSource();
+      else if (isSqlResultInspectRequest(message)) this.inspect(message);
+      else if (isSqlResultPreviewRequest(message)) this.preview(message);
+      else if (isSqlResultExportRequest(message)) await this.export(message);
       else await followLinkFromView(message);
     });
     this.update();
@@ -78,6 +97,30 @@ export class DebugResultsViewProvider implements vscode.WebviewViewProvider, vsc
 
   private post(message: DebugResultsResponse): void {
     void this.view?.webview.postMessage(message);
+  }
+
+  /** The retained rows of one captured result; a debug capture is its own display projection. */
+  private heldResult(resultId: string): HeldResult | undefined {
+    const entry = this.store.entryOf(resultId);
+    if (!entry || !("columns" in entry)) return undefined;
+    return {
+      loadedResult: () => ({ columns: entry.columns, rows: entry.rows }),
+      displayedRows: (start, length) => entry.rows.slice(start, start + length),
+    };
+  }
+
+  private inspect(request: SqlResultInspectRequest): void {
+    this.post(inspectedResponse(this.heldResult(request.resultId), request));
+  }
+
+  private preview(request: SqlResultPreviewRequest): void {
+    this.post(previewedResponse(this.heldResult(request.resultId), request, MISSING_CAPTURE));
+  }
+
+  private export(request: SqlResultExportRequest): Promise<void> {
+    return answerExport(request, this.heldResult(request.resultId), {
+      missingMessage: MISSING_CAPTURE,
+    });
   }
 
   private async openSelectedSource(): Promise<void> {

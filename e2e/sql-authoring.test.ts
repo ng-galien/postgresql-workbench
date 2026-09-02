@@ -1,10 +1,5 @@
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { TextDocument } from "vscode-languageserver-textdocument";
-import { ensureLocalCodeMonikerWorkspace } from "../packages/catalog/src/localCodeMoniker.js";
-import { createCodeMonikerSyntaxParser } from "../packages/sql/src/analysis/codeMonikerSyntax.js";
 import type { PostgresSyntaxExpectationProvider } from "../packages/sql/src/analysis/syntaxExpectations.js";
 import type { SyntaxParser } from "../packages/sql/src/analysis/syntaxTree.js";
 import { postgresSyntaxExpectationProvider } from "../packages/sql/src/authoring/postgresSyntaxPredictor.js";
@@ -30,6 +25,7 @@ import {
   sqlStatementAtOffset,
   sqlStatementSlices,
 } from "../packages/sql/src/text/sqlLexing.js";
+import { tempWorkspaceParser } from "./codeMonikerRuntime.js";
 
 const snapshot: SqlAuthoringSnapshot = {
   status: "available",
@@ -113,22 +109,7 @@ describe("SQL authoring language contracts", async () => {
   const expectations: PostgresSyntaxExpectationProvider = postgresSyntaxExpectationProvider;
 
   beforeAll(async () => {
-    // Parsing needs no index: an empty workspace answers immediately, the repository does not.
-    const workspace = await mkdtemp(join(tmpdir(), "sql-authoring-"));
-    const session = await ensureLocalCodeMonikerWorkspace({
-      ...(process.env.CODE_MONIKER_RUNTIME
-        ? { runtimePath: process.env.CODE_MONIKER_RUNTIME }
-        : {}),
-      workspaceRoots: [workspace],
-      clientName: "postgresql-workbench-sql-authoring",
-    });
-    codeMoniker = {
-      parser: createCodeMonikerSyntaxParser(session.client),
-      dispose: async () => {
-        await session.dispose();
-        await rm(workspace, { force: true, recursive: true });
-      },
-    };
+    codeMoniker = await tempWorkspaceParser("postgresql-workbench-sql-authoring");
   }, 30_000);
 
   afterAll(async () => {
@@ -525,6 +506,7 @@ describe("SQL authoring language contracts", async () => {
     expect(scaffold?.insertTextFormat).toBe(2);
     expect(
       scaffold?.textEdit && "newText" in scaffold.textEdit ? scaffold.textEdit.newText : "",
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: This asserts literal VS Code snippet placeholders.
     ).toBe("SELECT ${1:columns}\nFROM ${2:relation};");
     expect(statements.some((item) => item.label === "UPDATE … SET … WHERE …;")).toBe(true);
 

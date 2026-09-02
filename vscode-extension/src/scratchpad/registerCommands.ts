@@ -22,7 +22,7 @@ import {
 } from "../../../packages/rows/src/notebookClient.js";
 import {
   notebookErrorPayload,
-  type ScratchpadAssociationSnapshot,
+  type ResultBinding,
   type SqlNotebookResultPayload,
   sqlFailurePayload,
 } from "../../../packages/rows/src/resultPayload.js";
@@ -106,7 +106,7 @@ type ResultPlanner = (sql: string) => Promise<SqlExecutionPlan>;
 
 export interface ScratchpadDebugRequest {
   sql: string;
-  association: ScratchpadAssociationSnapshot;
+  association: ResultBinding;
   source: { name: string; uri: string; line: number };
 }
 
@@ -126,10 +126,10 @@ export type ScratchpadDebugger = (
 /** Tells whether a cell's SQL currently offers one replayable PL/pgSQL entry point. */
 export type ScratchpadDebugEligibility = (request: {
   sql: string;
-  association: ScratchpadAssociationSnapshot;
+  association: ResultBinding;
 }) => Promise<boolean>;
 
-type ScratchpadSchemaMutation = (association: ScratchpadAssociationSnapshot) => void;
+type ScratchpadSchemaMutation = (association: ResultBinding) => void;
 
 export function registerSqlNotebook(
   context: vscode.ExtensionContext,
@@ -1223,7 +1223,7 @@ class SqlNotebookController implements vscode.Disposable {
     cell: vscode.NotebookCell,
     sql: string,
     settings: SqlResultSettings,
-    association: ScratchpadAssociationSnapshot,
+    association: ResultBinding,
     statementTimeoutMs: number,
     cancellation: NotebookClientCancellation,
   ): Promise<SqlNotebookResultPayload> {
@@ -1281,7 +1281,7 @@ class SqlNotebookController implements vscode.Disposable {
 
   private isAssociationCurrent(
     notebook: vscode.NotebookDocument,
-    expected: ScratchpadAssociationSnapshot,
+    expected: ResultBinding,
   ): boolean {
     const association = resolveScratchpadAssociation(
       normalizeMetadata(notebook.metadata),

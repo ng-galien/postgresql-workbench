@@ -55,6 +55,16 @@ function sourceFiles(directory) {
 
 /** One walk, one read per file: every question below is asked of this. */
 const sources = sourceFiles(root).map((path) => [relative(root, path), readFileSync(path, "utf8")]);
+
+/** The language server names commands the host registers on its behalf; its ids count too. */
+const serverRoot = resolve("packages/sql/src/languageServer");
+const idSources = [
+  ...sources,
+  ...sourceFiles(serverRoot).map((path) => [
+    relative(serverRoot, path),
+    readFileSync(path, "utf8"),
+  ]),
+];
 const countIn = (text, pattern) => (text.match(pattern) ?? []).length;
 
 const stray = [];
@@ -80,7 +90,7 @@ const stale = [...ALLOWED.keys()].filter(
  */
 const idOf = new Map();
 const collidingIds = [];
-for (const [name, text] of sources) {
+for (const [name, text] of idSources) {
   for (const [, constant, id] of text.matchAll(ID_CONSTANT)) {
     const known = idOf.get(constant);
     if (known !== undefined && known !== id) {

@@ -218,3 +218,29 @@
   --pgw-syntax-operator: var(--pgw-default-syntax-operator);
   --pgw-syntax-punctuation: var(--pgw-default-syntax-punctuation);
 }
+
+/* Every scrollbar of every Workbench surface: the tokens above, applied once. */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--pgw-scrollbar);
+  border: 2px solid transparent;
+  border-radius: 6px;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--pgw-scrollbar-hover);
+}
+
+::-webkit-scrollbar-thumb:active {
+  background-color: var(--pgw-scrollbar-active);
+}

@@ -1,4 +1,4 @@
-import { SemanticTokensBuilder } from "vscode-languageserver";
+import { type Position, SemanticTokensBuilder } from "vscode-languageserver";
 import { TextDocument } from "vscode-languageserver-textdocument";
 import type { SqlAuthoringDocumentProjection } from "./protocol.js";
 import { decodeSemanticTokenData } from "./protocol.js";
@@ -48,6 +48,23 @@ export function projectedSqlDocument(
 /** Offset of the visible caret in the statement analyzed by the server. */
 export function analysisOffsetOf(document: ProjectedSqlDocument, visibleOffset: number): number {
   return document.visibleStart + visibleOffset;
+}
+
+/**
+ * A character range of the analyzed statement, carried back to the visible fragment's own
+ * coordinates. A range crossing the projection boundary is host-owned and is intentionally
+ * not exposed.
+ */
+export function visibleRangeOf(
+  document: ProjectedSqlDocument,
+  range: { start: number; end: number },
+): { start: Position; end: Position } | undefined {
+  const { start, end } = range;
+  if (start < document.visibleStart || end > document.visibleEnd || end < start) return undefined;
+  return {
+    start: document.visible.positionAt(start - document.visibleStart),
+    end: document.visible.positionAt(end - document.visibleStart),
+  };
 }
 
 /**

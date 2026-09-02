@@ -407,11 +407,12 @@ that one.
 What is left is named and guarded rather than enforced by a rule, because neither fact lives in
 the reference graph. scripts/extension/check-extension-adapts.mjs lists each remaining file with
 its reason: the adapters that are legitimately VS Code's — the DAP entry, the shared error line,
-the theme projection, the webview transport and its API shim, the notebook renderer entry — and
-two debts still awaiting a home: coverage/client leans on the ConnectionManager, and
-debug/launchConfiguration needs the saved connections and the SQL call parser together while no
-package may depend on both catalog and sql. The guard fails on a new one, and on an entry that
-has started adapting something.
+the theme projection, the webview transport and its API shim, the notebook renderer entry. The
+last two debts dissolved in September 2026: coverage/client was a duplicate of the
+ConnectionManager's own client plumbing and became ConnectionManager.openClient, and
+debug/launchConfiguration joined the debugger's launch contract once its Connection needs were
+declared as ports the host satisfies. The guard fails on a new entry, and on an entry that has
+started adapting something.
 
 A command is registered in a module's registerCommands. No reference rule can hold that: `vscode`
 is an ambient module, `registerCommand` has no indexed symbol, and a rule written against it reports

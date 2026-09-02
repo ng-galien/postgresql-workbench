@@ -86,23 +86,30 @@ export async function documentRelations(
     return { source: parsed, relations: [], columns: [], routines: [], facts };
   }
   const offsets = byteToUtf16Offsets(parsed);
-  const relations = facts.names
-    .filter((fact): fact is PostgresRelationFact => fact.role === "relation")
-    .map((fact) => relationMention(fact, parsed));
-  const columns = facts.names
-    .filter((fact): fact is PostgresColumnFact => fact.role === "column")
-    .map(columnMention);
-  const routines = facts.names
-    .filter((fact): fact is PostgresRoutineFact => fact.role === "routine")
-    .map(routineMention);
   const caretRole = caret === undefined ? undefined : caretRoleOf(tree.root, parsed, offsets);
   return {
     source: parsed,
-    relations,
-    columns,
-    routines,
+    ...documentMentionsOfFacts(facts, parsed),
     facts,
     ...(caretRole === undefined ? {} : { caretRole }),
+  };
+}
+
+/** The mention projections of a facts document, for a consumer that already holds the facts. */
+export function documentMentionsOfFacts(
+  facts: PostgresDocumentSyntaxFacts,
+  source: string,
+): Pick<DocumentMentions, "relations" | "columns" | "routines"> {
+  return {
+    relations: facts.names
+      .filter((fact): fact is PostgresRelationFact => fact.role === "relation")
+      .map((fact) => relationMention(fact, source)),
+    columns: facts.names
+      .filter((fact): fact is PostgresColumnFact => fact.role === "column")
+      .map(columnMention),
+    routines: facts.names
+      .filter((fact): fact is PostgresRoutineFact => fact.role === "routine")
+      .map(routineMention),
   };
 }
 

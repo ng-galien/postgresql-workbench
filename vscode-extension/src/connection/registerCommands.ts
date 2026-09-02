@@ -1,9 +1,11 @@
 import * as vscode from "vscode";
 import type { WorkbenchDdlSyncController } from "../../../packages/catalog/src/ddlSync.js";
+import type { WorkbenchIndexController } from "../../../packages/catalog/src/indexController.js";
 import { getConnectionName } from "../../../packages/catalog/src/savedConnection.js";
 import type { SqlCodeLensProvider } from "../codeLens/index.js";
 import { startDockerDebugDatabase } from "../docker/index.js";
 import type { ConnectionItem, WorkbenchDdlSyncItem } from "../workbench/index.js";
+import { ConnectionsPanel } from "./connectionsPanel.js";
 import type { ConnectionManager } from "./index.js";
 
 /**
@@ -16,12 +18,24 @@ export interface ConnectionCommandOptions {
   context: vscode.ExtensionContext;
   connections: ConnectionManager;
   ddlSync: WorkbenchDdlSyncController;
+  index: WorkbenchIndexController;
   codeLens: SqlCodeLensProvider;
   output: vscode.OutputChannel;
 }
-export function registerConnectionCommands(options: ConnectionCommandOptions): void {
-  const { context, connections, ddlSync, codeLens, output } = options;
+export function registerConnectionCommands(options: ConnectionCommandOptions): ConnectionsPanel {
+  const { context, connections, ddlSync, index, codeLens, output } = options;
+  const connectionsPanel = new ConnectionsPanel(
+    connections,
+    ddlSync,
+    index,
+    context.extensionUri,
+    () => startDockerDebugDatabase(connections, output),
+  );
   context.subscriptions.push(
+    connectionsPanel,
+    vscode.commands.registerCommand("postgresql-workbench.manageConnections", () =>
+      connectionsPanel.open(),
+    ),
     vscode.commands.registerCommand("postgresql-workbench.addConnection", () =>
       connections.commands.addConnection(),
     ),
@@ -213,4 +227,5 @@ export function registerConnectionCommands(options: ConnectionCommandOptions): v
       },
     ),
   );
+  return connectionsPanel;
 }

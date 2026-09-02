@@ -2,6 +2,7 @@ import { writeFile } from "node:fs/promises";
 import { test as base, type TestInfo } from "@playwright/test";
 import { startWorkbench } from "../journeys/startup";
 import { CockpitPage } from "../pages/CockpitPage";
+import { ConnectionsPage } from "../pages/ConnectionsPage";
 import { DebuggerPage } from "../pages/DebuggerPage";
 import { NotebookPage } from "../pages/NotebookPage";
 import { SqlEditorPage } from "../pages/SqlEditorPage";
@@ -22,6 +23,7 @@ interface AcceptanceFixtures {
   debuggerPage: DebuggerPage;
   notebook: NotebookPage;
   sqlEditor: SqlEditorPage;
+  connectionsPage: ConnectionsPage;
 }
 
 interface AcceptanceWorkerFixtures {
@@ -165,6 +167,9 @@ export const test = base.extend<AcceptanceFixtures, AcceptanceWorkerFixtures>({
     await use(
       new SqlEditorPage(() => vscode.page, vscode.inspectActiveTextEditor, vscode.executeCommand),
     );
+  },
+  connectionsPage: async ({ vscode }, use) => {
+    await use(new ConnectionsPage(() => vscode.page, vscode.executeCommand));
   },
 });
 

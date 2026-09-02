@@ -4,14 +4,14 @@
  * The extension adapts the engine to VS Code and holds nothing else, because the same engine is
  * meant to run under a host that is not VS Code at all.
  *
- * A file that never imports `vscode` adapts nothing. Some of those are fine — a module's index
- * re-exports what its neighbours already adapt, and the standalone DAP entry deliberately runs
- * without VS Code — and the rest are debt: engine code that has not found its package yet.
+ * A file that never imports `vscode` adapts nothing and belongs in a package. The exceptions are
+ * few and each one is declared below with its reason — a module's index re-exports what its
+ * neighbours already adapt, and the standalone DAP entry deliberately runs without VS Code.
  *
  * Code Moniker cannot hold this: whether a module imports an ambient external module is not a fact
  * about the reference graph. So the guard is here, in the same `npm run check` the commit hook
- * runs, and it keeps the debt named rather than growing. A file that stops importing `vscode` fails
- * until someone says why, and an entry that has started importing it fails until someone drops it.
+ * runs. A file that stops importing `vscode` fails until someone says why, and an entry that has
+ * started importing it fails until someone drops it.
  */
 
 import { readdirSync, readFileSync } from "node:fs";
@@ -28,12 +28,6 @@ const DECLARED = new Map([
     "presentation/vscodeTheme.ts",
     "the explicit projection from product visual roles to VS Code theme token names",
   ],
-  // Debt: engine code still living in the extension. Each needs a package that can hold it.
-  ["coverage/client.ts", "debt: the connection pgTAP coverage is measured through"],
-  [
-    "debug/launchConfiguration.ts",
-    "debt with no home: it needs the saved connections and the SQL call parser, and no package may depend on both catalog and sql",
-  ],
   [
     "scratchpad/notebookRenderer.ts",
     "the VS Code notebook entrypoint that composes the host-neutral renderer with its theme adapter",
@@ -42,13 +36,13 @@ const DECLARED = new Map([
   ["webviews/webviewPage.ts", "the VS Code webview transport and DOM composition adapter"],
 ]);
 
+/** A module's index re-exports what its neighbours adapt; it needs no import of its own. */
 function sourceFiles(directory) {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const path = join(directory, entry.name);
     if (entry.isDirectory()) return sourceFiles(path);
     const name = entry.name;
     if (!name.endsWith(".ts") || name.endsWith(".test.ts") || name.endsWith(".d.ts")) return [];
-    // A module's index re-exports what its neighbours adapt; it needs no import of its own.
     return name === "index.ts" ? [] : [path];
   });
 }

@@ -6,7 +6,6 @@ import type {
 } from "../../../packages/catalog/src/indexController.js";
 import { validateManagedRoutineDeployment } from "../../../packages/sql/src/routines/validateDeployment.js";
 import type { ConnectionManager } from "../connection/index.js";
-import { openCoverageClient } from "../coverage/index.js";
 import type { WorkbenchSourceUris } from "../workbench/sourceUris.js";
 import { CODE_MONIKER_URI_SCHEME, codeMonikerUriString } from "./uri.js";
 
@@ -394,6 +393,8 @@ async function connectionForDescriptor(
   descriptor: WorkbenchSourceDescriptor,
 ): Promise<UriConnection> {
   return {
-    client: await openCoverageClient(connections, descriptor.connectionId),
+    client: await connections.openClient(descriptor.connectionId, {
+      applicationName: "postgresql-workbench:test-runner",
+    }),
   };
 }

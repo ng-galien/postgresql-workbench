@@ -27,3 +27,16 @@ export {
   type DebugLaunchRoutineTarget,
   routineDisplayName,
 } from "./launchConfig.js";
+export {
+  buildRoutineArgs,
+  buildRoutineTarget,
+  configNameFromRoutine,
+  configNameFromSql,
+  type DebugConfigConnectionManager,
+  type DebugConfigLogger,
+  type DebugConfigUi,
+  type DebugConfigurationLike,
+  type DebugLaunchConnection,
+  resolveDebugConfiguration,
+  type SqlTargetParser,
+} from "./launchConfiguration.js";

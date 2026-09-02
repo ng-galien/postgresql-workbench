@@ -9,7 +9,7 @@ import type {
   PostgresAuthoringProposal,
   PostgresCompletionPlan,
 } from "../../authoring/completion.js";
-import type { ProjectedSqlDocument } from "../documentProjection.js";
+import { type ProjectedSqlDocument, visibleRangeOf } from "../documentProjection.js";
 
 /**
  * Final LSP projection of an autonomous authoring plan. This adapter never derives language
@@ -23,7 +23,7 @@ export function postgresCompletionList(
   return {
     isIncomplete: plan.isIncomplete,
     items: plan.proposals.flatMap((proposal, index) => {
-      const range = visibleReplacementRange(proposal, document);
+      const range = visibleRangeOf(document, proposal.documentReplacementRange);
       if (!range) return [];
       const insertion = completionInsertion(proposal);
       const item: CompletionItem = {
@@ -44,18 +44,6 @@ export function postgresCompletionList(
       };
       return [item];
     }),
-  };
-}
-
-function visibleReplacementRange(
-  proposal: PostgresAuthoringProposal,
-  document: ProjectedSqlDocument,
-) {
-  const { start, end } = proposal.documentReplacementRange;
-  if (start < document.visibleStart || end > document.visibleEnd || end < start) return undefined;
-  return {
-    start: document.visible.positionAt(start - document.visibleStart),
-    end: document.visible.positionAt(end - document.visibleStart),
   };
 }
 

@@ -271,11 +271,19 @@ function isSqlExpectation(
  * the region holds statements — an expression position gets the keyword alone.
  */
 const SQL_STATEMENT_SCAFFOLDS: ReadonlyMap<string, { label: string; snippet: string }> = new Map([
-  ["SELECT", { label: "SELECT … FROM …;", snippet: "SELECT ${1:columns}\nFROM ${2:relation};" }],
+  [
+    "SELECT",
+    {
+      label: "SELECT … FROM …;",
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: VS Code snippet placeholders are literal.
+      snippet: "SELECT ${1:columns}\nFROM ${2:relation};",
+    },
+  ],
   [
     "INSERT",
     {
       label: "INSERT INTO … VALUES …;",
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: VS Code snippet placeholders are literal.
       snippet: "INSERT INTO ${1:relation} (${2:columns})\nVALUES (${3:values});",
     },
   ],
@@ -283,6 +291,7 @@ const SQL_STATEMENT_SCAFFOLDS: ReadonlyMap<string, { label: string; snippet: str
     "UPDATE",
     {
       label: "UPDATE … SET … WHERE …;",
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: VS Code snippet placeholders are literal.
       snippet: "UPDATE ${1:relation}\nSET ${2:column} = ${3:value}\nWHERE ${4:condition};",
     },
   ],
@@ -290,6 +299,7 @@ const SQL_STATEMENT_SCAFFOLDS: ReadonlyMap<string, { label: string; snippet: str
     "DELETE",
     {
       label: "DELETE FROM … WHERE …;",
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: VS Code snippet placeholders are literal.
       snippet: "DELETE FROM ${1:relation}\nWHERE ${2:condition};",
     },
   ],

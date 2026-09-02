@@ -9,7 +9,7 @@ import {
 import type { DebugResultTruncationReason } from "../../dap/src/debugger/launch/debugResult.js";
 import { DEBUG_RESULT_LIMITS, type DebugResultCell } from "../../dap/src/debugger/launch/index.js";
 import { clamp } from "./clamp.js";
-import type { ScratchpadAssociationSnapshot, SqlNotebookResultPayload } from "./resultPayload.js";
+import type { ResultBinding, SqlNotebookResultPayload } from "./resultPayload.js";
 
 const LOAD_ALL_PAGE_ROWS = 5_000;
 
@@ -39,7 +39,7 @@ export interface OffsetQuerySource {
 
 export interface OffsetResultOptions {
   pageSize: number;
-  binding: ScratchpadAssociationSnapshot;
+  binding: ResultBinding;
   id?: string;
   now?: () => number;
   maxCellBytes?: number;
@@ -132,7 +132,7 @@ export class OffsetResultSession {
   private readonly pageSize: number;
   private readonly maxCellBytes: number;
   private readonly maxRetainedCellBytes: number;
-  private readonly binding: ScratchpadAssociationSnapshot;
+  private readonly binding: ResultBinding;
   private readonly statement: string | undefined;
   private readonly now: () => number;
   private readonly reasons = new Set<DebugResultTruncationReason>();

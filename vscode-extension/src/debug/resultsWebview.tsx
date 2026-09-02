@@ -13,7 +13,7 @@ import { mountWebview, webviewMessaging } from "../webviews/webviewPage.js";
 const messaging = webviewMessaging<DebugResultsRequest, DebugResultsResponse>();
 
 function DebugResults() {
-  return <DebugResultsApp post={messaging.post} state={useDebugResultsState(messaging)} />;
+  return <DebugResultsApp messaging={messaging} state={useDebugResultsState(messaging)} />;
 }
 
 mountWebview(<DebugResults />, `${resultViewStyles}\n${debugResultsStyles}`);

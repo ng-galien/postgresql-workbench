@@ -956,15 +956,6 @@ body,
 }
 
 /*
- * Every scrollable pane of the view wears the same scrollbar — the colours come from one rule for
- * all these views; what is said here is how much room one takes.
- */
-.data-view ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-}
-
-/*
  * Except down the rows, where the bar is drawn by hand: the grid loads its rows as a reader walks
  * them, so the height of what is scrolled says nothing about how many there are. Giving that axis
  * a browser scrollbar as well would put two beside each other, one of them lying.

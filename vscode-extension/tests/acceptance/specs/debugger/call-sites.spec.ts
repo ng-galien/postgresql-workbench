@@ -47,6 +47,10 @@ test.describe("PL/pgSQL debugger call sites", () => {
       await debuggerPage.continueToCompletion("11");
       await debuggerPage.expectNoErrorNotification();
     });
+
+    await test.step("inspect and export the captured result like any other rowset", async () => {
+      await debuggerPage.useResultActions("11");
+    });
   });
 
   test("navigates to the active routine editor across successive debug sessions", async ({

@@ -29,7 +29,6 @@ import { destroyClientSocket } from "../../../packages/rows/src/closingClient.js
 import type { SyntaxParser } from "../../../packages/sql/src/analysis/syntaxTree.js";
 import type { ConnectionManager } from "../connection/index.js";
 import { errorMessage } from "../errorMessage.js";
-import { openCoverageClient } from "./client.js";
 
 export interface PgTapCoverageTarget {
   item: vscode.TestItem;
@@ -318,7 +317,7 @@ export class PgTapCoverageProfile implements vscode.Disposable {
       const syntax = createCoverageSyntaxService(() => this.syntaxParser());
       const runner = new CoverageRunner(
         () =>
-          openCoverageClient(this.connections, first.connectionId, {
+          this.connections.openClient(first.connectionId, {
             applicationName: "postgresql-workbench:coverage-runner",
             statementTimeoutMs: 0,
           }),
@@ -698,7 +697,7 @@ async function assertSourceCurrent(
   if (token.isCancellationRequested) throw new Error("Coverage detail loading cancelled.");
   const client = await openClientWithCancellation(
     () =>
-      openCoverageClient(connections, metadata.connectionId, {
+      connections.openClient(metadata.connectionId, {
         applicationName: "postgresql-workbench:coverage-details",
         statementTimeoutMs: 10_000,
       }),

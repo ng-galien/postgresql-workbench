@@ -1,6 +1,7 @@
 import {
   type Connection,
   type DocumentFormattingParams,
+  MarkupKind,
   TextDocumentSyncKind,
   TextDocuments,
   TextEdit,
@@ -8,6 +9,7 @@ import {
 import { TextDocument } from "vscode-languageserver-textdocument";
 import type { PostgresSyntaxExpectationProvider } from "../analysis/syntaxExpectations.js";
 import { postgresSyntaxExpectationProvider } from "../authoring/postgresSyntaxPredictor.js";
+import { documentMentionsOfFacts } from "../query/relations.js";
 import { formatPostgresSql } from "../text/format.js";
 import { planSqlAuthoringCompletionRequest } from "./completionRequest.js";
 import { composeSqlAuthoringRequest } from "./composeRequest.js";
@@ -15,8 +17,10 @@ import {
   analysisOffsetOf,
   projectedSqlDocument,
   projectSemanticTokenData,
+  visibleRangeOf,
 } from "./documentProjection.js";
 import { postgresCompletionList } from "./features/completion.js";
+import { postgresHoverMarkdown, postgresSqlReferenceAt } from "./features/hover.js";
 import { postgresSemanticTokens } from "./features/semanticTokens.js";
 import type { SqlAuthoringDisposable, SqlAuthoringHostServices } from "./hostServices.js";
 import { SQL_SEMANTIC_TOKEN_MODIFIERS, SQL_SEMANTIC_TOKEN_TYPES } from "./legend.js";
@@ -53,6 +57,7 @@ export function startSqlAuthoringServer(
     capabilities: {
       textDocumentSync: TextDocumentSyncKind.Incremental,
       documentFormattingProvider: true,
+      hoverProvider: true,
       completionProvider: { triggerCharacters: ["."] },
       semanticTokensProvider: {
         full: true,
@@ -89,6 +94,34 @@ export function startSqlAuthoringServer(
       expectations,
     );
     return postgresCompletionList(completion, projected);
+  });
+
+  connection.onHover(async (params) => {
+    const visible = documents.get(params.textDocument.uri);
+    if (!visible) return null;
+    const context = await host.documentContext(params.textDocument.uri);
+    if (context.status !== "available" || context.snapshot.status !== "available") return null;
+    const projected = projectedSqlDocument(visible, context.projection);
+    const analysisSource = projected.analysis.getText();
+    const syntax = await host.syntax({
+      uri: visible.uri,
+      source: analysisSource,
+      language: postgresAuthoringDocumentLanguage(visible.languageId, visible.uri),
+    });
+    if (!syntax.facts) return null;
+    const reference = postgresSqlReferenceAt(
+      analysisSource,
+      context.snapshot,
+      documentMentionsOfFacts(syntax.facts, analysisSource),
+      analysisOffsetOf(projected, visible.offsetAt(params.position)),
+    );
+    if (!reference) return null;
+    const range = visibleRangeOf(projected, reference.range);
+    if (!range) return null;
+    return {
+      contents: { kind: MarkupKind.Markdown, value: postgresHoverMarkdown(reference) },
+      range,
+    };
   });
 
   connection.onDocumentFormatting(async (params: DocumentFormattingParams) => {

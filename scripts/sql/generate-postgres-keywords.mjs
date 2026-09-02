@@ -7,7 +7,7 @@ import { resolve } from "node:path";
 const POSTGRES_VERSION = "18.4";
 const SOURCE_TAG = "REL_18_4";
 const TREE_SITTER_POSTGRES_VERSION = "1.2.4";
-const CODE_MONIKER_CLIENT_VERSION = "0.9.2";
+const CODE_MONIKER_CLIENT_VERSION = "0.10.1";
 const OUTPUT = resolve("packages/sql/src/analysis/generated/postgresKeywords.ts");
 
 const sources = {

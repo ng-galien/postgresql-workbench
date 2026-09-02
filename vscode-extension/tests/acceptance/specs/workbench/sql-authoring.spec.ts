@@ -50,6 +50,15 @@ test.describe("SQL authoring", () => {
       await sqlEditor.dismissCompletion();
     });
 
+    await test.step("hover an indexed relation and offer the Workbench Sources link", async () => {
+      await vscode.openSqlDocument("SELECT id FROM shop.product;");
+      await sqlEditor.associateDocumentAutomatically(demoAssociationText);
+      const hover = await sqlEditor.showHover("product");
+      await expect(hover).toContainText("shop.product");
+      await expect(hover).toContainText("Reveal in Workbench Sources");
+      await sqlEditor.dismissHover();
+    });
+
     await test.step("compose from the Document Association into an ordinary SQL document", async () => {
       await vscode.openSqlDocument("");
       await sqlEditor.associateDocumentAutomatically(demoAssociationText);

@@ -18,6 +18,17 @@ export const SQL_AUTHORING_CONTEXT_REQUEST = "postgresql-workbench/documentConte
 
 export const SQL_AUTHORING_SYNTAX_REQUEST = "postgresql-workbench/syntax";
 
+/** The command every host registers to reveal an indexed object in its own tree. */
+export const REVEAL_SQL_REFERENCE_COMMAND = "postgresql-workbench.revealSqlReference";
+
+/** What the reveal command receives: one indexed object, optionally narrowed to a column. */
+export interface SqlAuthoringNavigationTarget {
+  column?: string;
+  database: string;
+  oid: number;
+  connectionId: string;
+}
+
 export const SQL_AUTHORING_COMPOSE_REQUEST = "postgresql-workbench/compose";
 
 export const SQL_AUTHORING_SETTINGS_REQUEST = "postgresql-workbench/sqlAuthoringSettings";

@@ -1,9 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { ensureLocalCodeMonikerWorkspace } from "../packages/catalog/src/localCodeMoniker.js";
-import { createCodeMonikerSyntaxParser } from "../packages/sql/src/analysis/codeMonikerSyntax.js";
 import {
   PLPGSQL_GRAMMAR_KINDS,
   SQL_GRAMMAR_KINDS,
@@ -16,6 +11,7 @@ import {
 } from "../packages/sql/src/analysis/postgresGrammar.js";
 import { findSyntaxNodes } from "../packages/sql/src/analysis/syntaxNodes.js";
 import type { SyntaxNode, SyntaxParser } from "../packages/sql/src/analysis/syntaxTree.js";
+import { tempWorkspaceParser } from "./codeMonikerRuntime.js";
 
 /**
  * The vocabulary against the parser that produces it.
@@ -92,12 +88,9 @@ describe("the grammar this Workbench is parsed by", () => {
   let statements: SyntaxNode;
 
   beforeAll(async () => {
-    const workspace = await mkdtemp(join(tmpdir(), "postgres-grammar-"));
-    const session = await ensureLocalCodeMonikerWorkspace({
-      workspaceRoots: [workspace],
-      clientName: "postgresql-workbench-postgres-grammar",
-    });
-    parser = createCodeMonikerSyntaxParser(session.client);
+    const runtime = await tempWorkspaceParser("postgresql-workbench-postgres-grammar");
+    parser = runtime.parser;
+    dispose = runtime.dispose;
     const budget = { maxDepth: 64, maxNodes: 20_000, namedOnly: false } as const;
     const parsedBody = await parser.parse({ language: "plpgsql", source: BODY, ...budget });
     const parsedStatements = await parser.parse({ language: "sql", source: STATEMENTS, ...budget });
@@ -105,10 +98,6 @@ describe("the grammar this Workbench is parsed by", () => {
     expect(parsedStatements.hasError).toBe(false);
     body = parsedBody.root;
     statements = parsedStatements.root;
-    dispose = async () => {
-      await session.dispose();
-      await rm(workspace, { force: true, recursive: true });
-    };
   }, 30_000);
 
   afterAll(async () => {

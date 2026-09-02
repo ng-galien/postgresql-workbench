@@ -24,6 +24,7 @@ import {
 } from "../../packages/dap/src/debugger/launch/sqlDebugAvailability.js";
 import type { DebugResultStore } from "../../packages/rows/src/capturedResults.js";
 import { planSqlResultExecution } from "../../packages/sql/src/analysis/sqlStatements.js";
+import type { SqlAuthoringNavigationTarget } from "../../packages/sql/src/languageServer/protocol.js";
 import { POSTGRES_SOURCE_LANGUAGE_IDS } from "../../packages/sql/src/text/documentLanguage.js";
 import { createAcceptanceProbes, registerAcceptanceControl } from "./acceptanceControl.js";
 import { registerWorkbenchGraphDropBridge, WorkbenchGraphView } from "./cockpit/index.js";
@@ -31,7 +32,7 @@ import { registerGraphWorkbenchCommands } from "./cockpit/registerCommands.js";
 import { WorkbenchGraphTreeSync } from "./cockpit/treeSync.js";
 import { PlpgsqlDiagnosticsProvider, SqlCodeLensProvider } from "./codeLens/index.js";
 import { ConnectionManager, registerConnectionCommands } from "./connection/index.js";
-import { openCoverageClient, PgTapTestController } from "./coverage/index.js";
+import { PgTapTestController } from "./coverage/index.js";
 import { DataViewEditorProvider } from "./dataView/dataViewEditorProvider.js";
 import { DataViewQueryFileSystem } from "./dataView/queryFileSystem.js";
 import { registerDataViewQueryLens } from "./dataView/queryLens.js";
@@ -55,7 +56,6 @@ import { CodeMonikerContentProvider, closePostgresqlDapTabs } from "./sources/in
 import {
   registerSqlAuthoring,
   resolveSqlAuthoringSettings,
-  type SqlAuthoringNavigationTarget,
   type SqlAuthoringRegistration,
   sqlSyntaxAnalysisBudget,
 } from "./sqlAuthoring.js";
@@ -259,7 +259,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
       const timeoutMs = vscode.workspace
         .getConfiguration("postgresql-workbench.sql")
         .get<number>("statementTimeoutMs", 60_000);
-      return openCoverageClient(cm, connectionId, {
+      return cm.openClient(connectionId, {
         applicationName: "postgresql-workbench:data-view",
         statementTimeoutMs: Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 60_000,
       });
@@ -811,13 +811,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
     workbenchIndex.onDidChangeState(() => codeLens.refresh()),
   );
 
-  registerConnectionCommands({
+  const connectionsPanel = registerConnectionCommands({
     context,
     connections: cm,
     ddlSync: workbenchDdlSync,
+    index: workbenchIndex,
     codeLens,
     output: out,
   });
+  if (cm.store.getAll().length === 0) connectionsPanel.open();
 
   registerSqlWorkbenchCommands({
     output: out,

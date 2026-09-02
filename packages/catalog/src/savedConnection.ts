@@ -7,7 +7,29 @@
 /**
  * A saved connection entry (no password — stored separately in secrets).
  */
-export type SslMode = "disable" | "prefer" | "require";
+export type SslMode = "disable" | "allow" | "prefer" | "require" | "verify-ca" | "verify-full";
+
+/**
+ * How the client opens its sessions, beyond the endpoint identity: TLS material, timeouts, the
+ * session identity and settings PostgreSQL applies at startup. Everything optional — an absent
+ * value means the Workbench default for that lane.
+ */
+export interface ConnectionTuning {
+  /** PEM files the host reads at connect time; paths, never contents. */
+  sslRootCert?: string;
+  sslCert?: string;
+  sslKey?: string;
+  connectTimeoutMs?: number;
+  statementTimeoutMs?: number;
+  keepAlive?: boolean;
+  /** Overrides the per-lane application_name this Workbench reports to PostgreSQL. */
+  applicationName?: string;
+  searchPath?: string;
+  /** Extra server settings in libpq `options` syntax: `-c work_mem=64MB -c timezone=UTC`. */
+  serverOptions?: string;
+  /** Opens every session with default_transaction_read_only = on. */
+  readOnly?: boolean;
+}
 
 export interface ConnectionConfig {
   /** Unique key: "host:port/database:user" */
@@ -19,6 +41,7 @@ export interface ConnectionConfig {
   database: string;
   user: string;
   ssl?: SslMode;
+  tuning?: ConnectionTuning;
   /** Optional per-Connection overrides for Workbench schema synchronization. */
   schemaSync?: {
     enabled?: boolean;

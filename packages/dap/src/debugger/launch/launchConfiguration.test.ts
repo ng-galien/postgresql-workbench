@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from "vitest";
-import type { ConnectionConfig } from "../../../packages/catalog/src/savedConnection.js";
 import {
   buildRoutineArgs,
   buildRoutineTarget,
@@ -8,6 +7,7 @@ import {
   type DebugConfigLogger,
   type DebugConfigUi,
   type DebugConfigurationLike,
+  type DebugLaunchConnection,
   resolveDebugConfiguration,
   type SqlTargetParser,
 } from "./launchConfiguration.js";
@@ -19,10 +19,9 @@ const noSqlTarget: SqlTargetParser = async () => ({
   kind: null,
 });
 
-function makeConnection(overrides: Partial<ConnectionConfig> = {}): ConnectionConfig {
+function makeConnection(overrides: Partial<DebugLaunchConnection> = {}): DebugLaunchConnection {
   return {
     id: "localhost:5432/testdb:postgres",
-    name: "postgres@localhost:5432/testdb",
     host: "localhost",
     port: 5432,
     database: "testdb",
@@ -32,15 +31,14 @@ function makeConnection(overrides: Partial<ConnectionConfig> = {}): ConnectionCo
 }
 
 function makeManager(
-  connection: ConnectionConfig | undefined,
+  connection: DebugLaunchConnection | undefined,
   overrides: Partial<DebugConfigConnectionManager> = {},
 ): DebugConfigConnectionManager {
   return {
-    store: {
-      get: vi.fn((id: string) => (connection?.id === id ? connection : undefined)),
-    },
+    connection: vi.fn((id: string) => (connection?.id === id ? connection : undefined)),
     connectedConnectionIds: connection ? [connection.id] : [],
-    commands: { pickConnection: vi.fn(async () => undefined) },
+    pickConnection: vi.fn(async () => undefined),
+    describeConnection: vi.fn((id: string) => id),
     isConnectionConnected: vi.fn(() => Boolean(connection)),
     connectConnection: vi.fn(async () => true),
     refreshDebugCapability: vi.fn(async () => ({ available: true, error: "" })),
@@ -49,7 +47,7 @@ function makeManager(
   };
 }
 
-describe("debugConfig", () => {
+describe("debug launch configuration", () => {
   it("builds debug names from structured routine targets", () => {
     expect(
       configNameFromRoutine({
@@ -118,17 +116,15 @@ describe("debugConfig", () => {
     const ui: DebugConfigUi = { showErrorMessage: vi.fn() };
     const out: DebugConfigLogger = { appendLine: vi.fn() };
     const cm = makeManager(undefined, {
-      commands: {
-        pickConnection: vi.fn(async () => {
-          throw new Error("should not pick");
-        }),
-      },
+      pickConnection: vi.fn(async () => {
+        throw new Error("should not pick");
+      }),
     });
 
     const resolved = await resolveDebugConfiguration(config, cm, ui, noSqlTarget, out);
 
     expect(resolved).toBe(config);
-    expect(cm.commands.pickConnection).not.toHaveBeenCalled();
+    expect(cm.pickConnection).not.toHaveBeenCalled();
     expect(out.appendLine).toHaveBeenCalledWith(
       "resolveDebugConfiguration: inline connection localhost:5433/testdb",
     );
@@ -214,12 +210,10 @@ describe("debugConfig", () => {
       get connectedConnectionIds() {
         return connectedIds;
       },
-      commands: {
-        pickConnection: vi.fn(async function (this: void) {
-          connectedIds = [connection.id];
-          return connection.id;
-        }),
-      },
+      pickConnection: vi.fn(async function (this: void) {
+        connectedIds = [connection.id];
+        return connection.id;
+      }),
       isConnectionConnected: vi.fn(() => true),
     };
     const config: DebugConfigurationLike = {
@@ -234,7 +228,7 @@ describe("debugConfig", () => {
 
     const resolved = await resolveDebugConfiguration(config, pickedManager, ui, noSqlTarget);
 
-    expect(pickedManager.commands.pickConnection).toHaveBeenCalledOnce();
+    expect(pickedManager.pickConnection).toHaveBeenCalledOnce();
     expect(resolved?.host).toBe(connection.host);
   });
 
@@ -248,16 +242,16 @@ describe("debugConfig", () => {
     ]);
     const cm: DebugConfigConnectionManager = {
       ...makeManager(undefined),
-      store: { get: vi.fn((id: string) => connections.get(id)) },
+      connection: vi.fn((id: string) => connections.get(id)),
       connectedConnectionIds: [first.id, second.id],
-      commands: { pickConnection: vi.fn(async () => second.id) },
+      pickConnection: vi.fn(async () => second.id),
       isConnectionConnected: vi.fn(() => true),
     };
     const config: DebugConfigurationLike = { sql: "SELECT public.test_simple(1)" };
 
     const resolved = await resolveDebugConfiguration(config, cm, ui, noSqlTarget);
 
-    expect(cm.commands.pickConnection).toHaveBeenCalledOnce();
+    expect(cm.pickConnection).toHaveBeenCalledOnce();
     expect(resolved?.host).toBe(second.host);
     expect(resolved?.connection).toBe(second.id);
   });
@@ -266,7 +260,7 @@ describe("debugConfig", () => {
     const other = makeConnection();
     const ui: DebugConfigUi = { showErrorMessage: vi.fn() };
     const cm = makeManager(other, {
-      commands: { pickConnection: vi.fn(async () => other.id) },
+      pickConnection: vi.fn(async () => other.id),
     });
     const config: DebugConfigurationLike = {
       connection: "missing-connection-id",
@@ -276,7 +270,7 @@ describe("debugConfig", () => {
     const resolved = await resolveDebugConfiguration(config, cm, ui, noSqlTarget);
 
     expect(resolved).toBeUndefined();
-    expect(cm.commands.pickConnection).not.toHaveBeenCalled();
+    expect(cm.pickConnection).not.toHaveBeenCalled();
     expect(ui.showErrorMessage).toHaveBeenCalledWith(expect.stringContaining("no longer exists"));
   });
 
@@ -290,9 +284,9 @@ describe("debugConfig", () => {
     const ui: DebugConfigUi = { showErrorMessage: vi.fn() };
     const cm: DebugConfigConnectionManager = {
       ...makeManager(undefined),
-      store: { get: vi.fn((id: string) => connections.get(id)) },
+      connection: vi.fn((id: string) => connections.get(id)),
       connectedConnectionIds: [active.id],
-      commands: { pickConnection: vi.fn(async () => active.id) },
+      pickConnection: vi.fn(async () => active.id),
       isConnectionConnected: vi.fn(() => true),
     };
     const config: DebugConfigurationLike = {
@@ -304,7 +298,7 @@ describe("debugConfig", () => {
 
     expect(resolved).toMatchObject({ connection: legacy.id, host: legacy.host });
     expect(resolved).not.toHaveProperty("server");
-    expect(cm.commands.pickConnection).not.toHaveBeenCalled();
+    expect(cm.pickConnection).not.toHaveBeenCalled();
   });
 
   it("aborts when connection fails", async () => {

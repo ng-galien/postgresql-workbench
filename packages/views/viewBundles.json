@@ -16,5 +16,9 @@
     "script": "workbench-graph.js",
     "styles": "linked",
     "stylesheet": "workbench-graph.css"
+  },
+  "connections": {
+    "script": "connections-page.js",
+    "styles": "inlined"
   }
 }

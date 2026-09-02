@@ -142,6 +142,12 @@ const debugResultsWebviewConfig = viewConfig(
 );
 
 /** @type {import('esbuild').BuildOptions} */
+const connectionsWebviewConfig = viewConfig(
+  viewBundles.connections,
+  "src/connection/connectionsWebview.tsx",
+);
+
+/** @type {import('esbuild').BuildOptions} */
 const editorWorkerConfig = {
   entryPoints: [nodeRequire.resolve("@codingame/monaco-vscode-editor-api/esm/vs/editor/editor.worker.js")],
   bundle: true,
@@ -253,6 +259,7 @@ async function main() {
     const notebookRendererCtx = await esbuild.context(sqlNotebookRendererConfig);
     const dataViewCtx = await esbuild.context(dataViewWebviewConfig);
     const debugResultsCtx = await esbuild.context(debugResultsWebviewConfig);
+    const connectionsCtx = await esbuild.context(connectionsWebviewConfig);
     const editorWorkerCtx = await esbuild.context(editorWorkerConfig);
     await Promise.all([
       extCtx.watch(),
@@ -262,6 +269,7 @@ async function main() {
       notebookRendererCtx.watch(),
       dataViewCtx.watch(),
       debugResultsCtx.watch(),
+      connectionsCtx.watch(),
       editorWorkerCtx.watch(),
     ]);
     console.log("Watching for changes...");
@@ -275,6 +283,7 @@ async function main() {
       esbuild.build(sqlNotebookRendererConfig),
       esbuild.build(dataViewWebviewConfig),
       esbuild.build(debugResultsWebviewConfig),
+      esbuild.build(connectionsWebviewConfig),
       esbuild.build(editorWorkerConfig),
     ]);
     generateThirdPartyNotices(results.map((result) => result.metafile));

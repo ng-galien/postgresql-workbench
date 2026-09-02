@@ -1,27 +1,16 @@
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { ensureLocalCodeMonikerWorkspace } from "../packages/catalog/src/localCodeMoniker.js";
-import { createCodeMonikerSyntaxParser } from "../packages/sql/src/analysis/codeMonikerSyntax.js";
 import { postgresDocumentSyntaxFacts } from "../packages/sql/src/analysis/documentFacts.js";
 import type { SyntaxParser } from "../packages/sql/src/analysis/syntaxTree.js";
+import { tempWorkspaceParser } from "./codeMonikerRuntime.js";
 
 describe("PostgreSQL document syntax facts", () => {
   let parser: SyntaxParser;
   let dispose: () => Promise<void>;
 
   beforeAll(async () => {
-    const workspace = await mkdtemp(join(tmpdir(), "document-facts-"));
-    const session = await ensureLocalCodeMonikerWorkspace({
-      workspaceRoots: [workspace],
-      clientName: "postgresql-workbench-document-facts",
-    });
-    parser = createCodeMonikerSyntaxParser(session.client);
-    dispose = async () => {
-      await session.dispose();
-      await rm(workspace, { force: true, recursive: true });
-    };
+    const runtime = await tempWorkspaceParser("postgresql-workbench-document-facts");
+    parser = runtime.parser;
+    dispose = runtime.dispose;
   }, 30_000);
 
   afterAll(async () => {

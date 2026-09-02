@@ -1,16 +1,12 @@
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { TextDocument } from "vscode-languageserver-textdocument";
-import { ensureLocalCodeMonikerWorkspace } from "../packages/catalog/src/localCodeMoniker.js";
-import { createCodeMonikerSyntaxParser } from "../packages/sql/src/analysis/codeMonikerSyntax.js";
 import { postgresDocumentSyntaxFacts } from "../packages/sql/src/analysis/documentFacts.js";
 import type { SyntaxParser } from "../packages/sql/src/analysis/syntaxTree.js";
 import { postgresSemanticTokens } from "../packages/sql/src/languageServer/features/semanticTokens.js";
 import { SQL_SEMANTIC_TOKEN_TYPES } from "../packages/sql/src/languageServer/legend.js";
 import { postgresAuthoringDocumentLanguage } from "../packages/sql/src/languageServer/policy.js";
 import type { SqlAuthoringSnapshot } from "../packages/sql/src/snapshot.js";
+import { tempWorkspaceParser } from "./codeMonikerRuntime.js";
 
 const NOTEBOOK_SHAPED_SCRIPT = [
   "SELECT address.id, address.city FROM shop.address AS address;",
@@ -26,16 +22,9 @@ describe("SQL authoring semantic tokens", () => {
   let dispose: () => Promise<void>;
 
   beforeAll(async () => {
-    const workspace = await mkdtemp(join(tmpdir(), "semantic-tokens-"));
-    const session = await ensureLocalCodeMonikerWorkspace({
-      workspaceRoots: [workspace],
-      clientName: "postgresql-workbench-semantic-tokens",
-    });
-    parser = createCodeMonikerSyntaxParser(session.client);
-    dispose = async () => {
-      await session.dispose();
-      await rm(workspace, { force: true, recursive: true });
-    };
+    const runtime = await tempWorkspaceParser("postgresql-workbench-semantic-tokens");
+    parser = runtime.parser;
+    dispose = runtime.dispose;
   }, 30_000);
 
   afterAll(async () => {

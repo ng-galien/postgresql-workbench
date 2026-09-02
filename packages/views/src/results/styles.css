@@ -388,30 +388,13 @@
   overflow-y: hidden;
 }
 
+/*
+ * The rows draw their scrollbar by hand: the grid loads rows as the reader walks them, so the
+ * browser bar on that axis would lie beside the honest one.
+ */
 .result-scroller::-webkit-scrollbar {
   width: 0;
   height: 10px;
-}
-
-/*
- * Every scrollbar of every pane these views draw, in one place: the colours are the views' own
- * names, valued by the product theme and optionally overridden by the host.
- */
-::-webkit-scrollbar-track,
-::-webkit-scrollbar-corner {
-  background: transparent;
-}
-
-::-webkit-scrollbar-thumb {
-  background: var(--pgw-scrollbar);
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: var(--pgw-scrollbar-hover);
-}
-
-::-webkit-scrollbar-thumb:active {
-  background: var(--pgw-scrollbar-active);
 }
 
 .result-scrollbar {

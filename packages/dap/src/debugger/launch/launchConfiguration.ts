@@ -1,14 +1,15 @@
-import {
-  type ConnectionConfig,
-  getConnectionName,
-} from "../../../packages/catalog/src/savedConnection.js";
+/**
+ * Turning a routine or a SQL call into a complete launch configuration: naming the session,
+ * choosing the Connection, verifying the debugger capability, and inlining the credentials the
+ * DAP server needs. The host supplies its Connections and UI through the ports declared here.
+ */
+import type { FunctionDefinition, ParsedCall } from "../../../../sql/src/callParser.js";
+import type { DebugResultSource } from "./debugResult.js";
 import {
   type DebugLaunchRoutineArgument,
   type DebugLaunchRoutineTarget,
-  type DebugResultSource,
   routineDisplayName,
-} from "../../../packages/dap/src/debugger/launch/index.js";
-import type { FunctionDefinition, ParsedCall } from "../../../packages/sql/src/callParser.js";
+} from "./launchConfig.js";
 
 export interface DebugConfigurationLike {
   type?: string;
@@ -30,7 +31,7 @@ export interface DebugConfigurationLike {
   database?: string;
   user?: string;
   password?: string;
-  ssl?: boolean | "require" | "prefer" | "disable";
+  ssl?: boolean | "disable" | "allow" | "prefer" | "require" | "verify-ca" | "verify-full";
   [key: string]: unknown;
 }
 
@@ -41,21 +42,30 @@ export interface DebugConfigUi {
     prompt: string;
     placeHolder?: string;
     ignoreFocusOut?: boolean;
-  }): Thenable<string | undefined>;
+  }): PromiseLike<string | undefined>;
 }
 
 export interface DebugConfigLogger {
   appendLine(message: string): void;
 }
 
-export interface DebugConfigConnectionStore {
-  get(id: string): ConnectionConfig | undefined;
+/** The saved-Connection fields a debug launch reads; the host's richer Connection satisfies it. */
+export interface DebugLaunchConnection {
+  id: string;
+  host: string;
+  port: number;
+  database: string;
+  user: string;
+  ssl?: "disable" | "allow" | "prefer" | "require" | "verify-ca" | "verify-full";
 }
 
 export interface DebugConfigConnectionManager {
-  store: DebugConfigConnectionStore;
+  /** The saved Connection, when it still exists. */
+  connection(id: string): DebugLaunchConnection | undefined;
   connectedConnectionIds: readonly string[];
-  commands: { pickConnection(): Promise<string | undefined> };
+  pickConnection(): Promise<string | undefined>;
+  /** How the host presents this Connection in messages. */
+  describeConnection(id: string): string;
   isConnectionConnected(id: string): boolean;
   connectConnection(id: string): Promise<boolean>;
   refreshDebugCapability(
@@ -139,9 +149,10 @@ export async function resolveDebugConfiguration(
       );
       return undefined;
     }
-    config.sql = sql.trim();
+    const statement = sql.trim();
+    config.sql = statement;
     if (!config.name || config.name === "Debug PL/pgSQL") {
-      config.name = await configNameFromSql(config.sql, parseTarget);
+      config.name = await configNameFromSql(statement, parseTarget);
     }
   }
 
@@ -156,9 +167,9 @@ export async function resolveDebugConfiguration(
   if (connectionId) config.connection = connectionId;
   delete config.server;
   let connection = connectionId
-    ? cm.store.get(connectionId)
+    ? cm.connection(connectionId)
     : cm.connectedConnectionIds.length === 1
-      ? cm.store.get(cm.connectedConnectionIds[0])
+      ? cm.connection(cm.connectedConnectionIds[0])
       : undefined;
 
   if (connectionId && !connection) {
@@ -168,9 +179,9 @@ export async function resolveDebugConfiguration(
     return undefined;
   }
   if (!connection) {
-    const picked = await cm.commands.pickConnection();
+    const picked = await cm.pickConnection();
     if (!picked) return undefined;
-    connection = cm.store.get(picked);
+    connection = cm.connection(picked);
     if (!connection) return undefined;
   }
 
@@ -182,7 +193,7 @@ export async function resolveDebugConfiguration(
   const capability = await cm.refreshDebugCapability(connection.id);
   if (!capability?.available) {
     await ui.showErrorMessage(
-      `${getConnectionName(connection)}: PL/pgSQL debugging is unavailable. ${capability?.error || "The debugger capability could not be verified."}`,
+      `${cm.describeConnection(connection.id)}: PL/pgSQL debugging is unavailable. ${capability?.error || "The debugger capability could not be verified."}`,
     );
     return undefined;
   }
@@ -196,6 +207,6 @@ export async function resolveDebugConfiguration(
   config.password = password;
   if (connection.ssl) config.ssl = connection.ssl;
 
-  out?.appendLine(`resolveDebugConfiguration: ${getConnectionName(connection)}`);
+  out?.appendLine(`resolveDebugConfiguration: ${cm.describeConnection(connection.id)}`);
   return config;
 }

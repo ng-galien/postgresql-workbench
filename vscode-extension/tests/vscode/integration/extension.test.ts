@@ -13,6 +13,12 @@ async function extensionSyntaxParser() {
 
 // ============================================================
 suite("Extension basics", () => {
+  test("opens the Connections page on command", async () => {
+    await vscode.commands.executeCommand("postgresql-workbench.manageConnections");
+    const tab = vscode.window.tabGroups.activeTabGroup.activeTab;
+    assert.ok(tab, "a tab should be active after opening the Connections page");
+    assert.strictEqual(tab.label, "PostgreSQL Connections");
+  });
   test("activates and registers commands", async () => {
     const ext = vscode.extensions.getExtension(EXT_ID)!;
     assert.ok(ext, "Extension not found");

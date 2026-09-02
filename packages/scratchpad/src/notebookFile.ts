@@ -1,10 +1,11 @@
 import { type ConnectionConfig, getConnectionName } from "../../catalog/src/savedConnection.js";
 import type { DebugResult } from "../../dap/src/debugger/launch/index.js";
-import type {
-  ScratchpadAssociationSnapshot,
-  SqlCommandReportOperation,
-  SqlCommandReportPayload,
-  SqlNotebookResultPayload,
+import {
+  type ResultBinding,
+  type SqlCommandReportOperation,
+  type SqlCommandReportPayload,
+  type SqlNotebookResultPayload,
+  sqlRowsetPayload,
 } from "../../rows/src/resultPayload.js";
 
 export const SQL_NOTEBOOK_TYPE = "postgresql-workbench-sql";
@@ -35,8 +36,8 @@ export interface SqlNotebookMetadata {
 /** Persistent Association between a Scratchpad and a saved Connection. */
 
 export type ScratchpadAssociation =
-  | { status: "associated"; snapshot: ScratchpadAssociationSnapshot; connection: ConnectionConfig }
-  | { status: "unavailable"; snapshot: ScratchpadAssociationSnapshot }
+  | { status: "associated"; snapshot: ResultBinding; connection: ConnectionConfig }
+  | { status: "unavailable"; snapshot: ResultBinding }
   | { status: "unassociated" };
 
 export type ScratchpadCreationAssociation =
@@ -91,7 +92,7 @@ export function resolveScratchpadAssociation(
   if (!connectionId || !database) return { status: "unassociated" };
 
   const connection = connections.find((candidate) => candidate.id === connectionId);
-  const snapshot: ScratchpadAssociationSnapshot = {
+  const snapshot: ResultBinding = {
     connectionId,
     connectionName: connection
       ? getConnectionName(connection)
@@ -108,7 +109,7 @@ export function resolveScratchpadAssociation(
   };
 }
 
-export function associationSnapshot(connection: ConnectionConfig): ScratchpadAssociationSnapshot {
+export function associationSnapshot(connection: ConnectionConfig): ResultBinding {
   return {
     connectionId: connection.id,
     connectionName: getConnectionName(connection),
@@ -155,7 +156,7 @@ export function scratchpadCreationAssociation(
   return { kind: "choose" };
 }
 
-export function associationFingerprint(association: ScratchpadAssociationSnapshot): string {
+export function associationFingerprint(association: ResultBinding): string {
   return `${association.connectionId}\0${association.database}`;
 }
 
@@ -226,28 +227,15 @@ export function serializeSqlNotebookFile(file: SqlNotebookFile): string {
 
 export function sqlNotebookResultPayload(
   result: DebugResult,
-  binding: ScratchpadAssociationSnapshot,
+  binding: ResultBinding,
   statement?: string,
 ): SqlNotebookResultPayload {
-  return {
-    version: 3,
-    kind: "rowset",
-    binding,
-    ...(statement !== undefined ? { statement } : {}),
-    command: result.command,
-    columns: result.columns,
-    rows: result.rows,
-    rowCount: result.rowCount,
-    capturedRowCount: result.capturedRowCount,
-    durationMs: result.durationMs,
-    truncated: result.truncated,
-    truncationReasons: result.truncationReasons,
-  };
+  return sqlRowsetPayload(result, { binding, ...(statement !== undefined ? { statement } : {}) });
 }
 
 export function sqlNotebookCommandReportPayload(
   result: DebugResult,
-  binding: ScratchpadAssociationSnapshot,
+  binding: ResultBinding,
 ): SqlCommandReportPayload | undefined {
   if (!isCommandReportOperation(result.command)) return undefined;
   return {
