@@ -151,6 +151,14 @@ export class WorkbenchGraphView implements vscode.Disposable {
     return this.panel.visible;
   }
 
+  get active(): boolean {
+    return this.panel.active;
+  }
+
+  get visibleViewColumn(): vscode.ViewColumn | undefined {
+    return this.panel.visibleViewColumn;
+  }
+
   get isOpen(): boolean {
     return this.panel.current !== undefined;
   }
@@ -279,6 +287,19 @@ export class WorkbenchGraphView implements vscode.Disposable {
       );
       return false;
     }
+    return this.runTreeDrop(payload);
+  }
+
+  /** Accepts an immutable URI handoff after VS Code consumed the native drop on its overlay. */
+  async acceptTransportedTreeDrop(payload: WorkbenchGraphDragPayload): Promise<boolean> {
+    if (this.closing || this.disposed) {
+      await this.rejectTreeDrop("The PostgreSQL graph is not ready yet. Try the drop again.");
+      return false;
+    }
+    return this.runTreeDrop(payload);
+  }
+
+  private runTreeDrop(payload: WorkbenchGraphDragPayload): Promise<boolean> {
     const run = this.acceptTreeDropNow(payload);
     this.activeTreeDrops.add(run);
     void run.then(

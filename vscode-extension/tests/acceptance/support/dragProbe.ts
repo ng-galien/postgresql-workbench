@@ -4,6 +4,7 @@ export interface DragProbeEvent {
   type: string;
   types: string[];
   target: string;
+  uriList?: string;
 }
 
 export interface NativeDragStart {
@@ -31,6 +32,9 @@ export async function installDragProbe(target: Page | Frame): Promise<void> {
           state.__pgwbDragProbe?.push({
             type,
             types: drag.dataTransfer ? [...drag.dataTransfer.types] : [],
+            ...(drag.dataTransfer?.types.includes("text/uri-list")
+              ? { uriList: drag.dataTransfer.getData("text/uri-list") }
+              : {}),
             target:
               drag.target instanceof Element
                 ? `${drag.target.tagName.toLocaleLowerCase()}.${drag.target.className}`

@@ -167,6 +167,14 @@ export class CockpitPage {
     } finally {
       await this.page.mouse.up();
     }
+    await expect
+      .poll(async () => (await readDragProbe(this.page)).some((event) => event.type === "drop"), {
+        message: `VS Code must accept the final drop on the Cockpit overlay. Workbench events=${JSON.stringify(
+          (await readDragProbe(this.page)).slice(-40),
+        )}; Cockpit events=${JSON.stringify((await readDragProbe(this.frame!)).slice(-40))}`,
+        timeout: 5_000,
+      })
+      .toBe(true);
   }
 
   async previewRejectedTreeItem(source: Locator, reason: RegExp): Promise<void> {

@@ -26,6 +26,7 @@
       "file": "05-data-view",
       "title": "Compose a query over your tables, and read it back as SQL",
       "maxDurationSeconds": 16,
+      "site": "data-view",
       "posterSeconds": 9.2
     },
     {

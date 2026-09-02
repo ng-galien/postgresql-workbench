@@ -63,7 +63,9 @@ export const test = base.extend<AcceptanceFixtures, AcceptanceWorkerFixtures>({
         }
       }
     },
-    { scope: "worker", auto: true },
+    // A cold CI runner builds the demo image here before waiting for PostgreSQL health.
+    // Keep that infrastructure budget separate from the 60-second product journey timeout.
+    { scope: "worker", auto: true, timeout: 75_000 },
   ],
   vscode: [
     async ({ demoDatabase: _demoDatabase }, use) => {

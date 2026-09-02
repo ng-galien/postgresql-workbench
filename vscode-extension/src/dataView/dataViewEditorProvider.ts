@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import type { DataViewSource } from "../../../packages/rows/src/dataView/dataView.js";
 import type { DataViewRequest } from "../../../packages/rows/src/dataView/dataViewProtocol.js";
 import type { SqlAuthoringDocumentProjection } from "../../../packages/sql/src/languageServer/protocol.js";
+import type { SqlAuthoringDragPayload } from "../../../packages/sql/src/snapshot.js";
 import viewBundles from "../../../packages/views/viewBundles.json" with { type: "json" };
 import { sqlEditorWebviewPage } from "../sqlEditorWebviewPage.js";
 import { webviewShell } from "../webviewShell.js";
@@ -23,6 +24,7 @@ export class DataViewEditorProvider
   >();
   readonly onDidChangeCustomDocument = this._onDidChangeCustomDocument.event;
   private readonly documents = new Map<string, DataViewDocument>();
+  private readonly panels = new Map<string, vscode.WebviewPanel>();
   /** Edit subscriptions, released with their tab so a closed Data View keeps no rows alive. */
   private readonly edits = new Map<DataViewDocument, vscode.Disposable>();
   private readonly disposables: vscode.Disposable[] = [];
@@ -79,6 +81,23 @@ export class DataViewEditorProvider
     return undefined;
   }
 
+  /** Every visible Data View, keyed by the editor group that can receive a native drop. */
+  visibleDestinations(): readonly { uri: vscode.Uri; viewColumn: vscode.ViewColumn }[] {
+    return [...this.panels.entries()].flatMap(([value, panel]) =>
+      panel.visible && panel.viewColumn !== undefined
+        ? [{ uri: vscode.Uri.parse(value), viewColumn: panel.viewColumn }]
+        : [],
+    );
+  }
+
+  /** Routes a native TreeView drop back to the Data View tab that owned the destination. */
+  async acceptTreeDrop(uri: vscode.Uri, payload: SqlAuthoringDragPayload): Promise<boolean> {
+    const document = this.documents.get(uri.toString());
+    if (!document) return false;
+    await document.acceptTreeDrop(payload);
+    return true;
+  }
+
   async openCustomDocument(uri: vscode.Uri): Promise<DataViewDocument> {
     const source = parseDataViewUri(uri);
     if (!source) throw new Error("This Data View link is not valid.");
@@ -92,6 +111,7 @@ export class DataViewEditorProvider
   }
 
   async resolveCustomEditor(document: DataViewDocument, panel: vscode.WebviewPanel): Promise<void> {
+    this.panels.set(document.uri.toString(), panel);
     panel.webview.options = {
       enableScripts: true,
       localResourceRoots: [vscode.Uri.joinPath(this.services.extensionUri, "dist")],
@@ -154,6 +174,9 @@ export class DataViewEditorProvider
       attachment.dispose();
       messages.dispose();
       renaming.dispose();
+      if (this.panels.get(document.uri.toString()) === panel) {
+        this.panels.delete(document.uri.toString());
+      }
       this.edits.get(document)?.dispose();
       this.edits.delete(document);
       if (this.documents.get(document.uri.toString()) === document) {
@@ -186,6 +209,7 @@ export class DataViewEditorProvider
   dispose(): void {
     for (const document of this.documents.values()) document.dispose();
     this.documents.clear();
+    this.panels.clear();
     for (const subscription of this.edits.values()) subscription.dispose();
     this.edits.clear();
     for (const disposable of this.disposables) disposable.dispose();

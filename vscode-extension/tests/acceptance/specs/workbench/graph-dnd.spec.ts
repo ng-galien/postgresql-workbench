@@ -21,7 +21,10 @@ async function openCockpitFromTree(
   ]);
   const item = await workbench.tree.findChild(schema, source);
   await expect(item).toBeVisible({ timeout: 5_000 });
-  await workbench.dragTreeItemToEditor(item);
+  await workbench.tree.hoverItem(item, source);
+  const openGraph = workbench.page.getByRole("button", { name: "Open Graph", exact: true });
+  await expect(openGraph).toBeVisible({ timeout: 5_000 });
+  await openGraph.click();
   await cockpit.waitUntilOpen();
   await expect(cockpit.node(expectedFocus)).toHaveAttribute("data-graph-role", "focus", {
     timeout: 5_000,
@@ -33,7 +36,7 @@ test.describe("Workbench graph", () => {
     workbench,
     cockpit,
   }) => {
-    await test.step("drop shop.address into the editor area to open the Cockpit", async () => {
+    await test.step("open shop.address in the Cockpit from its explicit graph action", async () => {
       await openCockpitFromTree(workbench, cockpit, /^address/, "address");
       await expect(cockpit.object(/^address, PostgreSQL table\./i)).toBeVisible({
         timeout: 5_000,

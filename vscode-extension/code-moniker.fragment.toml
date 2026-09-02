@@ -8,6 +8,8 @@ extension_host_source = "source ~ '**/dir:vscode-extension/**'"
 workbench_engine_target = "target ~ '**/dir:packages/**'"
 connection_service_target = "target.segment('module') = 'connectPostgres' AND target.segment('path') = 'ConnectionService'"
 connection_service_owner = "source.segment('module') = 'openConnections' OR source.segment('module') = 'openConnections.test'"
+workbench_tree_drag_source = "source.segment('module') = 'treeDragAndDrop'"
+workbench_destination_owner_target = "target ~ '**/dir:vscode-extension/dir:src/dir:cockpit/**' OR target ~ '**/dir:vscode-extension/dir:src/dir:dataView/**' OR target.segment('module') = 'sqlAuthoring'"
 
 [[ts.refs.where]]
 id = "connection-service-ownership-stays-with-connection-manager"
@@ -15,6 +17,13 @@ severity = "error"
 expr = "$connection_service_target => $connection_service_owner"
 message = "Consume PostgreSQL transport through ConnectionManager; ConnectionService is its private construction adapter."
 rationale = "ConnectionManager owns the open Connections, the connection events, the reconnect state and the dedicated-client factory. A feature controller building its own ConnectionService would create a second connection lifecycle nothing reconnects or disposes."
+
+[[ts.refs.where]]
+id = "workbench-ownership-keeps-tree-drag-destination-neutral"
+severity = "error"
+expr = "$workbench_tree_drag_source AND $structural_edge => NOT $workbench_destination_owner_target"
+message = "The Workbench tree publishes destination-neutral drag data; it never depends on a SQL, Data View, or Cockpit destination owner."
+rationale = "A tree drag means what its destination says: SQL editors and Scratchpads compose SQL, Data Views extend their query, and the Cockpit focuses the graph. Opening the graph is an explicit tree action, so the drag source may depend only on the neutral Workbench transport, never on a destination owner. Typed payloads carry Workbench intent; text/plain is only a readable object label for Chromium and generic editors."
 
 [[ts.refs.where]]
 id = "extension-host-composition-root-is-not-a-service-locator"

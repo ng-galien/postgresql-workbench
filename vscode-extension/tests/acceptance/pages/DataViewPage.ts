@@ -49,6 +49,10 @@ export class DataViewPage {
     await expect(this.sqlPanel).toBeVisible();
   }
 
+  get surface(): Locator {
+    return this.located(".data-view");
+  }
+
   /** The line above the rows: how many there are, how to walk them, whether they may be written. */
   get rowsLine(): Locator {
     return this.located(".data-view-rows-line");

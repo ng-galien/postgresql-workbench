@@ -318,8 +318,9 @@
 }
 
 /*
- * The document, coloured the way the editor colours one. The names are the workbench's own token
- * colours, so a reader's theme decides what a string looks like here as everywhere else.
+ * JSON is text, not a chart. Debug token expressions are VS Code's themeable colours for names
+ * and typed values in compact structured data. A theme that omits one falls back to the editor's
+ * foreground, which preserves contrast instead of borrowing an unrelated chart or icon colour.
  */
 .json-key {
   color: var(--pgw-data-property);
@@ -333,7 +334,8 @@
   color: var(--pgw-data-number);
 }
 
-.json-word {
+.json-boolean,
+.json-null {
   color: var(--pgw-data-literal);
 }
 

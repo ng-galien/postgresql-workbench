@@ -1,14 +1,14 @@
 ---
 title: Documentation
-description: Set up PostgreSQL Workbench and use its VS Code guides for schemas, SQL, pgTAP coverage, and PL/pgSQL debugging.
+description: Set up PostgreSQL Workbench and use its VS Code guides for schemas, SQL, editable Data Views, pgTAP coverage, and PL/pgSQL debugging.
 eyebrow: Documentation
 ---
 
 # PostgreSQL Workbench documentation
 
 PostgreSQL Workbench documentation covers the complete PostgreSQL development
-workflow in VS Code: schema navigation, SQL Scratchpads, pgTAP coverage,
-PL/pgSQL debugging, and the standalone DAP server.
+workflow in VS Code: schema navigation, SQL Scratchpads, editable Data Views,
+pgTAP coverage, PL/pgSQL debugging, and the standalone DAP server.
 
 ## Start with a development database
 

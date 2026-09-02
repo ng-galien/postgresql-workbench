@@ -67,6 +67,7 @@ enable = [
   "extension-host-composition-root-is-not-a-service-locator",
   "extension-host-workbench-encapsulation-does-not-re-export-engine",
   "connection-service-ownership-stays-with-connection-manager",
+  "workbench-ownership-keeps-tree-drag-destination-neutral",
   # declared by the package fragments
   "ddl-sync-single-responsibility-excludes-runtime-orchestration",
   "scratchpad-single-responsibility-keeps-files-passive",
@@ -470,19 +471,23 @@ rules = ["scratchpad-single-responsibility-keeps-files-passive"]
 id = "tree-and-cockpit"
 owns = [
   "the Workbench tree projection of index snapshots",
+  "destination-neutral drag data interpreted by the receiving surface",
   "the Cockpit host: navigation, snapshot validation, and the webview panel",
   "selection synchronization between the tree and the graph",
 ]
 forbids = [
   "PostgreSQL transport construction",
   "owning the Code Moniker session",
+  "the tree drag choosing the Cockpit or any other destination by default",
 ]
-rationale = "Tree and Cockpit project what the index holds. The host validates context and performs actions; the webview renders and manipulates protocol values."
+forbid_rules = ["workbench-ownership-keeps-tree-drag-destination-neutral"]
+rationale = "Tree and Cockpit project what the index holds. The tree publishes object intent without choosing an outcome: SQL editors and Scratchpads compose, Data Views extend their query, and the Cockpit focuses the graph. Opening the graph is an explicit tree action. The host validates context and performs actions; the webview renders and manipulates protocol values."
 symbols = [
   "ts:vscode-extension/src/workbench/tree.class:WorkbenchTreeProvider",
   "ts:vscode-extension/src/cockpit/view.class:WorkbenchGraphView",
   "ts:vscode-extension/src/cockpit/treeSync.class:WorkbenchGraphTreeSync",
 ]
+rules = ["workbench-ownership-keeps-tree-drag-destination-neutral"]
 
 [[views.gotchas]]
 id = "the-language-server-is-also-a-worker"

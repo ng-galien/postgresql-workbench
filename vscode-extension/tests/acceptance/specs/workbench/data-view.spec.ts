@@ -52,5 +52,10 @@ test.describe("Data View", () => {
      */
     await dataView.openSqlPanel();
     await expect(dataView.sqlColouredTokens.first()).toBeVisible({ timeout: 10_000 });
+
+    const product = await workbench.tree.findChild(schema, /^product$/);
+    await workbench.dragTreeItemToDataView(product, dataView.surface);
+    await expect(dataView.tableBadges).toHaveCount(2, { timeout: 5_000 });
+    await expect(dataView.tableBadges).toContainText(["brand", "product"]);
   });
 });

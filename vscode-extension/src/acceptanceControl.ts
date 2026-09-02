@@ -38,6 +38,8 @@ const RESET_WORKBENCH_COMMAND = "postgresql-workbench.acceptance.resetWorkbench"
 const OPEN_WORKSPACE_FILE_COMMAND = "postgresql-workbench.acceptance.openWorkspaceFile";
 const OPEN_SQL_DOCUMENT_COMMAND = "postgresql-workbench.acceptance.openSqlDocument";
 const CLOSE_ACTIVE_EDITOR_COMMAND = "postgresql-workbench.acceptance.closeActiveEditor";
+const JOIN_ALL_GROUPS_COMMAND = "workbench.action.joinAllGroups";
+const NEW_GROUP_RIGHT_COMMAND = "workbench.action.newGroupRight";
 /* Opening a Data View on whatever the tree has selected: the one thing only this lane can prove. */
 const OPEN_DATA_VIEW_COMMAND = "postgresql-workbench.openDataView";
 const ACCEPTANCE_COMMANDS = new Set([
@@ -73,6 +75,8 @@ const ACCEPTANCE_COMMANDS = new Set([
   OPEN_WORKSPACE_FILE_COMMAND,
   OPEN_SQL_DOCUMENT_COMMAND,
   CLOSE_ACTIVE_EDITOR_COMMAND,
+  JOIN_ALL_GROUPS_COMMAND,
+  NEW_GROUP_RIGHT_COMMAND,
   OPEN_DATA_VIEW_COMMAND,
 ]);
 

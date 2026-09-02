@@ -41,6 +41,15 @@ scripts/                   repository-level automation, one directory per purpos
 - Write all repository documentation in English.
 - Keep the product name, extension ID, repository URLs, commands, screenshots,
   and release instructions aligned with PostgreSQL Workbench.
+- Keep every user-visible capability aligned across the complete documentation
+  surface: the root `README.md`, `vscode-extension/README.md`, extension metadata,
+  the public GitHub repository description and homepage, the landing page in
+  `site/`, its guide and navigation in `docs/user/`, and the shared showcase
+  declaration in `docs/marketplace-showcase.json`.
+- A showcase scene promoted on the documentation site must declare its `site`
+  asset name in `docs/marketplace-showcase.json`; the landing page and guide must
+  then reference the generated asset. Capturing Marketplace media alone does not
+  publish that capability on GitHub Pages.
 - Prefer current product behavior over historical implementation details. If a
   claim cannot be verified from the checkout or a live test, remove it or mark
   it explicitly as unverified.

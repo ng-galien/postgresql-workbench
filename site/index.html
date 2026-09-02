@@ -5,13 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       name="description"
-      content="PostgreSQL development extension for VS Code with schema exploration, SQL scratchpads, pgTAP coverage, and PL/pgSQL debugging."
+      content="PostgreSQL Workbench for VS Code: explore schemas, write SQL, edit data, run pgTAP tests with coverage, and debug PL/pgSQL."
     />
     <meta name="theme-color" content="#f7f9fa" />
     <meta property="og:title" content="PostgreSQL VS Code Extension | PostgreSQL Workbench" />
     <meta
       property="og:description"
-      content="PostgreSQL development extension for VS Code with schema exploration, SQL scratchpads, pgTAP coverage, and PL/pgSQL debugging."
+      content="PostgreSQL Workbench for VS Code: explore schemas, write SQL, edit data, run pgTAP tests with coverage, and debug PL/pgSQL."
     />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://ng-galien.github.io/postgresql-workbench/" />
@@ -28,7 +28,7 @@
             "@type": "WebSite",
             "name": "PostgreSQL Workbench",
             "url": "https://ng-galien.github.io/postgresql-workbench/",
-            "description": "PostgreSQL development extension for VS Code with schema exploration, SQL scratchpads, pgTAP coverage, and PL/pgSQL debugging."
+            "description": "PostgreSQL Workbench for VS Code: explore schemas, write SQL, edit data, run pgTAP tests with coverage, and debug PL/pgSQL."
           },
           {
             "@type": "SoftwareApplication",
@@ -41,7 +41,7 @@
               "https://github.com/ng-galien/postgresql-workbench",
               "https://marketplace.visualstudio.com/items?itemName=ng-galien.postgresql-workbench"
             ],
-            "description": "Explore PostgreSQL schemas, write and run SQL, execute pgTAP tests with coverage, and debug PL/pgSQL in VS Code.",
+            "description": "Explore PostgreSQL schemas, write and run SQL, inspect and edit data, execute pgTAP tests with coverage, and debug PL/pgSQL in VS Code.",
             "offers": {
               "@type": "Offer",
               "price": "0",
@@ -90,8 +90,8 @@
           <h1 id="hero-title">PostgreSQL development, directly in VS Code.</h1>
           <p class="hero-summary">
             PostgreSQL Workbench is a PostgreSQL development extension for VS Code.
-            Explore schemas, write and run SQL, execute pgTAP tests with coverage, and
-            debug PL/pgSQL without leaving the editor.
+            Explore schemas, write and run SQL, inspect and edit data, execute pgTAP
+            tests with coverage, and debug PL/pgSQL without leaving the editor.
           </p>
           <div class="hero-actions">
             <a
@@ -161,6 +161,26 @@
       <section class="feature feature-split feature-reverse reveal">
         <div class="feature-copy">
           <p class="feature-number">03</p>
+          <h3>Inspect and edit PostgreSQL data.</h3>
+          <p>
+            Open a table, view, or SQL statement in a Data View. Compose joins, filter
+            and sort rows, and export the result. When the query identifies editable
+            rows, stage changes and apply them in one transaction.
+          </p>
+          <a href="docs/data-view.html">Data View guide</a>
+        </div>
+        <img
+          src="assets/data-view.gif"
+          alt="PostgreSQL Data View composing a query with a related table and filtering its rows"
+          width="1080"
+          height="562"
+          loading="lazy"
+        />
+      </section>
+
+      <section class="feature feature-split reveal">
+        <div class="feature-copy">
+          <p class="feature-number">04</p>
           <h3>Run pgTAP tests with coverage.</h3>
           <p>
             Discover tests in the native VS Code Test Explorer, run selected suites,
@@ -179,7 +199,7 @@
 
       <section class="feature feature-wide feature-dark reveal">
         <div class="feature-copy">
-          <p class="feature-number">04</p>
+          <p class="feature-number">05</p>
           <h3>Debug PL/pgSQL.</h3>
           <p>
             Set breakpoints, step across nested calls, inspect records, arrays, and JSON,

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import * as vscode from "vscode";
 import type { WorkbenchObjectModel } from "../../../packages/catalog/src/objectModel.js";
 import {
@@ -11,14 +12,21 @@ import {
   WORKBENCH_GRAPH_UNSUPPORTED_MIME,
   type WorkbenchGraphDragPayload,
 } from "../../../packages/views/src/cockpit/dragAndDrop.js";
-import { workbenchGraphDropUri } from "../cockpit/index.js";
 import type { PlpgsqlTreeItem } from "./tree.js";
 
 export class WorkbenchTreeDragAndDropController
   implements vscode.TreeDragAndDropController<PlpgsqlTreeItem>, vscode.Disposable
 {
-  private active?: { payload: WorkbenchGraphDragPayload; expiresAt: number };
-  private activeAuthoring?: { payload: SqlAuthoringDragPayload; expiresAt: number };
+  private active?: {
+    handoffId: string;
+    payload: WorkbenchGraphDragPayload;
+    expiresAt: number;
+  };
+  private activeAuthoring?: {
+    handoffId: string;
+    payload: SqlAuthoringDragPayload;
+    expiresAt: number;
+  };
   private expiry?: ReturnType<typeof setTimeout>;
   readonly dropMimeTypes: readonly string[] = [];
   readonly dragMimeTypes = [
@@ -31,15 +39,21 @@ export class WorkbenchTreeDragAndDropController
 
   constructor(
     private readonly announce: (payload: WorkbenchGraphDragPayload | null) => void = () => {},
+    private readonly destinationTransportUri: (
+      handoffId: string,
+      payload: WorkbenchGraphDragPayload,
+      authoringPayload: SqlAuthoringDragPayload | undefined,
+    ) => string | undefined = () => undefined,
   ) {}
 
   handleDrag(source: readonly PlpgsqlTreeItem[], dataTransfer: vscode.DataTransfer): void {
     const payload = dragPayload(source);
     const authoringPayload = sqlAuthoringDragPayload(source);
+    const handoffId = randomUUID();
     if (this.expiry) clearTimeout(this.expiry);
-    this.active = payload ? { payload, expiresAt: Date.now() + 30_000 } : undefined;
+    this.active = payload ? { handoffId, payload, expiresAt: Date.now() + 30_000 } : undefined;
     this.activeAuthoring = authoringPayload
-      ? { payload: authoringPayload, expiresAt: Date.now() + 30_000 }
+      ? { handoffId, payload: authoringPayload, expiresAt: Date.now() + 30_000 }
       : undefined;
     this.announce(payload ?? null);
     if (authoringPayload) {
@@ -60,8 +74,13 @@ export class WorkbenchTreeDragAndDropController
         : WORKBENCH_GRAPH_UNSUPPORTED_MIME,
       new vscode.DataTransferItem(serialized),
     );
-    dataTransfer.set("text/plain", new vscode.DataTransferItem(serialized));
-    dataTransfer.set("text/uri-list", new vscode.DataTransferItem(workbenchGraphDropUri(payload)));
+    // VS Code's editor overlay needs one native flavor to deliver the final drop without Shift.
+    // Keep the fallback destination-neutral and readable; Workbench surfaces use typed payloads.
+    dataTransfer.set("text/plain", new vscode.DataTransferItem(payload.label));
+    const transportUri = this.destinationTransportUri(handoffId, payload, authoringPayload);
+    if (transportUri) {
+      dataTransfer.set("text/uri-list", new vscode.DataTransferItem(transportUri));
+    }
   }
 
   activePayload(consume = false): WorkbenchGraphDragPayload | undefined {
@@ -79,7 +98,7 @@ export class WorkbenchTreeDragAndDropController
     return current.payload;
   }
 
-  /** SQL authoring payload of the ongoing tree drag, for webviews that compose SQL on drop. */
+  /** SQL authoring payload of the ongoing tree drag, for destinations that compose SQL on drop. */
   activeAuthoringPayload(consume = false): SqlAuthoringDragPayload | undefined {
     const current = this.activeAuthoring;
     if (!current || current.expiresAt < Date.now()) {
@@ -90,10 +109,24 @@ export class WorkbenchTreeDragAndDropController
     return current.payload;
   }
 
+  /** Clears only the preview state that belongs to this exact drag gesture. */
+  completeHandoff(handoffId: string): void {
+    if (this.active?.handoffId === handoffId) {
+      this.active = undefined;
+      if (this.expiry) clearTimeout(this.expiry);
+      this.expiry = undefined;
+      this.announce(null);
+    }
+    if (this.activeAuthoring?.handoffId === handoffId) {
+      this.activeAuthoring = undefined;
+    }
+  }
+
   dispose(): void {
     if (this.expiry) clearTimeout(this.expiry);
     this.expiry = undefined;
     this.active = undefined;
+    this.activeAuthoring = undefined;
     this.announce(null);
   }
 }

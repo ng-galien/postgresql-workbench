@@ -8,13 +8,14 @@
 [![License: MIT](https://img.shields.io/github/license/ng-galien/postgresql-workbench)](LICENSE)
 
 PostgreSQL Workbench is a PostgreSQL development extension for VS Code. It
-combines database exploration, SQL scratchpads, result inspection, schema
+combines database exploration, SQL scratchpads, an editable Data View, schema
 synchronization, pgTAP testing, coverage, and PL/pgSQL debugging. Its standalone
 [Debug Adapter Protocol](https://microsoft.github.io/debug-adapter-protocol/)
 server remains usable from other DAP clients such as Neovim and Emacs.
 
 Read the [PostgreSQL Workbench documentation](https://ng-galien.github.io/postgresql-workbench/)
-for feature guides, setup instructions, and the complete command and settings reference.
+for feature guides, including the [Data View guide](https://ng-galien.github.io/postgresql-workbench/docs/data-view.html),
+setup instructions, and the complete command and settings reference.
 
 ## Architecture
 

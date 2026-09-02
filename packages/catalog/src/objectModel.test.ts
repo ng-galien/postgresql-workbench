@@ -106,6 +106,11 @@ describe("Workbench tree model", () => {
     ).toMatchObject({ icon: "$(type-hierarchy)" });
     expect(
       manifest.contributes.commands.find(
+        ({ command }) => command === "postgresql-workbench.openObjectGraph",
+      ),
+    ).toMatchObject({ icon: "$(type-hierarchy)" });
+    expect(
+      manifest.contributes.commands.find(
         ({ command }) => command === "postgresql-workbench.revealDatabaseObjectInTree",
       ),
     ).toMatchObject({ icon: "$(list-tree)" });
@@ -147,7 +152,32 @@ describe("Workbench tree model", () => {
         }),
         expect.objectContaining({
           command: "postgresql-workbench.openDatabaseObject",
+          group: "inline@3",
+        }),
+        expect.objectContaining({
+          command: "postgresql-workbench.openObjectGraph",
           group: "inline@2",
+        }),
+      ]),
+    );
+    expect(
+      manifest.contributes.menus["view/item/context"].filter(
+        ({ when }) =>
+          when.includes("postgresql-workbench-table") || when.includes("postgresql-workbench-view"),
+      ),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          command: "postgresql-workbench.openDataView",
+          group: "inline@1",
+        }),
+        expect.objectContaining({
+          command: "postgresql-workbench.openObjectGraph",
+          group: "inline@2",
+        }),
+        expect.objectContaining({
+          command: "postgresql-workbench.openDatabaseObject",
+          group: "inline@3",
         }),
       ]),
     );

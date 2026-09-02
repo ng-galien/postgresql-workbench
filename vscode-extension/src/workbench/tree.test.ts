@@ -427,7 +427,7 @@ describe("Workbench tree object navigation", () => {
     expect(unresolved.tooltip).toBe("table orders");
   });
 
-  it("explains the Shift+drop composition gesture on draggable Sources items", () => {
+  it("explains the destination-owned gesture on draggable Sources items", () => {
     const routine = new FunctionItem(
       {
         ...table,

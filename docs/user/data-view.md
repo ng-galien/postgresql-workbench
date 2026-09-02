@@ -2,6 +2,10 @@
 title: Data View
 description: Open PostgreSQL tables, views, and query results in an editable grid, compose the query it runs, and write rows back in one transaction.
 eyebrow: Data View
+media: data-view.gif
+mediaAlt: PostgreSQL Data View composing a query with a related table and filtering its rows
+mediaWidth: 1080
+mediaHeight: 562
 ---
 
 # Data View
@@ -14,6 +18,8 @@ The query is yours to compose from inside the view: add a column, join a related
 table, filter, sort, or take a table back out. The Connection never changes
 implicitly; a Data View runs against the Connection it was opened from, like every
 other Workbench surface.
+
+{{media}}
 
 ## Open one
 

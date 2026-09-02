@@ -324,41 +324,58 @@ export class WorkbenchPage {
     return this.tree.waitForStableItem(schemaSync, "Schema synchronization");
   }
 
-  async dragTreeItemToEditor(source: import("@playwright/test").Locator): Promise<void> {
-    const target = this.page.locator(".editor-group-container.active").first();
-    await this.dragTreeItemToTarget(source, target, false);
-  }
-
   async dragTreeItemToTextEditor(
     source: import("@playwright/test").Locator,
     target: import("@playwright/test").Locator,
     atFirstLine = false,
+    primeTarget = true,
   ): Promise<void> {
     const dropTarget = atFirstLine
       ? target.locator(".view-line").first()
       : target.locator(".view-lines").first();
-    await this.dragTreeItemToTarget(source, dropTarget, true, atFirstLine);
+    await this.dragTreeItemToTarget(
+      source,
+      dropTarget,
+      "application/vnd.postgresql-workbench.sql-object",
+      atFirstLine,
+      primeTarget,
+    );
+  }
+
+  async dragTreeItemToDataView(
+    source: import("@playwright/test").Locator,
+    target: import("@playwright/test").Locator,
+  ): Promise<void> {
+    await this.dragTreeItemToTarget(
+      source,
+      target,
+      "application/vnd.code.tree.postgresql-workbench-connections",
+    );
   }
 
   private async dragTreeItemToTarget(
     source: import("@playwright/test").Locator,
     target: import("@playwright/test").Locator,
-    dropIntoTextEditor: boolean,
+    acceptedMime: string,
     nearStart = false,
+    primeTarget = true,
   ): Promise<void> {
     await this.tree.revealItem(source, "drag source");
     await target.scrollIntoViewIfNeeded();
     const targetBox = await target.boundingBox();
     expect(targetBox, "The VS Code editor area must have screen coordinates").not.toBeNull();
+    const targetX = nearStart
+      ? targetBox!.x + Math.min(80, targetBox!.width / 2)
+      : targetBox!.x + targetBox!.width / 2;
+    const targetY = nearStart
+      ? targetBox!.y + Math.min(12, targetBox!.height / 2)
+      : targetBox!.y + targetBox!.height / 2;
+    // Without Shift, VS Code consumes the native drop through its editor overlay. The product
+    // therefore composes at the cursor that was active when the drag began; prime that cursor at
+    // the same screen position where this journey releases the object.
+    if (primeTarget) await this.page.mouse.click(targetX, targetY);
     const { sourceBox, failedAttempts } = await startNativeTreeDrag(this.page, source);
-    if (dropIntoTextEditor) await this.page.keyboard.down("Shift");
     try {
-      const targetX = nearStart
-        ? targetBox!.x + Math.min(80, targetBox!.width / 2)
-        : targetBox!.x + targetBox!.width / 2;
-      const targetY = nearStart
-        ? targetBox!.y + Math.min(12, targetBox!.height / 2)
-        : targetBox!.y + targetBox!.height / 2;
       await this.page.mouse.move(targetX, targetY, { steps: 24 });
       try {
         await expect
@@ -367,7 +384,7 @@ export class WorkbenchPage {
               (await readDragProbe(this.page)).some(
                 (event) =>
                   (event.type === "dragenter" || event.type === "dragover") &&
-                  event.types.includes("resourceurls"),
+                  event.types.includes(acceptedMime),
               ),
             {
               message: "VS Code must expose an accepted editor drop target before release",
@@ -384,7 +401,6 @@ export class WorkbenchPage {
       }
     } finally {
       await this.page.mouse.up();
-      if (dropIntoTextEditor) await this.page.keyboard.up("Shift");
     }
     await expect
       .poll(async () => (await readDragProbe(this.page)).some((event) => event.type === "drop"), {
