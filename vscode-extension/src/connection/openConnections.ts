@@ -240,12 +240,16 @@ export class ConnectionManager implements vscode.Disposable {
    * The engine-port lane (DDL sync, notebook execution): those clients back a Connection the user
    * already opened, so a missing saved password falls back to empty rather than failing the lane.
    */
-  async createDedicatedClient(id: string): Promise<Client> {
+  async createDedicatedClient(
+    id: string,
+    options?: { statementTimeoutMs?: number },
+  ): Promise<Client> {
     const connection = this.store.get(id);
     if (!connection) throw new Error("The PostgreSQL connection no longer exists.");
-    return this.service.connectClient(
-      dedicatedConnectParams(connection, await this.getPassword(id)),
-    );
+    return this.service.connectClient({
+      ...dedicatedConnectParams(connection, await this.getPassword(id)),
+      statementTimeoutMs: options?.statementTimeoutMs,
+    });
   }
 
   async setSchemaSyncOverride(id: string, override: ConnectionConfig["schemaSync"]): Promise<void> {

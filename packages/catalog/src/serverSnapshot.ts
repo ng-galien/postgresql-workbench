@@ -75,8 +75,9 @@ export async function readPostgresServerSnapshot(client: Client): Promise<Postgr
       wait_event_type: string | null;
       wait_event: string | null;
       query: string;
+      total_count: string;
     }>(
-      `SELECT pid, usename, datname, application_name, state,
+      `SELECT pid, usename, datname, application_name, state, count(*) OVER () AS total_count,
               client_addr::text AS client_addr, backend_start, xact_start, query_start,
               wait_event_type, wait_event, left(query, 500) AS query
          FROM pg_stat_activity
@@ -113,7 +114,7 @@ export async function readPostgresServerSnapshot(client: Client): Promise<Postgr
     encoding: facts.encoding,
     timeZone: facts.timezone,
     maxConnections: Number(facts.max_connections),
-    currentConnections: sessions.rows.length,
+    currentConnections: Number(sessions.rows[0]?.total_count ?? 0),
     sessions: sessions.rows.map((row) => ({
       pid: row.pid,
       ...(row.usename ? { user: row.usename } : {}),

@@ -45,7 +45,7 @@
     "prepack": "node ../../scripts/dap/build-package.mjs && node ../../scripts/dap/verify-package.mjs"
   },
   "dependencies": {
-    "@code-moniker/client": "0.9.2",
+    "@code-moniker/client": "0.10.1",
     "@vscode/debugadapter": "^1.68.0",
     "@vscode/debugprotocol": "^1.68.0",
     "pg": "^8.20.0"

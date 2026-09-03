@@ -274,6 +274,9 @@ describe("WorkbenchDdlSyncController", () => {
     );
 
     await vi.waitFor(() => expect(controller.state(CONNECTION.id).status).toBe("listening"));
+    expect(connections.createDedicatedClient).toHaveBeenNthCalledWith(1, CONNECTION.id, {
+      statementTimeoutMs: 0,
+    });
     expect(listener.queries.at(-1)).toBe("LISTEN plpgsql_workbench_ddl");
 
     const payload = JSON.stringify({
