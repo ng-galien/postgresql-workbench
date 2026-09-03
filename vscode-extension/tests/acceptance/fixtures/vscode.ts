@@ -636,6 +636,8 @@ export async function launchVSCode(options: LaunchVSCodeOptions = {}): Promise<V
       "security.workspace.trust.enabled": false,
       "telemetry.telemetryLevel": "off",
       "update.mode": "none",
+      "editor.autoClosingBrackets": "never",
+      "editor.autoClosingQuotes": "never",
       "editor.wordBasedSuggestions": "off",
       "git.openRepositoryInParentFolders": "never",
       "postgresql-workbench.acceptanceControlFile": controlFile,
