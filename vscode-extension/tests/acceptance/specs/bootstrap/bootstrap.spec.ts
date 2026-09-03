@@ -167,7 +167,7 @@ test("recovers, renames, and removes a Connection after connection errors", asyn
     const removal = startConnectionAction(vscode, INVALID_CONNECTION_ID, "Remove Connection");
     await confirmConnectionRemoval(workbench);
     await removal;
-    await workbench.tree.expectItemAbsent(RENAMED_CONNECTION);
+    await workbench.tree.expectItemAbsent(RENAMED_CONNECTION, 10_000);
     await expect(
       workbench.page.getByRole("dialog", { name: CONNECTION_ERROR_NOTIFICATION }),
     ).toBeHidden();

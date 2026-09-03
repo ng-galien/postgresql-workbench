@@ -378,6 +378,9 @@ export class ConnectionManager implements vscode.Disposable {
 
         const classifiedFailure = failure;
         if (classifiedFailure) {
+          // The failed endpoint remains a saved, disconnected Connection. Publish that state even
+          // when the initial root refresh is still materializing the newly added row.
+          this.fire([id]);
           const actions =
             classifiedFailure.kind === "auth"
               ? ["Change Password", "Edit Connection"]

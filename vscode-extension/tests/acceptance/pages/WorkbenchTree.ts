@@ -229,17 +229,20 @@ export class WorkbenchTree {
   }
 
   async hasItem(label: RegExp): Promise<boolean> {
-    if (await this.isEmptyConnectionsView()) return false;
-    if (!(await this.locator().isVisible())) return false;
-    try {
-      await this.findItem(label);
-      return true;
-    } catch (error) {
-      if (await this.isEmptyConnectionsView()) return false;
-      if (!(await this.locator().isVisible())) return false;
-      if (error instanceof TreeItemNotFoundError) return false;
-      throw error;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      if ((await this.waitForPresentation()) === "empty") return false;
+      try {
+        await this.findItem(label);
+        return true;
+      } catch (error) {
+        if (!(error instanceof TreeItemNotFoundError)) throw error;
+        if (await this.isEmptyConnectionsView()) return false;
+        if (await this.locator().isVisible()) {
+          if (attempt === 1) return false;
+        }
+      }
     }
+    throw new Error(`The ${this.accessibleName} TreeView remained between presentations`);
   }
 
   async waitForItem(label: RegExp, timeout = 5_000): Promise<Locator> {
@@ -266,6 +269,24 @@ export class WorkbenchTree {
       this.accessibleName === "Connections" &&
       (await this.page.getByRole("button", { name: "Open Connections", exact: true }).isVisible())
     );
+  }
+
+  private async waitForPresentation(): Promise<"empty" | "tree"> {
+    let presentation: "empty" | "transition" | "tree" = "transition";
+    await expect
+      .poll(
+        async () => {
+          presentation = (await this.isEmptyConnectionsView())
+            ? "empty"
+            : (await this.locator().isVisible())
+              ? "tree"
+              : "transition";
+          return presentation;
+        },
+        { timeout: 2_000 },
+      )
+      .not.toBe("transition");
+    return presentation as "empty" | "tree";
   }
 
   async itemTexts(label: RegExp): Promise<string[]> {

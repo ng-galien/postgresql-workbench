@@ -956,6 +956,23 @@ export class WorkbenchTreeProvider
       this.refreshScratchpadConnections(change.connectionIds);
       return;
     }
+    if (
+      change.connectionIds.some((connectionId) => {
+        const connection = this.connections.store.get(connectionId);
+        return (
+          connection &&
+          ![...this.visibleItems.values()].some(
+            (item) => "connection" in item && item.connection.id === connection.id,
+          )
+        );
+      })
+    ) {
+      // A root refresh that adds a Connection can still be rendering when its immediate
+      // connect result arrives. An item-only event cannot materialize that new root, so
+      // publish the current root snapshot again instead of leaving the welcome view stale.
+      this.refresh(true);
+      return;
+    }
     for (const connectionId of change.connectionIds) {
       const connection = this.connections.store.get(connectionId);
       if (!connection) continue;

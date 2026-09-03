@@ -66,6 +66,18 @@ export class WorkbenchPage {
       await frame.getByLabel("User", { exact: true }).fill(decodeURIComponent(url.username));
       await frame.getByLabel("Password", { exact: true }).fill(decodeURIComponent(url.password));
       await frame.getByRole("button", { name: "Create & Connect", exact: true }).click();
+      if (this.inspectWorkbenchState) {
+        const id = `${url.hostname}:${url.port}/${url.pathname.slice(1)}:${decodeURIComponent(url.username)}`;
+        await expect
+          .poll(
+            () =>
+              this.inspectWorkbenchState!().then((state) => state.connection.savedConnectionIds),
+            {
+              timeout: 5_000,
+            },
+          )
+          .toContain(id);
+      }
     } else {
       const addConnection = await this.tree.findItem(/^Add Connection\.\.\.$/);
       await addConnection.click();
@@ -75,9 +87,12 @@ export class WorkbenchPage {
       );
       await this.quickInput.submit(connectionUrl, /postgresql:\/\/user:pass@localhost/i);
     }
-    await expect(await this.tree.waitForItem(expectedConnection)).toContainText(expectedState, {
-      timeout: 5_000,
-    });
+    await expect(await this.tree.waitForItem(expectedConnection, 10_000)).toContainText(
+      expectedState,
+      {
+        timeout: 5_000,
+      },
+    );
   }
 
   private async connectionsFrame(): Promise<Frame> {

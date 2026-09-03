@@ -219,6 +219,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
     workbenchIndex.releaseAcceptancePhaseGate(runId, phase);
   acceptanceProbes.inspectWorkbenchState = () => ({
     connection: {
+      savedConnectionIds: cm.connections.map((connection) => connection.id),
       connectedConnectionIds: [...cm.connectedConnectionIds],
       connected: cm.connectedConnectionIds.length > 0,
     },

@@ -312,6 +312,7 @@ export interface WorkbenchIndexActiveRun {
 
 export interface WorkbenchStateSnapshot {
   connection: {
+    savedConnectionIds: string[];
     connected: boolean;
     connectedConnectionIds: string[];
   };
