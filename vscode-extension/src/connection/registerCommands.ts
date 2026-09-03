@@ -49,9 +49,7 @@ export function registerConnectionCommands(options: ConnectionCommandOptions): C
     ),
     vscode.commands.registerCommand(
       "postgresql-workbench.removeConnection",
-      (item: ConnectionItem) => {
-        connections.commands.removeConnection(item.connection.id);
-      },
+      (item: ConnectionItem) => connections.commands.removeConnection(item.connection.id),
     ),
     vscode.commands.registerCommand("postgresql-workbench.editConnection", (item: ConnectionItem) =>
       connections.commands.editConnection(item.connection.id),

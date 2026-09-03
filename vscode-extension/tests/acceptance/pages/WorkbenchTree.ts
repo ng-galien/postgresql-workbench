@@ -230,10 +230,13 @@ export class WorkbenchTree {
 
   async hasItem(label: RegExp): Promise<boolean> {
     if (await this.isEmptyConnectionsView()) return false;
+    if (!(await this.locator().isVisible())) return false;
     try {
       await this.findItem(label);
       return true;
     } catch (error) {
+      if (await this.isEmptyConnectionsView()) return false;
+      if (!(await this.locator().isVisible())) return false;
       if (error instanceof TreeItemNotFoundError) return false;
       throw error;
     }
