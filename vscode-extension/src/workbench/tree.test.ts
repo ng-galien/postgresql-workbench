@@ -92,6 +92,72 @@ const createdTable: WorkbenchObjectModel = {
 };
 
 describe("Workbench tree object navigation", () => {
+  it("leaves the Connections view empty when no Connection is saved", async () => {
+    const event = () => ({ dispose: () => undefined });
+    const provider = new WorkbenchTreeProvider(
+      {
+        connections: [],
+        onChanged: event,
+      } as never,
+      { onDidChangeState: event } as never,
+      { list: async () => [], onDidChangeEntries: event } as never,
+      { transaction: () => undefined, onDidChange: event } as never,
+      { onDidChangeState: event } as never,
+    );
+
+    await expect(provider.getChildren()).resolves.toEqual([]);
+    provider.dispose();
+  });
+
+  it("refreshes roots when a new Connection status arrives before its row is materialized", async () => {
+    const connection = {
+      id: "connection-a",
+      name: "A",
+      host: "localhost",
+      port: 5432,
+      database: "a",
+      user: "postgres",
+    };
+    let connections: (typeof connection)[] = [];
+    type ConnectionChange = { connectionIds: readonly string[]; rootsChanged: boolean };
+    const listeners = new Set<(change: ConnectionChange) => void>();
+    const event = (listener?: (change: ConnectionChange) => void) => {
+      if (listener) listeners.add(listener);
+      return { dispose: () => listener && listeners.delete(listener) };
+    };
+    const noopEvent = () => ({ dispose: () => undefined });
+    const provider = new WorkbenchTreeProvider(
+      {
+        get connections() {
+          return connections;
+        },
+        store: { get: (id: string) => connections.find((candidate) => candidate.id === id) },
+        isConnectionConnected: () => false,
+        debugCapabilityFor: () => ({ status: "unknown" }),
+        onChanged: event,
+      } as never,
+      { databaseState: () => ({ status: "idle" }), onDidChangeState: noopEvent } as never,
+      { list: async () => [], onDidChangeEntries: noopEvent } as never,
+      { transaction: () => undefined, onDidChange: noopEvent } as never,
+      { onDidChangeState: noopEvent } as never,
+    );
+    await expect(provider.getChildren()).resolves.toEqual([]);
+    const emitted: Array<{ id?: string } | undefined> = [];
+    provider.onDidChangeTreeData((item) => emitted.push(item));
+
+    connections = [connection];
+    for (const listener of listeners) {
+      listener({ connectionIds: [connection.id], rootsChanged: false });
+    }
+
+    expect(emitted).toContain(undefined);
+    await expect(provider.getChildren()).resolves.toMatchObject([
+      { kind: "connection", label: "A" },
+      { kind: "add" },
+    ]);
+    provider.dispose();
+  });
+
   it("scopes a disconnect event to its exact Connection branch", async () => {
     const connectionA = {
       id: "connection-a",

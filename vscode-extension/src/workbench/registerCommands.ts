@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import type { CallSiteConnectionStore } from "../../../packages/catalog/src/callSiteAssociations.js";
 import type { WorkbenchIndexController } from "../../../packages/catalog/src/indexController.js";
 import type {
   WorkbenchObjectAction,
@@ -27,9 +28,8 @@ import type {
   DocumentConnectionTarget,
   SqlCodeLensProvider,
 } from "../codeLens/index.js";
-import type { CallSiteConnectionStore, ConnectionManager } from "../connection/index.js";
+import type { ConnectionManager } from "../connection/index.js";
 import type { PgTapTestController } from "../coverage/index.js";
-import { openCoverageClient } from "../coverage/index.js";
 import type { DataViewEditorProvider } from "../dataView/dataViewEditorProvider.js";
 import { dataViewSqlLabel } from "../dataView/dataViewUri.js";
 import type { DebugResultsViewProvider } from "../debug/index.js";
@@ -484,12 +484,12 @@ async function openDocumentSqlClient(
   output: vscode.OutputChannel,
   documentUri: string,
   reassign: () => Promise<boolean>,
-): Promise<Awaited<ReturnType<typeof openCoverageClient>> | undefined> {
+): Promise<Awaited<ReturnType<ConnectionManager["openClient"]>> | undefined> {
   const timeoutMs = vscode.workspace
     .getConfiguration("postgresql-workbench.sql")
     .get<number>("statementTimeoutMs", 60_000);
   try {
-    return await openCoverageClient(connections, connection.id, {
+    return await connections.openClient(connection.id, {
       applicationName: "postgresql-workbench:sql",
       statementTimeoutMs: Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 60_000,
     });

@@ -34,21 +34,24 @@ import {
   enrichDebugSessions,
   listDebugSessions,
 } from "../../../packages/dap/src/orphanSessions.js";
+import { postgresVisual } from "../../../packages/presentation/src/presentation.js";
 import { countLabel } from "../../../packages/rows/src/countLabel.js";
-import { postgresVisual } from "../../../packages/views/src/presentation.js";
+import {
+  resolveScratchpadAssociation,
+  type ScratchpadAssociation,
+  scratchpadExecutionMode,
+} from "../../../packages/scratchpad/src/notebookFile.js";
 import type {
   ConnectionChange,
   ConnectionManager,
   DebugCapabilitySnapshot,
 } from "../connection/index.js";
+import { vscodeThemeColour } from "../presentation/vscodeTheme.js";
 import type { ScratchpadTransaction, ScratchpadTransactionManager } from "../scratchpad/index.js";
 import {
   OPEN_SQL_NOTEBOOK_COMMAND,
-  resolveScratchpadAssociation,
-  type ScratchpadAssociation,
   type SqlNotebookEntry,
   type SqlNotebookWorkspace,
-  scratchpadExecutionMode,
   sqlNotebookDisplayName,
 } from "../scratchpad/index.js";
 
@@ -720,6 +723,7 @@ class WorkbenchTreeChildren {
 
   private async rootChildren(): Promise<PlpgsqlTreeItem[]> {
     if (this.scope === "scratchpads") return this.scratchpads();
+    if (this.connections.connections.length === 0) return [];
     return [
       ...this.connections.connections.map((connection) => {
         const connected = this.connections.isConnectionConnected(connection.id);
@@ -950,6 +954,23 @@ export class WorkbenchTreeProvider
     }
     if (this.scope === "scratchpads") {
       this.refreshScratchpadConnections(change.connectionIds);
+      return;
+    }
+    if (
+      change.connectionIds.some((connectionId) => {
+        const connection = this.connections.store.get(connectionId);
+        return (
+          connection &&
+          ![...this.visibleItems.values()].some(
+            (item) => "connection" in item && item.connection.id === connection.id,
+          )
+        );
+      })
+    ) {
+      // A root refresh that adds a Connection can still be rendering when its immediate
+      // connect result arrives. An item-only event cannot materialize that new root, so
+      // publish the current root snapshot again instead of leaving the welcome view stale.
+      this.refresh(true);
       return;
     }
     for (const connectionId of change.connectionIds) {
@@ -1330,7 +1351,7 @@ function themedIcon(id: string, color: string): vscode.ThemeIcon {
 
 function postgresThemeIcon(kind: string): vscode.ThemeIcon {
   const visual = postgresVisual(kind);
-  return themedIcon(visual.icon, visual.color);
+  return themedIcon(visual.icon, vscodeThemeColour(visual.color));
 }
 
 function objectTreeItem(

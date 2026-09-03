@@ -1,5 +1,5 @@
 import { Handle, Position, useStore } from "@xyflow/react";
-import { postgresVisual } from "../../presentation.js";
+import { postgresVisual } from "../../../../presentation/src/presentation.js";
 import type { CockpitNodeModel } from "../graph/domain.js";
 import { useCockpitStore } from "../graph/store.js";
 import { cockpitZoomLevel } from "../graph/zoom.js";

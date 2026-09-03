@@ -14,7 +14,8 @@ import type {
  * What a result view renders: the rows PostgreSQL returned, or the error it raised, plus the
  * Connection they came from. This is the contract the Extension Host must satisfy.
  */
-export interface ScratchpadAssociationSnapshot {
+/** The Connection a result came from, as every result surface presents it. */
+export interface ResultBinding {
   connectionId: string;
   connectionName: string;
   database: string;
@@ -37,7 +38,8 @@ export interface ResultTable {
 
 interface SqlStatementResultBase {
   version: 3;
-  binding: ScratchpadAssociationSnapshot;
+  /** Absent when the producer no longer knows the Connection; the view then shows no binding. */
+  binding?: ResultBinding;
   durationMs: number;
 }
 
@@ -121,6 +123,34 @@ export interface DebugResultSummary {
 export interface DebugResultViewState {
   results: DebugResultSummary[];
   selected?: DebugResultEntry;
+  /** The Connection the selected result came from, when the host still knows it. */
+  selectedBinding?: ResultBinding;
+}
+
+/**
+ * A rowset as the shared result view renders it. `resultId` is given only when a host answers
+ * inspect and export for it — an id on an unhosted payload would draw buttons nobody serves.
+ */
+export function sqlRowsetPayload(
+  result: DebugResult,
+  options: { binding?: ResultBinding; statement?: string; resultId?: string } = {},
+): SqlNotebookResultPayload {
+  const { binding, statement, resultId } = options;
+  return {
+    version: 3,
+    kind: "rowset",
+    ...(resultId !== undefined ? { resultId } : {}),
+    ...(binding ? { binding } : {}),
+    ...(statement !== undefined ? { statement } : {}),
+    durationMs: result.durationMs,
+    command: result.command,
+    columns: result.columns,
+    rows: result.rows,
+    rowCount: result.rowCount,
+    capturedRowCount: result.capturedRowCount,
+    truncated: result.truncated,
+    truncationReasons: result.truncationReasons,
+  };
 }
 
 /** An error a surface shows as a result: a title, a message, and whatever PostgreSQL said. */

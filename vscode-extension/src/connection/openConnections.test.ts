@@ -165,6 +165,29 @@ beforeEach(() => {
 });
 
 describe("ConnectionManager independent Connection transitions", () => {
+  it("names the shared PostgreSQL session and applies the saved client tuning", async () => {
+    const { manager } = fixture();
+    const connection: ConnectionConfig = {
+      ...NEXT_CONNECTION,
+      tuning: { keepAlive: true, searchPath: "shop, public" },
+    };
+    await manager.store.add(connection, "next-password");
+    service.connect.mockResolvedValue(postgresClient());
+
+    await expect(manager.connectConnection(connection.id)).resolves.toBe(true);
+
+    expect(service.connect).toHaveBeenCalledWith({
+      host: "next",
+      port: 5432,
+      database: "next",
+      user: "postgres",
+      password: "next-password",
+      tuning: connection.tuning,
+      applicationName: "postgresql-workbench:connection",
+    });
+    manager.dispose();
+  });
+
   it("keeps connection controls independent from debugger capability detection", async () => {
     const { manager } = fixture();
     await manager.store.add(NEXT_CONNECTION, "next-password");

@@ -19,6 +19,11 @@ export class ResultTable {
     return this.root.locator(`td[data-row="${rowIndex}"][data-column="${columnIndex}"]`);
   }
 
+  /** The texts of one column, in the order the rows are shown. */
+  async columnTexts(columnIndex: number): Promise<string[]> {
+    return this.root.locator(`tbody td[data-column="${columnIndex}"]`).allTextContents();
+  }
+
   /** Every cell holding exactly this text, whichever column it sits in. */
   cellsWithText(text: string): Locator {
     return this.root
@@ -56,14 +61,20 @@ export class ResultTable {
     await this.command("Cancel loading").click();
   }
 
+  get inspectorButton(): Locator {
+    return this.command("Show the value under the cursor, whole");
+  }
+
+  get exportButton(): Locator {
+    return this.command("Export rows to a file…");
+  }
+
   async inspect(): Promise<void> {
-    await this.root
-      .getByRole("button", { name: "Show the value under the cursor, whole", exact: true })
-      .click();
+    await this.inspectorButton.click();
   }
 
   async openExport(): Promise<Locator> {
-    await this.root.getByRole("button", { name: "Export rows to a file…", exact: true }).click();
+    await this.exportButton.click();
     return this.root.getByRole("region", { name: "Export rows", exact: true });
   }
 

@@ -73,6 +73,7 @@ function scopedIndex<T extends Record<string, unknown>>(index: T): T {
 function graphView(): WorkbenchGraphView {
   return new WorkbenchGraphView({
     extensionUri: {} as never,
+    sqlEditorLanguageServerUrl: () => "ws://127.0.0.1:1/test",
     index: scopedIndex({ indexedSymbols: [] }) as never,
     openDefinition: async () => undefined,
     showActions: async () => undefined,
@@ -161,6 +162,7 @@ describe("Workbench graph Connection context invalidation", () => {
     };
     const view = new WorkbenchGraphView({
       extensionUri: {} as never,
+      sqlEditorLanguageServerUrl: () => "ws://127.0.0.1:1/test",
       index: scopedIndex(index) as never,
       openDefinition: async () => undefined,
       showActions: async () => undefined,
@@ -243,6 +245,7 @@ describe("Workbench graph Connection context invalidation", () => {
     };
     const view = new WorkbenchGraphView({
       extensionUri: {} as never,
+      sqlEditorLanguageServerUrl: () => "ws://127.0.0.1:1/test",
       index: scopedIndex(index) as never,
       openDefinition: async () => undefined,
       showActions: async () => undefined,
@@ -317,6 +320,7 @@ describe("Workbench graph Connection context invalidation", () => {
     controller.handleDrag([{ kind: "object", object: droppedObject }] as never, transfer);
     const view = new WorkbenchGraphView({
       extensionUri: {} as never,
+      sqlEditorLanguageServerUrl: () => "ws://127.0.0.1:1/test",
       index: scopedIndex(index) as never,
       openDefinition: async () => undefined,
       showActions: async () => undefined,
@@ -404,6 +408,7 @@ describe("Workbench graph Connection context invalidation", () => {
     );
     const view = new WorkbenchGraphView({
       extensionUri: {} as never,
+      sqlEditorLanguageServerUrl: () => "ws://127.0.0.1:1/test",
       index: scopedIndex(index) as never,
       openDefinition: async () => undefined,
       showActions: async () => undefined,
@@ -460,6 +465,7 @@ describe("Workbench graph Connection context invalidation", () => {
     };
     const view = new WorkbenchGraphView({
       extensionUri: {} as never,
+      sqlEditorLanguageServerUrl: () => "ws://127.0.0.1:1/test",
       index: scopedIndex(index) as never,
       openDefinition: async () => undefined,
       showActions: async () => undefined,
@@ -525,6 +531,7 @@ describe("Workbench graph Connection context invalidation", () => {
     };
     const view = new WorkbenchGraphView({
       extensionUri: {} as never,
+      sqlEditorLanguageServerUrl: () => "ws://127.0.0.1:1/test",
       index: scopedIndex(index) as never,
       openDefinition: async () => undefined,
       showActions: async () => undefined,

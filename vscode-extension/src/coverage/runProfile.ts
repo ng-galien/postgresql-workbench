@@ -9,24 +9,26 @@ import {
   type CoverageSuiteRoutineResult,
   type CoverageTestClient,
   type CoverageTestReport,
+  coverageAsJson,
+  coverageAsLcov,
+  coverageDelta,
+  createCoverageSyntaxService,
+  type ExportedCoverageFile,
   executePgTapTest,
+  indexCoverageSnapshot,
   isCleanCoverageCancellation,
+  mapCoverageToSource,
+  matchesCoveragePatterns,
   type PgTapReport,
   type PgTapSourceRoutine,
   type PgTapTestRoutine,
   resetPgTapState,
   toCoverageTestReport,
 } from "../../../packages/coverage/src/index.js";
-import { createCoverageSyntaxService } from "../../../packages/coverage/src/syntaxService.js";
 import { destroyClientSocket } from "../../../packages/rows/src/closingClient.js";
 import type { SyntaxParser } from "../../../packages/sql/src/analysis/syntaxTree.js";
 import type { ConnectionManager } from "../connection/index.js";
 import { errorMessage } from "../errorMessage.js";
-import { openCoverageClient } from "./client.js";
-import { coverageAsJson, coverageAsLcov, type ExportedCoverageFile } from "./coverageReport.js";
-import { coverageDelta, indexCoverageSnapshot } from "./delta.js";
-import { mapCoverageToSource } from "./mapToSource.js";
-import { matchesCoveragePatterns } from "./selection.js";
 
 export interface PgTapCoverageTarget {
   item: vscode.TestItem;
@@ -159,8 +161,7 @@ export class PgTapCoverageProfile implements vscode.Disposable {
     } finally {
       validation.dispose();
     }
-    const files = exportFiles;
-    if (files.length === 0) {
+    if (exportFiles.length === 0) {
       await vscode.window.showInformationMessage("Run pgTAP tests with coverage before exporting.");
       return false;
     }
@@ -184,7 +185,8 @@ export class PgTapCoverageProfile implements vscode.Disposable {
       saveLabel: "Export Coverage",
     });
     if (!destination) return false;
-    const content = format.label === "LCOV" ? coverageAsLcov(files) : coverageAsJson(files);
+    const content =
+      format.label === "LCOV" ? coverageAsLcov(exportFiles) : coverageAsJson(exportFiles);
     await vscode.workspace.fs.writeFile(destination, new TextEncoder().encode(content));
     return true;
   }
@@ -315,7 +317,7 @@ export class PgTapCoverageProfile implements vscode.Disposable {
       const syntax = createCoverageSyntaxService(() => this.syntaxParser());
       const runner = new CoverageRunner(
         () =>
-          openCoverageClient(this.connections, first.connectionId, {
+          this.connections.openClient(first.connectionId, {
             applicationName: "postgresql-workbench:coverage-runner",
             statementTimeoutMs: 0,
           }),
@@ -525,10 +527,9 @@ function mergeCoverage(
   symbolUri: string,
   result: CoverageSuiteRoutineResult,
 ): void {
-  const key = symbolUri;
-  const existing = aggregates.get(key);
+  const existing = aggregates.get(symbolUri);
   if (!existing) {
-    aggregates.set(key, {
+    aggregates.set(symbolUri, {
       symbolUri,
       connectionId,
       routine: result.routine,
@@ -696,7 +697,7 @@ async function assertSourceCurrent(
   if (token.isCancellationRequested) throw new Error("Coverage detail loading cancelled.");
   const client = await openClientWithCancellation(
     () =>
-      openCoverageClient(connections, metadata.connectionId, {
+      connections.openClient(metadata.connectionId, {
         applicationName: "postgresql-workbench:coverage-details",
         statementTimeoutMs: 10_000,
       }),

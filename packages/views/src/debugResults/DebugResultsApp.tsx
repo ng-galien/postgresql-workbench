@@ -1,33 +1,35 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { debugResultEntryStatus } from "../../../dap/src/debugger/launch/index.js";
 import { countLabel } from "../../../rows/src/countLabel.js";
-import { followLinkRequest } from "../../../rows/src/followLink.js";
 import {
   type DebugResultSummary,
   type DebugResultViewState,
   notebookErrorPayload,
+  type ResultBinding,
   sqlFailurePayload,
+  sqlRowsetPayload,
 } from "../../../rows/src/resultPayload.js";
-import { ResultGrid } from "../results/ResultGrid.js";
-import { resultRowSummary, truncationNotices } from "../results/resultFormatting.js";
+import type { ViewMessaging } from "../messaging.js";
 import { SqlErrorView } from "../results/SqlErrorView.js";
-import type { WebviewMessaging } from "../webviewPage.js";
+import { type SqlResultMessaging, SqlResultView } from "../results/SqlResultView.js";
 import type { DebugResultsRequest, DebugResultsResponse } from "./protocol.js";
 
 /**
- * The result of the debugged call: its history, and the selected result as a plain table. It is
- * the innermost of the three result views — the same grid the Scratchpad and the Data View use,
- * with none of their options, because a debug result is neither sorted on the server nor edited.
+ * The result of the debugged call: its history, and the selected result in the same result view
+ * the Scratchpad renders — inspection and export included, because a captured rowset answers both
+ * from the rows it retains. Only navigation is absent: a debug capture is never paged.
  */
 export function DebugResultsApp({
   state,
-  post,
+  messaging,
 }: {
   state: DebugResultViewState;
-  post: (message: DebugResultsRequest) => void;
+  messaging: ViewMessaging<DebugResultsRequest, DebugResultsResponse>;
 }) {
+  const post = messaging.post;
   const selected = state.selected;
   const source = selected && "source" in selected ? selected.source : undefined;
+  const sqlMessaging = useMemo(() => sqlResultMessaging(messaging), [messaging]);
 
   return (
     <div className="debug-results">
@@ -59,7 +61,11 @@ export function DebugResultsApp({
       {selected === undefined ? (
         <p className="result-empty">Run a PL/pgSQL debug call to see its result.</p>
       ) : (
-        <ResultDetail selected={selected} post={post} />
+        <ResultDetail
+          selected={selected}
+          binding={state.selectedBinding}
+          messaging={sqlMessaging}
+        />
       )}
     </div>
   );
@@ -67,10 +73,12 @@ export function DebugResultsApp({
 
 function ResultDetail({
   selected,
-  post,
+  binding,
+  messaging,
 }: {
   selected: NonNullable<DebugResultViewState["selected"]>;
-  post: (message: DebugResultsRequest) => void;
+  binding?: ResultBinding;
+  messaging: SqlResultMessaging;
 }) {
   const status = debugResultEntryStatus(selected);
   if (status === "pending") {
@@ -98,29 +106,46 @@ function ResultDetail({
       />
     );
   }
+  if (selected.columns.length === 0) {
+    return <p className="result-empty">{selected.command} completed with no result columns.</p>;
+  }
   return (
-    <>
-      <header className="result-toolbar">
-        <div className="result-summary">
-          <span className="result-badge status-success">Completed</span>
-          <span className="result-badge">{selected.command}</span>
-          <span className="result-badge">{resultRowSummary(selected)}</span>
-          <span className="result-badge">{countLabel(selected.columns.length, "column")}</span>
-          <span className="result-badge">{selected.durationMs} ms</span>
-        </div>
-      </header>
-      {truncationNotices(selected).map((notice) => (
-        <p className="result-message result-warning" key={notice}>
-          {notice}
-        </p>
-      ))}
-      {selected.columns.length === 0 ? (
-        <p className="result-empty">{selected.command} completed with no result columns.</p>
-      ) : (
-        <ResultGrid payload={selected} onFollowLink={(href) => post(followLinkRequest(href))} />
-      )}
-    </>
+    <SqlResultView
+      key={selected.id}
+      payload={sqlRowsetPayload(selected, {
+        resultId: selected.id,
+        ...(binding ? { binding } : {}),
+      })}
+      messaging={messaging}
+    />
   );
+}
+
+/**
+ * The subset of the shared result protocol this view's host answers. A message outside it — the
+ * paged-navigation attach a static capture never sends — is dropped rather than forwarded.
+ */
+function sqlResultMessaging(
+  messaging: ViewMessaging<DebugResultsRequest, DebugResultsResponse>,
+): SqlResultMessaging {
+  return {
+    postMessage: (message) => {
+      if (
+        message.type === "sql-result/inspect" ||
+        message.type === "sql-result/preview" ||
+        message.type === "sql-result/export" ||
+        message.type === "follow-link"
+      ) {
+        messaging.post(message);
+      }
+    },
+    subscribe: (listener) =>
+      messaging.subscribe((message) => {
+        if (message.type === "sql-result/inspected" || message.type === "sql-result/previewed") {
+          listener(message);
+        }
+      }),
+  };
 }
 
 function historyLabel(item: DebugResultSummary): string {
@@ -144,7 +169,7 @@ function historyState(item: DebugResultSummary): string {
 
 /** Subscribes the view to the Extension Host and announces it is ready to receive a state. */
 export function useDebugResultsState(
-  messaging: WebviewMessaging<DebugResultsRequest, DebugResultsResponse>,
+  messaging: ViewMessaging<DebugResultsRequest, DebugResultsResponse>,
 ): DebugResultViewState {
   const [state, setState] = useState<DebugResultViewState>({ results: [] });
   useEffect(() => {

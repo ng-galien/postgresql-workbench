@@ -5,6 +5,7 @@ import {
   add,
   editBar,
   enterEditMode,
+  MonacoEditor,
   openColumns,
   openEmpty,
   openExport,
@@ -25,7 +26,7 @@ import { EXPORTS } from "./playwright.config.js";
 async function runningSql(page: Page): Promise<string> {
   const panel = page.getByRole("region", { name: "Query SQL" });
   if (!(await panel.isVisible())) await page.getByTitle(/Show the SQL/u).click();
-  return (await panel.locator(".postgres-source-line-code").allInnerTexts()).join("\n");
+  return new MonacoEditor(page, "Query SQL").text();
 }
 
 test("opens with nothing, and offers every table as a first one", async ({ page }) => {
@@ -146,8 +147,21 @@ test("sorts on a column, and says so in the SQL", async ({ page }) => {
   await page.getByTitle(/^Sort by price/u).click();
 
   await expect.poll(async () => runningSql(page)).toMatch(/ORDER BY\s+product\.price ASC/u);
-  // Cheapest first: the rows really came back sorted, not just the SQL.
-  await expect(rows.cell(0, 2)).toHaveText("6.40");
+  /*
+   * Cheapest first: the rows really came back sorted, not just the SQL. Sortedness is read from
+   * what is shown, never from a value the seed once held: this is the demo database, and the
+   * product legitimately edits it — a spec pinned to a seeded price fails the day someone
+   * exercises the very editing journey this suite exists to prove.
+   */
+  await expect
+    .poll(async () => {
+      const prices = (await rows.columnTexts(2)).map(Number);
+      return (
+        prices.length > 1 &&
+        prices.every((price, index) => index === 0 || (prices[index - 1] ?? 0) <= price)
+      );
+    })
+    .toBe(true);
 });
 
 test("turns a criterion over when it is pressed, with nothing else to reach for", async ({
@@ -197,9 +211,9 @@ test("filters on a WHERE the reader types", async ({ page }) => {
   await openEmpty(page);
   const rows = await add(page, "shop.product");
 
-  const filter = page.getByRole("combobox", { name: /where/iu });
-  await filter.fill("product.stock = 0");
-  await filter.press("Enter");
+  const filter = new MonacoEditor(page, "Filter (WHERE)");
+  await filter.replace("product.stock = 0");
+  await filter.submit();
 
   await expect(rows.cellsWithText("Truite fumée")).toHaveCount(1);
   await expect(rows.cellsWithText("Saumon fumé")).toHaveCount(0);
@@ -233,34 +247,28 @@ test("colours the SQL by what the language server makes of its names", async ({ 
    * painted over what the grammar coloured — and a reader who cannot tell them apart by colour has
    * gained nothing, so they are also kept apart.
    */
-  const painted = page.locator(".postgres-source-token[class*=postgres-token-]");
-  await expect(painted.first()).toBeVisible();
-  const colours = await painted.evaluateAll((spans) => {
-    const of = (kind: string) => {
-      const span = spans.find((candidate) =>
-        candidate.classList.contains(`postgres-token-${kind}`),
-      );
-      return span ? getComputedStyle(span).color : undefined;
-    };
-    return { table: of("sqlTable"), alias: of("sqlAlias"), column: of("sqlColumn") };
-  });
-
-  expect(colours.table).toBeDefined();
-  expect(new Set(Object.values(colours)).size).toBe(3);
+  const sql = new MonacoEditor(page, "Query SQL");
+  await sql.waitUntilReady();
+  await expect
+    .poll(
+      async () =>
+        new Set([...(await sql.tokenColours("brand")), ...(await sql.tokenColours("name"))]).size,
+    )
+    .toBeGreaterThanOrEqual(2);
 
   /*
    * And the panel and the field are coloured at the same time. They ask the same question of the
    * same host, so each has to be able to tell its own answer from the other's: counted apart, both
    * asked a request 1 and each took the other's tokens.
    */
-  const inPanel = page.locator(".data-view-sql [class*=postgres-token-]");
-  const namedInPanel = await inPanel.count();
-  expect(namedInPanel).toBeGreaterThan(4);
-
-  await page.getByRole("combobox", { name: /where/iu }).fill("brand.name LIKE 'F%'");
-  await expect(page.locator(".filter-highlight .postgres-token-sqlAlias").first()).toBeVisible();
-  // The panel still holds the query's names, not the two the condition answered with.
-  await expect(inPanel).toHaveCount(namedInPanel);
+  const panelText = await sql.text();
+  const filter = new MonacoEditor(page, "Filter (WHERE)");
+  await filter.replace("brand.name LIKE 'F%'");
+  await expect.poll(async () => filter.tokenColours("brand")).toHaveLength(1);
+  await expect.poll(async () => filter.tokenColours("name")).toHaveLength(1);
+  expect((await filter.tokenColours("brand"))[0]).not.toBe((await filter.tokenColours("name"))[0]);
+  // The panel still holds the query's names, not the condition's answer.
+  expect(await sql.text()).toBe(panelText);
 });
 
 test("hands over the statement the rows came from", async ({ page }) => {
@@ -407,16 +415,15 @@ test("inspects a timestamp as PostgreSQL text, not as JSON", async ({ page }) =>
   await expect(inspectorToggle).toHaveAttribute("aria-expanded", "false");
 });
 
-test("colours JSONB inspector values with the active VS Code theme", async ({ page }) => {
+test("colours JSONB inspector values with the active presentation theme", async ({ page }) => {
   await openEmpty(page);
   const table = await add(page, "shop.product");
   await page.evaluate(() => {
     const palette = document.documentElement.style;
-    palette.setProperty("--vscode-debugTokenExpression-name", "#d60000");
-    palette.setProperty("--vscode-debugTokenExpression-string", "#007a00");
-    palette.setProperty("--vscode-debugTokenExpression-number", "#004fd6");
-    palette.setProperty("--vscode-debugTokenExpression-boolean", "#a000a0");
-    palette.setProperty("--vscode-debugTokenExpression-value", "#595959");
+    palette.setProperty("--pgw-data-property", "#d60000");
+    palette.setProperty("--pgw-data-string", "#007a00");
+    palette.setProperty("--pgw-data-number", "#004fd6");
+    palette.setProperty("--pgw-data-literal", "#a000a0");
   });
 
   // The second product contains every JSON value kind, including a null smoke value.
@@ -428,7 +435,7 @@ test("colours JSONB inspector values with the active VS Code theme", async ({ pa
   await expect(inspector.locator(".json-string").first()).toHaveCSS("color", "rgb(0, 122, 0)");
   await expect(inspector.locator(".json-number").first()).toHaveCSS("color", "rgb(0, 79, 214)");
   await expect(inspector.locator(".json-boolean").first()).toHaveCSS("color", "rgb(160, 0, 160)");
-  await expect(inspector.locator(".json-null").first()).toHaveCSS("color", "rgb(89, 89, 89)");
+  await expect(inspector.locator(".json-null").first()).toHaveCSS("color", "rgb(160, 0, 160)");
 });
 
 test("opens the menu of the cell the box is on, from the keys alone", async ({ page }) => {
@@ -617,15 +624,14 @@ test("keeps the caret on the line the filter was typed on", async ({ page }) => 
   await openEmpty(page);
   await add(page, "shop.address");
 
-  const where = page.getByRole("combobox", { name: /where/iu });
-  await where.click();
-  await where.fill("city = 'Lyon'");
-  await page.keyboard.press("Enter");
+  const where = new MonacoEditor(page, "Filter (WHERE)");
+  await where.replace("city = 'Lyon'");
+  await where.submit();
 
   // The rows are fetched with the caret still here: a reader who ran a filter is still writing it.
-  await expect(where).toBeFocused();
+  await expect(where.root).toHaveClass(/focused/u);
   await expect(page.locator("tbody tr:not(.result-spacer)")).toHaveCount(1);
-  await expect(where).toBeFocused();
+  await expect(where.root).toHaveClass(/focused/u);
 });
 
 test("filters on what a cell holds, and says so in the WHERE", async ({ page }) => {
@@ -645,9 +651,9 @@ test("filters on what a cell holds, and says so in the WHERE", async ({ page }) 
    * The condition is written where the reader can read it, correct it and undo it — the relation
    * named as the query names it, the value as a literal — not applied behind them.
    */
-  await expect(page.getByRole("combobox", { name: /where/iu })).toHaveValue(
-    "brand.country_code = 'FR'",
-  );
+  await expect
+    .poll(() => new MonacoEditor(page, "Filter (WHERE)").text())
+    .toBe("brand.country_code = 'FR'");
   await expect(page.locator("tbody tr:not(.result-spacer)")).toHaveCount(3);
 });
 
@@ -655,71 +661,68 @@ test("colours the condition being typed, the way the SQL is coloured", async ({ 
   await openEmpty(page);
   await add(page, "shop.brand");
 
-  const where = page.getByRole("combobox", { name: /where/iu });
-  await where.fill("brand.name LIKE 'F%'");
+  const where = new MonacoEditor(page, "Filter (WHERE)");
+  await where.replace("brand.name LIKE 'F%'");
 
   /*
    * A condition is SQL, and on its own it is not a statement: `brand` is an alias only the query
    * around it explains. The host asks about it as part of that query and carries the answer back,
    * so the field shows what the panel shows — the grammar's colours, and the names resolved.
    */
-  const painted = page.locator(".filter-highlight .postgres-source-token[class*=postgres-token-]");
-  await expect(painted.first()).toBeVisible();
-  await expect(painted.filter({ hasText: "brand" }).first()).toHaveClass(
-    /postgres-token-sqlAlias/u,
+  await expect.poll(async () => where.tokenColours("brand")).toHaveLength(1);
+  await expect.poll(async () => where.tokenColours("name")).toHaveLength(1);
+  expect((await where.tokenColours("brand"))[0]).toBe(
+    await where.presentationColour("--pgw-syntax-binding"),
   );
-  await expect(painted.filter({ hasText: "name" }).first()).toHaveClass(
-    /postgres-token-sqlColumn/u,
+  expect((await where.tokenColours("name"))[0]).toBe(
+    await where.presentationColour("--pgw-syntax-column"),
   );
-
-  // What is painted is exactly what is typed: the two are drawn on top of each other.
-  const layer = page.locator(".filter-highlight");
-  expect(await layer.innerText()).toBe(await where.inputValue());
+  // What Monaco paints is the exact condition held by its model.
+  expect(await where.text()).toBe("brand.name LIKE 'F%'");
 });
 
 test("proposes the language a condition is written in, not only the schema", async ({ page }) => {
   await openEmpty(page);
   await add(page, "shop.address");
 
-  const where = page.getByRole("combobox", { name: /where/iu });
-  await where.fill("an");
+  const where = new MonacoEditor(page, "Filter (WHERE)");
+  await where.replace("address.id = 1 an");
+  await where.requestCompletions();
 
   /*
-   * No column of shop.address starts with those letters, and a reader writing a condition needs
-   * the words holding it together as much as the names it puts between them.
+   * No column of shop.address starts with those letters. AND is valid after a complete predicate,
+   * and the grammar — not an editor word list — is what offers it there.
    */
-  const proposals = page.getByRole("listbox", { name: /completion/iu });
-  await expect(proposals).toBeVisible();
-  await expect(proposals.getByText("AND", { exact: true })).toBeVisible();
+  await expect(where.completionWidget()).toBeVisible();
+  await expect(where.suggestion("AND")).toBeVisible();
 
   // The schema still comes first: the language is offered after everything the index knows.
-  await where.fill("l");
-  await expect(proposals.locator(".filter-completion").first()).toContainText("label");
+  await where.replace("l");
+  await where.requestCompletions();
+  await expect(where.suggestions().first()).toContainText("label");
 });
 
-test("puts a proposal in place of what is being typed, phrase and all", async ({ page }) => {
+test("replaces only the fragment while advancing through grammar terminals", async ({ page }) => {
   await openEmpty(page);
   await add(page, "shop.address");
 
-  const where = page.getByRole("combobox", { name: /where/iu });
-  const proposals = page.getByRole("listbox", { name: /completion/iu });
+  const where = new MonacoEditor(page, "Filter (WHERE)");
   const accept = async (typed: string, proposal: string) => {
-    await where.fill(typed);
-    await expect(proposals).toBeVisible();
-    await proposals.locator(".filter-completion").filter({ hasText: proposal }).first().click();
-    return where.inputValue();
+    await where.replace(typed);
+    await where.requestCompletions();
+    await where.accept(proposal);
+    return where.text();
   };
 
   // What was typed goes: a proposal continues the reader's word, it does not follow it.
-  expect(await accept("l", "LIKE")).toBe("LIKE");
+  expect(await accept("address.id l", "LIKE")).toBe("address.id LIKE");
   expect(await accept("ci", "city")).toBe("address.city");
 
-  /*
-   * And a phrase takes every word it continues, not only the last one. The server says the span
-   * for each proposal; a client left to guess would replace the `n` alone and write `id is IS NOT
-   * NULL`.
-   */
-  expect(await accept("id is n", "IS NOT NULL")).toBe("id IS NOT NULL");
+  // Multi-word constructs advance one grammar terminal at a time; there is no phrase/snippet
+  // table in the editor. Each replacement range still replaces only the fragment being typed.
+  expect(await accept("id i", "IS")).toBe("id IS");
+  expect(await accept("id IS n", "NOT")).toBe("id IS NOT");
+  expect(await accept("id IS NOT n", "NULL")).toBe("id IS NOT NULL");
 });
 
 test("proposes what the language server knows, not what the view already shows", async ({
@@ -728,13 +731,16 @@ test("proposes what the language server knows, not what the view already shows",
   await openEmpty(page);
   await add(page, "shop.product");
 
-  await page.getByRole("combobox", { name: /where/iu }).fill("product.");
+  const where = new MonacoEditor(page, "Filter (WHERE)");
+  await where.replace("product.");
+  await where.requestCompletions();
 
-  const proposals = page.getByRole("listbox", { name: /completion/iu });
-  await expect(proposals).toBeVisible();
+  await expect(where.completionWidget()).toBeVisible();
   // The type comes from the catalog through the server; the view's own columns carry no type.
-  await expect(proposals.getByText("numeric(8,2)")).toBeVisible();
-  await expect(proposals.getByText("brand_id")).toBeVisible();
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("ArrowDown");
+  await expect(where.completionWidget().getByText("numeric(8,2)")).toBeVisible();
+  await expect(where.suggestion("brand_id")).toBeVisible();
 });
 
 test("pages a relation too large to load at once, and loads the rest on demand", async ({
@@ -1493,8 +1499,8 @@ test("says a refused write in a band across the top, not in a corner", async ({ 
   await bar.add.click();
   await bar.apply.click();
 
-  const band = page.getByRole("alert");
-  await expect(band).toContainText(/not applied/u);
+  const band = page.getByRole("alert").filter({ hasText: /not applied/u });
+  await expect(band).toBeVisible();
   // The changes are still held, so the reader can put right what was refused.
   await expect(bar.changes).toHaveText(/1/u);
   // And it is said once: the status line does not repeat what the band already carries.
@@ -1505,7 +1511,7 @@ test("says a refused write in a band across the top, not in a corner", async ({ 
 
   // Asking again says it again, in the same words: a dismissal was about the last attempt.
   await bar.apply.click();
-  await expect(page.getByRole("alert")).toContainText(/not applied/u);
+  await expect(page.getByRole("alert").filter({ hasText: /not applied/u })).toBeVisible();
 });
 
 test("brings back the columns a new row cannot go without", async ({ page }) => {

@@ -7,7 +7,7 @@ import {
   type DebugResultStatus,
   debugResultEntryStatus,
 } from "../../dap/src/debugger/launch/index.js";
-import type { DebugResultViewState } from "../../rows/src/resultPayload.js";
+import type { DebugResultViewState, ResultBinding } from "../../rows/src/resultPayload.js";
 
 /**
  * The captured debug results the Extension Host holds: the bounded history it keeps, what it
@@ -16,9 +16,13 @@ import type { DebugResultViewState } from "../../rows/src/resultPayload.js";
  */
 export const DEBUG_RESULT_NULL_EXPORT = "\\N";
 
+function connectionLabelOf(binding: ResultBinding | undefined): { connection?: string } {
+  return binding ? { connection: binding.connectionName } : {};
+}
+
 export class DebugResultStore {
   private readonly results: DebugResultEntry[] = [];
-  private readonly connections = new Map<string, string>();
+  private readonly bindings = new Map<string, ResultBinding>();
   private readonly listeners = new Set<() => void>();
   private selectedId: string | undefined;
 
@@ -32,32 +36,36 @@ export class DebugResultStore {
     return { dispose: () => this.listeners.delete(listener) };
   }
 
-  add(result: DebugResult, connection?: string): void {
-    this.update(result, connection);
+  add(result: DebugResult, binding?: ResultBinding): void {
+    this.update(result, binding);
   }
 
-  addStatus(status: DebugResultStatus, connection?: string): void {
-    this.update(status, connection);
+  addStatus(status: DebugResultStatus, binding?: ResultBinding): void {
+    this.update(status, binding);
   }
 
-  update(entry: DebugResultEntry, connection?: string): void {
+  update(entry: DebugResultEntry, binding?: ResultBinding): void {
     const existing = this.results.findIndex((item) => item.id === entry.id);
     if (existing >= 0) this.results.splice(existing, 1);
     this.results.unshift(entry);
-    if (connection !== undefined) this.connections.set(entry.id, connection);
+    if (binding !== undefined) this.bindings.set(entry.id, binding);
     this.selectedId = entry.id;
     this.trim();
     this.fire();
   }
 
-  connectionOf(id: string): string | undefined {
-    return this.connections.get(id);
+  bindingOf(id: string): ResultBinding | undefined {
+    return this.bindings.get(id);
+  }
+
+  entryOf(id: string): DebugResultEntry | undefined {
+    return this.results.find((result) => result.id === id);
   }
 
   clear(): void {
     if (this.results.length === 0) return;
     this.results.length = 0;
-    this.connections.clear();
+    this.bindings.clear();
     this.selectedId = undefined;
     this.fire();
   }
@@ -84,6 +92,8 @@ export class DebugResultStore {
   }
 
   viewState(): DebugResultViewState {
+    const selected = this.selectedEntry;
+    const selectedBinding = selected && this.bindings.get(selected.id);
     return {
       results: this.results.map((result) => ({
         id: result.id,
@@ -98,9 +108,10 @@ export class DebugResultStore {
         durationMs: "durationMs" in result ? result.durationMs : 0,
         timestamp: result.timestamp,
         ...("message" in result ? { message: result.message } : {}),
-        ...(this.connections.has(result.id) ? { connection: this.connections.get(result.id) } : {}),
+        ...connectionLabelOf(this.bindings.get(result.id)),
       })),
-      selected: this.selectedEntry,
+      selected,
+      ...(selectedBinding ? { selectedBinding } : {}),
     };
   }
 
@@ -127,8 +138,8 @@ export class DebugResultStore {
       total -= removed ? retainedBytes(removed) : 0;
     }
     const retained = new Set(this.results.map((result) => result.id));
-    for (const id of [...this.connections.keys()]) {
-      if (!retained.has(id)) this.connections.delete(id);
+    for (const id of [...this.bindings.keys()]) {
+      if (!retained.has(id)) this.bindings.delete(id);
     }
   }
 

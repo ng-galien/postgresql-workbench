@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { type ExplorationModel, emptyExploration } from "../graph/domain.js";
+import type { CockpitMessaging } from "../protocol.js";
 
 interface CockpitStoreMockState {
   exploration: ExplorationModel;
@@ -69,17 +70,17 @@ vi.mock("../graph/transport.js", () => ({
   setPinnedSymbol: vi.fn(),
 }));
 
-vi.mock("../vscodeApi.js", () => ({
-  post: vi.fn(),
-  subscribeToHost: () => () => {},
-}));
-
 vi.mock("../graph/store.js", () => ({
   useCockpitStore: (selector: (state: typeof cockpitStore.state) => unknown) =>
     selector(cockpitStore.state),
 }));
 
 import { CockpitCanvas, hasWorkbenchTreeDrag } from "./CockpitCanvas.js";
+
+const messaging: CockpitMessaging = {
+  post: vi.fn(),
+  subscribe: () => () => undefined,
+};
 
 afterEach(() => {
   reactFlow.props = null;
@@ -116,7 +117,7 @@ describe("Cockpit canvas node dragging", () => {
       neighborhoods: {},
     };
 
-    renderToStaticMarkup(<CockpitCanvas frameRequest="0:0" />);
+    renderToStaticMarkup(<CockpitCanvas messaging={messaging} frameRequest="0:0" />);
 
     const nodes = reactFlow.props?.nodes as Array<{ dragHandle?: string }> | undefined;
     expect(nodes).toHaveLength(1);

@@ -16,7 +16,6 @@ import type { SyntaxParser } from "../../../packages/sql/src/analysis/syntaxTree
 import type { ConnectionManager } from "../connection/index.js";
 import { errorMessage } from "../errorMessage.js";
 import { CODE_MONIKER_URI_SCHEME } from "../sources/index.js";
-import { openCoverageClient } from "./client.js";
 import { PgTapCoverageProfile, type PgTapCoverageTarget } from "./runProfile.js";
 
 type TestItemData =
@@ -52,6 +51,9 @@ export interface PgTapTestControllerOptions {
   resolveDocumentUri: (symbolUri: string) => vscode.Uri | undefined;
   resolveSource: (uri: vscode.Uri) => { connectionId: string; oid: number } | undefined;
 }
+
+/** How every pgTAP client of this controller names itself to PostgreSQL. */
+const TEST_RUNNER_CLIENT = { applicationName: "postgresql-workbench:test-runner" };
 
 export class PgTapTestController implements vscode.Disposable {
   readonly controller = vscode.tests.createTestController(
@@ -217,7 +219,7 @@ export class PgTapTestController implements vscode.Disposable {
     item.error = undefined;
     let client: Client | undefined;
     try {
-      client = await openCoverageClient(this.connections, data.connectionId);
+      client = await this.connections.openClient(data.connectionId, TEST_RUNNER_CLIENT);
       await this.indexDatabase(data.connectionId, client);
       const patterns = pgTapTestPatterns();
       const indexedDependencies = this.indexedDependencies;
@@ -385,7 +387,7 @@ export class PgTapTestController implements vscode.Disposable {
     for (const item of items) run.started(item);
     let client: Client | undefined;
     try {
-      client = await openCoverageClient(this.connections, data.connectionId);
+      client = await this.connections.openClient(data.connectionId, TEST_RUNNER_CLIENT);
       client.on("error", (error) => {
         this.output.appendLine(
           `[pgTAP] PostgreSQL client error for ${data.test.schema}.${data.test.name}: ${errorMessage(error)}`,
@@ -405,7 +407,7 @@ export class PgTapTestController implements vscode.Disposable {
               .get<number>("maxOutputBytes", 1_048_576),
           ),
         token,
-        () => openCoverageClient(this.connections, data.connectionId),
+        () => this.connections.openClient(data.connectionId, TEST_RUNNER_CLIENT),
       );
       for (const item of items) appendTapOutput(run, item, report);
       if (!report.valid) {

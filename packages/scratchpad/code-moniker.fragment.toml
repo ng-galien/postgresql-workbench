@@ -1,0 +1,22 @@
+fragment = "scratchpad"
+enabled = true
+
+[aliases]
+scratchpad_source = "source ~ '**/dir:packages/dir:scratchpad/**'"
+scratchpad_engine_target = "target ~ '**/dir:packages/dir:scratchpad/**' OR target ~ '**/dir:packages/dir:catalog/**' OR target ~ '**/dir:packages/dir:dap/**' OR target ~ '**/dir:packages/dir:rows/**'"
+scratchpad_file_source = "source.segment('module') = 'notebookFile'"
+scratchpad_runtime_target = "target.segment('module') = 'registerCommands' OR target.segment('module') = 'resultHost' OR target.segment('module') = 'transactions' OR target.segment('module') = 'openConnections' OR target.segment('module') = 'runSelection' OR target.segment('module') = 'offsetQuery'"
+
+[[ts.refs.where]]
+id = "scratchpad-depends-on-engine-only"
+severity = "error"
+expr = "$scratchpad_source AND $structural_edge AND ($engine_package_target OR $host_local_target) => $scratchpad_engine_target"
+message = "packages/scratchpad owns the notebook file format and its engine decisions; it depends on the catalog, the debugger contract, and the result payloads — and nothing else."
+rationale = "A Scratchpad is a document any shell may open. The format that defines it must stay readable by the standalone application, so a dependency on VS Code, the views, or the Monaco editor would make the document conditional on one host."
+
+[[ts.refs.where]]
+id = "scratchpad-single-responsibility-keeps-files-passive"
+severity = "error"
+expr = "$scratchpad_file_source AND $structural_edge => NOT $scratchpad_runtime_target"
+message = "notebookFile owns the Scratchpad file format and its Association value objects, not connections, execution, or result-session lifecycle."
+rationale = "Reading and writing a Scratchpad must work without a live PostgreSQL Connection - a file opens before anything connects. Execution, explicit transactions and LIMIT/OFFSET result pages belong to the host's registerCommands, resultHost, and the row engine."

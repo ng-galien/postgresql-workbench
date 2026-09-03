@@ -1,9 +1,11 @@
 import * as vscode from "vscode";
 import type { DataViewSource } from "../../../packages/rows/src/dataView/dataView.js";
 import type { DataViewRequest } from "../../../packages/rows/src/dataView/dataViewProtocol.js";
+import type { SqlAuthoringDocumentProjection } from "../../../packages/sql/src/languageServer/protocol.js";
 import type { SqlAuthoringDragPayload } from "../../../packages/sql/src/snapshot.js";
 import viewBundles from "../../../packages/views/viewBundles.json" with { type: "json" };
-import { webviewPage } from "../webviewPage.js";
+import { sqlEditorWebviewPage } from "../sqlEditorWebviewPage.js";
+import { webviewShell } from "../webviewShell.js";
 import { DataViewDocument } from "./dataViewDocument.js";
 import { DATA_VIEW_EDITOR_VIEW_TYPE, dataViewUri, parseDataViewUri } from "./dataViewUri.js";
 import { type DataViewHostServices, errorMessage } from "./hostServices.js";
@@ -71,6 +73,14 @@ export class DataViewEditorProvider
     return [...this.documents.values()];
   }
 
+  authoringProjection(uri: string): SqlAuthoringDocumentProjection | undefined {
+    for (const document of this.documents.values()) {
+      const projection = document.authoringProjection(uri);
+      if (projection) return projection;
+    }
+    return undefined;
+  }
+
   /** Every visible Data View, keyed by the editor group that can receive a native drop. */
   visibleDestinations(): readonly { uri: vscode.Uri; viewColumn: vscode.ViewColumn }[] {
     return [...this.panels.entries()].flatMap(([value, panel]) =>
@@ -123,11 +133,17 @@ export class DataViewEditorProvider
       light: vscode.Uri.joinPath(this.services.extensionUri, "icons", `${iconKind}-light.svg`),
       dark: vscode.Uri.joinPath(this.services.extensionUri, "icons", `${iconKind}-dark.svg`),
     };
-    panel.webview.html = webviewPage({
+    const editor = sqlEditorWebviewPage(
+      panel.webview,
+      this.services.extensionUri,
+      this.services.sqlEditorLanguageServerUrl(),
+    );
+    panel.webview.html = webviewShell({
       webview: panel.webview,
       extensionUri: this.services.extensionUri,
       title: "Data View",
       script: viewBundles.dataView.script,
+      ...editor,
     });
     const attachment = document.attach(panel.webview);
     const messages = panel.webview.onDidReceiveMessage((message: DataViewRequest) => {

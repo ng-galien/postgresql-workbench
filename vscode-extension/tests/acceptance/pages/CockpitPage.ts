@@ -241,6 +241,10 @@ export class CockpitPage {
     codeFontSize: number;
   }> {
     if (!this.frame) throw new Error("CockpitPage.waitUntilOpen() must be called first");
+    await this.frame
+      .locator(".source-body .view-line")
+      .first()
+      .waitFor({ state: "visible", timeout: 10_000 });
     return this.frame.evaluate(() => {
       const size = (selector: string) => {
         const rect = document.querySelector(selector)?.getBoundingClientRect();
@@ -253,17 +257,17 @@ export class CockpitPage {
         inspector: size(".cockpit-inspector"),
         source: size(".source-inspector"),
         sourceBody: size(".source-body"),
-        totalLines: document.querySelectorAll(".postgres-source-line").length,
+        totalLines: document.querySelectorAll(".source-body .view-line").length,
         fullyVisibleLines: (() => {
           const body = document.querySelector(".source-body")?.getBoundingClientRect();
           if (!body) return 0;
-          return [...document.querySelectorAll(".postgres-source-line")].filter((line) => {
+          return [...document.querySelectorAll(".source-body .view-line")].filter((line) => {
             const rect = line.getBoundingClientRect();
             return rect.top >= body.top - 1 && rect.bottom <= body.bottom + 1;
           }).length;
         })(),
         codeFontSize: (() => {
-          const code = document.querySelector(".postgres-source-line-code");
+          const code = document.querySelector(".source-body .view-line");
           return code ? Number.parseFloat(getComputedStyle(code).fontSize) : 0;
         })(),
       };

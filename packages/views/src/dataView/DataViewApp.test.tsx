@@ -2,6 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
+import type { SqlEditorSurfaceProps } from "../../../editor/src/contracts.js";
 import { DataViewApp } from "./DataViewApp.js";
 import { dataViewHarness, dataViewPayload, readyDataView } from "./dataViewHarness.js";
 
@@ -11,6 +12,29 @@ import { dataViewHarness, dataViewPayload, readyDataView } from "./dataViewHarne
  * view does with one is covered here, in milliseconds instead of minutes.
  */
 afterEach(cleanup);
+
+/** Tests exercise the view contract without starting Monaco's browser runtime. */
+function StubEditor(props: SqlEditorSurfaceProps) {
+  return (
+    <textarea
+      aria-label={props.ariaLabel}
+      role={props.ariaLabel === "Filter (WHERE)" ? "combobox" : undefined}
+      value={props.text}
+      readOnly={props.readOnly}
+      onFocus={() => props.onFocusChange?.(true)}
+      onBlur={() => props.onFocusChange?.(false)}
+      onChange={(event) => props.onChange?.(event.currentTarget.value)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" && !event.shiftKey) {
+          event.preventDefault();
+          props.onSubmit?.(event.currentTarget.value);
+        } else if (event.key === "Escape") {
+          props.onCancel?.();
+        }
+      }}
+    />
+  );
+}
 
 /** The drag a reader performs, as the DOM reports it: start on one item, drop on another. */
 function dragOnto(source: Element, target: Element) {
@@ -23,7 +47,7 @@ function dragOnto(source: Element, target: Element) {
 /** Opens the view and hands it a state, the way the host answers `data-view/ready`. */
 function open(state = readyDataView()) {
   const harness = dataViewHarness();
-  render(<DataViewApp messaging={harness} />);
+  render(<DataViewApp messaging={harness} Editor={StubEditor} />);
   act(() => harness.deliver({ type: "data-view/state", state }));
   return harness;
 }
@@ -31,7 +55,7 @@ function open(state = readyDataView()) {
 describe("the Data View", () => {
   it("announces itself before the host sends anything", () => {
     const harness = dataViewHarness();
-    render(<DataViewApp messaging={harness} />);
+    render(<DataViewApp messaging={harness} Editor={StubEditor} />);
 
     expect(harness.posted).toEqual([{ type: "data-view/ready" }]);
     expect(screen.getByText("Opening the Data View…")).toBeDefined();
@@ -252,7 +276,9 @@ describe("the Data View", () => {
     await userEvent.click(toggle);
 
     const panel = screen.getByRole("region", { name: "Query SQL" });
-    expect(within(panel).getByText(/shop\.product/u)).toBeDefined();
+    expect(
+      within(panel).getByRole<HTMLTextAreaElement>("textbox", { name: "Query SQL" }).value,
+    ).toContain("shop.product");
 
     await userEvent.click(within(panel).getByRole("button", { name: /Hide the SQL/u }));
     expect(screen.queryByRole("region", { name: "Query SQL" })).toBeNull();

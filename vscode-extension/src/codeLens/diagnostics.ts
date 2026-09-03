@@ -1,8 +1,8 @@
 import * as vscode from "vscode";
+import { mapPlpgsqlBodyLineToSource } from "../../../packages/coverage/src/index.js";
 import { plpgsqlRoutineBodyStartLine } from "../../../packages/sql/src/analysis/plpgsqlDocument.js";
 import type { SyntaxParser } from "../../../packages/sql/src/analysis/syntaxTree.js";
 import type { ConnectionManager } from "../connection/index.js";
-import { mapPlpgsqlBodyLineToSource } from "../coverage/index.js";
 import { CODE_MONIKER_URI_SCHEME } from "../sources/index.js";
 import type { WorkbenchSourceUris } from "../workbench/sourceUris.js";
 
@@ -81,13 +81,14 @@ export class PlpgsqlDiagnosticsProvider implements vscode.Disposable {
     }
     if (!this.plpgsqlCheckAvailable.get(source.connectionId)) return;
 
-    const oid = source.oid;
-
-    const text = document.getText();
-
     try {
-      const result = await client.query("SELECT * FROM plpgsql_check_function($1::oid)", [oid]);
-      const bodyStartLine = await plpgsqlRoutineBodyStartLine(text, await this.syntaxParser());
+      const result = await client.query("SELECT * FROM plpgsql_check_function($1::oid)", [
+        source.oid,
+      ]);
+      const bodyStartLine = await plpgsqlRoutineBodyStartLine(
+        document.getText(),
+        await this.syntaxParser(),
+      );
       if (bodyStartLine === undefined) {
         this.diagnostics.delete(document.uri);
         return;

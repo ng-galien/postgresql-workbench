@@ -1,12 +1,20 @@
 import type { Client } from "pg";
 import * as vscode from "vscode";
+import { PostgresConnectionRegistry } from "../../../packages/catalog/src/postgresConnectionRegistry.js";
 import {
   type ConnectionConfig,
   getConnectionName,
 } from "../../../packages/catalog/src/savedConnection.js";
+import {
+  type PostgresServerSnapshot,
+  readPostgresServerSnapshot,
+} from "../../../packages/catalog/src/serverSnapshot.js";
+import type {
+  ConnectionTestReport,
+  WorkbenchServerExtension,
+} from "../../../packages/views/src/connections/protocol.js";
 import { ConnectionCommands } from "./commands.js";
-import { type ConnectionError, ConnectionService } from "./connectPostgres.js";
-import { PostgresConnectionRegistry } from "./registry.js";
+import { type ConnectionError, ConnectionService, type ConnectParams } from "./connectPostgres.js";
 import { ConnectionStore } from "./savedConnections.js";
 
 export type DebugCapabilityStatus = "unknown" | "checking" | "available" | "unavailable" | "error";
@@ -23,6 +31,19 @@ export interface ConnectionChange {
   readonly rootsChanged: boolean;
   /** Only the PL/pgSQL debug capability of `connectionIds` changed; connectivity is unchanged. */
   readonly debugCapabilityOnly?: boolean;
+}
+
+/** The one mapping from a saved Connection to the service's ConnectParams. */
+function dedicatedConnectParams(connection: ConnectionConfig, password: string): ConnectParams {
+  return {
+    host: connection.host,
+    port: connection.port,
+    database: connection.database,
+    user: connection.user,
+    password,
+    ssl: connection.ssl,
+    ...(connection.tuning ? { tuning: connection.tuning } : {}),
+  };
 }
 
 /**
@@ -99,16 +120,135 @@ export class ConnectionManager implements vscode.Disposable {
     return (await this.store.getPassword(id)) ?? "";
   }
 
-  async createDedicatedClient(id: string): Promise<Client> {
+  /**
+   * Verifies what a Connection draft can actually do, step by step: reach PostgreSQL and
+   * authenticate, then answer the PL/pgSQL debugger requirements. A missing debugger never fails
+   * the test — a Connection without pldbgapi still browses and edits.
+   */
+  async testConnection(params: ConnectParams): Promise<ConnectionTestReport> {
+    const steps: ConnectionTestReport["steps"] = [];
+    let client: Client;
+    const startedAt = Date.now();
+    try {
+      client = await this.service.connectClient({
+        ...params,
+        applicationName: "postgresql-workbench:connection-test",
+      });
+      steps.push({
+        label: `Connected to ${params.host}:${params.port}/${params.database} as ${params.user}`,
+        status: "ok",
+        detail: `in ${Date.now() - startedAt} ms`,
+      });
+    } catch (error) {
+      steps.push({
+        label: "Connection failed",
+        status: "failed",
+        detail: this.service.describeError(error),
+      });
+      steps.push({ label: "PL/pgSQL debugger (pldbgapi)", status: "skipped" });
+      return { ok: false, steps };
+    }
+    let server: PostgresServerSnapshot | undefined;
+    try {
+      const requirements = await this.service.checkRequirements(client, params.database);
+      steps.push(
+        requirements.available
+          ? { label: "PL/pgSQL debugger available (pldbgapi)", status: "ok" }
+          : {
+              label: "PL/pgSQL debugger unavailable",
+              status: "failed",
+              detail: requirements.error,
+            },
+      );
+      try {
+        server = await readPostgresServerSnapshot(client);
+      } catch (error) {
+        steps.push({
+          label: "Server overview unavailable",
+          status: "failed",
+          detail: this.service.describeError(error),
+        });
+      }
+    } finally {
+      await this.service.disconnect(client);
+    }
+    return { ok: true, steps, ...(server ? { server } : {}) };
+  }
+
+  /**
+   * Installs one of the extensions the Workbench builds on, with the tested credentials. The
+   * name comes from a closed union, never from free text: it is interpolated into DDL.
+   */
+  async installServerExtension(
+    params: ConnectParams,
+    name: WorkbenchServerExtension,
+  ): Promise<{ ok: boolean; message?: string }> {
+    let client: Client;
+    try {
+      client = await this.service.connectClient({
+        ...params,
+        applicationName: "postgresql-workbench:connection-test",
+      });
+    } catch (error) {
+      return { ok: false, message: this.service.describeError(error) };
+    }
+    try {
+      await client.query(`CREATE EXTENSION IF NOT EXISTS ${name}`);
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, message: this.service.describeError(error) };
+    } finally {
+      await this.service.disconnect(client);
+    }
+  }
+
+  /** The classified, user-facing wording for a PostgreSQL failure. */
+  describeConnectionError(error: unknown): string {
+    return this.service.describeError(error);
+  }
+
+  /** How this Connection presents itself in messages. */
+  describeConnection(id: string): string {
+    const connection = this.store.get(id);
+    return connection ? getConnectionName(connection) : id;
+  }
+
+  /**
+   * Opens a dedicated pg client for a saved Connection, refusing to guess a password: a caller
+   * that reaches for a client on its own lane must be able to name itself to PostgreSQL.
+   */
+  async openClient(
+    id: string,
+    options: { applicationName: string; statementTimeoutMs?: number },
+  ): Promise<Client> {
+    const connection = this.store.get(id);
+    if (!connection) throw new Error(`PostgreSQL connection ${id} is no longer configured.`);
+    const password = await this.store.getPassword(id);
+    if (password === undefined) {
+      throw new Error(
+        `PostgreSQL connection ${getConnectionName(connection)} has no saved password.`,
+      );
+    }
+    return this.service.connectClient({
+      ...dedicatedConnectParams(connection, password),
+      applicationName: options.applicationName,
+      statementTimeoutMs: options.statementTimeoutMs ?? 60_000,
+    });
+  }
+
+  /**
+   * The engine-port lane (DDL sync, notebook execution): those clients back a Connection the user
+   * already opened, so a missing saved password falls back to empty rather than failing the lane.
+   */
+  async createDedicatedClient(
+    id: string,
+    options?: { statementTimeoutMs?: number },
+  ): Promise<Client> {
     const connection = this.store.get(id);
     if (!connection) throw new Error("The PostgreSQL connection no longer exists.");
     return this.service.connectClient({
-      host: connection.host,
-      port: connection.port,
-      database: connection.database,
-      user: connection.user,
-      password: await this.getPassword(id),
-      ssl: connection.ssl,
+      ...dedicatedConnectParams(connection, await this.getPassword(id)),
+      statementTimeoutMs: options?.statementTimeoutMs,
     });
   }
 
@@ -180,12 +320,8 @@ export class ConnectionManager implements vscode.Disposable {
           async (_progress, token) => {
             let client: Client;
             const connectPromise = this.service.connectClient({
-              host: connection.host,
-              port: connection.port,
-              database: connection.database,
-              user: connection.user,
-              password,
-              ssl: connection.ssl,
+              ...dedicatedConnectParams(connection, password),
+              applicationName: "postgresql-workbench:connection",
             });
             let cancellation: vscode.Disposable | undefined;
             try {
@@ -242,6 +378,9 @@ export class ConnectionManager implements vscode.Disposable {
 
         const classifiedFailure = failure;
         if (classifiedFailure) {
+          // The failed endpoint remains a saved, disconnected Connection. Publish that state even
+          // when the initial root refresh is still materializing the newly added row.
+          this.fire([id]);
           const actions =
             classifiedFailure.kind === "auth"
               ? ["Change Password", "Edit Connection"]

@@ -1,40 +1,28 @@
 import { SemanticTokensBuilder } from "vscode-languageserver/node";
 import type { TextDocument } from "vscode-languageserver-textdocument";
-import type { SqlRelationMention } from "../../query/relations.js";
+import type {
+  PostgresBindingFact,
+  PostgresColumnFact,
+  PostgresCteFact,
+  PostgresLexicalFact,
+  PostgresNameFact,
+  PostgresParameterFact,
+  PostgresRoutineFact,
+  PostgresTypeFact,
+  PostgresWindowFact,
+} from "../../analysis/documentFacts.js";
 import type { SqlAuthoringObject, SqlAuthoringSnapshot } from "../../snapshot.js";
+import { canonicalSqlIdentifier, splitSqlQualifiedIdentifier } from "../../text/identifiers.js";
 import {
-  canonicalSqlIdentifier,
-  POSTGRES_IDENTIFIER_PATTERN,
-  splitSqlQualifiedIdentifier,
-} from "../../text/identifiers.js";
-import { postgresPlpgsqlRanges, scanPostgresSql } from "../../text/sqlLexing.js";
-import type { SqlAuthoringSemanticToken } from "../protocol.js";
-
-export const SQL_SEMANTIC_TOKEN_TYPES = [
-  "variable",
-  "parameter",
-  "type",
-  "function",
-  "sqlSchema",
-  "sqlTable",
-  "sqlView",
-  "sqlCte",
-  "sqlAlias",
-  "sqlColumn",
-  "sqlFunction",
-  "sqlProcedure",
-  "sqlParameter",
-  "sqlType",
-  "sqlWindow",
-] as const;
-
-export const SQL_SEMANTIC_TOKEN_MODIFIERS = ["declaration", "readonly"] as const;
-
-type SqlSemanticTokenType = (typeof SQL_SEMANTIC_TOKEN_TYPES)[number];
+  SQL_SEMANTIC_TOKEN_MODIFIERS,
+  SQL_SEMANTIC_TOKEN_TYPES,
+  type SqlSemanticTokenType,
+} from "../legend.js";
 
 interface Token {
   length: number;
   offset: number;
+  tokenModifiers: number;
   type: SqlSemanticTokenType;
 }
 
@@ -47,83 +35,6 @@ interface RelationReference {
   referenceOffset: number;
 }
 
-interface NamedSymbol {
-  name: string;
-  offset: number;
-}
-
-const IDENTIFIER = POSTGRES_IDENTIFIER_PATTERN;
-const QUALIFIED_IDENTIFIER = String.raw`(?:${IDENTIFIER})(?:\s*\.\s*(?:${IDENTIFIER}))?`;
-const STRUCTURAL_CALL_NAMES = new Set([
-  "all",
-  "any",
-  "array",
-  "as",
-  "case",
-  "call",
-  "cast",
-  "collate",
-  "distinct",
-  "delete",
-  "else",
-  "end",
-  "exists",
-  "fetch",
-  "filter",
-  "for",
-  "from",
-  "group",
-  "having",
-  "in",
-  "insert",
-  "into",
-  "join",
-  "lateral",
-  "limit",
-  "offset",
-  "on",
-  "order",
-  "over",
-  "partition",
-  "row",
-  "select",
-  "set",
-  "table",
-  "tablesample",
-  "then",
-  "union",
-  "update",
-  "using",
-  "values",
-  "when",
-  "where",
-  "window",
-  "with",
-]);
-const UNQUALIFIED_COLUMN_EXCLUSIONS = new Set([
-  ...STRUCTURAL_CALL_NAMES,
-  "and",
-  "asc",
-  "by",
-  "cross",
-  "desc",
-  "false",
-  "full",
-  "inner",
-  "interval",
-  "is",
-  "left",
-  "natural",
-  "not",
-  "null",
-  "or",
-  "outer",
-  "recursive",
-  "right",
-  "true",
-  "merge",
-]);
-
 interface EncodedToken {
   length: number;
   offset: number;
@@ -132,51 +43,40 @@ interface EncodedToken {
 }
 
 /**
- * Builds the semantic tokens of one document. `plpgsqlTokens` are syntax-tree PL/pgSQL tokens
- * (variables, parameters, types) already encoded against the SQL authoring legend; they take
- * precedence over indexed tokens covering the same range. Without a snapshot only those tokens
- * are emitted.
+ * One stream, in two layers. What each piece of the statement *is* comes from the parse; what each
+ * name *means* needs the catalog, and only this server has it. They are laid in that order and a
+ * piece already spoken for is left alone, so a word the grammar reserves but a query uses as a
+ * column name is coloured by what it means here rather than by how it is spelled.
  */
 export function postgresSemanticTokens(
   document: TextDocument,
   snapshot: SqlAuthoringSnapshot | undefined,
-  plpgsqlTokens: readonly SqlAuthoringSemanticToken[] = [],
-  relations: readonly SqlRelationMention[] = [],
+  names: readonly PostgresNameFact[] = [],
+  lexical: readonly PostgresLexicalFact[] = [],
 ) {
   const source = document.getText();
-  const encoded: EncodedToken[] = plpgsqlTokens
-    .filter((token) => token.length > 0 && token.tokenType >= 0)
-    .map((token) => ({
+  const encoded: EncodedToken[] = [];
+  for (const token of collectSemanticTokens(source, snapshot, names)) {
+    // A semantic token addresses one line: a quoted identifier written across two produces none.
+    if (source.slice(token.offset, token.offset + token.length).includes("\n")) continue;
+    encoded.push({
       length: token.length,
-      offset: document.offsetAt({ line: token.line, character: token.character }),
-      tokenType: token.tokenType,
+      offset: token.offset,
+      tokenType: semanticTokenTypeIndex(token.type),
       tokenModifiers: token.tokenModifiers,
-    }));
-  const occupied = new Set(encoded.map((token) => `${token.offset}:${token.length}`));
-  if (snapshot) {
-    const tokens = collectSemanticTokens(source, snapshot, 0, relations);
-    for (const range of postgresPlpgsqlRanges(source)) {
-      tokens.push(
-        ...collectSemanticTokens(
-          source.slice(range.start, range.end),
-          snapshot,
-          range.start,
-          rebasedRelations(relations, range),
-          true,
-        ),
-      );
-    }
-    for (const token of tokens) {
-      if (occupied.has(`${token.offset}:${token.length}`)) continue;
-      // A semantic token addresses one line: a quoted identifier written across two produces none.
-      if (source.slice(token.offset, token.offset + token.length).includes("\n")) continue;
-      encoded.push({
-        length: token.length,
-        offset: token.offset,
-        tokenType: SQL_SEMANTIC_TOKEN_TYPES.indexOf(token.type),
-        tokenModifiers: 0,
-      });
-    }
+    });
+  }
+  const taken = new Set(encoded.map((token) => `${token.offset}:${token.length}`));
+  for (const fact of lexical) {
+    const length = fact.range.end - fact.range.start;
+    if (length <= 0 || taken.has(`${fact.range.start}:${length}`)) continue;
+    encoded.push({
+      length,
+      offset: fact.range.start,
+      tokenType: semanticTokenTypeIndex(fact.kind),
+      tokenModifiers: 0,
+    });
+    taken.add(`${fact.range.start}:${length}`);
   }
   encoded.sort((left, right) => left.offset - right.offset || left.length - right.length);
   const builder = new SemanticTokensBuilder();
@@ -195,41 +95,73 @@ export function postgresSemanticTokens(
 
 function collectSemanticTokens(
   source: string,
-  snapshot: SqlAuthoringSnapshot,
-  baseOffset: number,
-  relations: readonly SqlRelationMention[],
-  plpgsql = false,
+  snapshot: SqlAuthoringSnapshot | undefined,
+  names: readonly PostgresNameFact[],
 ): Token[] {
-  const maskedSource = scanPostgresSql(source).maskedSource;
   const tokens: Token[] = [];
   const occupied = new Set<string>();
-  const ctes = cteDeclarations(source, maskedSource);
-  const windows = windowSymbols(source, maskedSource);
-  const references = relationReferences(relations, snapshot.objects, ctes);
 
-  addCteTokens(tokens, occupied, ctes);
-  addWindowTokens(tokens, occupied, windows);
-  addRelationTokens(tokens, occupied, references);
-  addRoutineTokens(tokens, occupied, source, maskedSource, snapshot.objects);
-  addParameterTokens(tokens, occupied, maskedSource);
-  addTypeTokens(tokens, occupied, source, maskedSource);
-  if (plpgsql) addPlpgsqlDeclarationTokens(tokens, occupied, source, maskedSource);
-  addQualifiedTokens(tokens, occupied, source, maskedSource, snapshot.objects, references);
-  addUnqualifiedColumnTokens(tokens, occupied, source, maskedSource, references);
-  return tokens.map((token) => ({ ...token, offset: token.offset + baseOffset }));
+  addBindingFactTokens(tokens, occupied, names);
+  addCteFactTokens(tokens, occupied, names);
+  addWindowFactTokens(tokens, occupied, names);
+  addRoutineFactTokens(tokens, occupied, names, snapshot?.objects ?? []);
+  addParameterFactTokens(tokens, occupied, names);
+  addTypeFactTokens(tokens, occupied, names);
+  if (snapshot) {
+    const references = relationReferences(names, snapshot.objects, source);
+    addRelationTokens(tokens, occupied, references);
+    addColumnFactTokens(tokens, occupied, names, references);
+  }
+  return tokens;
 }
 
-function addCteTokens(tokens: Token[], occupied: Set<string>, ctes: readonly NamedSymbol[]): void {
-  for (const cte of ctes) addToken(tokens, occupied, cte.offset, cte.name.length, "sqlCte");
-}
-
-function addWindowTokens(
+function addBindingFactTokens(
   tokens: Token[],
   occupied: Set<string>,
-  windows: { declarations: NamedSymbol[]; references: NamedSymbol[] },
+  names: readonly PostgresNameFact[],
 ): void {
-  for (const window of [...windows.declarations, ...windows.references]) {
-    addToken(tokens, occupied, window.offset, window.name.length, "sqlWindow");
+  for (const fact of names.filter(
+    (candidate): candidate is PostgresBindingFact => candidate.role === "binding",
+  )) {
+    const name = fact.parts[0];
+    if (!name) continue;
+    addToken(
+      tokens,
+      occupied,
+      name.range.start,
+      name.range.end - name.range.start,
+      fact.bindingKind,
+      semanticTokenModifiers(fact),
+    );
+  }
+}
+
+function addCteFactTokens(
+  tokens: Token[],
+  occupied: Set<string>,
+  names: readonly PostgresNameFact[],
+): void {
+  for (const fact of names.filter(
+    (candidate): candidate is PostgresCteFact => candidate.role === "cte",
+  )) {
+    const name = fact.parts.at(-1);
+    if (name)
+      addToken(tokens, occupied, name.range.start, name.range.end - name.range.start, "sqlCte");
+  }
+}
+
+function addWindowFactTokens(
+  tokens: Token[],
+  occupied: Set<string>,
+  names: readonly PostgresNameFact[],
+): void {
+  for (const fact of names.filter(
+    (candidate): candidate is PostgresWindowFact => candidate.role === "window",
+  )) {
+    const name = fact.parts.at(-1);
+    if (name) {
+      addToken(tokens, occupied, name.range.start, name.range.end - name.range.start, "sqlWindow");
+    }
   }
 }
 
@@ -271,123 +203,96 @@ function addObjectReferenceTokens(
   );
 }
 
-function addRoutineTokens(
+function addRoutineFactTokens(
   tokens: Token[],
   occupied: Set<string>,
-  source: string,
-  maskedSource: string,
+  names: readonly PostgresNameFact[],
   objects: readonly SqlAuthoringObject[],
 ): void {
-  const pattern = new RegExp(String.raw`(${QUALIFIED_IDENTIFIER})\s*(?=\()`, "gu");
-  for (const match of maskedSource.matchAll(pattern)) {
-    const offset = (match.index ?? 0) + match[0].indexOf(match[1]);
-    const reference = source.slice(offset, offset + match[1].length);
-    const parts = qualifiedIdentifierParts(reference, offset);
-    const namePart = parts.at(-1);
+  for (const fact of names.filter(
+    (candidate): candidate is PostgresRoutineFact => candidate.role === "routine",
+  )) {
+    const namePart = fact.parts.at(-1);
     if (!namePart) continue;
-    const name = canonicalSqlIdentifier(namePart.source);
-    const before = maskedSource.slice(Math.max(0, offset - 32), offset);
-    const called = /\bCALL\s*$/iu.test(before);
-    const object = routineObject(parts, objects, called);
-    if (!object && STRUCTURAL_CALL_NAMES.has(name)) continue;
-    if (parts.length === 2) {
-      addToken(tokens, occupied, parts[0].offset, parts[0].source.length, "sqlSchema");
+    const object = routineObject(fact, objects);
+    const schema = fact.parts.at(-2);
+    if (schema) {
+      addToken(
+        tokens,
+        occupied,
+        schema.range.start,
+        schema.range.end - schema.range.start,
+        "sqlSchema",
+      );
     }
     addToken(
       tokens,
       occupied,
-      namePart.offset,
-      namePart.source.length,
-      object?.kind === "procedure" || called ? "sqlProcedure" : "sqlFunction",
+      namePart.range.start,
+      namePart.range.end - namePart.range.start,
+      object?.kind === "procedure" || fact.invocation === "procedure"
+        ? "sqlProcedure"
+        : "sqlFunction",
     );
   }
 }
 
-function addParameterTokens(tokens: Token[], occupied: Set<string>, maskedSource: string): void {
-  for (const match of maskedSource.matchAll(/\$[1-9]\d*/gu)) {
-    addToken(tokens, occupied, match.index ?? 0, match[0].length, "sqlParameter");
-  }
-  const namedArgument = new RegExp(String.raw`(${IDENTIFIER})\s*=>`, "gu");
-  for (const match of maskedSource.matchAll(namedArgument)) {
-    const offset = (match.index ?? 0) + match[0].indexOf(match[1]);
-    addToken(tokens, occupied, offset, match[1].length, "sqlParameter");
-  }
-}
-
-function addTypeTokens(
+function addParameterFactTokens(
   tokens: Token[],
   occupied: Set<string>,
-  source: string,
-  maskedSource: string,
+  names: readonly PostgresNameFact[],
 ): void {
-  const castPattern = new RegExp(String.raw`::\s*(${QUALIFIED_IDENTIFIER})`, "gu");
-  for (const match of maskedSource.matchAll(castPattern)) {
-    addQualifiedType(tokens, occupied, source, match, 1);
-  }
-  const returnsPattern = new RegExp(String.raw`\bRETURNS\s+(${QUALIFIED_IDENTIFIER})`, "giu");
-  for (const match of maskedSource.matchAll(returnsPattern)) {
-    addQualifiedType(tokens, occupied, source, match, 1);
-  }
-  const castFunctionPattern = new RegExp(
-    String.raw`\bCAST\s*\([\s\S]*?\bAS\s+(${QUALIFIED_IDENTIFIER})(?:\s*\([^)]*\))?\s*\)`,
-    "giu",
-  );
-  for (const match of maskedSource.matchAll(castFunctionPattern)) {
-    addQualifiedType(tokens, occupied, source, match, 1);
+  for (const fact of names.filter(
+    (candidate): candidate is PostgresParameterFact => candidate.role === "parameter",
+  )) {
+    const part = fact.parts[0];
+    if (part) {
+      addToken(
+        tokens,
+        occupied,
+        part.range.start,
+        part.range.end - part.range.start,
+        "sqlParameter",
+      );
+    }
   }
 }
 
-function addPlpgsqlDeclarationTokens(
+function addTypeFactTokens(
   tokens: Token[],
   occupied: Set<string>,
-  source: string,
-  maskedSource: string,
+  names: readonly PostgresNameFact[],
 ): void {
-  const declarations = new Map<string, string>();
-  const declarationPattern = new RegExp(
-    String.raw`(?:^|[;\r\n])\s*(${IDENTIFIER})\s+(${QUALIFIED_IDENTIFIER})(?=\s*(?::=|DEFAULT\b|NOT\s+NULL\b|;))`,
-    "giu",
-  );
-  for (const match of maskedSource.matchAll(declarationPattern)) {
-    const variableOffset = (match.index ?? 0) + match[0].indexOf(match[1]);
-    const variable = source.slice(variableOffset, variableOffset + match[1].length);
-    declarations.set(canonicalSqlIdentifier(variable), variable);
-    addToken(tokens, occupied, variableOffset, match[1].length, "variable");
-    addQualifiedType(tokens, occupied, source, match, 2);
-  }
-  if (declarations.size === 0) return;
-  const identifierPattern = new RegExp(IDENTIFIER, "gu");
-  for (const match of maskedSource.matchAll(identifierPattern)) {
-    const offset = match.index ?? 0;
-    const identifier = source.slice(offset, offset + match[0].length);
-    if (!declarations.has(canonicalSqlIdentifier(identifier))) continue;
-    addToken(tokens, occupied, offset, match[0].length, "variable");
+  for (const fact of names.filter(
+    (candidate): candidate is PostgresTypeFact => candidate.role === "type",
+  )) {
+    const typeParts = fact.form === "qualified" ? fact.parts.slice(-1) : fact.parts;
+    const schema = fact.form === "qualified" ? fact.parts.at(-2) : undefined;
+    if (schema) {
+      addToken(
+        tokens,
+        occupied,
+        schema.range.start,
+        schema.range.end - schema.range.start,
+        "sqlSchema",
+      );
+    }
+    for (const part of typeParts) {
+      addToken(
+        tokens,
+        occupied,
+        part.range.start,
+        part.range.end - part.range.start,
+        fact.language === "plpgsql" ? "type" : "sqlType",
+      );
+    }
   }
 }
 
-function addQualifiedType(
+function addColumnFactTokens(
   tokens: Token[],
   occupied: Set<string>,
-  source: string,
-  match: RegExpMatchArray,
-  group: number,
-): void {
-  const offset = (match.index ?? 0) + match[0].lastIndexOf(match[group]);
-  const reference = source.slice(offset, offset + match[group].length);
-  const parts = qualifiedIdentifierParts(reference, offset);
-  if (parts.length === 2) {
-    addToken(tokens, occupied, parts[0].offset, parts[0].source.length, "sqlSchema");
-  }
-  const type = parts.at(-1);
-  if (type) addToken(tokens, occupied, type.offset, type.source.length, "sqlType");
-}
-
-function addQualifiedTokens(
-  tokens: Token[],
-  occupied: Set<string>,
-  source: string,
-  maskedSource: string,
-  objects: readonly SqlAuthoringObject[],
+  names: readonly PostgresNameFact[],
   references: readonly RelationReference[],
 ): void {
   const aliases = new Map<string, RelationReference>();
@@ -396,171 +301,78 @@ function addQualifiedTokens(
     if (qualifier) aliases.set(canonicalSqlIdentifier(qualifier), reference);
   }
 
-  const qualifiedPattern = new RegExp(String.raw`(${IDENTIFIER})\s*\.\s*(${IDENTIFIER})`, "gu");
-  for (const match of maskedSource.matchAll(qualifiedPattern)) {
-    const matchOffset = match.index ?? 0;
-    const leftOffset = matchOffset + match[0].indexOf(match[1]);
-    const rightOffset = matchOffset + match[0].lastIndexOf(match[2]);
-    const leftSource = source.slice(leftOffset, leftOffset + match[1].length);
-    const rightSource = source.slice(rightOffset, rightOffset + match[2].length);
-    const left = canonicalSqlIdentifier(leftSource);
-    const right = canonicalSqlIdentifier(rightSource);
-    const reference = aliases.get(left);
-    if (
-      reference &&
-      (reference.cte || reference.object?.columns.some((column) => column.name === right))
-    ) {
-      addToken(tokens, occupied, leftOffset, match[1].length, "sqlAlias");
-      addToken(tokens, occupied, rightOffset, match[2].length, "sqlColumn");
+  const objects = references.flatMap((reference) => (reference.object ? [reference.object] : []));
+  for (const fact of names.filter(
+    (candidate): candidate is PostgresColumnFact => candidate.role === "column",
+  )) {
+    const name = fact.parts.at(-1);
+    if (!name) continue;
+    const qualifier = fact.parts.at(-2);
+    if (qualifier) {
+      const reference = aliases.get(qualifier.canonical);
+      if (
+        reference &&
+        (reference.cte ||
+          reference.object?.columns.some((column) => column.name === name.canonical))
+      ) {
+        addToken(
+          tokens,
+          occupied,
+          qualifier.range.start,
+          qualifier.range.end - qualifier.range.start,
+          "sqlAlias",
+        );
+        addToken(
+          tokens,
+          occupied,
+          name.range.start,
+          name.range.end - name.range.start,
+          "sqlColumn",
+        );
+      }
       continue;
     }
-    const candidates = objects.filter((object) => object.schema === left && object.name === right);
-    const object = uniqueSemanticObject(candidates);
-    if (!object) continue;
-    addToken(tokens, occupied, leftOffset, match[1].length, "sqlSchema");
-    addToken(tokens, occupied, rightOffset, match[2].length, objectTokenType(object));
-  }
-}
-
-function addUnqualifiedColumnTokens(
-  tokens: Token[],
-  occupied: Set<string>,
-  source: string,
-  maskedSource: string,
-  references: readonly RelationReference[],
-): void {
-  const objects = references.flatMap((reference) => (reference.object ? [reference.object] : []));
-  const pattern = new RegExp(IDENTIFIER, "gu");
-  for (const match of maskedSource.matchAll(pattern)) {
-    const offset = match.index ?? 0;
-    if (isOccupied(occupied, offset, match[0].length)) continue;
-    const sourceIdentifier = source.slice(offset, offset + match[0].length);
-    const name = canonicalSqlIdentifier(sourceIdentifier);
-    if (UNQUALIFIED_COLUMN_EXCLUSIONS.has(name)) continue;
     const owners = new Set(
-      objects.filter((object) => object.columns.some((column) => column.name === name)).map(keyFor),
+      objects
+        .filter((object) => object.columns.some((column) => column.name === name.canonical))
+        .map(keyFor),
     );
     if (owners.size === 1) {
-      addToken(tokens, occupied, offset, match[0].length, "sqlColumn");
+      addToken(tokens, occupied, name.range.start, name.range.end - name.range.start, "sqlColumn");
     }
   }
-}
-
-/** Relations of a nested range, with offsets expressed inside that range. */
-function rebasedRelations(
-  relations: readonly SqlRelationMention[],
-  range: { start: number; end: number },
-): SqlRelationMention[] {
-  return relations
-    .filter(
-      (relation) => relation.nameRange.start >= range.start && relation.nameRange.end <= range.end,
-    )
-    .map((relation) => ({
-      ...relation,
-      nameRange: {
-        start: relation.nameRange.start - range.start,
-        end: relation.nameRange.end - range.start,
-      },
-      ...(relation.aliasRange
-        ? {
-            aliasRange: {
-              start: relation.aliasRange.start - range.start,
-              end: relation.aliasRange.end - range.start,
-            },
-          }
-        : {}),
-    }));
 }
 
 /** Relation references of the document, read from the syntax tree and resolved on the Index. */
 function relationReferences(
-  mentions: readonly SqlRelationMention[],
+  names: readonly PostgresNameFact[],
   objects: readonly SqlAuthoringObject[],
-  ctes: readonly NamedSymbol[],
+  source: string,
 ): RelationReference[] {
-  const cteNames = new Set(ctes.map((cte) => canonicalSqlIdentifier(cte.name)));
+  const cteReferences = new Map(
+    names
+      .filter(
+        (candidate): candidate is PostgresCteFact =>
+          candidate.role === "cte" && candidate.use === "reference",
+      )
+      .map((fact) => [`${fact.range.start}:${fact.range.end}`, fact] as const),
+  );
   const references: RelationReference[] = [];
-  for (const mention of mentions) {
-    const parts = (
-      mention.schema === undefined ? [mention.name] : [mention.schema, mention.name]
-    ).map(canonicalSqlIdentifier);
+  for (const fact of names.filter((candidate) => candidate.role === "relation")) {
+    const parts = fact.parts.map((part) => part.canonical);
     const object = resolveRelationObject(parts, objects);
-    const cte =
-      parts.length === 1 && parts[0] !== undefined && cteNames.has(parts[0]) ? parts[0] : undefined;
+    const cte = cteReferences.get(`${fact.range.start}:${fact.range.end}`)?.parts.at(-1)?.canonical;
     if (!object && !cte) continue;
     references.push({
-      ...(mention.alias === undefined ? {} : { alias: mention.alias }),
-      ...(mention.aliasRange === undefined ? {} : { aliasOffset: mention.aliasRange.start }),
+      ...(fact.alias === undefined ? {} : { alias: fact.alias.written }),
+      ...(fact.alias === undefined ? {} : { aliasOffset: fact.alias.range.start }),
       ...(cte === undefined ? {} : { cte }),
       ...(object === undefined ? {} : { object }),
-      reference: mention.qualifiedText,
-      referenceOffset: mention.nameRange.start,
+      reference: source.slice(fact.range.start, fact.range.end),
+      referenceOffset: fact.range.start,
     });
   }
   return references;
-}
-
-function cteDeclarations(source: string, maskedSource: string): NamedSymbol[] {
-  const declarations: NamedSymbol[] = [];
-  const withPattern = /\bWITH\b\s*(?:RECURSIVE\b\s*)?/giu;
-  for (const withMatch of maskedSource.matchAll(withPattern)) {
-    let cursor = (withMatch.index ?? 0) + withMatch[0].length;
-    while (cursor < maskedSource.length) {
-      const declaration = new RegExp(
-        String.raw`^\s*(${IDENTIFIER})(?:\s*\([^)]*\))?\s+AS\s+(?:(?:NOT\s+)?MATERIALIZED\s+)?\(`,
-        "iu",
-      ).exec(maskedSource.slice(cursor));
-      if (!declaration) break;
-      const nameOffset = cursor + declaration[0].indexOf(declaration[1]);
-      declarations.push({
-        name: source.slice(nameOffset, nameOffset + declaration[1].length),
-        offset: nameOffset,
-      });
-      const openOffset = cursor + declaration[0].lastIndexOf("(");
-      const closeOffset = matchingParenthesis(maskedSource, openOffset);
-      if (closeOffset === undefined) break;
-      const comma = /^\s*,/u.exec(maskedSource.slice(closeOffset + 1));
-      if (!comma) break;
-      cursor = closeOffset + 1 + comma[0].length;
-    }
-  }
-  return declarations;
-}
-
-function windowSymbols(
-  source: string,
-  maskedSource: string,
-): { declarations: NamedSymbol[]; references: NamedSymbol[] } {
-  const declarations = namedMatches(
-    source,
-    maskedSource,
-    new RegExp(String.raw`\bWINDOW\s+(${IDENTIFIER})\s+AS\s*\(`, "giu"),
-  );
-  const references = namedMatches(
-    source,
-    maskedSource,
-    new RegExp(String.raw`\bOVER\s+(${IDENTIFIER})(?!\s*\.)`, "giu"),
-  );
-  return { declarations, references };
-}
-
-function namedMatches(source: string, maskedSource: string, pattern: RegExp): NamedSymbol[] {
-  const symbols: NamedSymbol[] = [];
-  for (const match of maskedSource.matchAll(pattern)) {
-    const offset = (match.index ?? 0) + match[0].indexOf(match[1]);
-    symbols.push({ name: source.slice(offset, offset + match[1].length), offset });
-  }
-  return symbols;
-}
-
-function matchingParenthesis(source: string, openOffset: number): number | undefined {
-  let depth = 0;
-  for (let offset = openOffset; offset < source.length; offset += 1) {
-    if (source[offset] === "(") depth += 1;
-    if (source[offset] === ")") depth -= 1;
-    if (depth === 0) return offset;
-  }
-  return undefined;
 }
 
 function resolveRelationObject(
@@ -586,17 +398,16 @@ function resolveRelationObject(
 }
 
 function routineObject(
-  parts: Array<{ source: string }>,
+  fact: PostgresRoutineFact,
   objects: readonly SqlAuthoringObject[],
-  called: boolean,
 ): SqlAuthoringObject | undefined {
-  const names = parts.map((part) => canonicalSqlIdentifier(part.source));
+  const names = fact.parts.map((part) => part.canonical);
   const candidates = objects.filter(
     (object) =>
       (object.kind === "function" || object.kind === "procedure") &&
       object.name === names.at(-1) &&
       (names.length === 1 || object.schema === names[0]) &&
-      (!called || object.kind === "procedure"),
+      (fact.invocation !== "procedure" || object.kind === "procedure"),
   );
   return uniqueSemanticObject(candidates);
 }
@@ -641,19 +452,44 @@ function qualifiedIdentifierParts(
   return parts;
 }
 
-function isOccupied(occupied: Set<string>, offset: number, length: number): boolean {
-  return occupied.has(`${offset}:${length}`);
-}
-
 function addToken(
   tokens: Token[],
   occupied: Set<string>,
   offset: number,
   length: number,
   type: SqlSemanticTokenType,
+  tokenModifiers = 0,
 ): void {
   const key = `${offset}:${length}`;
   if (length <= 0 || occupied.has(key)) return;
   occupied.add(key);
-  tokens.push({ length, offset, type });
+  tokens.push({ length, offset, tokenModifiers, type });
+}
+
+const SEMANTIC_TOKEN_TYPE_INDEX = new Map<SqlSemanticTokenType, number>(
+  SQL_SEMANTIC_TOKEN_TYPES.map((type, index) => [type, index]),
+);
+const SEMANTIC_TOKEN_MODIFIER_INDEX = new Map(
+  SQL_SEMANTIC_TOKEN_MODIFIERS.map((modifier, index) => [modifier, index]),
+);
+
+function semanticTokenTypeIndex(type: SqlSemanticTokenType): number {
+  const index = SEMANTIC_TOKEN_TYPE_INDEX.get(type);
+  if (index === undefined)
+    throw new Error(`Semantic token type is absent from the legend: ${type}`);
+  return index;
+}
+
+function semanticTokenModifiers(fact: PostgresBindingFact): number {
+  let modifiers = 0;
+  if (fact.use === "declaration") modifiers |= semanticTokenModifier("declaration");
+  if (fact.readonly) modifiers |= semanticTokenModifier("readonly");
+  return modifiers;
+}
+
+function semanticTokenModifier(modifier: (typeof SQL_SEMANTIC_TOKEN_MODIFIERS)[number]): number {
+  const index = SEMANTIC_TOKEN_MODIFIER_INDEX.get(modifier);
+  if (index === undefined)
+    throw new Error(`Semantic token modifier is absent from the legend: ${modifier}`);
+  return 1 << index;
 }

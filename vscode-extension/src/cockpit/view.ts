@@ -9,6 +9,7 @@ import {
   schemaLandingIdentity,
   searchGraphObjects,
   sourcePreviewPresentation,
+  type WorkbenchGraphSourcePreview,
 } from "../../../packages/catalog/src/cockpitGraph.js";
 import type {
   WorkbenchIndexController,
@@ -26,6 +27,7 @@ import {
   workbenchObjectFromSymbol,
 } from "../../../packages/catalog/src/objectModel.js";
 import type { WorkbenchGraphDragPayload } from "../../../packages/views/src/cockpit/dragAndDrop.js";
+import { GraphNavigation } from "../../../packages/views/src/cockpit/graph/navigation.js";
 import type {
   CockpitNeighborhood,
   CockpitPerspective,
@@ -41,7 +43,6 @@ import type {
   WorkbenchGraphWebviewMessage,
 } from "../../../packages/views/src/cockpit/protocol.js";
 import { DEFAULT_WORKBENCH_GRAPH_APPEARANCE } from "../../../packages/views/src/cockpit/protocol.js";
-import { GraphNavigation } from "./navigation.js";
 import { WorkbenchGraphPanel } from "./panel.js";
 
 type WorkbenchSnapshot = Pick<
@@ -69,6 +70,10 @@ export interface WorkbenchGraphViewOptions {
   workspaceState?: vscode.Memento;
   collectRenderEvidence?: boolean;
   treeDragPayload?: (consume: boolean) => WorkbenchGraphDragPayload | undefined;
+  sourceEditor?: (
+    symbolUri: string,
+  ) => Pick<WorkbenchGraphSourcePreview, "editorUri" | "languageId"> | undefined;
+  sqlEditorLanguageServerUrl(): string;
 }
 
 // Explicit debt exception: this host controller still coordinates navigation/session state,
@@ -109,10 +114,21 @@ export class WorkbenchGraphView implements vscode.Disposable {
   private readonly selectInTree: NonNullable<WorkbenchGraphViewOptions["selectInTree"]>;
   private readonly workspaceState: vscode.Memento | undefined;
   private readonly treeDragPayload: NonNullable<WorkbenchGraphViewOptions["treeDragPayload"]>;
+  private readonly sourceEditor: NonNullable<WorkbenchGraphViewOptions["sourceEditor"]>;
   private readonly configurationSubscription: vscode.Disposable;
+
+  /** The preview projected onto the document identity its embedded editor opens. */
+  private presentedPreview(
+    source: Parameters<typeof sourcePreviewPresentation>[0],
+  ): WorkbenchGraphSourcePreview {
+    const preview = sourcePreviewPresentation(source);
+    const editor = this.sourceEditor(preview.symbolUri);
+    return editor ? { ...preview, ...editor } : preview;
+  }
 
   constructor(options: WorkbenchGraphViewOptions) {
     this.index = options.index;
+    this.sourceEditor = options.sourceEditor ?? (() => undefined);
     this.openDefinition = options.openDefinition;
     this.showActions = options.showActions;
     this.selectInTree = options.selectInTree ?? (async () => undefined);
@@ -122,6 +138,7 @@ export class WorkbenchGraphView implements vscode.Disposable {
       options.extensionUri,
       (message) => this.receive(message),
       () => this.reset(),
+      options.sqlEditorLanguageServerUrl,
       options.collectRenderEvidence ?? false,
     );
     this.configurationSubscription = vscode.workspace.onDidChangeConfiguration((event) => {
@@ -410,7 +427,7 @@ export class WorkbenchGraphView implements vscode.Disposable {
         this.sourceVisible = false;
         this.sourcePinned = false;
       }
-      const preview = sourcePreview ? sourcePreviewPresentation(sourcePreview) : null;
+      const preview = sourcePreview ? await this.presentedPreview(sourcePreview) : null;
       const session = this.createSession(this.session?.breadcrumbs ?? [], this.session?.schemaHint);
       this.session = session;
       const refreshMessage: WorkbenchGraphHostMessage = {
@@ -473,7 +490,7 @@ export class WorkbenchGraphView implements vscode.Disposable {
         if (shown && this.sourceVisible && sourcePreview) {
           await this.panel.post({
             type: "cockpitPreview",
-            preview: sourcePreviewPresentation(sourcePreview),
+            preview: await this.presentedPreview(sourcePreview),
             pinned: this.sourcePinned,
           });
         }
@@ -547,7 +564,7 @@ export class WorkbenchGraphView implements vscode.Disposable {
         this.sourceVisible = false;
         this.sourcePinned = false;
       }
-      const preview = sourcePreview ? sourcePreviewPresentation(sourcePreview) : null;
+      const preview = sourcePreview ? await this.presentedPreview(sourcePreview) : null;
       const session = this.createSession(
         cockpitBreadcrumbs(currentFocus, database, this.symbols(database)),
       );
@@ -999,7 +1016,7 @@ export class WorkbenchGraphView implements vscode.Disposable {
     this.previewSymbol = symbol;
     this.sourceVisible = true;
     if (symbol) this.rememberSymbols([symbol]);
-    const presentation = sourcePreviewPresentation(preview);
+    const presentation = await this.presentedPreview(preview);
     if (this.lastMessage?.type === "cockpitFocus") {
       this.lastMessage = {
         ...this.lastMessage,
@@ -1041,7 +1058,7 @@ export class WorkbenchGraphView implements vscode.Disposable {
     return {
       neighborhood,
       presentations,
-      preview: sourcePreview ? sourcePreviewPresentation(sourcePreview) : undefined,
+      preview: sourcePreview ? await this.presentedPreview(sourcePreview) : undefined,
     };
   }
 

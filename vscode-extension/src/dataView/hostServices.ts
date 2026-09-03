@@ -43,4 +43,6 @@ export interface DataViewHostServices {
   dissociate(documentUri: string): Promise<void>;
   output: vscode.OutputChannel;
   extensionUri: vscode.Uri;
+  /** Loopback LSP endpoint materialized by the VS Code SQL-authoring adapter. */
+  sqlEditorLanguageServerUrl(): string;
 }

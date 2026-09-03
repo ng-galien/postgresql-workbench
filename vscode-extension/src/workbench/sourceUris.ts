@@ -1,6 +1,11 @@
 import type * as vscode from "vscode";
 import type { WorkbenchIndexController } from "../../../packages/catalog/src/indexController.js";
-import { codeMonikerDocumentUri, codeMonikerIdentityUri, codeMonikerUri } from "../sources/uri.js";
+import {
+  CODE_MONIKER_URI_SCHEME,
+  codeMonikerDocumentUri,
+  codeMonikerIdentityUri,
+  codeMonikerUri,
+} from "../sources/uri.js";
 
 /**
  * Projects the symbols the Workbench Index holds onto the editor documents that show them. The
@@ -15,6 +20,7 @@ export class WorkbenchSourceUris {
    * not usable as the identity registry key.
    */
   sourceDescriptorForDocumentUri(uri: vscode.Uri) {
+    if (uri.scheme !== CODE_MONIKER_URI_SCHEME) return undefined;
     const documentKey = codeMonikerIdentityUri(uri).toString();
     for (const symbolUri of this.index.symbolUris()) {
       if (codeMonikerUri(symbolUri).toString() === documentKey) {

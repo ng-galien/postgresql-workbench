@@ -1,6 +1,5 @@
 import {
   type CSSProperties,
-  type KeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   useCallback,
   useEffect,
@@ -10,9 +9,10 @@ import {
   useState,
 } from "react";
 import type { DebugResultCell } from "../../../dap/src/debugger/launch/index.js";
+import type { SqlEditorSurface } from "../../../editor/src/contracts.js";
 import { countLabel } from "../../../rows/src/countLabel.js";
 import { whyNotFiltered } from "../../../rows/src/dataView/cellFilter.js";
-import type { DataViewAddition, DataViewCompletion } from "../../../rows/src/dataView/dataView.js";
+import type { DataViewAddition } from "../../../rows/src/dataView/dataView.js";
 import {
   dataViewColumnKeys,
   dataViewKeysAt,
@@ -26,13 +26,14 @@ import {
 import type {
   DataViewRequest,
   DataViewResponse,
-  DataViewSqlToken,
   DataViewState,
 } from "../../../rows/src/dataView/dataViewProtocol.js";
+import { READ_ONLY_REASONS } from "../../../rows/src/dataView/editability.js";
 import { rowOrder } from "../../../rows/src/dataView/rowOrder.js";
 import { shownValues } from "../../../rows/src/dataView/shownValues.js";
 import { followLinkRequest } from "../../../rows/src/followLink.js";
 import { hasWorkbenchTreeDrag } from "../cockpit/dragAndDrop.js";
+import type { ViewMessaging } from "../messaging.js";
 import { ExportDialog, type ExportSource } from "../results/ExportDialog.js";
 import {
   type GridSelection,
@@ -46,16 +47,13 @@ import { Modal } from "../results/Modal.js";
 import { type GridEditing, type GridLayout, ResultGrid } from "../results/ResultGrid.js";
 import { ResultNavigation } from "../results/ResultNavigation.js";
 import { nextResultSort, resultRowSummary } from "../results/resultFormatting.js";
-import type { WebviewMessaging } from "../webviewPage.js";
-import { FilterHighlight, useScrollFollower } from "./FilterHighlight.js";
 import { useReorderable } from "./reorder.js";
-import { nextRequestId } from "./requests.js";
 import { SqlPanel } from "./SqlPanel.js";
 
 /** What each kind of provisioned change is marked with, so the three are told apart at a glance. */
 const CHANGE_MARKS = { delete: "trash", insert: "add", update: "edit" } as const;
 
-export type DataViewMessaging = WebviewMessaging<DataViewRequest, DataViewResponse>;
+export type DataViewMessaging = ViewMessaging<DataViewRequest, DataViewResponse>;
 
 interface Notice {
   message: string;
@@ -70,199 +68,53 @@ interface Notice {
  */
 const IMPORT_ROWS_OFFERED: boolean = false;
 
-const COMPLETION_DEBOUNCE_MS = 120;
-const COMPLETIONS_ID = "data-view-filter-completions";
-
-/** The identifier a combobox points at to say which proposal is current. */
-function completionId(index: number): string {
-  return `${COMPLETIONS_ID}-${index}`;
-}
-
 /**
- * WHERE editor: multi-line (Shift+Enter), Enter applies, completions come from the SQL authoring
- * connection through the host (Ctrl+Space or while typing).
- *
- * Running the filter does not take the caret away from the line it was typed on: while the rows
- * are being fetched the field refuses keys but keeps them, because a disabled field loses the
- * focus to the page and a reader who pressed Enter is still writing here. Only a query the engine
- * cannot rewrite disables it outright — there, the field has nothing to do.
+ * Monaco owns editing and its official language client owns every language feature.
  */
 function FilterInput({
   value,
+  uri,
   busy,
   unavailable,
-  messaging,
+  Editor,
   onApply,
 }: {
   value: string;
+  uri: string;
   busy: boolean;
   unavailable: boolean;
-  messaging: DataViewMessaging;
+  Editor: SqlEditorSurface;
   onApply(text: string): void;
 }) {
   const [draft, setDraft] = useState(value);
-  const [items, setItems] = useState<DataViewCompletion[]>([]);
-  const [named, setNamed] = useState<readonly DataViewSqlToken[]>([]);
-  const [selected, setSelected] = useState(0);
   const [focused, setFocused] = useState(false);
-  const requestId = useRef(0);
-  const tokenRequestId = useRef(0);
-  const timer = useRef<number | undefined>(undefined);
-  const textarea = useRef<HTMLTextAreaElement>(null);
-  const highlight = useRef<HTMLDivElement>(null);
-  const dirty = draft.trim() !== value.trim();
-
-  const followScroll = useScrollFollower(textarea, highlight, draft);
-
   useEffect(() => {
     if (!focused) setDraft(value);
-  }, [value, focused]);
+  }, [focused, value]);
 
-  useEffect(() => {
-    tokenRequestId.current = nextRequestId();
-    const requested = tokenRequestId.current;
-    // Nothing typed, nothing to colour: an empty condition would cost a round trip to answer none.
-    if (draft.trim() === "") {
-      setNamed([]);
-      return;
-    }
-    const timer = window.setTimeout(
-      () =>
-        messaging.post({
-          type: "data-view/tokens",
-          requestId: requested,
-          of: { filter: draft },
-        }),
-      COMPLETION_DEBOUNCE_MS,
-    );
-    return () => window.clearTimeout(timer);
-  }, [draft, messaging]);
-
-  useEffect(
-    () =>
-      messaging.subscribe((message) => {
-        if (message.type === "data-view/tokens" && message.requestId === tokenRequestId.current) {
-          setNamed(message.tokens);
-          return;
-        }
-        if (message.type !== "data-view/completions" || message.requestId !== requestId.current) {
-          return;
-        }
-        setItems(message.items);
-        setSelected(0);
-      }),
-    [messaging],
-  );
-
-  const requestCompletions = (text: string, offset: number, explicit = false) => {
-    if (timer.current !== undefined) window.clearTimeout(timer.current);
-    // No proposals inside a string literal, and while typing only after an identifier character.
-    const before = text.slice(0, offset);
-    const insideLiteral = (before.match(/'/gu)?.length ?? 0) % 2 === 1;
-    if (insideLiteral || (!explicit && !/[\w$".]$/u.test(before))) {
-      close();
-      return;
-    }
-    timer.current = window.setTimeout(() => {
-      requestId.current = nextRequestId();
-      messaging.post({ type: "data-view/complete", requestId: requestId.current, text, offset });
-    }, COMPLETION_DEBOUNCE_MS);
-  };
-  const close = () => {
-    setItems([]);
-    requestId.current = nextRequestId();
-  };
-  const accept = (item: DataViewCompletion) => {
-    const element = textarea.current;
-    const caret = element?.selectionStart ?? draft.length;
-    const start = Math.max(0, caret - item.replaceLength);
-    const next = `${draft.slice(0, start)}${item.insertText}${draft.slice(caret)}`;
-    setDraft(next);
-    close();
-    requestAnimationFrame(() => {
-      const position = start + item.insertText.length;
-      element?.setSelectionRange(position, position);
-      element?.focus();
-    });
-  };
-  const handleKey = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (busy) return;
-    if (items.length > 0) {
-      if (event.key === "ArrowDown") {
-        event.preventDefault();
-        setSelected((current) => (current + 1) % items.length);
-        return;
-      }
-      if (event.key === "ArrowUp") {
-        event.preventDefault();
-        setSelected((current) => (current - 1 + items.length) % items.length);
-        return;
-      }
-      if (event.key === "Tab" || (event.key === "Enter" && !event.shiftKey)) {
-        const item = items[selected];
-        if (item) {
-          event.preventDefault();
-          accept(item);
-          return;
-        }
-      }
-      if (event.key === "Escape") {
-        event.preventDefault();
-        close();
-        return;
-      }
-    }
-    if (event.key === " " && event.ctrlKey) {
-      event.preventDefault();
-      requestCompletions(draft, event.currentTarget.selectionStart, true);
-      return;
-    }
-    if (event.key === "Enter" && !event.shiftKey) {
-      event.preventDefault();
-      close();
-      onApply(draft.trim());
-      return;
-    }
-    if (event.key === "Escape") {
-      setDraft(value);
-      event.currentTarget.blur();
-    }
-  };
-  const rows = Math.min(6, Math.max(1, draft.split("\n").length));
-
+  const dirty = draft.trim() !== value.trim();
+  const lines = Math.min(6, Math.max(1, draft.split("\n").length));
   return (
-    <div className={`filter-input${dirty ? " dirty" : ""}`}>
+    <div className={`filter-input filter-input-monaco${dirty ? " dirty" : ""}`}>
       <span className="codicon codicon-filter data-view-clause-mark" aria-hidden="true" />
-      <div className="filter-field">
-        <FilterHighlight text={draft} named={named} ref={highlight} />
-        <textarea
-          ref={textarea}
-          className="filter-textarea"
-          rows={rows}
-          value={draft}
+      <div
+        className="filter-field postgres-editor-surface"
+        style={{ "--filter-editor-lines": lines } as CSSProperties}
+      >
+        <Editor
+          uri={`${uri}.filter`}
+          text={draft}
+          languageId="sql"
+          ariaLabel="Filter (WHERE)"
+          lineNumbers="off"
           placeholder="WHERE … (Enter runs, Shift+Enter new line, Ctrl+Space completes)"
-          spellCheck={false}
-          disabled={unavailable}
-          readOnly={busy}
-          aria-label="Filter (WHERE)"
-          // A field with proposals is a combobox: the list is its own, and one entry is current.
-          role="combobox"
-          aria-expanded={items.length > 0}
-          aria-controls={COMPLETIONS_ID}
-          aria-autocomplete="list"
-          {...(items.length > 0 ? { "aria-activedescendant": completionId(selected) } : {})}
-          onFocus={() => setFocused(true)}
-          onBlur={() => {
-            setFocused(false);
-            window.setTimeout(close, 150);
+          readOnly={busy || unavailable}
+          onFocusChange={setFocused}
+          onChange={setDraft}
+          onSubmit={(text) => {
+            if (!busy && !unavailable) onApply(text.trim());
           }}
-          onChange={(event) => {
-            setDraft(event.target.value);
-            requestCompletions(event.target.value, event.target.selectionStart);
-          }}
-          onScroll={followScroll}
-          onSelect={followScroll}
-          onKeyDown={handleKey}
+          onCancel={() => setDraft(value)}
         />
       </div>
       {draft || value ? (
@@ -271,40 +123,13 @@ function FilterInput({
           className="icon-button"
           title="Clear the filter"
           aria-label="Clear the filter"
-          onMouseDown={(event) => event.preventDefault()}
           onClick={() => {
             setDraft("");
-            close();
             if (value) onApply("");
           }}
         >
           <span className="codicon codicon-close" aria-hidden="true" />
         </button>
-      ) : null}
-      {items.length > 0 ? (
-        <div
-          className="filter-completions"
-          id={COMPLETIONS_ID}
-          role="listbox"
-          aria-label="Completions"
-        >
-          {items.slice(0, 12).map((item, index) => (
-            <button
-              key={`${item.kind ?? ""}:${item.label}:${item.detail ?? ""}:${item.insertText}`}
-              type="button"
-              id={completionId(index)}
-              role="option"
-              aria-selected={index === selected}
-              className={`filter-completion${index === selected ? " selected" : ""}`}
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={() => accept(item)}
-            >
-              {item.kind ? <span className="filter-completion-kind">{item.kind}</span> : null}
-              <span className="filter-completion-label">{item.label}</span>
-              {item.detail ? <span className="filter-completion-detail">{item.detail}</span> : null}
-            </button>
-          ))}
-        </div>
       ) : null}
     </div>
   );
@@ -331,7 +156,13 @@ function whereNullsGo(
 /** The menus the toolbar opens. One is open at a time, so which one is one fact, held once. */
 type ToolbarMenu = "columns" | "more" | "changes";
 
-export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
+export function DataViewApp({
+  messaging,
+  Editor,
+}: {
+  messaging: DataViewMessaging;
+  Editor: SqlEditorSurface;
+}) {
   const [state, setState] = useState<DataViewState>();
   const pageStart = useRef<number | undefined>(undefined);
   const [progress, setProgress] = useState<number>();
@@ -641,10 +472,13 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
   const payload = state.payload;
   // Rows come in one table at a time, exactly as they are added one at a time.
   const writableTable = dataViewWritableTable(state.editability);
-  const addable =
-    "reason" in writableTable ? `Rows can only be added ${writableTable.reason}` : undefined;
-  const importable =
-    "reason" in writableTable ? `Rows can only be imported ${writableTable.reason}` : undefined;
+  const applying = state.applying ? READ_ONLY_REASONS.applying : undefined;
+  const unwritable = (verb: string) =>
+    "reason" in writableTable ? `Rows can only be ${verb} ${writableTable.reason}` : undefined;
+  const addable = applying ?? unwritable("added");
+  const importable = applying ?? unwritable("imported");
+  const removable =
+    applying ?? (selectedCount === 0 ? "Select rows in the gutter to delete them" : undefined);
   const navigation = payload?.navigation;
   // The same rules the Scratchpad output applies, read from the one place that states them.
   const navigationState = {
@@ -1295,7 +1129,12 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
       ) : null}
 
       {showSql ? (
-        <SqlPanel sql={query.text} messaging={messaging} onClose={() => setShowSql(false)} />
+        <SqlPanel
+          uri={query.uri}
+          sql={query.text}
+          Editor={Editor}
+          onClose={() => setShowSql(false)}
+        />
       ) : null}
 
       <section
@@ -1387,9 +1226,10 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
       <div className="data-view-query-line">
         <FilterInput
           value={query.whereText ?? ""}
+          uri={query.uri}
           busy={disabled}
           unavailable={!query.structured}
-          messaging={messaging}
+          Editor={Editor}
           onApply={(text) => post({ type: "data-view/filter", text })}
         />
       </div>
@@ -1640,12 +1480,8 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
           <button
             type="button"
             className="edit-bar-button remove"
-            title={
-              selectedCount > 0
-                ? `Delete ${countLabel(selectedCount, "row")}`
-                : "Select rows in the gutter to delete them"
-            }
-            disabled={selectedCount === 0}
+            title={removable ?? `Delete ${countLabel(selectedCount, "row")}`}
+            disabled={removable !== undefined}
             onClick={() => {
               // A row that was only ever local is taken back; one that exists is provisioned away.
               for (const localId of selected.added) post({ type: "data-view/drop-row", localId });
@@ -1727,12 +1563,12 @@ export function DataViewApp({ messaging }: { messaging: DataViewMessaging }) {
 }
 
 const TABLE_ACCENTS = [
-  "var(--vscode-charts-blue)",
-  "var(--vscode-charts-purple)",
-  "var(--vscode-charts-green)",
-  "var(--vscode-charts-orange)",
-  "var(--vscode-charts-yellow)",
-  "var(--vscode-charts-red)",
+  "var(--pgw-accent-blue)",
+  "var(--pgw-accent-purple)",
+  "var(--pgw-accent-green)",
+  "var(--pgw-accent-orange)",
+  "var(--pgw-accent-yellow)",
+  "var(--pgw-accent-red)",
 ];
 
 function tableAccent(index: number): string {

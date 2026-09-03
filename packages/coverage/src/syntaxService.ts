@@ -1,3 +1,7 @@
+import {
+  DEFAULT_SYNTAX_MAX_DEPTH,
+  DEFAULT_SYNTAX_MAX_NODES,
+} from "../../sql/src/analysis/codeMonikerSyntax.js";
 import type { SyntaxNode, SyntaxParser, SyntaxTree } from "../../sql/src/analysis/syntaxTree.js";
 import { CoverageInstrumentationError } from "./errors.js";
 import type { CoverageAnalysis, InstrumentedCoverageDdl } from "./model.js";
@@ -41,6 +45,8 @@ export function createCoverageSyntaxService(
         language: "plpgsql",
         source,
         uri: "coverage.plpgsql",
+        maxDepth: DEFAULT_SYNTAX_MAX_DEPTH,
+        maxNodes: DEFAULT_SYNTAX_MAX_NODES,
       });
       return {
         analysis: analyzeCoverageSyntax(source, syntax),
@@ -56,6 +62,8 @@ export function createCoverageSyntaxService(
         language: "sql",
         source: request.ddl,
         uri: "coverage.sql",
+        maxDepth: DEFAULT_SYNTAX_MAX_DEPTH,
+        maxNodes: DEFAULT_SYNTAX_MAX_NODES,
       });
       assertUsable(ddlSyntax, "coverage.ddl-invalid", "The routine DDL could not be parsed.");
       const embeddedBody = embeddedPlpgsqlBody(ddlSyntax, request.ddl, request.source);
@@ -75,6 +83,8 @@ export function createCoverageSyntaxService(
         language: "sql",
         source: ddl,
         uri: "coverage.generated.sql",
+        maxDepth: DEFAULT_SYNTAX_MAX_DEPTH,
+        maxNodes: DEFAULT_SYNTAX_MAX_NODES,
       });
       assertUsable(
         validation,
@@ -113,7 +123,8 @@ function embeddedPlpgsqlBody(
       node.kind === "dollar_quoted_string" &&
       findNodes(
         node,
-        (candidate) => candidate.kind === "source_file" && candidate.language === "plpgsql",
+        (candidate) =>
+          candidate.kind === "source_file" && candidate.languageRegion?.language === "plpgsql",
       ).length === 1,
   );
   if (containers.length !== 1) return undefined;

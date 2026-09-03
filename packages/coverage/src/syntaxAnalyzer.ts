@@ -1,4 +1,9 @@
 import {
+  DEFAULT_SYNTAX_MAX_DEPTH,
+  DEFAULT_SYNTAX_MAX_NODES,
+} from "../../sql/src/analysis/codeMonikerSyntax.js";
+import { plpgsqlStatementName, plpgsqlStep } from "../../sql/src/analysis/postgresGrammar.js";
+import {
   directSyntaxChild as directChild,
   directSyntaxChildren as directChildren,
   findSyntaxNodes as findAll,
@@ -13,27 +18,6 @@ import type {
   CoverageProbePlacement,
   CoverageStatementLabel,
 } from "./model.js";
-
-const STATEMENT_LABELS: Readonly<Record<string, CoverageStatementLabel>> = {
-  stmt_assert: "assert",
-  stmt_assign: "assign",
-  stmt_call: "call",
-  stmt_close: "close",
-  stmt_dynexecute: "dynexecute",
-  stmt_execsql: "execsql",
-  stmt_exit: "exit",
-  stmt_fetch: "fetch",
-  stmt_for: "for",
-  stmt_foreach_a: "foreach",
-  stmt_getdiag: "getdiag",
-  stmt_loop: "loop",
-  stmt_open: "open",
-  stmt_perform: "perform",
-  stmt_raise: "raise",
-  stmt_while: "while",
-};
-
-const LOOP_KINDS = new Set(["stmt_loop", "stmt_while", "stmt_for", "stmt_foreach_a"]);
 
 interface AnalyzerState {
   source: string;
@@ -57,6 +41,8 @@ export async function analyzeCoverageWithSyntaxParser(
       language: "plpgsql",
       source,
       uri: "coverage.plpgsql",
+      maxDepth: DEFAULT_SYNTAX_MAX_DEPTH,
+      maxNodes: DEFAULT_SYNTAX_MAX_NODES,
     });
     return analyzeCoverageSyntax(source, syntax);
   } catch (error) {
@@ -129,16 +115,13 @@ function analyzeSection(section: SyntaxNode, state: AnalyzerState, path: string)
 }
 
 function analyzeStatement(wrapper: SyntaxNode, state: AnalyzerState, path: string): void {
-  const directBlock = directChild(wrapper, "pl_block");
-  if (directBlock) {
-    analyzeBlock(directBlock, state, `${path}.block`);
+  const step = plpgsqlStep(wrapper);
+  if (!step) return;
+  if (step.held === "block") {
+    analyzeBlock(step.node, state, `${path}.block`);
     return;
   }
-  const statement = wrapper.children.find((child) => child.kind.startsWith("stmt_"));
-  if (!statement) {
-    return;
-  }
-
+  const statement = step.node;
   const label = statementLabel(statement);
   if (label) {
     addPoint(
@@ -164,20 +147,18 @@ function analyzeStatement(wrapper: SyntaxNode, state: AnalyzerState, path: strin
     analyzeCase(statement, state, path);
     return;
   }
-  if (LOOP_KINDS.has(statement.kind)) {
+  if (statementLoops(statement)) {
     analyzeLoop(statement, state, path);
-    return;
-  }
-  if (statement.kind === "stmt_block") {
-    const block = directChild(statement, "pl_block") ?? findFirst(statement, "pl_block");
-    if (block) {
-      analyzeBlock(block, state, `${path}.block`);
-    }
   }
 }
 
+/** A statement that runs its body again says so by holding one: the grammar marks it `loop_body`. */
+function statementLoops(statement: SyntaxNode): boolean {
+  return statement.children.some((child) => child.kind === "loop_body");
+}
+
 function statementCoverageEndLine(statement: SyntaxNode): number {
-  if (!LOOP_KINDS.has(statement.kind)) return statement.end.line;
+  if (!statementLoops(statement)) return statement.end.line;
   const bodyIndex = statement.children.findIndex((child) => child.kind === "loop_body");
   if (bodyIndex <= 0) return statement.start.line;
   return statement.children
@@ -365,17 +346,16 @@ function analyzeException(exception: SyntaxNode, state: AnalyzerState, path: str
   analyzeSection(section, state, path);
 }
 
+/**
+ * Statements this reads by the paths they open rather than as one action of their own. A point on
+ * the decision's line would then be counted a second time, by the branch that runs from it.
+ */
+const READ_BY_SHAPE: ReadonlySet<string> = new Set(["stmt_if", "stmt_case"]);
+
+/** What this statement is called, when it is one this counts as an action. */
 function statementLabel(statement: SyntaxNode): CoverageStatementLabel | undefined {
-  if (statement.kind !== "stmt_return") {
-    return STATEMENT_LABELS[statement.kind];
-  }
-  if (statement.children.some((child) => child.kind === "kw_next")) {
-    return "return_next";
-  }
-  if (statement.children.some((child) => child.kind === "kw_query")) {
-    return "return_query";
-  }
-  return "return";
+  if (READ_BY_SHAPE.has(statement.kind)) return undefined;
+  return plpgsqlStatementName(statement) as CoverageStatementLabel | undefined;
 }
 
 function firstStatementLocation(section: SyntaxNode, path: string): StatementLocation | undefined {

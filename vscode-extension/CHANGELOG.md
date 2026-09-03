@@ -2,6 +2,80 @@
 
 ## Unreleased
 
+## [1.5.0] - 2026-09-03
+
+PostgreSQL Workbench 1.5.0 makes Connections the operational front door of the
+product and gives every SQL surface one PostgreSQL language authority. A saved
+Connection can now be configured, opened, diagnosed, indexed and prepared for
+Workbench capabilities without using the database tree as a control panel.
+
+### Connections
+
+- Added a **Manage Connections** page that fills the complete editor viewport,
+  with a collapsible Connection rail, compact status cards, per-Connection
+  actions and layouts that adapt when the editor group becomes narrow
+- Added a native empty state to the Connections tree that opens the management
+  page, and restores that entry point after the last saved Connection is removed
+- Moved creation, editing, deletion, import, connection testing and connect or
+  disconnect actions into that page; saved passwords remain in VS Code secret
+  storage and are never sent back to the webview
+- Added live PostgreSQL diagnostics after a successful test or refresh: server
+  version and uptime, encoding, time zone, capacity, database sizes, installed
+  extensions and current sessions
+- Made session rows inspectable, including application, client address, backend,
+  transaction and query timestamps, wait events and the current query when the
+  connected role may read them
+- Added guided installation of `pldbgapi` and `pgtap`, plus a local Docker
+  database entry point, alongside the capability that needs each extension
+- Put the Workbench Index on the Connection page with its current status,
+  generation, source and symbol counts, timing breakdown, revision and an
+  explicit build or refresh action
+- Put opt-in schema synchronization and its support-schema provisioning beside
+  the index it updates, while keeping structural DDL synchronization separate
+  from ordinary data changes
+- Added one host-neutral application-settings catalogue and a guard that keeps
+  the Connections UI and the VS Code settings manifest in agreement
+
+### SQL authoring and shared views
+
+- Replaced the parallel SQL readers with one language-server pipeline backed by
+  Code Moniker's PostgreSQL and PL/pgSQL syntax boundary; VS Code editors,
+  Scratchpads, Data Views, the Cockpit and the standalone browser shell now ask
+  the same engine what the document means
+- Derived the SQL vocabulary and prediction data from the PostgreSQL 18.4
+  grammar, with generated-source checks that fail when the grammar, catalogue or
+  installed runtime drifts
+- Added statement scaffolds and grammar-aware completion ranges, so accepting a
+  proposal replaces exactly the fragment or phrase being completed
+- Added indexed hover and reference navigation, and kept semantic names layered
+  over grammar tokens so relations, aliases, columns, routines and local
+  PL/pgSQL names retain distinct meanings on every surface
+- Added a standalone Sources experience and moved the reusable Monaco editor,
+  presentation roles and React views behind host-neutral contracts instead of
+  VS Code-owned implementations
+
+### Results, Data View and debugging
+
+- Unified held result state and paging across Scratchpads, Data Views and debug
+  results, including retained values, command reports and consistent rendering
+  of inspected PostgreSQL values
+- Projected inspected JSON and JSONB values through host-overridable presentation
+  roles for properties, strings, numbers and literals, including light themes
+- Kept the 1.4.2 destination-aware tree drag: one native drag composes into SQL,
+  extends a Data View query or focuses an already open Cockpit according to the
+  editor group under the pointer
+- Moved PL/pgSQL launch configuration into the standalone DAP package behind
+  explicit host ports, and removed duplicate PostgreSQL client plumbing from
+  coverage in favour of the Connection Manager lifecycle
+
+### Runtime
+
+- Updated the packaged Code Moniker client and native CLI runtime to 0.10.1 and
+  extended the packaged-runtime authority checks to the SQL grammar catalogue
+- Added executable architecture guards for the language server, settings,
+  Connection ownership, result engine and destination-neutral Workbench drag
+  transport
+
 ## [1.4.2] - 2026-08-31
 
 - Replaced the Shift-modified database-tree drag with one native drag whose

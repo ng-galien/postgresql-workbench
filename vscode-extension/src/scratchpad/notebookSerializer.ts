@@ -5,7 +5,7 @@ import {
   type SqlNotebookFile,
   scratchpadCellExecutionIntent,
   serializeSqlNotebookFile,
-} from "./notebookFile.js";
+} from "../../../packages/scratchpad/src/notebookFile.js";
 
 /**
  * Reading a Scratchpad off disk and writing it back. The file format itself is notebookFile's;

@@ -23,6 +23,7 @@ export interface PostgresDocumentDescriptor extends PostgresCatalogIdentity {
   oid: number;
   name: string;
   signature: string;
+  routineKind?: "function" | "procedure";
 }
 
 export interface VirtualSqlSourceSet {
@@ -150,6 +151,7 @@ interface DefinitionRow {
   extensionName?: string;
   identityArguments: string;
   relationName?: string;
+  routineKind?: "function" | "procedure";
 }
 
 interface TableDefinition {
@@ -340,6 +342,7 @@ SELECT
   namespace.nspname AS schema_name,
   routine.proname AS object_name,
   pg_catalog.pg_get_function_identity_arguments(routine.oid) AS identity_arguments,
+  CASE routine.prokind WHEN 'p' THEN 'procedure' ELSE 'function' END AS routine_kind,
   pg_catalog.pg_get_functiondef(routine.oid) AS definition,
   extension_row.extname AS extension_name
 FROM pg_catalog.pg_proc AS routine
@@ -814,6 +817,7 @@ function appendDefinitions(
         definition.oid,
         definition.objectName,
         definition.identityArguments,
+        definition.routineKind,
       ),
     });
   }
@@ -882,6 +886,7 @@ function descriptor(
   oid: string,
   name: string,
   signature = "",
+  routineKind?: "function" | "procedure",
 ): PostgresDocumentDescriptor {
   return {
     ...identity,
@@ -890,6 +895,7 @@ function descriptor(
     oid: Number(oid),
     name,
     signature,
+    ...(routineKind ? { routineKind } : {}),
   };
 }
 
@@ -999,7 +1005,12 @@ function definitionRow(row: Record<string, unknown>): DefinitionRow {
     extensionName: optionalString(row.extension_name),
     identityArguments: optionalString(row.identity_arguments) ?? "",
     relationName: optionalString(row.relation_name),
+    routineKind: optionalRoutineKind(row.routine_kind),
   };
+}
+
+function optionalRoutineKind(value: unknown): "function" | "procedure" | undefined {
+  return value === "function" || value === "procedure" ? value : undefined;
 }
 
 function requiredString(value: unknown, field: string): string {

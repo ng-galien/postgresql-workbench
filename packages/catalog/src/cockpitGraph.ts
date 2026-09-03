@@ -1,4 +1,5 @@
 import type {
+  CodeMonikerClient,
   CodeMonikerGraphResult,
   CodeMonikerIdentityGraphResult,
   CodeMonikerSymbol,
@@ -10,6 +11,11 @@ import {
   type WorkbenchObjectModel,
   workbenchObjectFromSymbol,
 } from "./objectModel.js";
+import {
+  type PostgresCatalogIdentity,
+  postgresDatabaseDocumentGlob,
+  type VirtualSqlDocument,
+} from "./postgresCatalog.js";
 import { buildWorkbenchRelationGroups } from "./relations.js";
 
 /**
@@ -47,6 +53,82 @@ export interface CockpitNeighborhood {
   limited: boolean;
 }
 
+/**
+ * Restores the PostgreSQL identity carried by the catalog document onto an indexed symbol.
+ * Code Moniker deliberately owns syntax identities; the catalog owns the database projection.
+ */
+export function cockpitSymbolFromCatalog(
+  symbol: CodeMonikerSymbol,
+  documents: ReadonlyMap<string, VirtualSqlDocument>,
+): CodeMonikerSymbol {
+  const postgres = documents.get(symbol.file)?.postgres;
+  return postgres ? { ...symbol, postgres } : symbol;
+}
+
+/** Projects one Code Moniker graph through the same PostgreSQL catalog identity boundary. */
+export function cockpitGraphFromCatalog(
+  graph: CodeMonikerGraphResult,
+  documents: ReadonlyMap<string, VirtualSqlDocument>,
+): CodeMonikerGraphResult {
+  return {
+    ...graph,
+    focus: {
+      ...graph.focus,
+      symbol: graph.focus.symbol
+        ? cockpitSymbolFromCatalog(graph.focus.symbol, documents)
+        : undefined,
+    },
+    callers: graph.callers.map((neighbor) => ({
+      ...neighbor,
+      symbol: cockpitSymbolFromCatalog(neighbor.symbol, documents),
+    })),
+    callees: graph.callees.map((neighbor) => ({
+      ...neighbor,
+      symbol: cockpitSymbolFromCatalog(neighbor.symbol, documents),
+    })),
+  };
+}
+
+/** Reads the complete PostgreSQL symbol projection used by every Cockpit host. */
+export async function readPostgresCockpitSymbols(
+  client: CodeMonikerClient,
+  database: PostgresCatalogIdentity,
+): Promise<{ symbols: CodeMonikerSymbol[]; generation: number | null }> {
+  const symbols: CodeMonikerSymbol[] = [];
+  let generation: number | null = null;
+  let cursor: unknown | null = null;
+  do {
+    const page = await client.symbols.search(
+      {
+        language: ["sql"],
+        kind: [
+          "schema",
+          "table",
+          "column",
+          "constraint",
+          "view",
+          "function",
+          "procedure",
+          "trigger",
+        ],
+        path: [postgresDatabaseDocumentGlob(database)],
+        includeCode: true,
+        contextLines: 16,
+      },
+      { consistency: "stale_ok", limit: 500, cursor },
+    );
+    symbols.push(...page.data.rows);
+    generation = graphGenerationValue(page.generation) ?? generation;
+    cursor = page.nextCursor;
+  } while (cursor !== null);
+  return { symbols, generation };
+}
+
+function graphGenerationValue(value: { value?: number } | number | null): number | null {
+  if (typeof value === "number") return value;
+  return typeof value?.value === "number" ? value.value : null;
+}
+
 export interface WorkbenchGraphSearchResult {
   symbolUri: string;
   label: string;
@@ -61,6 +143,10 @@ export interface WorkbenchGraphSearchResult {
 
 export interface WorkbenchGraphSourcePreview {
   symbolUri: string;
+  /** Stable document identity the embedded editor and language server share. */
+  editorUri: string;
+  /** The indexed source language; SQL and PL/pgSQL remain distinct at the LSP boundary. */
+  languageId: "sql" | "plpgsql";
   title: string;
   kind: string;
   file: string;
@@ -496,8 +582,15 @@ export function sourcePreviewPresentation(source: {
   symbol: CodeMonikerSymbol;
   source: NonNullable<CodeMonikerSymbol["source"]>;
 }): WorkbenchGraphSourcePreview {
+  const languageId = source.symbol.language === "plpgsql" ? "plpgsql" : "sql";
   return {
     symbolUri: source.symbol.uri,
+    // The editor receives the bounded source excerpt below, not the complete indexed document.
+    // A distinct model identity prevents Monaco/LSP from associating that excerpt with full text.
+    // The Monaco file service owns this in-memory document. Keep it in the Workbench file tree;
+    // the second encoding preserves the indexed identity as one segment after URI decoding.
+    editorUri: `file:///postgresql-workbench/cockpit-previews/${encodeURIComponent(encodeURIComponent(source.symbol.uri))}.${languageId}`,
+    languageId,
     title: source.symbol.name,
     kind: source.symbol.kind,
     file: source.source.file,

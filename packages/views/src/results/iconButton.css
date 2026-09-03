@@ -5,7 +5,7 @@
   height: 22px;
   min-width: 22px;
   padding: 0 3px;
-  color: var(--vscode-icon-foreground, var(--vscode-foreground));
+  color: var(--pgw-icon);
   background: transparent;
   border: 1px solid transparent;
   border-radius: 4px;
@@ -14,7 +14,7 @@
 }
 
 .icon-button:hover:not(:disabled) {
-  background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
+  background: var(--pgw-toolbar-hover-background);
 }
 
 .icon-button:disabled {
@@ -23,16 +23,16 @@
 }
 
 .icon-button.primary {
-  color: var(--vscode-button-foreground);
-  background: var(--vscode-button-background);
+  color: var(--pgw-action-text);
+  background: var(--pgw-action-background);
 }
 
 .icon-button.primary:hover:not(:disabled) {
-  background: var(--vscode-button-hoverBackground);
+  background: var(--pgw-action-hover-background);
 }
 
 .icon-button:focus-visible {
-  outline: 1px solid var(--vscode-focusBorder);
+  outline: 1px solid var(--pgw-focus);
   outline-offset: -1px;
 }
 
@@ -62,7 +62,7 @@
   text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--vscode-descriptionForeground);
+  color: var(--pgw-text-muted);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
@@ -75,5 +75,5 @@
 }
 
 .result-navigation-summary .codicon-warning {
-  color: var(--vscode-editorWarning-foreground);
+  color: var(--pgw-warning);
 }

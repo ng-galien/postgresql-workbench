@@ -8,6 +8,7 @@ import type {
   WorkbenchGraphSourcePreview,
 } from "../../../catalog/src/cockpitGraph.js";
 import type { CodeMonikerSymbol } from "../../../catalog/src/localCodeMoniker.js";
+import type { ViewMessaging } from "../messaging.js";
 import type { WorkbenchGraphDragPayload } from "./dragAndDrop.js";
 
 /**
@@ -195,3 +196,9 @@ export type WorkbenchGraphWebviewMessage =
       renderId: number;
       rendered: WorkbenchGraphRenderEvidence;
     };
+
+/** Host-neutral port the Cockpit receives from whichever application mounts it. */
+export type CockpitMessaging = ViewMessaging<
+  WorkbenchGraphWebviewMessage,
+  WorkbenchGraphHostMessage
+>;

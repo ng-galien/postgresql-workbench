@@ -1,9 +1,10 @@
-export { CoverageInstrumentationError } from "./errors.js";
 export {
-  coverageMarkerPrefix,
-  formatCoverageMarker,
-  parseCoverageMarker,
-} from "./markers.js";
+  coverageAsJson,
+  coverageAsLcov,
+  type ExportedCoverageFile,
+} from "./coverageReport.js";
+export { coverageDelta, indexCoverageSnapshot } from "./delta.js";
+export { mapCoverageToSource, mapPlpgsqlBodyLineToSource } from "./mapToSource.js";
 export type {
   CoverageAnalysis,
   CoverageDiagnostic,
@@ -30,8 +31,6 @@ export {
   DEFAULT_PGTAP_TEST_PATTERNS,
   discoverPgTapTests,
   executePgTapTest,
-  matchesPgTapTestPatterns,
-  parsePgTapOutput,
   resetPgTapState,
   toCoverageTestReport,
 } from "./pgtap.js";
@@ -64,11 +63,7 @@ export {
   isCleanCoverageCancellation,
   PgTapUnavailableError,
 } from "./runner.js";
-export {
-  analyzeCoverageSyntax,
-  analyzeCoverageWithSyntaxParser,
-} from "./syntaxAnalyzer.js";
-export { instrumentCoverageSyntaxBody } from "./syntaxInstrumenter.js";
+export { matchesCoveragePatterns } from "./selection.js";
 export type {
   CoverageInstrumentationRequest,
   CoverageSourceAnalysis,

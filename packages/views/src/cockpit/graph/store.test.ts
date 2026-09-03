@@ -23,6 +23,8 @@ describe("Workbench graph cockpit invalidation", () => {
       },
       preview: {
         symbolUri: "sql:table:old",
+        editorUri: "file:///old.sql",
+        languageId: "sql",
         title: "old",
         kind: "table",
         file: "old.sql",
@@ -279,6 +281,8 @@ describe("Workbench graph Source panel", () => {
   });
   const preview = (name: string) => ({
     symbolUri: `sql:table:${name}`,
+    editorUri: `file:///${name}.sql`,
+    languageId: "sql" as const,
     title: name,
     kind: "table",
     file: `${name}.sql`,

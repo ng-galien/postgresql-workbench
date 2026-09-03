@@ -8,38 +8,37 @@ import {
 } from "vscode-languageclient/node";
 import type { WorkbenchIndexController } from "../../packages/catalog/src/indexController.js";
 import { getConnectionName } from "../../packages/catalog/src/savedConnection.js";
-import type { SyntaxParser } from "../../packages/sql/src/analysis/syntaxTree.js";
+import {
+  resolveScratchpadAssociation,
+  SQL_NOTEBOOK_TYPE,
+  type SqlNotebookMetadata,
+} from "../../packages/scratchpad/src/notebookFile.js";
 import {
   answerSyntaxRequest,
   type SqlAuthoringSyntaxRequest,
 } from "../../packages/sql/src/languageServer/answerSyntax.js";
 import { sqlAuthoringEditStillApplies } from "../../packages/sql/src/languageServer/composeRequest.js";
+import { localSqlAuthoringHostServices } from "../../packages/sql/src/languageServer/hostServices.js";
 import {
   type SqlAuthoringScope,
   sqlAuthoringLanguageStatus,
   sqlAuthoringRejectionAction,
 } from "../../packages/sql/src/languageServer/languageStatus.js";
 import {
-  decodeSemanticTokenData,
+  REVEAL_SQL_REFERENCE_COMMAND,
   SQL_AUTHORING_COMPOSE_REQUEST,
   SQL_AUTHORING_CONTEXT_REQUEST,
-  SQL_AUTHORING_PLPGSQL_TOKENS_REQUEST,
   SQL_AUTHORING_SEMANTIC_TOKENS_CHANGED,
   SQL_AUTHORING_SETTINGS_REQUEST,
   SQL_AUTHORING_SYNTAX_REQUEST,
   type SqlAuthoringComposeRequest,
   type SqlAuthoringComposeResult,
   type SqlAuthoringDocumentContext,
-  type SqlAuthoringPlpgsqlTokensResult,
+  type SqlAuthoringDocumentProjection,
+  type SqlAuthoringNavigationTarget,
   type SqlAuthoringSyntaxResult,
   sqlAuthoringContextMatchesToken,
 } from "../../packages/sql/src/languageServer/protocol.js";
-import {
-  documentRelations,
-  type SqlColumnMention,
-  type SqlRelationMention,
-  type SqlRoutineMention,
-} from "../../packages/sql/src/query/relations.js";
 import {
   DEFAULT_SQL_AUTHORING_SETTINGS,
   parseSqlAuthoringDrag,
@@ -48,38 +47,41 @@ import {
   type SqlAuthoringSettings,
   serializeSqlAuthoringDrag,
 } from "../../packages/sql/src/snapshot.js";
-import { canonicalSqlIdentifier } from "../../packages/sql/src/text/identifiers.js";
-import { sqlStatementSlices } from "../../packages/sql/src/text/sqlLexing.js";
-import type { ConnectionManager } from "./connection/index.js";
-import { PlpgsqlSemanticTokensProvider } from "./plpgsql/index.js";
 import {
-  resolveScratchpadAssociation,
-  SQL_NOTEBOOK_TYPE,
-  type SqlNotebookMetadata,
-} from "./scratchpad/index.js";
+  NOTEBOOK_CELL_URI_SCHEME,
+  POSTGRES_SOURCE_LANGUAGE_IDS,
+} from "../../packages/sql/src/text/documentLanguage.js";
+import type { ConnectionManager } from "./connection/index.js";
+import { CODE_MONIKER_URI_SCHEME } from "./sources/uri.js";
+import { SqlAuthoringWebviewServer } from "./sqlAuthoringWebview.js";
 
 const SQL_DOCUMENT_SELECTOR = [
   { language: "sql", scheme: "file" },
   { language: "plpgsql", scheme: "file" },
   { language: "sql", scheme: "untitled" },
   { language: "plpgsql", scheme: "untitled" },
-  { language: "plpgsql", scheme: "vscode-notebook-cell" },
+  { language: "plpgsql", scheme: NOTEBOOK_CELL_URI_SCHEME },
+  { language: "sql", scheme: NOTEBOOK_CELL_URI_SCHEME },
   { language: "sql", scheme: "postgresql-workbench-data-sql" },
+  /*
+   * The virtual sources and the sources a debug session opens. Their features come from the server
+   * like every other document's: a virtual source only one shell could colour would be a capability
+   * VS Code owns, and VS Code governs nothing.
+   */
+  ...POSTGRES_SOURCE_LANGUAGE_IDS.map((language) => ({
+    language,
+    scheme: CODE_MONIKER_URI_SCHEME,
+  })),
+  { language: "plpgsql", scheme: "debug" },
 ] as const;
 const SQL_AUTHORING_LANGUAGE_STATUS_ID = "postgresql-workbench.sqlAuthoring";
-const REVEAL_SQL_REFERENCE_COMMAND = "postgresql-workbench.revealSqlReference";
 export const REFRESH_SQL_AUTHORING_CONTEXT_COMMAND =
   "postgresql-workbench.refreshSqlAuthoringContext";
 
-export interface SqlAuthoringNavigationTarget {
-  column?: string;
-  database: string;
-  oid: number;
-  connectionId: string;
-}
-
 /** The running SQL authoring server: every consumer composes through it, never through the engine. */
 export interface SqlAuthoringRegistration extends vscode.Disposable {
+  /** Authenticated loopback endpoint used only by Monaco clients inside Workbench webviews. */
+  webviewLanguageServerUrl: string;
   compose(
     request: SqlAuthoringComposeRequest,
     token?: vscode.CancellationToken,
@@ -97,15 +99,16 @@ export async function registerSqlAuthoring(
   index: WorkbenchIndexController,
   navigate?: (target: SqlAuthoringNavigationTarget) => Promise<boolean>,
   documentAssociation?: (uri: string) => string | undefined,
+  documentProjection?: (uri: string) => SqlAuthoringDocumentProjection | undefined,
 ): Promise<SqlAuthoringRegistration> {
   const module = context.asAbsolutePath(join("dist", "sql-authoring-server.js"));
   const serverOptions: ServerOptions = {
     run: { module, transport: TransportKind.ipc },
     debug: { module, transport: TransportKind.ipc },
   };
-  const plpgsqlSemanticTokens = new PlpgsqlSemanticTokensProvider(() => index.syntaxParser());
   const clientOptions: LanguageClientOptions = {
     documentSelector: [...SQL_DOCUMENT_SELECTOR],
+    markdown: { isTrusted: { enabledCommands: [REVEAL_SQL_REFERENCE_COMMAND] } },
     outputChannelName: "PostgreSQL Workbench SQL Authoring",
   };
   const client = new LanguageClient(
@@ -113,22 +116,6 @@ export async function registerSqlAuthoring(
     "PostgreSQL Workbench SQL Authoring",
     serverOptions,
     clientOptions,
-  );
-
-  client.onRequest(
-    SQL_AUTHORING_PLPGSQL_TOKENS_REQUEST,
-    async ({ uri }: { uri: string }): Promise<SqlAuthoringPlpgsqlTokensResult> => {
-      const document = vscode.workspace.textDocuments.find(
-        (candidate) => candidate.uri.toString() === uri,
-      );
-      if (!document) return { tokens: [] };
-      try {
-        const tokens = await plpgsqlSemanticTokens.provideDocumentSemanticTokens(document);
-        return { tokens: decodeSemanticTokenData(tokens.data) };
-      } catch {
-        return { tokens: [] };
-      }
-    },
   );
   client.onRequest<SqlAuthoringDocumentContext, never>(
     SQL_AUTHORING_CONTEXT_REQUEST,
@@ -147,15 +134,39 @@ export async function registerSqlAuthoring(
         request,
         await index.syntaxParser(),
         resolveSqlAuthoringSettings(request.uri),
-        (uri) =>
-          vscode.workspace.textDocuments.find((candidate) => candidate.uri.toString() === uri)
-            ?.languageId === "plpgsql",
       ),
   );
   client.onRequest<SqlAuthoringSettings, never>(SQL_AUTHORING_SETTINGS_REQUEST, (parameters) =>
     resolveSqlAuthoringSettings((parameters as { uri: string }).uri),
   );
   await client.start();
+
+  const webviewServer = new SqlAuthoringWebviewServer(
+    localSqlAuthoringHostServices({
+      parser: () => index.syntaxParser(),
+      documentContext: (uri) => {
+        const context = resolveDocumentContext(uri, connections, index, documentAssociation);
+        const projection = documentProjection?.(uri);
+        return context.status === "available" && projection ? { ...context, projection } : context;
+      },
+      documentSettings: resolveSqlAuthoringSettings,
+      onDidChangeContext: (listener) =>
+        vscode.Disposable.from(index.onDidChangeState(listener), connections.onChanged(listener)),
+    }),
+  );
+  let webviewLanguageServerUrl: string;
+  try {
+    await webviewServer.start();
+    const internalEditorEndpoint = vscode.Uri.parse(webviewServer.url().replace(/^ws:/u, "http:"));
+    const externalEditorEndpoint = await vscode.env.asExternalUri(internalEditorEndpoint);
+    webviewLanguageServerUrl = externalEditorEndpoint
+      .with({ scheme: externalEditorEndpoint.scheme === "https" ? "wss" : "ws" })
+      .toString();
+  } catch (error) {
+    webviewServer.dispose();
+    await client.stop();
+    throw error;
+  }
 
   const languageStatus = vscode.languages.createLanguageStatusItem(
     SQL_AUTHORING_LANGUAGE_STATUS_ID,
@@ -278,36 +289,6 @@ export async function registerSqlAuthoring(
     { dropMimeTypes: [SQL_AUTHORING_OBJECT_MIME] },
   );
 
-  const hovers = vscode.languages.registerHoverProvider(
-    [...SQL_DOCUMENT_SELECTOR] satisfies vscode.DocumentSelector,
-    {
-      async provideHover(document, position) {
-        const context = resolveDocumentContext(
-          document.uri.toString(),
-          connections,
-          index,
-          documentAssociation,
-        );
-        if (context.status !== "available" || context.snapshot.status !== "available") return;
-        const references = await sqlReferences(
-          document,
-          context.snapshot,
-          await index.syntaxParser(),
-          resolveSqlAuthoringSettings(document.uri.toString()),
-        );
-        const reference = references.find(({ range }) => range.contains(position));
-        if (!reference) return;
-        const command = `command:${REVEAL_SQL_REFERENCE_COMMAND}?${encodeURIComponent(
-          JSON.stringify([reference.target]),
-        )}`;
-        const markdown = new vscode.MarkdownString(
-          `**${reference.label}**\n\n[Reveal in Workbench Sources](${command})`,
-        );
-        markdown.isTrusted = { enabledCommands: [REVEAL_SQL_REFERENCE_COMMAND] };
-        return new vscode.Hover(markdown, reference.range);
-      },
-    },
-  );
   const revealReference = vscode.commands.registerCommand(
     REVEAL_SQL_REFERENCE_COMMAND,
     async (target: SqlAuthoringNavigationTarget) => {
@@ -341,17 +322,18 @@ export async function registerSqlAuthoring(
 
   const subscriptions = vscode.Disposable.from(
     dropProvider,
-    hovers,
     revealReference,
     refreshContext,
     languageStatus,
     semanticTokenRefreshSubscriptions,
+    webviewServer,
     {
       dispose: () => void client.stop(),
     },
   );
   return {
     dispose: () => subscriptions.dispose(),
+    webviewLanguageServerUrl,
     compose: (request, token) =>
       token
         ? client.sendRequest<SqlAuthoringComposeResult>(
@@ -383,149 +365,6 @@ export async function registerSqlAuthoring(
         tokenSource.dispose();
       }
     },
-  };
-}
-
-interface SqlReference {
-  label: string;
-  range: vscode.Range;
-  target: SqlAuthoringNavigationTarget;
-}
-
-export async function sqlReferences(
-  document: vscode.TextDocument,
-  snapshot: Extract<SqlAuthoringDocumentContext, { status: "available" }>["snapshot"],
-  parser: SyntaxParser,
-  settings: SqlAuthoringSettings = DEFAULT_SQL_AUTHORING_SETTINGS,
-): Promise<SqlReference[]> {
-  const source = document.getText();
-  const { relations, columns, routines } = await documentRelations(parser, source, {
-    uri: document.uri.toString(),
-    maxDepth: settings.syntaxMaxDepth,
-    maxNodes: settings.syntaxMaxNodes,
-  });
-  const references: SqlReference[] = [];
-  // Aliases are scoped to their Statement: the same name may denote another relation further down.
-  for (const statement of sqlStatementSlices(source)) {
-    const within = <T extends { nameRange: { start: number; end: number } }>(
-      mentions: readonly T[],
-    ) =>
-      mentions.filter(
-        (mention) =>
-          mention.nameRange.start >= statement.start && mention.nameRange.end <= statement.end,
-      );
-    references.push(
-      ...statementReferences(
-        document,
-        snapshot,
-        within(relations),
-        within(columns),
-        within(routines),
-      ),
-    );
-  }
-  return references;
-}
-
-/** References of one Statement, with its own alias scope. */
-function statementReferences(
-  document: vscode.TextDocument,
-  snapshot: Extract<SqlAuthoringDocumentContext, { status: "available" }>["snapshot"],
-  relations: readonly SqlRelationMention[],
-  columns: readonly SqlColumnMention[],
-  routines: readonly SqlRoutineMention[],
-): SqlReference[] {
-  const references: SqlReference[] = [];
-  const aliases = new Map<string, (typeof snapshot.objects)[number]>();
-  for (const relation of relations) {
-    if (relation.schema === undefined) continue;
-    // A relation position names a table or a view; only when no relation carries that name does
-    // it name a routine, as in `CALL shop.move_inventory(…)`. Homonyms resolve to the relation.
-    const named = snapshot.objects.filter(
-      (candidate) =>
-        candidate.schema === canonicalSqlIdentifier(relation.schema ?? "") &&
-        candidate.name === canonicalSqlIdentifier(relation.name),
-    );
-    const object =
-      named.find((candidate) => candidate.kind === "table" || candidate.kind === "view") ??
-      named.find((candidate) => candidate.kind === "function" || candidate.kind === "procedure");
-    if (!object) continue;
-    const nameLength = relation.name.length;
-    references.push(
-      sqlReference(document, relation.nameRange.end - nameLength, nameLength, object),
-    );
-    if (object.kind === "table" || object.kind === "view") {
-      aliases.set(canonicalSqlIdentifier(relation.reference), object);
-    }
-  }
-  for (const routine of routines) {
-    if (routine.schema === undefined) continue;
-    const object = snapshot.objects.find(
-      (candidate) =>
-        (candidate.kind === "function" || candidate.kind === "procedure") &&
-        candidate.schema === canonicalSqlIdentifier(routine.schema ?? "") &&
-        candidate.name === canonicalSqlIdentifier(routine.name),
-    );
-    if (!object) continue;
-    references.push(
-      sqlReference(
-        document,
-        routine.nameRange.start,
-        routine.nameRange.end - routine.nameRange.start,
-        object,
-      ),
-    );
-  }
-  for (const column of columns) {
-    const name = canonicalSqlIdentifier(column.name);
-    const owner =
-      column.qualifier === undefined
-        ? soleOwnerOf(name, aliases)
-        : aliases.get(canonicalSqlIdentifier(column.qualifier));
-    if (!owner?.columns.some((candidate) => candidate.name === name)) continue;
-    references.push(
-      sqlReference(
-        document,
-        column.nameRange.start,
-        column.nameRange.end - column.nameRange.start,
-        owner,
-        name,
-      ),
-    );
-  }
-  return references;
-}
-
-/** The only relation of the query that has this column, when exactly one does. */
-function soleOwnerOf<T extends { oid: number; columns: readonly { name: string }[] }>(
-  name: string,
-  aliases: ReadonlyMap<string, T>,
-): T | undefined {
-  const owners = new Map(
-    [...aliases.values()]
-      .filter((object) => object.columns.some((column) => column.name === name))
-      .map((object) => [object.oid, object]),
-  );
-  return owners.size === 1 ? [...owners.values()][0] : undefined;
-}
-
-function sqlReference(
-  document: vscode.TextDocument,
-  offset: number,
-  length: number,
-  object: { database: string; name: string; oid: number; schema: string; connectionId: string },
-  column?: string,
-): SqlReference {
-  const target: SqlAuthoringNavigationTarget = {
-    column,
-    database: object.database,
-    oid: object.oid,
-    connectionId: object.connectionId,
-  };
-  return {
-    label: column ? `${object.schema}.${object.name}.${column}` : `${object.schema}.${object.name}`,
-    range: new vscode.Range(document.positionAt(offset), document.positionAt(offset + length)),
-    target,
   };
 }
 

@@ -177,8 +177,16 @@ function plpgsqlTree(source: string, withCommit: boolean): SyntaxTree {
     ]),
   ];
   if (withCommit) {
+    // On a line of its own, as PostgreSQL would have it: two statements never share one.
     statements.push(
-      node("proc_stmt", returnEnd, returnEnd, [node("stmt_commit", returnEnd, returnEnd)]),
+      node(
+        "proc_stmt",
+        returnEnd,
+        returnEnd,
+        [node("stmt_commit", returnEnd, returnEnd, [], null, 2)],
+        null,
+        2,
+      ),
     );
   }
   return tree(
@@ -202,6 +210,10 @@ function tree(language: string, _source: string, root: SyntaxNode): SyntaxTree {
   return {
     file: `${language}.sql`,
     language,
+    target:
+      language === "plpgsql"
+        ? { language: "plpgsql", entryPoint: "block" }
+        : { language: "sql", entryPoint: "script" },
     focus: `${language}.sql`,
     focusLineRange: null,
     root,
@@ -219,16 +231,20 @@ function node(
   end: number,
   children: SyntaxNode[] = [],
   language: string | null = null,
+  line = 1,
 ): SyntaxNode {
   return {
     kind,
     language,
+    ...(language === "sql" || language === "plpgsql"
+      ? { languageRegion: { language, projection: { kind: "identity" as const } } }
+      : {}),
     named: true,
     error: false,
     missing: false,
     byteRange: [start, end],
-    start: { line: 1, column: start },
-    end: { line: 1, column: end },
+    start: { line, column: start },
+    end: { line, column: end },
     text: null,
     children,
   };

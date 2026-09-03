@@ -20,6 +20,9 @@ packages/                  the engine, one package per subject
   catalog/                 PostgreSQL catalog projection, DDL sync, and the Cockpit graph
   rows/                    reading and editing relation rows: query composition,
                            editability, and the Data View engine
+  presentation/            host-neutral visual roles, default theme, and PostgreSQL identities
+  editor/                  host-neutral Monaco editor and official LSP client integration,
+                           depending only on SQL authoring and presentation contracts
   views/                   the React views every surface renders: result grid,
                            Data View, Cockpit, debug results
   coverage/                pgTAP coverage analysis and instrumentation

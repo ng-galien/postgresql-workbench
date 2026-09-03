@@ -18,6 +18,7 @@ import {
 import type { DebugProtocol } from "@vscode/debugprotocol";
 import { Client, type ClientConfig } from "pg";
 import { plpgsqlRoutineBodyStartLine } from "../../../../sql/src/analysis/plpgsqlDocument.js";
+import { POSTGRES_SQL_KEYWORDS } from "../../../../sql/src/analysis/postgresKeywordCatalog.js";
 import type { SyntaxParser } from "../../../../sql/src/analysis/syntaxTree.js";
 import {
   analyzeFunction,
@@ -1101,7 +1102,9 @@ export class PlpgsqlDebugSession extends LoggingDebugSession {
       }
     }
 
-    for (const kw of ["SELECT", "WHERE", "AND", "OR", "NOT", "IS", "NULL", "TRUE", "FALSE"]) {
+    // Debug Console input is executed by `evaluateSql`; this is an SQL context even though the
+    // active debug target is PL/pgSQL.
+    for (const { label: kw } of POSTGRES_SQL_KEYWORDS) {
       if (!prefix || kw.toLowerCase().startsWith(prefix)) {
         targets.push({ label: kw, type: "keyword" });
       }

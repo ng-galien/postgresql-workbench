@@ -1,13 +1,10 @@
 import type { DebugResultCell } from "../../../dap/src/debugger/launch/index.js";
-import type { NamedSqlToken } from "../../../sql/src/languageServer/protocol.js";
 import type { DataViewExportChoice, DataViewExportScope } from "../export.js";
 import type { FollowLinkRequest } from "../followLink.js";
 import type { ResultNavigationCommand } from "../navigation.js";
 import type { SqlNotebookResultPayload } from "../resultPayload.js";
 import type {
   DataViewAddition,
-  DataViewChangeHandle,
-  DataViewCompletion,
   DataViewEdit,
   DataViewEditability,
   DataViewProjection,
@@ -17,6 +14,7 @@ import type {
   DataViewSort,
   DataViewSource,
 } from "./dataView.js";
+import type { DataViewMove } from "./pendingEdits.js";
 
 /** What the Data View webview and the Extension Host send each other. */
 
@@ -68,31 +66,10 @@ export type DataViewRequest =
   | { type: "data-view/filter"; text: string }
   /** Filter on what a cell holds: the host writes the condition, so the reader reads it. */
   | { type: "data-view/filter-cell"; ordinal: number; value: string | null; negate: boolean }
-  | { type: "data-view/complete"; requestId: number; text: string; offset: number }
   | { type: "data-view/edit-query"; clause?: "select" }
   | { type: "data-view/apply-query" }
-  | { type: "data-view/edit"; edit: DataViewEdit }
-  /**
-   * Adds a row to fill in; it exists only in the grid until the changes are applied. `values`
-   * arrives already filled when a pasted line fell past the last loaded row.
-   */
-  | { type: "data-view/add-row"; values?: Record<string, string | null>; above?: number }
-  /** Takes away every row of the selection, by identity. */
-  | { type: "data-view/remove-rows"; rows: DataViewRowRemoval[] }
-  | { type: "data-view/drop-row"; localId: string }
-  /**
-   * Fills columns of an added row; a paste arrives as one message, not one per column. A column a
-   * reader gives NULL is inserted as NULL; one named in `unset` is left out of the INSERT, so the
-   * database gives it whatever it would have given — a DEFAULT, a sequence, an identity.
-   */
-  | {
-      type: "data-view/fill-row";
-      localId: string;
-      values: Record<string, string | null>;
-      unset?: readonly string[];
-    }
-  /** Takes one change back out of what is waiting, leaving every other one held. */
-  | { type: "data-view/discard-change"; change: DataViewChangeHandle }
+  /** Everything a reader can do to what is waiting to be written; the row engine names them. */
+  | DataViewMove
   | { type: "data-view/discard" }
   | { type: "data-view/apply" }
   | { type: "data-view/copy"; text: string }
@@ -124,19 +101,7 @@ export type DataViewRequest =
       scope: DataViewExportScope;
       selected?: { from: number; to: number; ordinals: number[] };
     }
-  | { type: "data-view/open-sql" }
-  /**
-   * Colour some SQL the way the editor colours it: the query as it stands, or a condition being
-   * typed — which the host asks about as part of the query, since a condition alone names aliases
-   * nothing could resolve.
-   */
-  | { type: "data-view/tokens"; requestId: number; of: "query" | { filter: string } };
-
-/**
- * One semantic token of a SQL statement, as the language server reads it. The host resolves the
- * kind against the server's legend before sending it, so nothing downstream holds a legend.
- */
-export type DataViewSqlToken = NamedSqlToken;
+  | { type: "data-view/open-sql" };
 
 export type DataViewResponse =
   | { type: "data-view/state"; state: DataViewState }
@@ -150,11 +115,5 @@ export type DataViewResponse =
       title: string;
       choices: Array<{ index: number; label: string; description: string }>;
     }
-  | { type: "data-view/completions"; requestId: number; items: DataViewCompletion[] }
-  /**
-   * What the language server makes of the SQL it was asked about: one token per name it
-   * recognised, carrying the kind it is — a table, a column, an alias.
-   */
-  | { type: "data-view/tokens"; requestId: number; tokens: DataViewSqlToken[] }
   | { type: "data-view/progress"; loadedRowCount: number }
   | { type: "data-view/notice"; message: string; severity: "info" | "error" };

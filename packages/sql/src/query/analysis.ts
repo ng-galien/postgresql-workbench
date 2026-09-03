@@ -1,6 +1,6 @@
-import { Buffer } from "node:buffer";
 import { directSyntaxChild, findSyntaxNode, findSyntaxNodes } from "../analysis/syntaxNodes.js";
 import type { SyntaxNode, SyntaxParser } from "../analysis/syntaxTree.js";
+import { byteToUtf16Offsets } from "../analysis/textOffsets.js";
 import { formatPostgresSql } from "../text/format.js";
 import {
   canonicalSqlIdentifier,
@@ -168,7 +168,7 @@ export async function analyzeSqlQuery(
   // A clipped tree yields ranges computed from a partial parse: rewriting on it would corrupt SQL.
   if (tree.truncated) return rejected("syntax-budget");
   const shape = sqlQueryShape(tree.root);
-  const offset = byteToCharOffsets(text);
+  const offset = byteToUtf16Offsets(text);
   const range = (node: SyntaxNode): TextRange => ({
     start: offset(node.byteRange[0]),
     end: offset(node.byteRange[1]),
@@ -377,24 +377,6 @@ function removedNames(removed: ReadonlySet<SqlQueryRelation>): Set<string> {
 /** How a relation is named in the rest of the query, in the form qualifiers are compared in. */
 export function relationReference(relation: SqlQueryRelation): string {
   return canonicalSqlIdentifier(relation.reference);
-}
-
-/** Byte offset to character offset in one pass, so every node range is an O(1) lookup. */
-export function byteToCharOffsets(text: string): (byte: number) => number {
-  const bytes = Buffer.byteLength(text, "utf8");
-  if (bytes === text.length) return (byte) => byte;
-  const characters = new Uint32Array(bytes + 1);
-  let byte = 0;
-  let index = 0;
-  // By code point: a character outside the BMP is two UTF-16 units but one UTF-8 sequence.
-  for (const character of text) {
-    const width = Buffer.byteLength(character, "utf8");
-    for (let step = 0; step < width; step += 1) characters[byte + step] = index;
-    byte += width;
-    index += character.length;
-  }
-  characters[bytes] = text.length;
-  return (position) => characters[Math.max(0, Math.min(bytes, position))] ?? text.length;
 }
 
 /** Items of a left-recursive list node, without descending into nested expressions. */

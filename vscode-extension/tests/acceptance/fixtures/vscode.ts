@@ -212,6 +212,7 @@ async function waitForWorkbenchViews(app: ElectronApplication, timeout: number):
   );
   await page
     .getByRole("tree", { name: "Connections", exact: true })
+    .or(page.getByRole("button", { name: "Open Connections", exact: true }))
     .waitFor({ state: "visible", timeout });
   return page;
 }
@@ -248,6 +249,7 @@ export interface VSCodeInstance {
       | "testing.runAll"
       | "testing.toggleInlineCoverage"
       | "postgresql-workbench-connections.focus"
+      | "postgresql-workbench.manageConnections"
       | "postgresql-workbench.openDataView"
       | "editor.action.formatDocument"
       | "workbench.action.files.saveAll"
@@ -310,6 +312,7 @@ export interface WorkbenchIndexActiveRun {
 
 export interface WorkbenchStateSnapshot {
   connection: {
+    savedConnectionIds: string[];
     connected: boolean;
     connectedConnectionIds: string[];
   };
@@ -633,6 +636,8 @@ export async function launchVSCode(options: LaunchVSCodeOptions = {}): Promise<V
       "security.workspace.trust.enabled": false,
       "telemetry.telemetryLevel": "off",
       "update.mode": "none",
+      "editor.autoClosingBrackets": "never",
+      "editor.autoClosingQuotes": "never",
       "editor.wordBasedSuggestions": "off",
       "git.openRepositoryInParentFolders": "never",
       "postgresql-workbench.acceptanceControlFile": controlFile,

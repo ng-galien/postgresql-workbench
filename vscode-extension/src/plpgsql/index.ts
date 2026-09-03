@@ -7,4 +7,3 @@
 
 export { createRoutineComparisonHandler } from "./compareCommand.js";
 export { PlpgsqlInlineValuesProvider } from "./inlineValues.js";
-export { LEGEND, PlpgsqlSemanticTokensProvider } from "./semanticTokens.js";

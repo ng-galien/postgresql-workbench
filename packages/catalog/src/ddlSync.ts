@@ -22,7 +22,10 @@ import { type ConnectionConfig, getConnectionName } from "./savedConnection.js";
 export interface DdlSyncConnections {
   readonly connections: readonly ConnectionConfig[];
   readonly store: { get(connectionId: string): ConnectionConfig | undefined };
-  createDedicatedClient(connectionId: string): Promise<Client>;
+  createDedicatedClient(
+    connectionId: string,
+    options?: { statementTimeoutMs?: number },
+  ): Promise<Client>;
   setSchemaSyncOverride(
     connectionId: string,
     override: ConnectionConfig["schemaSync"],
@@ -538,7 +541,9 @@ export class WorkbenchDdlSyncController {
       await client?.end().catch(() => undefined);
     };
     try {
-      client = await this.connections.createDedicatedClient(connection.id);
+      client = await this.connections.createDedicatedClient(connection.id, {
+        statementTimeoutMs: 0,
+      });
       startupPhase = "starting";
       client.on("notification", (notification) => {
         if (startupPhase === "closed") return;

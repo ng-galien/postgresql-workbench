@@ -1,14 +1,7 @@
 import * as assert from "node:assert";
 import * as vscode from "vscode";
 import { analyzePlpgsqlDocument } from "../../../../packages/sql/src/routines/documentAnalysis.js";
-import {
-  TOKEN_MODIFIERS,
-  TOKEN_TYPES,
-} from "../../../../packages/sql/src/text/plpgsqlTokenLegend.js";
-import {
-  PlpgsqlInlineValuesProvider,
-  PlpgsqlSemanticTokensProvider,
-} from "../../../src/plpgsql/index.js";
+import { PlpgsqlInlineValuesProvider } from "../../../src/plpgsql/index.js";
 import { CodeMonikerContentProvider } from "../../../src/sources/index.js";
 import { EXT_ID } from "./testUtils.js";
 
@@ -20,6 +13,12 @@ async function extensionSyntaxParser() {
 
 // ============================================================
 suite("Extension basics", () => {
+  test("opens the Connections page on command", async () => {
+    await vscode.commands.executeCommand("postgresql-workbench.manageConnections");
+    const tab = vscode.window.tabGroups.activeTabGroup.activeTab;
+    assert.ok(tab, "a tab should be active after opening the Connections page");
+    assert.strictEqual(tab.label, "PostgreSQL Connections");
+  });
   test("activates and registers commands", async () => {
     const ext = vscode.extensions.getExtension(EXT_ID)!;
     assert.ok(ext, "Extension not found");
@@ -91,63 +90,6 @@ suite("Inline values", () => {
     assert.deepStrictEqual(
       lookups.map((value) => value.variableName),
       ["counter", "result"],
-    );
-  });
-});
-
-suite("Semantic tokens", () => {
-  test("marks declarations on the body-relative declaration line", async function () {
-    this.timeout(60_000);
-
-    const provider = new PlpgsqlSemanticTokensProvider(extensionSyntaxParser);
-    // pg_get_functiondef layout: LANGUAGE in the header, body opens on line 3
-    const lines = [
-      "CREATE OR REPLACE FUNCTION public.demo(counter integer)",
-      " RETURNS integer",
-      " LANGUAGE plpgsql",
-      "AS $function$",
-      "DECLARE",
-      "  result integer;",
-      "BEGIN",
-      "  SELECT counter::integer INTO result;",
-      "  RETURN result;",
-      "END;",
-      "$function$",
-    ];
-    const document = {
-      uri: { toString: () => "test://semantic-tokens.sql" },
-      version: 1,
-      getText: () => lines.join("\n"),
-    } as unknown as vscode.TextDocument;
-
-    const tokens = await provider.provideDocumentSemanticTokens(document);
-    assert.ok(tokens, "Expected semantic tokens");
-
-    // Decode [deltaLine, deltaStart, length, tokenType, tokenModifiers] runs
-    const decoded: { line: number; char: number; length: number; type: string; mods: number }[] =
-      [];
-    let line = 0;
-    let char = 0;
-    for (let i = 0; i < tokens.data.length; i += 5) {
-      line += tokens.data[i];
-      char = tokens.data[i] === 0 ? char + tokens.data[i + 1] : tokens.data[i + 1];
-      decoded.push({
-        line,
-        char,
-        length: tokens.data[i + 2],
-        type: TOKEN_TYPES[tokens.data[i + 3]],
-        mods: tokens.data[i + 4],
-      });
-    }
-
-    const declBit = 1 << TOKEN_MODIFIERS.indexOf("declaration");
-    const declarations = decoded.filter(
-      (t) => t.type === "variable" && (t.mods & declBit) !== 0 && t.length === "result".length,
-    );
-    assert.deepStrictEqual(
-      declarations.map((t) => ({ line: t.line, char: t.char })),
-      [{ line: 5, char: 2 }],
-      "Declaration token should land on the 'result integer;' line",
     );
   });
 });
@@ -272,5 +214,73 @@ suite("Virtual source editing", () => {
     } finally {
       disposable.dispose();
     }
+  });
+});
+
+// ============================================================
+suite("Scratchpad SQL authoring", () => {
+  async function openScratchCell(text: string): Promise<vscode.NotebookCell> {
+    const extension = vscode.extensions.getExtension(EXT_ID)!;
+    if (!extension.isActive) await extension.activate();
+    const notebook = await vscode.workspace.openNotebookDocument(
+      "postgresql-workbench-sql",
+      new vscode.NotebookData([
+        new vscode.NotebookCellData(vscode.NotebookCellKind.Code, text, "plpgsql"),
+      ]),
+    );
+    await vscode.window.showNotebookDocument(notebook);
+    return notebook.cellAt(0);
+  }
+
+  async function pollUntil<T>(
+    fetch: () => Thenable<T>,
+    accept: (value: T) => boolean,
+    timeoutMs = 30_000,
+  ): Promise<T> {
+    const deadline = Date.now() + timeoutMs;
+    let value = await fetch();
+    while (!accept(value) && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      value = await fetch();
+    }
+    return value;
+  }
+
+  test("a notebook cell is coloured by the SQL authoring server", async function () {
+    this.timeout(60_000);
+    const cell = await openScratchCell("SELECT 1 FROM information_schema.tables;");
+    const tokens = await pollUntil(
+      () =>
+        vscode.commands.executeCommand<vscode.SemanticTokens>(
+          "vscode.provideDocumentSemanticTokens",
+          cell.document.uri,
+        ),
+      (value) => (value?.data.length ?? 0) > 0,
+    );
+    assert.ok(
+      tokens && tokens.data.length > 0,
+      "The server's one stream never coloured the notebook cell",
+    );
+  });
+
+  test("a notebook cell completes through the SQL authoring server", async function () {
+    this.timeout(60_000);
+    const cell = await openScratchCell("SEL");
+    const proposals = await pollUntil(
+      () =>
+        vscode.commands.executeCommand<vscode.CompletionList>(
+          "vscode.executeCompletionItemProvider",
+          cell.document.uri,
+          new vscode.Position(0, 3),
+        ),
+      (value) => (value?.items.length ?? 0) > 0,
+    );
+    const labels = (proposals?.items ?? []).map((item) =>
+      typeof item.label === "string" ? item.label : item.label.label,
+    );
+    assert.ok(
+      labels.some((label) => label.toUpperCase() === "SELECT"),
+      `The server never proposed SELECT for a notebook cell; got [${labels.slice(0, 8).join(", ")}]`,
+    );
   });
 });

@@ -1,0 +1,27 @@
+.shell-page {
+  display: grid;
+  grid-template-rows: 36px minmax(0, 1fr);
+  height: 100%;
+  overflow: hidden;
+}
+
+.shell-page__content {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.shell-page__unavailable {
+  box-sizing: border-box;
+  height: 100%;
+  padding: 32px;
+}
+
+.shell-page__unavailable h1 {
+  margin: 0 0 8px;
+  font-size: 18px;
+}
+
+.shell-page__unavailable p {
+  margin: 0;
+  color: var(--pgw-text-muted);
+}

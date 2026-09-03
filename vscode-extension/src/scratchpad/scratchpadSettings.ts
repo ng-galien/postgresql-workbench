@@ -6,7 +6,7 @@ import {
 import {
   DEFAULT_SCRATCHPAD_STATEMENT_TIMEOUT_MS,
   validStatementTimeoutMs,
-} from "./notebookFile.js";
+} from "../../../packages/scratchpad/src/notebookFile.js";
 
 /**
  * What the reader has configured for a Scratchpad: how long a statement may run before PostgreSQL

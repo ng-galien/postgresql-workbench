@@ -4,6 +4,7 @@
     "includes": [
       "packages/**",
       "!**/dist",
+      "!packages/sql/src/authoring/generated",
       "vscode-extension/src/**",
       "vscode-extension/tests/**",
       "e2e/**",

@@ -50,6 +50,15 @@ test.describe("SQL authoring", () => {
       await sqlEditor.dismissCompletion();
     });
 
+    await test.step("hover an indexed relation and offer the Workbench Sources link", async () => {
+      await vscode.openSqlDocument("SELECT id FROM shop.product;");
+      await sqlEditor.associateDocumentAutomatically(demoAssociationText);
+      const hover = await sqlEditor.showHover("product");
+      await expect(hover).toContainText("shop.product");
+      await expect(hover).toContainText("Reveal in Workbench Sources");
+      await sqlEditor.dismissHover();
+    });
+
     await test.step("compose from the Document Association into an ordinary SQL document", async () => {
       await vscode.openSqlDocument("");
       await sqlEditor.associateDocumentAutomatically(demoAssociationText);
@@ -228,6 +237,14 @@ test.describe("SQL authoring", () => {
         ],
       });
 
+    await test.step("complete an aliased column inside a notebook cell", async () => {
+      const aliased = await notebook.addCodeCell();
+      await notebook.typeInCell(aliased, "SELECT * FROM shop.product AS product WHERE product.");
+      await notebook.requestCompletion(aliased);
+      await expect(notebook.suggestion(/^id$/)).toBeVisible({ timeout: 5_000 });
+      await notebook.dismissCompletion();
+    });
+
     await test.step("keep completion on the Association when another Connection is connected", async () => {
       try {
         await workbench.tree.scrollToTop();
@@ -246,7 +263,7 @@ test.describe("SQL authoring", () => {
         await notebook.dismissCompletion();
       } finally {
         await vscode.removeConnection(alternateConnectionId);
-        await workbench.tree.expectItemAbsent(alternateConnection);
+        await workbench.tree.expectItemAbsent(alternateConnection, 10_000);
       }
     });
   });

@@ -33,14 +33,20 @@ import {
   requestNeighborhood,
   setPinnedSymbol,
 } from "../graph/transport.js";
-import { post } from "../vscodeApi.js";
+import type { CockpitMessaging } from "../protocol.js";
 import { CockpitEdge, type CockpitEdgeData } from "./CockpitEdge.js";
 import { CockpitNode, type CockpitNodeData } from "./CockpitNode.js";
 
 const NODE_TYPES = { cockpit: CockpitNode };
 const EDGE_TYPES = { cockpit: CockpitEdge };
 
-export function CockpitCanvas({ frameRequest }: { frameRequest: string }) {
+export function CockpitCanvas({
+  messaging,
+  frameRequest,
+}: {
+  messaging: CockpitMessaging;
+  frameRequest: string;
+}) {
   const exploration = useCockpitStore((state) => state.exploration);
   const filters = useCockpitStore((state) => state.relationFilters);
   const positions = useCockpitStore((state) => state.positions);
@@ -107,28 +113,28 @@ export function CockpitCanvas({ frameRequest }: { frameRequest: string }) {
   const onExpand = useCallback<CockpitNodeData["onExpand"]>(
     (identity, direction) => {
       if (exploration.neighborhoods[identity]) reveal(identity, direction);
-      else requestNeighborhood(identity, "expand", direction);
+      else requestNeighborhood(messaging, identity, "expand", direction);
     },
-    [exploration.neighborhoods, reveal],
+    [exploration.neighborhoods, messaging, reveal],
   );
   const onPin = useCallback<CockpitNodeData["onPin"]>(
     (identity) => {
       const willPin = !exploration.nodes[identity]?.pinned;
       pin(identity);
-      setPinnedSymbol(identity, willPin);
+      setPinnedSymbol(messaging, identity, willPin);
     },
-    [exploration.nodes, pin],
+    [exploration.nodes, messaging, pin],
   );
   const onToggleSource = useCallback<CockpitNodeData["onToggleSource"]>(
     (identity) => {
       if (sourceVisible && preview?.symbolUri === identity) {
         dismissPreview();
-        dismissSource();
+        dismissSource(messaging);
       } else {
-        inspectSymbol(identity);
+        inspectSymbol(messaging, identity);
       }
     },
-    [dismissPreview, preview?.symbolUri, sourceVisible],
+    [dismissPreview, messaging, preview?.symbolUri, sourceVisible],
   );
   const flowNodes = useMemo(() => {
     const base: Array<Node<CockpitNodeData>> = nodes.map((node) => {
@@ -148,10 +154,10 @@ export function CockpitCanvas({ frameRequest }: { frameRequest: string }) {
             incoming: hiddenCount(exploration, node.identity, "incoming"),
             outgoing: hiddenCount(exploration, node.identity, "outgoing"),
           },
-          onFocus: focusSymbol,
+          onFocus: (identity) => focusSymbol(messaging, identity),
           onToggleSource,
-          onOpen: openSymbol,
-          onActions: debugSymbol,
+          onOpen: (identity) => openSymbol(messaging, identity),
+          onActions: (identity) => debugSymbol(messaging, identity),
           onPin,
           onExpand,
         },
@@ -168,6 +174,7 @@ export function CockpitCanvas({ frameRequest }: { frameRequest: string }) {
     exploration,
     hoveredIdentity,
     laidOut,
+    messaging,
     nodes,
     onExpand,
     onPin,
@@ -190,7 +197,7 @@ export function CockpitCanvas({ frameRequest }: { frameRequest: string }) {
       visibleEdges.map((edge) => {
         const kind = edge.kinds[0] ?? "references";
         const onPath = pathSet.has(edge.source) && pathSet.has(edge.target);
-        const color = onPath ? "var(--vscode-charts-yellow)" : relationColor(kind);
+        const color = onPath ? "var(--pgw-accent-yellow)" : relationColor(kind);
         const data: CockpitEdgeData = {
           sourceLabel: exploration.nodes[edge.source]?.presentation.label ?? edge.source,
           targetLabel: exploration.nodes[edge.target]?.presentation.label ?? edge.target,
@@ -261,7 +268,7 @@ export function CockpitCanvas({ frameRequest }: { frameRequest: string }) {
         if (payload) setDropFeedback(payload);
         if (nativeTreeDrag && !treeDragRequested.current) {
           treeDragRequested.current = true;
-          post({ type: "resolveTreeDrag" });
+          messaging.post({ type: "resolveTreeDrag" });
         }
         const resolved = payload ?? treeDragPayload;
         event.dataTransfer.dropEffect = resolved?.availability === "unsupported" ? "none" : "copy";
@@ -271,7 +278,7 @@ export function CockpitCanvas({ frameRequest }: { frameRequest: string }) {
         setDropFeedback(null);
         clearTreeDrag();
         treeDragRequested.current = false;
-        post({ type: "clearTreeDrag" });
+        messaging.post({ type: "clearTreeDrag" });
       }}
       onDrop={(event) => {
         event.preventDefault();
@@ -282,13 +289,13 @@ export function CockpitCanvas({ frameRequest }: { frameRequest: string }) {
         clearTreeDrag();
         treeDragRequested.current = false;
         if (payload?.availability !== "accepted") {
-          post({ type: "clearTreeDrag" });
+          messaging.post({ type: "clearTreeDrag" });
           return;
         }
         if (nativeTreeDrag && !directPayload) {
-          post({ type: "dropTreeSource" });
+          messaging.post({ type: "dropTreeSource" });
         } else {
-          post({ type: "dropSource", payload });
+          messaging.post({ type: "dropSource", payload });
         }
       }}
     >

@@ -68,6 +68,17 @@ describe("SQL notebook renderer lifecycle", () => {
     expect(roots[2]?.unmount).toHaveBeenCalledOnce();
   });
 
+  it("places host theme overrides after the product defaults in a notebook shadow root", () => {
+    const element = outputElement();
+    const renderer = activate({}, ":host { --pgw-text: host-colour; }");
+
+    renderer.renderOutputItem({ id: "result-1", json: () => ({}) }, element);
+
+    const shadow = vi.mocked(element.attachShadow).mock.results[0]?.value;
+    const style = vi.mocked(shadow.append).mock.calls[0]?.[0] as HTMLStyleElement;
+    expect(style.textContent).toMatch(/:host \{ --pgw-text: host-colour; \}$/u);
+  });
+
   it("bridges renderer messages into the React result view", () => {
     let receiveMessage: ((message: unknown) => void) | undefined;
     const postMessage = vi.fn();

@@ -1,3 +1,4 @@
+import type { PostgresDocumentSyntaxFacts } from "../analysis/documentFacts.js";
 import type { SqlQueryAnalysis } from "../query/analysis.js";
 import type {
   SqlComposition,
@@ -17,16 +18,44 @@ export const SQL_AUTHORING_CONTEXT_REQUEST = "postgresql-workbench/documentConte
 
 export const SQL_AUTHORING_SYNTAX_REQUEST = "postgresql-workbench/syntax";
 
+/** The command every host registers to reveal an indexed object in its own tree. */
+export const REVEAL_SQL_REFERENCE_COMMAND = "postgresql-workbench.revealSqlReference";
+
+/** What the reveal command receives: one indexed object, optionally narrowed to a column. */
+export interface SqlAuthoringNavigationTarget {
+  column?: string;
+  database: string;
+  oid: number;
+  connectionId: string;
+}
+
 export const SQL_AUTHORING_COMPOSE_REQUEST = "postgresql-workbench/compose";
 
 export const SQL_AUTHORING_SETTINGS_REQUEST = "postgresql-workbench/sqlAuthoringSettings";
 
 export const SQL_AUTHORING_SEMANTIC_TOKENS_CHANGED = "postgresql-workbench/semanticTokensChanged";
 
-export const SQL_AUTHORING_PLPGSQL_TOKENS_REQUEST = "postgresql-workbench/plpgsqlSemanticTokens";
+/**
+ * A visible SQL document may be an editable fragment of a larger statement. The host owns the
+ * surrounding statement because it owns the Data View query; the language server remains the one
+ * place that combines both texts for analysis and projects every answer back to the visible
+ * document.
+ */
+export interface SqlAuthoringDocumentProjection {
+  /** Text immediately before the visible document in the statement analyzed by the server. */
+  prefix: string;
+  /** Text immediately after the visible document in the statement analyzed by the server. */
+  suffix: string;
+  /** Changes whenever prefix or suffix changes, even if the visible document does not. */
+  revision: string;
+}
 
 export type SqlAuthoringDocumentContext =
-  | { status: "available"; snapshot: SqlAuthoringSnapshot }
+  | {
+      status: "available";
+      snapshot: SqlAuthoringSnapshot;
+      projection?: SqlAuthoringDocumentProjection;
+    }
   | { status: "unassociated" | "unavailable" | "not-indexed"; message: string };
 
 export interface SqlAuthoringSyntaxResult {
@@ -36,6 +65,8 @@ export interface SqlAuthoringSyntaxResult {
   analysis?: SqlQueryAnalysis;
   /** Relations the statement names, whatever its kind: FROM, JOIN, USING, UPDATE, INSERT INTO. */
   relations?: SqlRelationMention[];
+  /** Complete host-neutral facts used by syntax-driven authoring decisions. */
+  facts?: PostgresDocumentSyntaxFacts;
   /** What the caret names, when one was given: a relation or an expression. */
   caretRole?: SqlCaretRole;
   /** Shape of the statement: nested query, and whether composition can rewrite it. */
@@ -53,10 +84,6 @@ export interface SqlAuthoringSemanticToken {
   length: number;
   tokenType: number;
   tokenModifiers: number;
-}
-
-export interface SqlAuthoringPlpgsqlTokensResult {
-  tokens: SqlAuthoringSemanticToken[];
 }
 
 /**

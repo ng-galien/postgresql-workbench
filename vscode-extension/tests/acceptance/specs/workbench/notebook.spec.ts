@@ -63,6 +63,23 @@ test.describe("Scratchpads", () => {
       const queryResult = result.getByRole("region", { name: "PostgreSQL query result" });
       // The SELECT value, not the row number or the INSERT report beside it.
       await expect(new ResultTable(queryResult).cell(0, 0)).toHaveText("1", { timeout: 10_000 });
+      expect(
+        await queryResult.evaluate((region) => {
+          const shadow = region.getRootNode();
+          if (!(shadow instanceof ShadowRoot)) return "not-shadow";
+          const host = shadow.host as HTMLElement;
+          const previous = host.style.getPropertyValue("--vscode-foreground");
+          host.style.setProperty("--vscode-foreground", "rgb(1, 2, 3)");
+          const probe = document.createElement("span");
+          probe.style.color = "var(--pgw-text)";
+          shadow.append(probe);
+          const projected = getComputedStyle(probe).color;
+          probe.remove();
+          if (previous) host.style.setProperty("--vscode-foreground", previous);
+          else host.style.removeProperty("--vscode-foreground");
+          return projected;
+        }),
+      ).toBe("rgb(1, 2, 3)");
       await workbench.scratchpads.expand(scratchpad);
       const transaction = await workbench.scratchpads.transaction(scratchpad, "in progress");
       await expect(transaction).toContainText("3 Statements", { timeout: 5_000 });

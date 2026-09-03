@@ -1,6 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import * as vscode from "vscode";
+import { CallSiteConnectionStore } from "../../packages/catalog/src/callSiteAssociations.js";
 import { WorkbenchDdlSyncController } from "../../packages/catalog/src/ddlSync.js";
 import { WorkbenchIndexController } from "../../packages/catalog/src/indexController.js";
 import {
@@ -16,23 +17,22 @@ import {
 import { getConnectionName } from "../../packages/catalog/src/savedConnection.js";
 import type { DebugSessionStatus } from "../../packages/dap/src/debugger/launch/index.js";
 import { DebugSessionController } from "../../packages/dap/src/debugger/launch/sessionController.js";
+import {
+  debuggableSqlCall,
+  debuggableSqlDefinition,
+  type SqlDebugAvailability,
+} from "../../packages/dap/src/debugger/launch/sqlDebugAvailability.js";
 import type { DebugResultStore } from "../../packages/rows/src/capturedResults.js";
 import { planSqlResultExecution } from "../../packages/sql/src/analysis/sqlStatements.js";
+import type { SqlAuthoringNavigationTarget } from "../../packages/sql/src/languageServer/protocol.js";
 import { POSTGRES_SOURCE_LANGUAGE_IDS } from "../../packages/sql/src/text/documentLanguage.js";
 import { createAcceptanceProbes, registerAcceptanceControl } from "./acceptanceControl.js";
 import { WorkbenchGraphView } from "./cockpit/index.js";
 import { registerGraphWorkbenchCommands } from "./cockpit/registerCommands.js";
 import { WorkbenchGraphTreeSync } from "./cockpit/treeSync.js";
-import {
-  debuggableSqlCall,
-  debuggableSqlDefinition,
-  PlpgsqlDiagnosticsProvider,
-  SqlCodeLensProvider,
-  type SqlDebugAvailability,
-} from "./codeLens/index.js";
-import { CallSiteConnectionStore, ConnectionManager } from "./connection/index.js";
-import { registerConnectionCommands } from "./connection/registerCommands.js";
-import { openCoverageClient, PgTapTestController } from "./coverage/index.js";
+import { PlpgsqlDiagnosticsProvider, SqlCodeLensProvider } from "./codeLens/index.js";
+import { ConnectionManager, registerConnectionCommands } from "./connection/index.js";
+import { PgTapTestController } from "./coverage/index.js";
 import { DataViewEditorProvider } from "./dataView/dataViewEditorProvider.js";
 import { DataViewQueryFileSystem } from "./dataView/queryFileSystem.js";
 import { registerDataViewQueryLens } from "./dataView/queryLens.js";
@@ -56,7 +56,6 @@ import { CodeMonikerContentProvider, closePostgresqlDapTabs } from "./sources/in
 import {
   registerSqlAuthoring,
   resolveSqlAuthoringSettings,
-  type SqlAuthoringNavigationTarget,
   type SqlAuthoringRegistration,
   sqlSyntaxAnalysisBudget,
 } from "./sqlAuthoring.js";
@@ -73,6 +72,22 @@ import {
 import { registerSqlWorkbenchCommands } from "./workbench/registerCommands.js";
 
 const out = vscode.window.createOutputChannel("PostgreSQL Workbench");
+const OUTPUT_TAIL_LIMIT = 200;
+
+/**
+ * The last lines the extension told its reader, kept for the acceptance state capture: a journey
+ * that fails on a silent branch reads what the product logged instead of guessing at it. The
+ * capture only exists under the acceptance harness, so production installs never pay for it.
+ */
+const outputTail: string[] = [];
+if (process.env.POSTGRESQL_WORKBENCH_ACCEPTANCE_CONTROL_FILE) {
+  const originalAppendLine = out.appendLine.bind(out);
+  out.appendLine = (value: string) => {
+    outputTail.push(value);
+    if (outputTail.length > OUTPUT_TAIL_LIMIT) outputTail.shift();
+    originalAppendLine(value);
+  };
+}
 
 /** Surface returned by activate() — consumed by integration tests. */
 export interface PlpgsqlExtensionApi {
@@ -204,11 +219,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
     workbenchIndex.releaseAcceptancePhaseGate(runId, phase);
   acceptanceProbes.inspectWorkbenchState = () => ({
     connection: {
+      savedConnectionIds: cm.connections.map((connection) => connection.id),
       connectedConnectionIds: [...cm.connectedConnectionIds],
       connected: cm.connectedConnectionIds.length > 0,
     },
     schemaSync: workbenchDdlSync.diagnosticStates(),
     index: workbenchIndex.acceptanceSnapshot(),
+    recentOutput: [...outputTail],
   });
   let debugScratchpadSql: ScratchpadDebugger = async () => ({
     started: false,
@@ -224,6 +241,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
     status: "rejected",
     message: "The SQL authoring server is still starting.",
   });
+  let sqlEditorLanguageServerUrl: string | undefined;
+  const requireSqlEditorLanguageServerUrl = () => {
+    if (!sqlEditorLanguageServerUrl) {
+      throw new Error("The SQL authoring server is not available for embedded editors.");
+    }
+    return sqlEditorLanguageServerUrl;
+  };
   let composeSqlDrop: SqlAuthoringRegistration["composeIntoDocument"] = async () => false;
   const dataViews = new DataViewEditorProvider({
     parser: () => workbenchIndex.syntaxParser(),
@@ -240,7 +264,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
       const timeoutMs = vscode.workspace
         .getConfiguration("postgresql-workbench.sql")
         .get<number>("statementTimeoutMs", 60_000);
-      return openCoverageClient(cm, connectionId, {
+      return cm.openClient(connectionId, {
         applicationName: "postgresql-workbench:data-view",
         statementTimeoutMs: Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 60_000,
       });
@@ -260,6 +284,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
     },
     output: out,
     extensionUri: context.extensionUri,
+    sqlEditorLanguageServerUrl: requireSqlEditorLanguageServerUrl,
   });
   context.subscriptions.push(dataViews, dataViews.register(), registerDataViewQueryLens());
   const scratchpads = registerSqlNotebook(
@@ -366,6 +391,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
     workspaceState: context.workspaceState,
     collectRenderEvidence: context.extensionMode === vscode.ExtensionMode.Test,
     treeDragPayload: (consume) => workbenchTreeDragAndDrop.activePayload(consume),
+    sourceEditor: (symbolUri) => {
+      const uri = workbenchSourceUris.documentUri(symbolUri);
+      const descriptor = uri ? workbenchSourceUris.sourceDescriptorForDocumentUri(uri) : undefined;
+      return uri && descriptor
+        ? {
+            // The Cockpit Monaco model contains a bounded preview, so it must not reuse the URI
+            // of the complete virtual source document. The identity query remains resolvable.
+            editorUri: uri.with({ fragment: "cockpit-source-preview" }).toString(),
+            languageId: descriptor.plpgsql ? "plpgsql" : "sql",
+          }
+        : undefined;
+    },
+    sqlEditorLanguageServerUrl: requireSqlEditorLanguageServerUrl,
   });
   registerWorkbenchDragTransport(context, {
     acceptCockpitDrop: (payload) => workbenchGraph.acceptTransportedTreeDrop(payload),
@@ -631,9 +669,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
           workbenchTree,
           graphTreeSync,
         ),
-      (uri) => callSiteConnections.getDocument(uri),
+      (uri) =>
+        callSiteConnections.getDocument(uri) ??
+        workbenchSourceUris.sourceDescriptorForDocumentUri(vscode.Uri.parse(uri))?.connectionId,
+      (uri) => dataViews.authoringProjection(uri),
     );
     composeSqlAuthoring = (request, token) => authoring.compose(request, token);
+    sqlEditorLanguageServerUrl = authoring.webviewLanguageServerUrl;
     composeSqlDrop = (uri, offset, payload) => authoring.composeIntoDocument(uri, offset, payload);
     context.subscriptions.push(authoring);
   } catch (error) {
@@ -831,13 +873,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
     workbenchIndex.onDidChangeState(() => codeLens.refresh()),
   );
 
-  registerConnectionCommands({
+  const connectionsPanel = registerConnectionCommands({
     context,
     connections: cm,
     ddlSync: workbenchDdlSync,
+    index: workbenchIndex,
     codeLens,
     output: out,
   });
+  if (cm.store.getAll().length === 0) connectionsPanel.open();
 
   registerSqlWorkbenchCommands({
     output: out,

@@ -195,16 +195,6 @@ export interface DataViewProjection {
   columnTable: (number | undefined)[];
 }
 
-/** One completion proposal for the filter input, computed by the SQL authoring server. */
-export interface DataViewCompletion {
-  label: string;
-  insertText: string;
-  detail?: string;
-  kind?: string;
-  /** Characters before the caret that the insertion replaces. */
-  replaceLength: number;
-}
-
 /** One thing the composition engine can add to the query. */
 export interface DataViewAddition {
   /** Index in `projection.tables` of the table it relates to. */

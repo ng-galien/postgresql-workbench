@@ -31,6 +31,24 @@ export class DataViewPage {
     return this.located(".data-view-toolbar");
   }
 
+  /** The SQL panel, opened from the toolbar, and the pieces the server's stream coloured in it. */
+  get sqlPanel(): Locator {
+    return this.located(".data-view-sql");
+  }
+
+  /**
+   * Pieces Monaco painted with something other than its default class. Without the server's
+   * stream every token wears the default, so one departure proves the whole chain answered.
+   */
+  get sqlColouredTokens(): Locator {
+    return this.located('.data-view-sql [class^="mtk"]:not(.mtk1)');
+  }
+
+  async openSqlPanel(): Promise<void> {
+    await this.located('[title*="Show the SQL"]').click();
+    await expect(this.sqlPanel).toBeVisible();
+  }
+
   get surface(): Locator {
     return this.located(".data-view");
   }

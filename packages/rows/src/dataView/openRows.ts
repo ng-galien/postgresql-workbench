@@ -8,7 +8,7 @@ import {
   PostgresOffsetQuerySource,
   sameResultShape,
 } from "../offsetQuery.js";
-import type { ScratchpadAssociationSnapshot } from "../resultPayload.js";
+import type { ResultBinding } from "../resultPayload.js";
 import { loadDataViewCatalog } from "./catalogFacts.js";
 import {
   type DataViewEditability,
@@ -130,7 +130,7 @@ export async function openOffsetResult(options: {
   openClient(): Promise<Client>;
   sql: string;
   settings: DataViewResultSettings;
-  binding: ScratchpadAssociationSnapshot;
+  binding: ResultBinding;
   types?: OffsetQueryTypes;
   configure?: (client: Client) => Promise<void>;
 }): Promise<OffsetResultSession> {
@@ -155,7 +155,7 @@ export async function openDataViewResult(options: {
   openClient(): Promise<Client>;
   sql: string;
   settings: DataViewResultSettings;
-  binding: ScratchpadAssociationSnapshot;
+  binding: ResultBinding;
   accents: TableAccents;
   orderBy?: readonly DataViewResultSort[];
   /** Direct relations in the analyzed FROM clause; repeated relations count separately. */

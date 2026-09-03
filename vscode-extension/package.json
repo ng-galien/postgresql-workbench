@@ -1,7 +1,7 @@
 {
   "name": "postgresql-workbench",
   "displayName": "PostgreSQL Workbench",
-  "version": "1.4.2",
+  "version": "1.5.0",
   "description": "PostgreSQL Workbench for VS Code: explore schemas, write SQL, edit data, run pgTAP tests with coverage, and debug PL/pgSQL.",
   "publisher": "ng-galien",
   "author": {
@@ -214,45 +214,6 @@
         }
       }
     ],
-    "grammars": [
-      {
-        "language": "plpgsql",
-        "scopeName": "source.plpgsql",
-        "path": "./syntaxes/plpgsql.tmLanguage.json"
-      },
-      {
-        "language": "postgresql-table",
-        "scopeName": "source.plpgsql",
-        "path": "./syntaxes/plpgsql.tmLanguage.json"
-      },
-      {
-        "language": "postgresql-view",
-        "scopeName": "source.plpgsql",
-        "path": "./syntaxes/plpgsql.tmLanguage.json"
-      },
-      {
-        "language": "postgresql-function",
-        "scopeName": "source.plpgsql",
-        "path": "./syntaxes/plpgsql.tmLanguage.json"
-      },
-      {
-        "language": "postgresql-procedure",
-        "scopeName": "source.plpgsql",
-        "path": "./syntaxes/plpgsql.tmLanguage.json"
-      },
-      {
-        "language": "postgresql-trigger",
-        "scopeName": "source.plpgsql",
-        "path": "./syntaxes/plpgsql.tmLanguage.json"
-      },
-      {
-        "scopeName": "source.plpgsql",
-        "injectTo": [
-          "source.sql"
-        ],
-        "path": "./syntaxes/plpgsql.tmLanguage.json"
-      }
-    ],
     "semanticTokenTypes": [
       {
         "id": "sqlSchema",
@@ -403,6 +364,54 @@
         "editor.dropIntoEditor.showDropSelector": "never",
         "editor.insertSpaces": true,
         "editor.tabSize": 2
+      },
+      "editor.semanticTokenColorCustomizations": {
+        "rules": {
+          "sqlSchema": "#9d9d9d",
+          "sqlTable": "#ee9d28",
+          "sqlView": "#ee9d28",
+          "sqlCte": {
+            "foreground": "#ee9d28",
+            "italic": true
+          },
+          "sqlAlias": {
+            "foreground": "#89d185",
+            "italic": true
+          },
+          "sqlColumn": "#75beff",
+          "sqlFunction": "#b180d7",
+          "sqlProcedure": "#b180d7",
+          "sqlParameter": "#cca700",
+          "sqlType": "#75beff",
+          "sqlWindow": {
+            "foreground": "#89d185",
+            "italic": true
+          }
+        },
+        "[*Light*]": {
+          "rules": {
+            "sqlSchema": "#767676",
+            "sqlTable": "#b25a00",
+            "sqlView": "#b25a00",
+            "sqlCte": {
+              "foreground": "#b25a00",
+              "italic": true
+            },
+            "sqlAlias": {
+              "foreground": "#22863a",
+              "italic": true
+            },
+            "sqlColumn": "#0969da",
+            "sqlFunction": "#6f42c1",
+            "sqlProcedure": "#6f42c1",
+            "sqlParameter": "#9a6700",
+            "sqlType": "#267f99",
+            "sqlWindow": {
+              "foreground": "#22863a",
+              "italic": true
+            }
+          }
+        }
       }
     },
     "viewsContainers": {
@@ -446,6 +455,12 @@
         }
       ]
     },
+    "viewsWelcome": [
+      {
+        "view": "postgresql-workbench-connections",
+        "contents": "No saved Connections.\n[Open Connections](command:postgresql-workbench.manageConnections)"
+      }
+    ],
     "submenus": [
       {
         "id": "postgresql-workbench.scratchpadExecutionMode",
@@ -596,6 +611,11 @@
         }
       ],
       "view/title": [
+        {
+          "command": "postgresql-workbench.manageConnections",
+          "when": "view == postgresql-workbench-connections",
+          "group": "navigation@0"
+        },
         {
           "command": "postgresql-workbench.pickConnection",
           "when": "view == postgresql-workbench-connections",
@@ -873,6 +893,12 @@
       ]
     },
     "commands": [
+      {
+        "command": "postgresql-workbench.manageConnections",
+        "title": "Manage Connections",
+        "category": "PostgreSQL Workbench",
+        "icon": "$(settings-gear)"
+      },
       {
         "command": "postgresql-workbench.addConnection",
         "title": "Add Connection",
@@ -1636,11 +1662,7 @@
     "vscode:prepublish": "npm run build:production"
   },
   "dependencies": {
-    "@code-moniker/client": "0.9.1",
-    "@shikijs/core": "^4.4.1",
-    "@shikijs/engine-javascript": "^4.4.1",
-    "@shikijs/langs": "^4.4.1",
-    "@shikijs/themes": "^4.4.1",
+    "@code-moniker/client": "0.10.1",
     "@vscode/codicons": "^0.0.46-24",
     "@xyflow/react": "^12.11.2",
     "pg": "^8.20.0",

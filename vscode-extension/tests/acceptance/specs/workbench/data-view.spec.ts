@@ -43,6 +43,16 @@ test.describe("Data View", () => {
     await expect(dataView.rowCount).toHaveText(/^\d/u);
     await expect(dataView.gutter.first()).toHaveText("1");
 
+    /*
+     * The SQL panel is coloured by the language server's one stream, across the wire: a keyword
+     * piece can only come from the server's answer, so its presence proves the whole chain — the
+     * host asked the one client, the server merged the layers, the view painted them. This is the
+     * assertion that was missing when the tokens request silently hung and every SQL surface went
+     * plain: nothing here failed, because nothing here looked.
+     */
+    await dataView.openSqlPanel();
+    await expect(dataView.sqlColouredTokens.first()).toBeVisible({ timeout: 10_000 });
+
     const product = await workbench.tree.findChild(schema, /^product$/);
     await workbench.dragTreeItemToDataView(product, dataView.surface);
     await expect(dataView.tableBadges).toHaveCount(2, { timeout: 5_000 });

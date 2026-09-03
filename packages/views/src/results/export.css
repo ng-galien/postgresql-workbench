@@ -20,8 +20,8 @@
  * panel instead; opening it grows the output and leaves the rows above visible.
  */
 .export-panel {
-  border-top: 1px solid var(--vscode-panel-border);
-  background: var(--vscode-editorWidget-background);
+  border-top: 1px solid var(--pgw-divider);
+  background: var(--pgw-floating-background);
 }
 
 .export-panel-header {
@@ -31,7 +31,7 @@
   gap: 12px;
   min-height: 34px;
   padding: 5px 8px 5px 12px;
-  border-bottom: 1px solid var(--vscode-panel-border);
+  border-bottom: 1px solid var(--pgw-divider);
 }
 
 .export-panel-title {
@@ -52,7 +52,7 @@
 
 .export-legend {
   padding: 0 0 4px;
-  color: var(--vscode-descriptionForeground);
+  color: var(--pgw-text-muted);
   font-size: 0.85em;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -74,7 +74,7 @@
 .export-option input {
   flex: none;
   margin: 0;
-  accent-color: var(--vscode-focusBorder);
+  accent-color: var(--pgw-focus);
 }
 
 .export-option-label {
@@ -83,7 +83,7 @@
 }
 
 .export-option-hint {
-  color: var(--vscode-descriptionForeground);
+  color: var(--pgw-text-muted);
   font-size: 0.92em;
 }
 
@@ -103,13 +103,13 @@
 
 .export-row-label {
   margin-right: 2px;
-  color: var(--vscode-descriptionForeground);
+  color: var(--pgw-text-muted);
   font-size: 0.92em;
 }
 
 .export-pill {
   padding: 2px 9px;
-  border: 1px solid color-mix(in srgb, var(--vscode-foreground) 25%, transparent);
+  border: 1px solid color-mix(in srgb, var(--pgw-text) 25%, transparent);
   border-radius: 10px;
   background: transparent;
   color: inherit;
@@ -119,8 +119,8 @@
 }
 
 .export-pill.chosen {
-  border-color: var(--vscode-focusBorder);
-  background: color-mix(in srgb, var(--vscode-focusBorder) 26%, transparent);
+  border-color: var(--pgw-focus);
+  background: color-mix(in srgb, var(--pgw-focus) 26%, transparent);
 }
 
 .export-preview-frame {
@@ -139,7 +139,7 @@
 }
 
 .export-preview-heading {
-  color: var(--vscode-descriptionForeground);
+  color: var(--pgw-text-muted);
   font-size: 0.85em;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -151,7 +151,7 @@
 
 .export-no-options {
   margin: 4px 2px 0;
-  color: var(--vscode-descriptionForeground);
+  color: var(--pgw-text-muted);
   font-size: 0.92em;
 }
 
@@ -161,9 +161,9 @@
   margin: 0;
   padding: 8px 10px;
   overflow: auto;
-  border: 1px solid var(--vscode-panel-border);
-  background: var(--vscode-textCodeBlock-background, var(--vscode-editorWidget-background));
-  font-family: var(--vscode-editor-font-family, monospace);
+  border: 1px solid var(--pgw-divider);
+  background: var(--pgw-code-block-background);
+  font-family: var(--pgw-code-font-family, monospace);
   font-size: 0.9em;
   line-height: 1.5;
   white-space: pre;
@@ -181,7 +181,7 @@
   flex: 1;
   min-width: 0;
   overflow: hidden;
-  color: var(--vscode-descriptionForeground);
+  color: var(--pgw-text-muted);
   font-size: 0.92em;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -190,9 +190,9 @@
 .export-warning {
   margin: 0;
   padding: 8px 10px;
-  border-left: 2px solid var(--vscode-editorWarning-foreground);
-  background: var(--vscode-inputValidation-warningBackground);
-  color: var(--vscode-foreground);
+  border-left: 2px solid var(--pgw-warning);
+  background: var(--pgw-field-warning-background);
+  color: var(--pgw-text);
   font-size: 12px;
   line-height: 1.4;
 }

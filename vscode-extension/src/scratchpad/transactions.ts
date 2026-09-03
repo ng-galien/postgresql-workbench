@@ -1,7 +1,7 @@
 import type { Client } from "pg";
 import * as vscode from "vscode";
 import { createDedicatedNotebookClient } from "../../../packages/rows/src/notebookClient.js";
-import type { ScratchpadAssociationSnapshot } from "../../../packages/rows/src/resultPayload.js";
+import type { ResultBinding } from "../../../packages/rows/src/resultPayload.js";
 import type { ConnectionManager } from "../connection/index.js";
 
 const SHUTDOWN_DRAIN_TIMEOUT_MS = 2_000;
@@ -17,7 +17,7 @@ export interface ScratchpadStatement {
 export interface ScratchpadTransaction {
   readonly scratchpadUri: string;
   readonly scratchpadName: string;
-  readonly association: ScratchpadAssociationSnapshot;
+  readonly association: ResultBinding;
   readonly status: ScratchpadTransactionStatus;
   readonly statements: readonly ScratchpadStatement[];
 }
@@ -30,7 +30,7 @@ export interface ScratchpadChangeResult<T> {
 interface OpenScratchpadTransaction {
   scratchpadUri: string;
   scratchpadName: string;
-  association: ScratchpadAssociationSnapshot;
+  association: ResultBinding;
   status: ScratchpadTransactionStatus;
   statements: ScratchpadStatement[];
   client: Client;
@@ -69,7 +69,7 @@ export class ScratchpadTransactionManager implements vscode.Disposable {
   execute<T>(
     scratchpadUri: string,
     scratchpadName: string,
-    association: ScratchpadAssociationSnapshot,
+    association: ResultBinding,
     action: (client: Client) => Promise<T>,
   ): Promise<T> {
     if (this.blockedScratchpads.has(scratchpadUri)) {

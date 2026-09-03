@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import type { CallSiteConnectionStore } from "../../../packages/catalog/src/callSiteAssociations.js";
 import type { WorkbenchIndexController } from "../../../packages/catalog/src/indexController.js";
 import { getConnectionName } from "../../../packages/catalog/src/savedConnection.js";
 import type {
@@ -8,12 +9,18 @@ import type {
   DebugResultStatus,
 } from "../../../packages/dap/src/debugger/launch/index.js";
 import {
+  buildRoutineArgs,
+  buildRoutineTarget,
+  configNameFromRoutine,
+  configNameFromSql,
   DEBUG_RESULT_EVENT,
   DEBUG_RESULT_LIMITS,
   DEBUG_RESULT_STATUS_EVENT,
   DEBUG_SESSION_STATUS_EVENT,
+  type DebugConfigConnectionManager,
   type DebugLaunchRoutineTarget,
   type DebugSessionStatus,
+  resolveDebugConfiguration,
 } from "../../../packages/dap/src/debugger/launch/index.js";
 import {
   DEBUG_LAUNCH_TOKEN_PROPERTY,
@@ -21,37 +28,21 @@ import {
   type DebugSessionController,
 } from "../../../packages/dap/src/debugger/launch/sessionController.js";
 import { DebugResultStore } from "../../../packages/rows/src/capturedResults.js";
+import type { ResultBinding } from "../../../packages/rows/src/resultPayload.js";
 import type { SyntaxParser } from "../../../packages/sql/src/analysis/syntaxTree.js";
 import { type FunctionDefinition, parseCall } from "../../../packages/sql/src/callParser.js";
-import {
-  POSTGRES_SOURCE_LANGUAGE_IDS,
-  postgresSourceLanguageId,
-} from "../../../packages/sql/src/text/documentLanguage.js";
+import { postgresSourceLanguageId } from "../../../packages/sql/src/text/documentLanguage.js";
 import { truncationReasonLabel } from "../../../packages/views/src/results/resultFormatting.js";
 import type { CommandCallSite, CommandFunctionDefinition } from "../codeLens/index.js";
+import { type ConnectionManager, ConnectionStore } from "../connection/index.js";
 import {
-  type CallSiteConnectionStore,
-  type ConnectionManager,
-  ConnectionStore,
-} from "../connection/index.js";
-import {
-  buildRoutineArgs,
-  buildRoutineTarget,
-  configNameFromRoutine,
-  configNameFromSql,
   DEBUG_RESULTS_VIEW_ID,
   DebugResultsViewProvider,
   manageDebugSessions,
-  resolveDebugConfiguration,
 } from "../debug/index.js";
 import { debugResultSource } from "../debug/resultSource.js";
 import { showRequirementsGuide } from "../docker/index.js";
-import {
-  createRoutineComparisonHandler,
-  LEGEND,
-  PlpgsqlInlineValuesProvider,
-  PlpgsqlSemanticTokensProvider,
-} from "../plpgsql/index.js";
+import { createRoutineComparisonHandler, PlpgsqlInlineValuesProvider } from "../plpgsql/index.js";
 import { CodeMonikerContentProvider, closePostgresqlDapTabs } from "../sources/index.js";
 import type {
   ConnectionItem,
@@ -128,12 +119,12 @@ export function registerDebugInfrastructure(
         return;
       }
       let shouldRevealResults = false;
-      const resultConnection = debugSessionConnectionName(connections, event.session.configuration);
+      const resultBinding = debugSessionResultBinding(connections, event.session.configuration);
       if (event.event === DEBUG_RESULT_EVENT && isDebugResult(event.body)) {
-        resultStore.add(event.body, resultConnection);
+        resultStore.add(event.body, resultBinding);
         shouldRevealResults = true;
       } else if (event.event === DEBUG_RESULT_STATUS_EVENT && isDebugResultStatus(event.body)) {
-        resultStore.addStatus(event.body, resultConnection);
+        resultStore.addStatus(event.body, resultBinding);
         shouldRevealResults = event.body.status === "error";
       } else {
         return;
@@ -253,7 +244,7 @@ export function registerDebugInfrastructure(
       ): Promise<vscode.DebugConfiguration | undefined> {
         const resolved = (await resolveDebugConfiguration(
           config,
-          connections,
+          debugLaunchConnections(connections),
           vscode.window,
           undefined,
           output,
@@ -357,20 +348,25 @@ export function registerDebugInfrastructure(
       ],
       new PlpgsqlInlineValuesProvider(() => index.syntaxParser()),
     ),
-    vscode.languages.registerDocumentSemanticTokensProvider(
-      [
-        ...POSTGRES_SOURCE_LANGUAGE_IDS.map((language) => ({
-          scheme: CodeMonikerContentProvider.SCHEME,
-          language,
-        })),
-        { scheme: "debug", language: "plpgsql" },
-      ],
-      new PlpgsqlSemanticTokensProvider(() => index.syntaxParser()),
-      LEGEND,
-    ),
   );
   return { resultStore, resultsView, contentProvider };
 }
+/** The launch contract's flat Connection port, satisfied by the VS Code ConnectionManager. */
+function debugLaunchConnections(connections: ConnectionManager): DebugConfigConnectionManager {
+  return {
+    connection: (id) => connections.store.get(id),
+    get connectedConnectionIds() {
+      return connections.connectedConnectionIds;
+    },
+    pickConnection: () => connections.commands.pickConnection(),
+    describeConnection: (id) => connections.describeConnection(id),
+    isConnectionConnected: (id) => connections.isConnectionConnected(id),
+    connectConnection: (id) => connections.connectConnection(id),
+    refreshDebugCapability: (id) => connections.refreshDebugCapability(id),
+    getPassword: (id) => connections.getPassword(id),
+  };
+}
+
 export function registerDebugCommands(options: DebugCommandOptions): void {
   const { context, connections, documentConnections, tree, sessions, index, sourceUris, output } =
     options;
@@ -686,7 +682,7 @@ export async function promptArgs(def: FunctionDefinition): Promise<string[] | un
   }
   return values;
 }
-export function debugSessionConnectionName(
+function debugSessionConnectionName(
   connections: ConnectionManager,
   configuration: vscode.DebugConfiguration,
 ): string | undefined {
@@ -701,6 +697,20 @@ export function debugSessionConnectionName(
   const portSuffix = typeof port === "number" ? `:${port}` : "";
   return `${userPrefix}${host}${portSuffix}/${database}`;
 }
+/** The Connection identity a captured result keeps, as the shared result view presents it. */
+function debugSessionResultBinding(
+  connections: ConnectionManager,
+  configuration: vscode.DebugConfiguration,
+): ResultBinding | undefined {
+  const connectionName = debugSessionConnectionName(connections, configuration);
+  if (!connectionName) return undefined;
+  return {
+    connectionId: typeof configuration.connection === "string" ? configuration.connection : "",
+    connectionName,
+    database: typeof configuration.database === "string" ? configuration.database : "",
+  };
+}
+
 export function debugDescriptor(
   config: vscode.DebugConfiguration,
   viewColumn?: vscode.ViewColumn,

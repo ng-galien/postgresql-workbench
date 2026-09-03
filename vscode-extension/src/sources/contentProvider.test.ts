@@ -14,10 +14,6 @@ const deploymentState = vi.hoisted(() => ({
   openClient: vi.fn(),
 }));
 
-vi.mock("../coverage/index.js", () => ({
-  openCoverageClient: deploymentState.openClient,
-}));
-
 vi.mock("../../../packages/sql/src/routines/validateDeployment.js", () => ({
   validateManagedRoutineDeployment: vi.fn(async () => ({ status: "valid" })),
 }));
@@ -104,6 +100,7 @@ describe("stale Code Moniker source tabs", () => {
     const provider = new CodeMonikerContentProvider(
       {
         onConnectionChanged: () => ({ dispose() {} }),
+        openClient: deploymentState.openClient,
       } as never,
       {
         onDidChangeState: () => ({ dispose() {} }),
@@ -136,6 +133,7 @@ describe("stale Code Moniker source tabs", () => {
           onConnectionChanged = listener;
           return { dispose() {} };
         },
+        openClient: deploymentState.openClient,
       } as never,
       {
         onDidChangeState: () => ({ dispose() {} }),
@@ -321,6 +319,7 @@ function providerFor(
   return new CodeMonikerContentProvider(
     {
       onConnectionChanged: () => ({ dispose() {} }),
+      openClient: deploymentState.openClient,
     } as never,
     {
       onDidChangeState: () => ({ dispose() {} }),

@@ -1,86 +1,4 @@
-// PostgreSQL 17 `pg_get_keywords()` entries in the reserved (`R`) category. These identifiers
-// must be quoted when generated from catalog names, independently from the smaller grammar set
-// that cannot be interpreted as an implicit relation alias.
-const POSTGRES_RESERVED_KEYWORDS = new Set([
-  "all",
-  "analyse",
-  "analyze",
-  "and",
-  "any",
-  "array",
-  "as",
-  "asc",
-  "asymmetric",
-  "both",
-  "case",
-  "cast",
-  "check",
-  "collate",
-  "column",
-  "constraint",
-  "create",
-  "current_catalog",
-  "current_date",
-  "current_role",
-  "current_time",
-  "current_timestamp",
-  "current_user",
-  "default",
-  "deferrable",
-  "desc",
-  "distinct",
-  "do",
-  "else",
-  "end",
-  "except",
-  "false",
-  "fetch",
-  "for",
-  "foreign",
-  "from",
-  "grant",
-  "group",
-  "having",
-  "in",
-  "initially",
-  "intersect",
-  "into",
-  "lateral",
-  "leading",
-  "limit",
-  "localtime",
-  "localtimestamp",
-  "not",
-  "null",
-  "offset",
-  "on",
-  "only",
-  "or",
-  "order",
-  "placing",
-  "primary",
-  "references",
-  "returning",
-  "select",
-  "session_user",
-  "some",
-  "symmetric",
-  "system_user",
-  "table",
-  "then",
-  "to",
-  "trailing",
-  "true",
-  "union",
-  "unique",
-  "user",
-  "using",
-  "variadic",
-  "when",
-  "where",
-  "window",
-  "with",
-]);
+import { isReservedPostgresSqlKeyword } from "../analysis/postgresKeywordCatalog.js";
 
 const SIMPLE_IDENTIFIER = /^[a-z_][a-z0-9_$]*$/u;
 
@@ -104,7 +22,7 @@ export function quoteSqlIdentifierIfNeeded(identifier: string): string {
 }
 
 export function requiresQuotedPostgresIdentifier(identifier: string): boolean {
-  return POSTGRES_RESERVED_KEYWORDS.has(identifier.toLocaleLowerCase());
+  return isReservedPostgresSqlKeyword(identifier);
 }
 
 export function canonicalSqlIdentifier(identifier: string): string {

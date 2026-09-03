@@ -3,11 +3,11 @@ enabled = true
 
 [aliases]
 webview_source = "source ~ '**/dir:packages/dir:views/**'"
-webview_catalog_debugger_result_target = "target ~ '**/dir:packages/dir:views/**' OR target ~ '**/dir:packages/dir:catalog/**' OR target ~ '**/dir:packages/dir:dap/**' OR target ~ '**/dir:packages/dir:rows/**'"
+webview_catalog_debugger_result_presentation_editor_target = "target ~ '**/dir:packages/dir:views/**' OR target ~ '**/dir:packages/dir:catalog/**' OR target ~ '**/dir:packages/dir:dap/**' OR target ~ '**/dir:packages/dir:rows/**' OR target ~ '**/dir:packages/dir:presentation/**' OR target ~ '**/dir:packages/dir:editor/**'"
 
 [[ts.refs.where]]
-id = "webview-dependency-is-limited-to-catalog-debugger-and-result"
+id = "webview-dependency-is-limited-to-catalog-debugger-result-presentation-and-editor"
 severity = "error"
-expr = "$webview_source AND $structural_edge AND ($engine_package_target OR $host_local_target) => $webview_catalog_debugger_result_target"
+expr = "$webview_source AND $structural_edge AND ($engine_package_target OR $host_local_target) => $webview_catalog_debugger_result_presentation_editor_target"
 message = "packages/views renders what the other packages produce; it must never be depended on by them, and never depend on the Extension Host."
-rationale = "The React views run in a webview, a separate runtime from the Extension Host. They read the catalog, the captured debug results and the rows, and reach VS Code only through the typed protocol each view publishes."
+rationale = "The React views run in a webview, a separate runtime from the Extension Host. They read the catalog, captured debug results, rows, host-neutral presentation vocabulary, and the host-neutral editor surface contract; they reach a host only through the typed protocol each view publishes."

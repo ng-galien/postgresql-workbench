@@ -1,13 +1,13 @@
 import * as vscode from "vscode";
-import type { ScratchpadAssociationSnapshot } from "../../../packages/rows/src/resultPayload.js";
-import type { ConnectionManager } from "../connection/index.js";
+import type { ResultBinding } from "../../../packages/rows/src/resultPayload.js";
 import {
   normalizeMetadata,
   resolveScratchpadAssociation,
   scratchpadCellExecutionIntent,
   scratchpadExecutionMode,
   scratchpadStatementTimeoutMs,
-} from "./notebookFile.js";
+} from "../../../packages/scratchpad/src/notebookFile.js";
+import type { ConnectionManager } from "../connection/index.js";
 import { formatStatementTimeout } from "./notebookOutput.js";
 import {
   CHANGE_SQL_NOTEBOOK_CONNECTION_COMMAND,
@@ -67,10 +67,7 @@ export class SqlNotebookStatusProvider
     return cached?.version === cell.document.version && cached.value === true;
   }
 
-  private requestDebuggable(
-    cell: vscode.NotebookCell,
-    association: ScratchpadAssociationSnapshot,
-  ): boolean {
+  private requestDebuggable(cell: vscode.NotebookCell, association: ResultBinding): boolean {
     const key = cell.document.uri.toString();
     const version = cell.document.version;
     const cached = this.debuggable.get(key);

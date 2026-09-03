@@ -6,7 +6,6 @@ import {
 import { conditionForCell, withCondition } from "../../../packages/rows/src/dataView/cellFilter.js";
 import {
   type DataViewAddition,
-  type DataViewEdit,
   type DataViewEditability,
   type DataViewProjection,
   type DataViewSource,
@@ -17,16 +16,17 @@ import {
 import type {
   DataViewRequest,
   DataViewResponse,
-  DataViewSqlToken,
   DataViewState,
 } from "../../../packages/rows/src/dataView/dataViewProtocol.js";
 import { dataViewState } from "../../../packages/rows/src/dataView/dataViewState.js";
-import { filterTokensOf } from "../../../packages/rows/src/dataView/filterTokens.js";
+import { filterDocumentProjection } from "../../../packages/rows/src/dataView/filterTokens.js";
 import { HiddenColumns } from "../../../packages/rows/src/dataView/hiddenColumns.js";
 import { initialDataViewQuery } from "../../../packages/rows/src/dataView/initialProjection.js";
 import { openDataViewResult, TableAccents } from "../../../packages/rows/src/dataView/openRows.js";
 import {
+  type DataViewMoveContext,
   type DataViewWriteHost,
+  isDataViewMove,
   PendingEdits,
 } from "../../../packages/rows/src/dataView/pendingEdits.js";
 import { declaredColumnType, heldValues } from "../../../packages/rows/src/dataView/shownValues.js";
@@ -42,7 +42,7 @@ import {
 } from "../../../packages/rows/src/navigation.js";
 import type { OffsetResultSession } from "../../../packages/rows/src/offsetQuery.js";
 import type { SqlNotebookResultPayload } from "../../../packages/rows/src/resultPayload.js";
-import { namedSemanticTokens } from "../../../packages/sql/src/languageServer/protocol.js";
+import type { SqlAuthoringDocumentProjection } from "../../../packages/sql/src/languageServer/protocol.js";
 import { type QueryRewrite, SqlQueryModel } from "../../../packages/sql/src/query/model.js";
 import type {
   SqlAuthoringDragPayload,
@@ -53,7 +53,6 @@ import { followLinkFromView } from "../followLink.js";
 import { configuredScratchpadStatementTimeoutMs } from "../scratchpad/scratchpadSettings.js";
 import { DATA_VIEW_SCRATCHES, dataViewQueryUri, dataViewScratchUri } from "./dataViewUri.js";
 import { exportAllRows, exportHeldRows, pickExportTarget } from "./exportResult.js";
-import { completeDataViewFilter } from "./filterCompletion.js";
 import { type DataViewHostServices, errorMessage } from "./hostServices.js";
 
 class LoadCancelledError extends Error {}
@@ -67,11 +66,6 @@ class LoadCancelledError extends Error {}
 export class DataViewDocument implements vscode.CustomDocument {
   readonly source: DataViewSource;
   readonly queryUri: vscode.Uri;
-  /** Hidden SQL document that only exists to ask the SQL authoring server for filter completions. */
-  private readonly completionUri: vscode.Uri;
-  private readonly tokensUri: vscode.Uri;
-  private readonly filterTokensUri: vscode.Uri;
-  private legend?: Promise<readonly string[]>;
   private readonly query: SqlQueryModel;
   private readonly edits = new PendingEdits();
   private readonly accents = new TableAccents();
@@ -107,9 +101,6 @@ export class DataViewDocument implements vscode.CustomDocument {
   ) {
     this.source = source;
     this.queryUri = dataViewQueryUri(source);
-    this.completionUri = dataViewScratchUri(source, "completion");
-    this.tokensUri = dataViewScratchUri(source, "tokens");
-    this.filterTokensUri = dataViewScratchUri(source, "filter-tokens");
     this.query = new SqlQueryModel(() => services.parser(), {
       budget: () => {
         const settings = services.authoringSettings(this.queryUri.toString());
@@ -128,6 +119,12 @@ export class DataViewDocument implements vscode.CustomDocument {
 
   /** Fires when the query draws from other relations than it did, so a tab can say the new ones. */
   readonly onDidChangeTitle = this._onDidChangeTitle.event;
+
+  authoringProjection(uri: string): SqlAuthoringDocumentProjection | undefined {
+    if (uri !== `${this.queryUri.toString()}.filter` || !this.query.analysis) return undefined;
+    const projection = filterDocumentProjection(this.query.text, this.query.analysis);
+    return projection ? { ...projection, revision: this.query.text } : undefined;
+  }
 
   get hasPendingEdits(): boolean {
     return this.edits.size > 0;
@@ -164,6 +161,10 @@ export class DataViewDocument implements vscode.CustomDocument {
 
   async handle(request: DataViewRequest): Promise<void> {
     const tabSize = () => this.services.authoringSettings(this.queryUri.toString()).tabSize;
+    if (isDataViewMove(request)) {
+      this.edits.move(request, this.moveContext);
+      return;
+    }
     switch (request.type) {
       case "data-view/ready":
         if (this.loadGeneration === 0) {
@@ -279,38 +280,6 @@ export class DataViewDocument implements vscode.CustomDocument {
         await this.compose(payload);
         return;
       }
-      case "data-view/complete": {
-        const analysis = this.query.analysis;
-        const items = analysis
-          ? await completeDataViewFilter({
-              queryText: this.query.text,
-              analysis,
-              completionUri: this.completionUri,
-              text: request.text,
-              offset: request.offset,
-              log: (line) => this.log(line),
-            })
-          : [];
-        this.broadcast({ type: "data-view/completions", requestId: request.requestId, items });
-        return;
-      }
-      case "data-view/tokens": {
-        const of = request.of;
-        this.broadcast({
-          type: "data-view/tokens",
-          requestId: request.requestId,
-          tokens:
-            of === "query"
-              ? await this.semanticTokensOf(this.tokensUri, this.query.text)
-              : await filterTokensOf({
-                  queryText: this.query.text,
-                  analysis: this.query.analysis,
-                  text: of.filter,
-                  ask: (sql: string) => this.semanticTokensOf(this.filterTokensUri, sql),
-                }),
-        });
-        return;
-      }
       case "data-view/edit-query":
         await this.editQuery(request.clause);
         return;
@@ -320,53 +289,6 @@ export class DataViewDocument implements vscode.CustomDocument {
       case "data-view/navigate":
         await this.navigate(request.action);
         return;
-      case "data-view/edit":
-        this.recordEdit(request.edit);
-        return;
-      case "data-view/add-row": {
-        let refused: string | undefined;
-        this.moved("Add row", () => {
-          const added = this.edits.addRow(this.editability, request.values, request.above);
-          if (!added.held) refused = added.reason;
-          return added.held;
-        });
-        if (refused !== undefined) {
-          this.notify(refused, "info");
-          return;
-        }
-        this.hidden.revealRequired(this.editability);
-        this.broadcastState();
-        return;
-      }
-      case "data-view/drop-row":
-        this.moved("Take back row", () => {
-          this.edits.dropRow(request.localId);
-          return true;
-        });
-        return;
-      case "data-view/fill-row":
-        this.moved("Fill row", () => {
-          this.edits.fillRow(request.localId, request.values, request.unset);
-          return true;
-        });
-        return;
-      case "data-view/remove-rows": {
-        let refused: string | undefined;
-        let consequences: string[] = [];
-        this.moved("Delete rows", () => {
-          const removal = this.edits.removeRows(request.rows, this.editability);
-          if (!removal.held) refused = removal.reason;
-          else consequences = removal.consequences;
-          return removal.held;
-        });
-        if (refused !== undefined) {
-          this.notify(refused, "info");
-          return;
-        }
-        // Said when the row is taken, not discovered when the transaction fails.
-        if (consequences.length > 0) this.notify(consequences.join(" "), "info");
-        return;
-      }
       case "follow-link":
         await followLinkFromView(request);
         return;
@@ -378,9 +300,6 @@ export class DataViewDocument implements vscode.CustomDocument {
         return;
       case "data-view/open-sql":
         await this.services.openSql(this.source, this.query.effectiveSql());
-        return;
-      case "data-view/discard-change":
-        this.moved("Discard change", () => this.edits.discardChange(request.change));
         return;
       case "data-view/discard":
       case "data-view/apply":
@@ -423,45 +342,8 @@ export class DataViewDocument implements vscode.CustomDocument {
     }
   }
 
-  /**
-   * What the language server makes of the names in a SQL text, for a view to colour them with.
-   *
-   * The tokens are asked of a document holding exactly that text, so what a view shows is coloured
-   * by the same answer an editor tab would be. The legend comes back from the provider as well: a
-   * token number means nothing without it, and the kinds are the connection's to name.
-   */
-  private async semanticTokensOf(uri: vscode.Uri, sql: string): Promise<DataViewSqlToken[]> {
-    this.services.queryFiles.set(uri, sql);
-    const document = await vscode.workspace.openTextDocument(uri);
-    if (document.languageId !== "sql") {
-      await vscode.languages.setTextDocumentLanguage(document, "sql");
-    }
-    const [legend, answer] = await Promise.all([
-      this.tokenLegend(uri),
-      vscode.commands.executeCommand<vscode.SemanticTokens | undefined>(
-        "vscode.provideDocumentSemanticTokens",
-        uri,
-      ),
-    ]);
-    return namedSemanticTokens(answer?.data, legend);
-  }
-
   private scratchUris(): vscode.Uri[] {
     return DATA_VIEW_SCRATCHES.map((purpose) => dataViewScratchUri(this.source, purpose));
-  }
-
-  /**
-   * The kinds the provider numbers its tokens against. It does not change while a view is open, so
-   * it is asked for once instead of on every keystroke of the filter.
-   */
-  private async tokenLegend(uri: vscode.Uri): Promise<readonly string[]> {
-    this.legend ??= Promise.resolve(
-      vscode.commands.executeCommand<vscode.SemanticTokensLegend | undefined>(
-        "vscode.provideDocumentSemanticTokensLegend",
-        uri,
-      ),
-    ).then((legend): readonly string[] => legend?.tokenTypes ?? []);
-    return this.legend;
   }
 
   private async relationColumns(): Promise<string[]> {
@@ -769,34 +651,28 @@ export class DataViewDocument implements vscode.CustomDocument {
 
   // --- Cell edits ----------------------------------------------------------------------------
 
-  private recordEdit(edit: DataViewEdit): void {
-    let refused: string | undefined;
-    this.moved(`Edit ${edit.column}`, () => {
-      const held = this.edits.record(edit, this.editability);
-      if (!held.held) refused = held.reason;
-      return held.held;
-    });
-    if (refused !== undefined) this.notify(refused, "info");
-  }
-
   /**
-   * Every move in what is waiting goes through here. VS Code counts one as an edit of the document
-   * — it is what carries the tab's dirty mark and its undo stack — and a move that skips this leaves
-   * the two out of step: a row added without it, then taken back out through the list, leaves the
-   * tab dirty over an empty list, asking to save nothing at all.
+   * What this surface answers a move with. VS Code counts a move as an edit of the document — it is
+   * what carries the tab's dirty mark and its undo stack — so it remembers each one, and a move that
+   * skipped it would leave the two out of step: a row added without it, then taken back out through
+   * the list, leaves the tab dirty over an empty list, asking to save nothing at all. Read afresh
+   * each time, because auto save can be turned on while the tab is open.
    */
-  private moved(label: string, mutate: () => boolean): void {
-    const before = this.edits.snapshot();
-    if (!mutate()) return;
-    if (this.nativeDirtyTracking()) {
-      const after = this.edits.snapshot();
-      const replay = (restore: () => void) => () => {
-        restore();
-        this.broadcastState();
-      };
-      this._onDidEdit.fire({ label, undo: replay(before), redo: replay(after) });
-    }
-    this.broadcastState();
+  private get moveContext(): DataViewMoveContext {
+    return {
+      editability: this.editability,
+      hidden: this.hidden,
+      host: {
+        notify: (message, severity) => this.notify(message, severity),
+        changed: () => this.broadcastState(),
+        ...(this.nativeDirtyTracking()
+          ? {
+              remember: (label: string, undo: () => void, redo: () => void) =>
+                this._onDidEdit.fire({ label, undo, redo }),
+            }
+          : {}),
+      },
+    };
   }
 
   discard(): void {

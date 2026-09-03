@@ -1,6 +1,3 @@
-@import "../source/postgresSource.css";
-@import "@xyflow/react/dist/style.css";
-
 html,
 body,
 #root {
@@ -9,14 +6,14 @@ body,
 }
 
 :root {
-  --cockpit-accent: var(--vscode-focusBorder, var(--vscode-charts-blue));
-  --cockpit-panel: var(--vscode-sideBar-background, var(--vscode-editorWidget-background));
-  --cockpit-line: var(--vscode-widget-border, var(--vscode-panel-border));
-  --relation-calls: var(--vscode-charts-green);
-  --relation-reads: var(--vscode-charts-blue);
-  --relation-writes: var(--vscode-charts-orange);
-  --relation-references: var(--vscode-charts-purple);
-  --relation-types: var(--vscode-descriptionForeground);
+  --cockpit-accent: var(--pgw-focus);
+  --cockpit-panel: var(--pgw-sidebar-background);
+  --cockpit-line: var(--pgw-floating-border);
+  --relation-calls: var(--pgw-accent-green);
+  --relation-reads: var(--pgw-accent-blue);
+  --relation-writes: var(--pgw-accent-orange);
+  --relation-references: var(--pgw-accent-purple);
+  --relation-types: var(--pgw-text-muted);
 }
 
 * {
@@ -26,9 +23,9 @@ body,
 body {
   margin: 0;
   overflow: hidden;
-  color: var(--vscode-foreground);
-  background: var(--vscode-editor-background);
-  font-family: var(--vscode-font-family);
+  color: var(--pgw-text);
+  background: var(--pgw-canvas-background);
+  font-family: var(--pgw-ui-font-family);
 }
 
 button,
@@ -42,7 +39,7 @@ button {
 
 button:focus-visible,
 input:focus-visible {
-  outline: 1px solid var(--vscode-focusBorder);
+  outline: 1px solid var(--pgw-focus);
   outline-offset: 1px;
 }
 
@@ -58,7 +55,7 @@ input:focus-visible {
   position: relative;
   z-index: 20;
   border-bottom: 1px solid var(--cockpit-line);
-  background: var(--vscode-editor-background);
+  background: var(--pgw-canvas-background);
 }
 
 .toolbar-primary,
@@ -79,7 +76,7 @@ input:focus-visible {
   min-height: 34px;
   padding: 4px 10px;
   border-top: 1px solid color-mix(in srgb, var(--cockpit-line) 55%, transparent);
-  color: var(--vscode-descriptionForeground);
+  color: var(--pgw-text-muted);
 }
 
 .toolbar-primary button,
@@ -99,7 +96,7 @@ input:focus-visible {
 .perspective-bar button:hover,
 .source-actions button:hover,
 .node-actions button:hover {
-  background: var(--vscode-toolbar-hoverBackground);
+  background: var(--pgw-toolbar-hover-background);
 }
 
 button:disabled {
@@ -118,7 +115,7 @@ button:disabled {
   min-width: 120px;
   overflow: hidden;
   white-space: nowrap;
-  color: var(--vscode-descriptionForeground);
+  color: var(--pgw-text-muted);
 }
 
 .cockpit-breadcrumbs button {
@@ -128,7 +125,7 @@ button:disabled {
 }
 
 .cockpit-breadcrumbs button:last-child {
-  color: var(--vscode-foreground);
+  color: var(--pgw-text);
   font-weight: 600;
 }
 
@@ -140,15 +137,15 @@ button:disabled {
   gap: 7px;
   max-width: 620px;
   min-width: 210px;
-  border: 1px solid var(--vscode-input-border, var(--cockpit-line));
+  border: 1px solid var(--pgw-field-border, var(--cockpit-line));
   border-radius: 5px;
   padding: 0 8px;
-  color: var(--vscode-descriptionForeground);
-  background: var(--vscode-input-background);
+  color: var(--pgw-text-muted);
+  background: var(--pgw-field-background);
 }
 
 .cockpit-search:focus-within {
-  border-color: var(--vscode-focusBorder);
+  border-color: var(--pgw-focus);
 }
 
 .cockpit-search input {
@@ -156,7 +153,7 @@ button:disabled {
   min-width: 0;
   border: 0;
   padding: 6px 0;
-  color: var(--vscode-input-foreground);
+  color: var(--pgw-field-text);
   background: transparent;
   outline: 0;
 }
@@ -180,8 +177,8 @@ button:disabled {
   border: 1px solid var(--cockpit-line);
   border-radius: 6px;
   padding: 4px;
-  background: var(--vscode-quickInput-background, var(--vscode-editorWidget-background));
-  box-shadow: 0 8px 28px color-mix(in srgb, var(--vscode-widget-shadow) 45%, transparent);
+  background: var(--pgw-chooser-background);
+  box-shadow: 0 8px 28px color-mix(in srgb, var(--pgw-floating-shadow) 45%, transparent);
 }
 
 .search-options > button {
@@ -198,8 +195,8 @@ button:disabled {
 }
 
 .search-options > button.active {
-  color: var(--vscode-quickInputList-focusForeground);
-  background: var(--vscode-quickInputList-focusBackground);
+  color: var(--pgw-chooser-selection-text);
+  background: var(--pgw-chooser-selection-background);
 }
 
 .result-kind {
@@ -228,7 +225,7 @@ button:disabled {
 .result-degrees,
 .result-action,
 .search-message {
-  color: var(--vscode-descriptionForeground);
+  color: var(--pgw-text-muted);
   font-size: 0.78em;
 }
 
@@ -259,9 +256,9 @@ button:disabled {
   height: 22px;
   place-items: center;
   border-radius: 4px;
-  color: var(--vscode-textLink-foreground);
-  background: color-mix(in srgb, var(--vscode-textLink-foreground) 12%, transparent);
-  font-family: var(--vscode-editor-font-family);
+  color: var(--pgw-link);
+  background: color-mix(in srgb, var(--pgw-link) 12%, transparent);
+  font-family: var(--pgw-code-font-family);
   font-weight: 700;
 }
 
@@ -279,13 +276,13 @@ button:disabled {
   border: 0;
   border-radius: 4px;
   padding: 8px;
-  color: var(--vscode-foreground);
+  color: var(--pgw-text);
   text-align: left;
   background: transparent;
 }
 
 .search-primer > button:hover {
-  background: var(--vscode-quickInputList-focusBackground);
+  background: var(--pgw-chooser-selection-background);
 }
 
 .search-primer > button > span:last-child {
@@ -296,7 +293,7 @@ button:disabled {
 
 .search-primer small,
 .search-primer p {
-  color: var(--vscode-descriptionForeground);
+  color: var(--pgw-text-muted);
   font-size: 0.78em;
 }
 
@@ -311,7 +308,7 @@ button:disabled {
   border: 1px solid var(--cockpit-line);
   border-radius: 5px;
   padding: 1px 3px 1px 7px;
-  color: var(--vscode-descriptionForeground);
+  color: var(--pgw-text-muted);
   font-size: 0.78em;
   white-space: nowrap;
 }
@@ -322,13 +319,13 @@ button:disabled {
 
 .radius-control strong {
   min-width: 12px;
-  color: var(--vscode-foreground);
+  color: var(--pgw-text);
   text-align: center;
 }
 
 .cockpit-counts {
   margin-left: auto;
-  color: var(--vscode-descriptionForeground);
+  color: var(--pgw-text-muted);
   font-size: 0.8em;
   white-space: nowrap;
 }
@@ -407,17 +404,17 @@ button:disabled {
   position: relative;
   min-width: 0;
   min-height: 0;
-  background: var(--vscode-editor-background);
+  background: var(--pgw-canvas-background);
 }
 
 .cockpit-canvas.is-drop-accepted,
 .cockpit-canvas.is-drop-rejected {
-  outline: 2px solid var(--vscode-focusBorder);
+  outline: 2px solid var(--pgw-focus);
   outline-offset: -3px;
 }
 
 .cockpit-canvas.is-drop-rejected {
-  outline-color: var(--vscode-inputValidation-errorBorder, var(--vscode-errorForeground));
+  outline-color: var(--pgw-field-error-border);
 }
 
 .cockpit-drop-feedback {
@@ -428,28 +425,28 @@ button:disabled {
   display: grid;
   max-width: min(420px, calc(100% - 48px));
   gap: 4px;
-  border: 1px solid var(--vscode-focusBorder);
+  border: 1px solid var(--pgw-focus);
   border-radius: 6px;
   padding: 12px 16px;
-  color: var(--vscode-foreground);
-  background: var(--vscode-editorWidget-background);
-  box-shadow: 0 10px 32px color-mix(in srgb, var(--vscode-widget-shadow, #000) 42%, transparent);
+  color: var(--pgw-text);
+  background: var(--pgw-floating-background);
+  box-shadow: 0 10px 32px color-mix(in srgb, var(--pgw-floating-shadow) 42%, transparent);
   text-align: center;
   transform: translate(-50%, -50%);
   pointer-events: none;
 }
 
 .cockpit-drop-feedback[data-drop-availability="unsupported"] {
-  border-color: var(--vscode-inputValidation-errorBorder, var(--vscode-errorForeground));
+  border-color: var(--pgw-field-error-border);
 }
 
 .cockpit-drop-feedback span {
-  color: var(--vscode-descriptionForeground);
+  color: var(--pgw-text-muted);
   font-size: 0.82em;
 }
 
 .react-flow__background pattern circle {
-  fill: color-mix(in srgb, var(--vscode-descriptionForeground) 22%, transparent);
+  fill: color-mix(in srgb, var(--pgw-text-muted) 22%, transparent);
 }
 
 .react-flow__controls,
@@ -466,11 +463,11 @@ button:disabled {
   width: 220px;
   overflow: visible;
   border: 1px solid var(--cockpit-line);
-  border-left: 3px solid var(--vscode-descriptionForeground);
+  border-left: 3px solid var(--pgw-text-muted);
   border-radius: 6px;
-  color: var(--vscode-foreground);
-  background: var(--vscode-editorWidget-background);
-  box-shadow: 0 4px 14px color-mix(in srgb, var(--vscode-widget-shadow, #000000) 24%, transparent);
+  color: var(--pgw-text);
+  background: var(--pgw-floating-background);
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--pgw-floating-shadow) 24%, transparent);
   transition:
     box-shadow 120ms ease,
     transform 120ms ease,
@@ -487,7 +484,7 @@ button:disabled {
   height: 20px;
   place-items: center;
   border-radius: 3px;
-  color: var(--vscode-descriptionForeground);
+  color: var(--pgw-text-muted);
   font-size: 15px;
   line-height: 1;
   cursor: grab;
@@ -495,8 +492,8 @@ button:disabled {
 }
 
 .node-drag-handle:hover {
-  color: var(--vscode-foreground);
-  background: var(--vscode-toolbar-hoverBackground);
+  color: var(--pgw-text);
+  background: var(--pgw-toolbar-hover-background);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -507,16 +504,16 @@ button:disabled {
 
 .cockpit-node.kind-function,
 .cockpit-node.kind-procedure {
-  border-left-color: var(--vscode-charts-green);
+  border-left-color: var(--pgw-accent-green);
 }
 
 .cockpit-node.kind-table,
 .cockpit-node.kind-view {
-  border-left-color: var(--vscode-charts-blue);
+  border-left-color: var(--pgw-accent-blue);
 }
 
 .cockpit-node.kind-trigger {
-  border-left-color: var(--vscode-charts-yellow);
+  border-left-color: var(--pgw-accent-yellow);
 }
 
 .cockpit-node.role-focus {
@@ -531,8 +528,8 @@ button:disabled {
 }
 
 .is-on-path .cockpit-node {
-  border-color: var(--vscode-charts-yellow);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--vscode-charts-yellow) 32%, transparent);
+  border-color: var(--pgw-accent-yellow);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--pgw-accent-yellow) 32%, transparent);
 }
 
 .node-main {
@@ -561,19 +558,19 @@ button:disabled {
   overflow-wrap: anywhere;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
-  font-family: var(--vscode-editor-font-family);
+  font-family: var(--pgw-code-font-family);
   font-size: 0.9em;
 }
 
 .node-glyph {
-  color: var(--vscode-charts-green);
+  color: var(--pgw-accent-green);
   font-weight: 700;
 }
 
 .focus-flag,
 .pin-flag {
   margin-left: auto;
-  color: var(--vscode-charts-yellow);
+  color: var(--pgw-accent-yellow);
   font-size: 0.72em;
 }
 
@@ -581,7 +578,7 @@ button:disabled {
   display: flex;
   gap: 10px;
   margin-top: 5px;
-  color: var(--vscode-descriptionForeground);
+  color: var(--pgw-text-muted);
   font-size: 0.72em;
 }
 
@@ -596,14 +593,14 @@ button:disabled {
 .node-actions button {
   flex: 1 1 auto;
   padding: 2px 5px;
-  color: var(--vscode-descriptionForeground);
+  color: var(--pgw-text-muted);
   font-size: 0.7em;
 }
 
 .node-actions .node-source-toggle.is-active,
 .node-actions .node-source-toggle[aria-pressed="true"] {
-  color: var(--vscode-button-foreground);
-  background: var(--vscode-button-background);
+  color: var(--pgw-action-text);
+  background: var(--pgw-action-background);
 }
 
 .node-expansions {
@@ -614,11 +611,11 @@ button:disabled {
 
 .node-expansions button {
   flex: 1 1 0;
-  border: 1px dashed var(--vscode-descriptionForeground);
+  border: 1px dashed var(--pgw-text-muted);
   border-radius: 4px;
   padding: 3px 6px;
-  color: var(--vscode-descriptionForeground);
-  background: var(--vscode-editor-background);
+  color: var(--pgw-text-muted);
+  background: var(--pgw-canvas-background);
   font-size: 0.72em;
   white-space: nowrap;
   cursor: pointer;
@@ -639,8 +636,8 @@ button:disabled {
 .react-flow__handle.cockpit-port {
   width: 7px;
   height: 7px;
-  border: 1px solid var(--vscode-editor-background);
-  background: var(--vscode-descriptionForeground);
+  border: 1px solid var(--pgw-canvas-background);
+  background: var(--pgw-text-muted);
 }
 
 .cockpit-node.zoom-compact {
@@ -684,7 +681,7 @@ button:disabled {
 }
 
 .react-flow__edge.is-on-path .react-flow__edge-path {
-  filter: drop-shadow(0 0 2px var(--vscode-charts-yellow));
+  filter: drop-shadow(0 0 2px var(--pgw-accent-yellow));
 }
 
 .react-flow__edgelabel-renderer {
@@ -701,14 +698,11 @@ button:disabled {
 .react-flow__node.dragging .cockpit-node.is-dragging {
   opacity: 0.98;
   box-shadow:
-    10px 12px 0 -1px
-    color-mix(in srgb, var(--vscode-focusBorder, #007acc) 34%, var(--vscode-editor-background)),
-    0 22px 48px color-mix(in srgb, var(--vscode-widget-shadow, #000000) 78%, transparent),
-    0 0 0 2px color-mix(in srgb, var(--vscode-focusBorder, #007acc) 88%, transparent);
+    10px 12px 0 -1px color-mix(in srgb, var(--pgw-focus) 34%, var(--pgw-canvas-background)),
+    0 22px 48px color-mix(in srgb, var(--pgw-floating-shadow) 78%, transparent),
+    0 0 0 2px color-mix(in srgb, var(--pgw-focus) 88%, transparent);
   transform: translateY(-6px) scale(1.025);
-  filter: drop-shadow(
-    0 12px 16px color-mix(in srgb, var(--vscode-widget-shadow, #000000) 58%, transparent)
-  );
+  filter: drop-shadow(0 12px 16px color-mix(in srgb, var(--pgw-floating-shadow) 58%, transparent));
   cursor: grabbing;
 }
 
@@ -743,9 +737,9 @@ button:disabled {
   border: 1px solid var(--cockpit-line);
   border-radius: 4px;
   padding: 2px 6px;
-  color: var(--vscode-descriptionForeground);
-  background: var(--vscode-editorWidget-background);
-  box-shadow: 0 1px 4px color-mix(in srgb, var(--vscode-widget-shadow) 36%, transparent);
+  color: var(--pgw-text-muted);
+  background: var(--pgw-floating-background);
+  box-shadow: 0 1px 4px color-mix(in srgb, var(--pgw-floating-shadow) 36%, transparent);
   font-size: calc(0.68em * var(--cockpit-edge-label-font-scale, 1.3));
   white-space: nowrap;
   pointer-events: all;
@@ -770,7 +764,7 @@ button:disabled {
 }
 
 .cockpit-edge-count {
-  color: var(--vscode-descriptionForeground);
+  color: var(--pgw-text-muted);
   font-size: 0.88em;
 }
 
@@ -781,11 +775,11 @@ button:disabled {
   left: 50%;
   min-width: 320px;
   max-width: 520px;
-  border: 1px solid var(--vscode-focusBorder);
+  border: 1px solid var(--pgw-focus);
   border-radius: 6px;
   padding: 10px;
-  background: var(--vscode-editorWidget-background);
-  box-shadow: 0 8px 28px color-mix(in srgb, var(--vscode-widget-shadow) 45%, transparent);
+  background: var(--pgw-floating-background);
+  box-shadow: 0 8px 28px color-mix(in srgb, var(--pgw-floating-shadow) 45%, transparent);
   transform: translateX(-50%);
 }
 
@@ -805,16 +799,16 @@ button:disabled {
 .edge-summary {
   justify-content: space-between;
   margin: 8px 0;
-  color: var(--vscode-descriptionForeground);
+  color: var(--pgw-text-muted);
   font-size: 0.8em;
 }
 
 .edge-popover > button {
-  border: 1px solid var(--vscode-button-border, transparent);
+  border: 1px solid var(--pgw-action-border, transparent);
   border-radius: 3px;
   padding: 4px 8px;
-  color: var(--vscode-button-secondaryForeground);
-  background: var(--vscode-button-secondaryBackground);
+  color: var(--pgw-secondary-action-text);
+  background: var(--pgw-secondary-action-background);
 }
 
 .cockpit-empty {
@@ -827,7 +821,7 @@ button:disabled {
   padding: 40px;
   background-image: radial-gradient(
     circle,
-    color-mix(in srgb, var(--vscode-descriptionForeground) 18%, transparent) 1px,
+    color-mix(in srgb, var(--pgw-text-muted) 18%, transparent) 1px,
     transparent 1px
   );
   background-size: 20px 20px;
@@ -857,7 +851,7 @@ button:disabled {
 
 .cockpit-empty p {
   margin: 0;
-  color: var(--vscode-descriptionForeground);
+  color: var(--pgw-text-muted);
 }
 
 .cockpit-inspector {
@@ -922,7 +916,7 @@ button:disabled {
 
 .inspector-resize-handle:hover::after,
 .inspector-resize-handle:focus::after {
-  background: var(--vscode-focusBorder);
+  background: var(--pgw-focus);
 }
 
 .source-inspector {
@@ -988,7 +982,7 @@ button:disabled {
 .hidden-neighbor-hint,
 .neighbor-preview,
 .path-result {
-  color: var(--vscode-descriptionForeground);
+  color: var(--pgw-text-muted);
   font-size: 0.7em;
 }
 
@@ -1029,8 +1023,8 @@ button:disabled {
   border: 1px solid var(--cockpit-line);
   border-radius: 4px;
   padding: 4px 7px;
-  color: var(--vscode-input-foreground);
-  background: var(--vscode-input-background);
+  color: var(--pgw-field-text);
+  background: var(--pgw-field-background);
   font-size: 0.74em;
 }
 
@@ -1049,8 +1043,8 @@ button:disabled {
   overflow: hidden;
   border: 1px solid var(--cockpit-line);
   border-radius: 5px;
-  background: var(--vscode-quickInput-background, var(--vscode-editorWidget-background));
-  box-shadow: 0 7px 24px color-mix(in srgb, var(--vscode-widget-shadow) 42%, transparent);
+  background: var(--pgw-chooser-background);
+  box-shadow: 0 7px 24px color-mix(in srgb, var(--pgw-floating-shadow) 42%, transparent);
 }
 
 .path-picker-popover > input {
@@ -1058,10 +1052,10 @@ button:disabled {
   min-width: 0;
   box-sizing: border-box;
   margin: 6px;
-  border: 1px solid var(--vscode-input-border, var(--cockpit-line));
+  border: 1px solid var(--pgw-field-border, var(--cockpit-line));
   padding: 5px 7px;
-  color: var(--vscode-input-foreground);
-  background: var(--vscode-input-background);
+  color: var(--pgw-field-text);
+  background: var(--pgw-field-background);
   font: inherit;
   outline: none;
 }
@@ -1086,12 +1080,12 @@ button:disabled {
 
 .path-picker-popover > div > button:hover,
 .path-picker-popover > div > button[aria-selected="true"] {
-  background: var(--vscode-quickInputList-focusBackground);
+  background: var(--pgw-chooser-selection-background);
 }
 
 .path-picker-popover small,
 .path-picker-empty {
-  color: var(--vscode-descriptionForeground);
+  color: var(--pgw-text-muted);
   font-size: 0.72em;
 }
 
@@ -1106,11 +1100,11 @@ button:disabled {
   margin: 0;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: var(--vscode-editor-font-family);
+  font-family: var(--pgw-code-font-family);
 }
 
 .path-result.unavailable {
-  color: var(--vscode-errorForeground);
+  color: var(--pgw-error);
 }
 
 .source-heading {
@@ -1125,17 +1119,17 @@ button:disabled {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: var(--vscode-editor-font-family);
+  font-family: var(--pgw-code-font-family);
 }
 
 .source-glyph {
-  color: var(--vscode-charts-green);
+  color: var(--pgw-accent-green);
 }
 
 .source-kind,
 .source-file,
 .source-range {
-  color: var(--vscode-descriptionForeground);
+  color: var(--pgw-text-muted);
   font-size: 0.75em;
 }
 
@@ -1160,9 +1154,14 @@ button:disabled {
 
 .source-body {
   min-height: 0;
-  overflow: auto;
+  overflow: hidden;
   scrollbar-gutter: stable;
-  background: var(--vscode-editor-background);
+  background: var(--pgw-canvas-background);
+}
+
+.source-editor {
+  width: 100%;
+  height: 100%;
 }
 
 .perspective-bar {
@@ -1173,8 +1172,8 @@ button:disabled {
   overflow-x: auto;
   border-top: 1px solid var(--cockpit-line);
   padding: 4px 10px;
-  color: var(--vscode-descriptionForeground);
-  background: var(--vscode-editor-background);
+  color: var(--pgw-text-muted);
+  background: var(--pgw-canvas-background);
   white-space: nowrap;
 }
 
@@ -1214,18 +1213,18 @@ button:disabled {
   right: 12px;
   z-index: 60;
   max-width: 520px;
-  border: 1px solid var(--vscode-inputValidation-errorBorder);
+  border: 1px solid var(--pgw-field-error-border);
   border-radius: 4px;
   padding: 8px 10px;
-  color: var(--vscode-inputValidation-errorForeground);
-  background: var(--vscode-inputValidation-errorBackground);
+  color: var(--pgw-field-error-text);
+  background: var(--pgw-field-error-background);
 }
 
 .cockpit-loading {
   display: grid;
   height: 100%;
   place-items: center;
-  color: var(--vscode-descriptionForeground);
+  color: var(--pgw-text-muted);
 }
 
 @keyframes node-enter {

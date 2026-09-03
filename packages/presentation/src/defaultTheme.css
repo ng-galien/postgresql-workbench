@@ -1,0 +1,246 @@
+/*
+ * PostgreSQL Workbench's complete default theme.
+ *
+ * `:where` deliberately has no specificity: an integrating host can project its own theme with a
+ * normal `:root` rule regardless of load order. Public roles use `--pgw-*`; the `--pgw-default-*`
+ * values are private fallbacks used by host projections when a host has no equivalent token.
+ */
+:where(:root, :host) {
+  --pgw-default-color-scheme: dark;
+  --pgw-default-ui-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Ubuntu", sans-serif;
+  --pgw-default-ui-font-size: 13px;
+  --pgw-default-code-font-family: "SF Mono", Menlo, Monaco, "Courier New", monospace;
+  --pgw-default-code-font-size: 12px;
+
+  --pgw-default-text: #cccccc;
+  --pgw-default-text-muted: #9d9d9d;
+  --pgw-default-text-disabled: #cccccc80;
+  --pgw-default-icon: #cccccc;
+  --pgw-default-link: #4daafc;
+  --pgw-default-error: #f85149;
+  --pgw-default-warning: #cca700;
+  --pgw-default-warning-background: #cca7001a;
+  --pgw-default-focus: #0078d4;
+  --pgw-default-divider: #2b2b2b;
+  --pgw-default-modified: #e2c08d;
+
+  --pgw-default-canvas-background: #1f1f1f;
+  --pgw-default-floating-background: #202020;
+  --pgw-default-floating-text: var(--pgw-default-text);
+  --pgw-default-floating-border: #313131;
+  --pgw-default-floating-shadow: #0000005c;
+  --pgw-default-header-background: #181818;
+  --pgw-default-sidebar-background: #181818;
+  --pgw-default-code-block-background: #2b2b2b;
+  --pgw-default-shadow-low: rgb(0 0 0 / 25%);
+  --pgw-default-shadow-medium: rgb(0 0 0 / 35%);
+  --pgw-default-shadow-high: rgb(0 0 0 / 45%);
+
+  --pgw-default-code-text: #cccccc;
+  --pgw-default-code-line-number: #6e7681;
+  --pgw-default-code-selection-background: #264f78;
+  --pgw-default-code-selection-text: #ffffff;
+  --pgw-default-find-match-background: rgb(234 92 0 / 66%);
+  --pgw-default-find-match-highlight-background: rgb(234 92 0 / 33%);
+
+  --pgw-default-action-background: #0078d4;
+  --pgw-default-action-text: #ffffff;
+  --pgw-default-action-hover-background: #026ec1;
+  --pgw-default-action-border: #ffffff12;
+  --pgw-default-secondary-action-background: #313131;
+  --pgw-default-secondary-action-text: #cccccc;
+  --pgw-default-secondary-action-hover-background: #3c3c3c;
+
+  --pgw-default-field-background: #313131;
+  --pgw-default-field-text: #cccccc;
+  --pgw-default-field-border: #3c3c3c;
+  --pgw-default-field-placeholder: #989898;
+  --pgw-default-field-error-background: #5a1d1d;
+  --pgw-default-field-error-border: #be1100;
+  --pgw-default-field-error-text: #ffffff;
+  --pgw-default-field-warning-background: var(--pgw-default-warning-background);
+  --pgw-default-field-pending-accent: var(--pgw-default-warning);
+
+  --pgw-default-select-background: #313131;
+  --pgw-default-select-text: #cccccc;
+  --pgw-default-select-border: #3c3c3c;
+  --pgw-default-hover-background: #2a2d2e;
+  --pgw-default-selection-background: #04395e;
+  --pgw-default-selection-text: #ffffff;
+  --pgw-default-toolbar-hover-background: #5a5d5e50;
+
+  --pgw-default-menu-background: #1f1f1f;
+  --pgw-default-menu-text: #cccccc;
+  --pgw-default-menu-border: #454545;
+  --pgw-default-menu-selection-background: #0078d4;
+  --pgw-default-menu-selection-text: #ffffff;
+  --pgw-default-menu-separator: var(--pgw-default-divider);
+  --pgw-default-chooser-background: #222222;
+  --pgw-default-chooser-selection-background: var(--pgw-default-selection-background);
+  --pgw-default-chooser-selection-text: var(--pgw-default-selection-text);
+  --pgw-default-suggestion-background: #202020;
+  --pgw-default-suggestion-border: #454545;
+  --pgw-default-suggestion-text: #cccccc;
+  --pgw-default-suggestion-selection-background: var(--pgw-default-selection-background);
+  --pgw-default-suggestion-selection-text: var(--pgw-default-selection-text);
+
+  --pgw-default-badge-background: #616161;
+  --pgw-default-badge-text: #f8f8f8;
+  --pgw-default-scrollbar: #79797966;
+  --pgw-default-scrollbar-hover: #646464b3;
+  --pgw-default-scrollbar-active: #bfbfbf66;
+  --pgw-default-diff-inserted-background: #2ea04326;
+
+  --pgw-default-accent-blue: #3794ff;
+  --pgw-default-accent-cyan: #75beff;
+  --pgw-default-accent-green: #89d185;
+  --pgw-default-accent-orange: #d18616;
+  --pgw-default-accent-purple: #b180d7;
+  --pgw-default-accent-red: var(--pgw-default-error);
+  --pgw-default-accent-yellow: #cca700;
+  --pgw-default-data-property: var(--pgw-default-accent-blue);
+  --pgw-default-data-string: var(--pgw-default-accent-orange);
+  --pgw-default-data-number: var(--pgw-default-accent-green);
+  --pgw-default-data-literal: var(--pgw-default-accent-purple);
+
+  --pgw-default-syntax-schema: #9d9d9d;
+  --pgw-default-syntax-relation: #ee9d28;
+  --pgw-default-syntax-binding: #89d185;
+  --pgw-default-syntax-column: #75beff;
+  --pgw-default-syntax-routine: #b180d7;
+  --pgw-default-syntax-parameter: #cca700;
+  --pgw-default-syntax-type: #75beff;
+  --pgw-default-syntax-keyword: #569cd6;
+  --pgw-default-syntax-string: #ce9178;
+  --pgw-default-syntax-number: #b5cea8;
+  --pgw-default-syntax-comment: #6a9955;
+  --pgw-default-syntax-operator: #d4d4d4;
+  --pgw-default-syntax-punctuation: #d4d4d4;
+
+  --pgw-ui-font-family: var(--pgw-default-ui-font-family);
+  --pgw-ui-font-size: var(--pgw-default-ui-font-size);
+  --pgw-code-font-family: var(--pgw-default-code-font-family);
+  --pgw-code-font-size: var(--pgw-default-code-font-size);
+  --pgw-color-scheme: var(--pgw-default-color-scheme);
+  --pgw-text: var(--pgw-default-text);
+  --pgw-text-muted: var(--pgw-default-text-muted);
+  --pgw-text-disabled: var(--pgw-default-text-disabled);
+  --pgw-icon: var(--pgw-default-icon);
+  --pgw-link: var(--pgw-default-link);
+  --pgw-error: var(--pgw-default-error);
+  --pgw-warning: var(--pgw-default-warning);
+  --pgw-warning-background: var(--pgw-default-warning-background);
+  --pgw-focus: var(--pgw-default-focus);
+  --pgw-divider: var(--pgw-default-divider);
+  --pgw-modified: var(--pgw-default-modified);
+  --pgw-canvas-background: var(--pgw-default-canvas-background);
+  --pgw-floating-background: var(--pgw-default-floating-background);
+  --pgw-floating-text: var(--pgw-default-floating-text);
+  --pgw-floating-border: var(--pgw-default-floating-border);
+  --pgw-floating-shadow: var(--pgw-default-floating-shadow);
+  --pgw-header-background: var(--pgw-default-header-background);
+  --pgw-sidebar-background: var(--pgw-default-sidebar-background);
+  --pgw-code-block-background: var(--pgw-default-code-block-background);
+  --pgw-shadow-low: var(--pgw-default-shadow-low);
+  --pgw-shadow-medium: var(--pgw-default-shadow-medium);
+  --pgw-shadow-high: var(--pgw-default-shadow-high);
+  --pgw-code-text: var(--pgw-default-code-text);
+  --pgw-code-line-number: var(--pgw-default-code-line-number);
+  --pgw-code-selection-background: var(--pgw-default-code-selection-background);
+  --pgw-code-selection-text: var(--pgw-default-code-selection-text);
+  --pgw-find-match-background: var(--pgw-default-find-match-background);
+  --pgw-find-match-highlight-background: var(--pgw-default-find-match-highlight-background);
+  --pgw-action-background: var(--pgw-default-action-background);
+  --pgw-action-text: var(--pgw-default-action-text);
+  --pgw-action-hover-background: var(--pgw-default-action-hover-background);
+  --pgw-action-border: var(--pgw-default-action-border);
+  --pgw-secondary-action-background: var(--pgw-default-secondary-action-background);
+  --pgw-secondary-action-text: var(--pgw-default-secondary-action-text);
+  --pgw-secondary-action-hover-background: var(--pgw-default-secondary-action-hover-background);
+  --pgw-field-background: var(--pgw-default-field-background);
+  --pgw-field-text: var(--pgw-default-field-text);
+  --pgw-field-border: var(--pgw-default-field-border);
+  --pgw-field-placeholder: var(--pgw-default-field-placeholder);
+  --pgw-field-error-background: var(--pgw-default-field-error-background);
+  --pgw-field-error-border: var(--pgw-default-field-error-border);
+  --pgw-field-error-text: var(--pgw-default-field-error-text);
+  --pgw-field-warning-background: var(--pgw-default-field-warning-background);
+  --pgw-field-pending-accent: var(--pgw-default-field-pending-accent);
+  --pgw-select-background: var(--pgw-default-select-background);
+  --pgw-select-text: var(--pgw-default-select-text);
+  --pgw-select-border: var(--pgw-default-select-border);
+  --pgw-hover-background: var(--pgw-default-hover-background);
+  --pgw-selection-background: var(--pgw-default-selection-background);
+  --pgw-selection-text: var(--pgw-default-selection-text);
+  --pgw-toolbar-hover-background: var(--pgw-default-toolbar-hover-background);
+  --pgw-menu-background: var(--pgw-default-menu-background);
+  --pgw-menu-text: var(--pgw-default-menu-text);
+  --pgw-menu-border: var(--pgw-default-menu-border);
+  --pgw-menu-selection-background: var(--pgw-default-menu-selection-background);
+  --pgw-menu-selection-text: var(--pgw-default-menu-selection-text);
+  --pgw-menu-separator: var(--pgw-default-menu-separator);
+  --pgw-chooser-background: var(--pgw-default-chooser-background);
+  --pgw-chooser-selection-background: var(--pgw-default-chooser-selection-background);
+  --pgw-chooser-selection-text: var(--pgw-default-chooser-selection-text);
+  --pgw-suggestion-background: var(--pgw-default-suggestion-background);
+  --pgw-suggestion-border: var(--pgw-default-suggestion-border);
+  --pgw-suggestion-text: var(--pgw-default-suggestion-text);
+  --pgw-suggestion-selection-background: var(--pgw-default-suggestion-selection-background);
+  --pgw-suggestion-selection-text: var(--pgw-default-suggestion-selection-text);
+  --pgw-badge-background: var(--pgw-default-badge-background);
+  --pgw-badge-text: var(--pgw-default-badge-text);
+  --pgw-scrollbar: var(--pgw-default-scrollbar);
+  --pgw-scrollbar-hover: var(--pgw-default-scrollbar-hover);
+  --pgw-scrollbar-active: var(--pgw-default-scrollbar-active);
+  --pgw-diff-inserted-background: var(--pgw-default-diff-inserted-background);
+  --pgw-accent-blue: var(--pgw-default-accent-blue);
+  --pgw-accent-cyan: var(--pgw-default-accent-cyan);
+  --pgw-accent-green: var(--pgw-default-accent-green);
+  --pgw-accent-orange: var(--pgw-default-accent-orange);
+  --pgw-accent-purple: var(--pgw-default-accent-purple);
+  --pgw-accent-red: var(--pgw-default-accent-red);
+  --pgw-accent-yellow: var(--pgw-default-accent-yellow);
+  --pgw-data-property: var(--pgw-default-data-property);
+  --pgw-data-string: var(--pgw-default-data-string);
+  --pgw-data-number: var(--pgw-default-data-number);
+  --pgw-data-literal: var(--pgw-default-data-literal);
+  --pgw-syntax-schema: var(--pgw-default-syntax-schema);
+  --pgw-syntax-relation: var(--pgw-default-syntax-relation);
+  --pgw-syntax-binding: var(--pgw-default-syntax-binding);
+  --pgw-syntax-column: var(--pgw-default-syntax-column);
+  --pgw-syntax-routine: var(--pgw-default-syntax-routine);
+  --pgw-syntax-parameter: var(--pgw-default-syntax-parameter);
+  --pgw-syntax-type: var(--pgw-default-syntax-type);
+  --pgw-syntax-keyword: var(--pgw-default-syntax-keyword);
+  --pgw-syntax-string: var(--pgw-default-syntax-string);
+  --pgw-syntax-number: var(--pgw-default-syntax-number);
+  --pgw-syntax-comment: var(--pgw-default-syntax-comment);
+  --pgw-syntax-operator: var(--pgw-default-syntax-operator);
+  --pgw-syntax-punctuation: var(--pgw-default-syntax-punctuation);
+}
+
+/* Every scrollbar of every Workbench surface: the tokens above, applied once. */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--pgw-scrollbar);
+  border: 2px solid transparent;
+  border-radius: 6px;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--pgw-scrollbar-hover);
+}
+
+::-webkit-scrollbar-thumb:active {
+  background-color: var(--pgw-scrollbar-active);
+}

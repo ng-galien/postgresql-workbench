@@ -45,6 +45,9 @@ export default defineConfig({
       PGWB_DEV_PORT: String(PORT),
       PGWB_EXPORT_DIR: EXPORTS,
       PGWB_NAVIGATION_DELAY_MS: "150",
+      ...(process.env.PGWB_CODE_MONIKER_RUNTIME
+        ? { PGWB_CODE_MONIKER_RUNTIME: process.env.PGWB_CODE_MONIKER_RUNTIME }
+        : {}),
     },
   },
 });

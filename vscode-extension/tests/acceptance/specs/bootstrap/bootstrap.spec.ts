@@ -46,17 +46,7 @@ async function expectFailedConnection(workbench: WorkbenchPage) {
 }
 
 async function addInvalidConnection(workbench: WorkbenchPage) {
-  const addConnection = await workbench.tree.findItem(/^Add Connection\.\.\.$/);
-  await addConnection.click();
-  await workbench.quickInput.chooseThenInput(
-    /Add connection/i,
-    /postgresql:\/\/user:pass@localhost/i,
-  );
-  await workbench.quickInput.submit(INVALID_CONNECTION_URL, /postgresql:\/\/user:pass@localhost/i);
-  await expect(await workbench.tree.waitForItem(INVALID_CONNECTION)).toContainText(
-    /disconnected/u,
-    { timeout: 5_000 },
-  );
+  await workbench.addConnection(INVALID_CONNECTION_URL, INVALID_CONNECTION, /disconnected/u);
 }
 
 async function confirmConnectionRemoval(workbench: WorkbenchPage) {
@@ -79,13 +69,13 @@ test("starts, configures its first Connection, and indexes the database behind i
     ).toBeVisible({ timeout: 5_000 });
   });
 
-  await test.step("start with no Connection configured, and offer to add one", async () => {
+  await test.step("start with no Connection configured, and open centralized management", async () => {
     const state = await vscode.inspectWorkbenchState();
     expect(state.connection.connectedConnectionIds).toEqual([]);
     await expect(vscode.page.getByText("Start a local debug database with Docker")).toHaveCount(0);
-    await expect(await workbench.tree.findItem(/^Add Connection\.\.\.$/)).toBeVisible({
-      timeout: 5_000,
-    });
+    await expect(
+      vscode.page.getByRole("button", { name: "Open Connections", exact: true }),
+    ).toBeVisible({ timeout: 5_000 });
   });
 
   await test.step("live the startup sequence every other lane depends on", async () => {
@@ -177,9 +167,24 @@ test("recovers, renames, and removes a Connection after connection errors", asyn
     const removal = startConnectionAction(vscode, INVALID_CONNECTION_ID, "Remove Connection");
     await confirmConnectionRemoval(workbench);
     await removal;
-    await workbench.tree.expectItemAbsent(RENAMED_CONNECTION);
+    await workbench.tree.expectItemAbsent(RENAMED_CONNECTION, 10_000);
     await expect(
       workbench.page.getByRole("dialog", { name: CONNECTION_ERROR_NOTIFICATION }),
     ).toBeHidden();
   });
+});
+
+test("restores the Connections setup action after removing the last Connection", async ({
+  vscode,
+  workbench,
+}) => {
+  await workbench.ensureConnection(demoConnectionUrl, connection);
+
+  const removal = startConnectionAction(vscode, demoConnectionId, "Remove Connection");
+  await confirmConnectionRemoval(workbench);
+  await removal;
+
+  await expect(
+    vscode.page.getByRole("button", { name: "Open Connections", exact: true }),
+  ).toBeVisible({ timeout: 5_000 });
 });

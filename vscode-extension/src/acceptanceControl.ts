@@ -20,6 +20,7 @@ const DEBUG_STEP_INTO_COMMAND = "workbench.action.debug.stepInto";
 const DEBUG_STEP_OVER_COMMAND = "workbench.action.debug.stepOver";
 const FOCUS_WORKBENCH_COMMAND = "postgresql-workbench-connections.focus";
 const EDIT_CONNECTION_COMMAND = "postgresql-workbench.editConnection";
+const MANAGE_CONNECTIONS_COMMAND = "postgresql-workbench.manageConnections";
 const REMOVE_SAVED_CONNECTION_COMMAND = "postgresql-workbench.removeConnection";
 const RENAME_CONNECTION_COMMAND = "postgresql-workbench.renameConnection";
 const INSPECT_TESTING_STATE_COMMAND = "postgresql-workbench.acceptance.inspectTestingState";
@@ -58,6 +59,7 @@ const ACCEPTANCE_COMMANDS = new Set([
   DEBUG_STEP_OVER_COMMAND,
   FOCUS_WORKBENCH_COMMAND,
   EDIT_CONNECTION_COMMAND,
+  MANAGE_CONNECTIONS_COMMAND,
   REMOVE_SAVED_CONNECTION_COMMAND,
   RENAME_CONNECTION_COMMAND,
   INSPECT_TESTING_STATE_COMMAND,
@@ -91,6 +93,8 @@ export interface AcceptanceControlOptions {
   removeConnection(id: string): Promise<void> | void;
   resetWorkbench(): Promise<void> | void;
 }
+
+const outputDecoder = new TextDecoder();
 
 /**
  * The probes an acceptance run reads. Activation builds the pieces in order, so each probe starts
@@ -162,6 +166,9 @@ export function registerAcceptanceControl(
                 languageId: cell.document.languageId,
                 outputs: cell.outputs.flatMap((output) => output.items.map((item) => item.mime)),
                 outputGroups: cell.outputs.map((output) => output.items.map((item) => item.mime)),
+                outputPreviews: cell.outputs.map((output) =>
+                  output.items.map((item) => outputDecoder.decode(item.data).slice(0, 400)),
+                ),
                 text: cell.document.getText(),
               })),
               notebookType: notebook.notebookType,

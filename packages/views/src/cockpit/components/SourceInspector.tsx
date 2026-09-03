@@ -1,40 +1,22 @@
-import { useEffect, useMemo, useState } from "react";
-import { postgresVisual } from "../../presentation.js";
-import {
-  type HighlightedPostgresSource,
-  highlightPostgresSource,
-  plainPostgresSource,
-} from "../../source/highlight.js";
-import { PostgresSourceView } from "../../source/PostgresSourceView.js";
-import type { WorkbenchGraphSourcePreview } from "../protocol.js";
-import { post } from "../vscodeApi.js";
+import type { SqlEditorSurface } from "../../../../editor/src/contracts.js";
+import { postgresVisual } from "../../../../presentation/src/presentation.js";
+import type { CockpitMessaging, WorkbenchGraphSourcePreview } from "../protocol.js";
 
 function SourceInspector({
   preview,
+  messaging,
   onClose,
   pinned,
   onPinnedChange,
+  Editor,
 }: {
   preview: WorkbenchGraphSourcePreview;
+  messaging: CockpitMessaging;
   onClose: () => void;
   pinned: boolean;
   onPinnedChange(pinned: boolean): void;
+  Editor: SqlEditorSurface;
 }) {
-  const fallback = useMemo<HighlightedPostgresSource>(
-    () => plainPostgresSource(preview.lines),
-    [preview.lines],
-  );
-  const [source, setSource] = useState(fallback);
-  useEffect(() => {
-    let active = true;
-    setSource(fallback);
-    void highlightPostgresSource(preview.lines).then((highlighted) => {
-      if (active) setSource(highlighted);
-    });
-    return () => {
-      active = false;
-    };
-  }, [fallback, preview.lines]);
   const visual = postgresVisual(preview.kind);
   const file = preview.file.split("/").at(-1) ?? preview.file;
   return (
@@ -66,7 +48,7 @@ function SourceInspector({
             type="button"
             title="Open definition in the editor"
             aria-label="Open definition"
-            onClick={() => post({ type: "open", symbolUri: preview.symbolUri })}
+            onClick={() => messaging.post({ type: "open", symbolUri: preview.symbolUri })}
           >
             ↗
           </button>
@@ -84,7 +66,16 @@ function SourceInspector({
         lines {preview.firstLine}–{preview.lastLine}
       </div>
       <div className="source-body">
-        <PostgresSourceView source={source} />
+        <div className="source-editor postgres-editor-surface">
+          <Editor
+            uri={preview.editorUri}
+            text={preview.lines.map((line) => line.text).join("\n")}
+            languageId={preview.languageId}
+            ariaLabel="PostgreSQL source preview"
+            lineNumberStart={preview.lines[0]?.number ?? preview.firstLine}
+            readOnly
+          />
+        </div>
       </div>
     </aside>
   );

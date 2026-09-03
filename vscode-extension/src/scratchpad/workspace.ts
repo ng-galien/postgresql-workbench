@@ -1,13 +1,13 @@
 import { TextDecoder } from "node:util";
 import * as vscode from "vscode";
-import { SQL_NOTEBOOK_SCHEME, type SqlNotebookFileSystemProvider } from "./fileSystem.js";
 import {
   nextSqlNotebookName,
   normalizeSqlNotebookName,
   parseSqlNotebookFile,
   SQL_NOTEBOOK_EXTENSION,
   type SqlNotebookMetadata,
-} from "./notebookFile.js";
+} from "../../../packages/scratchpad/src/notebookFile.js";
+import { SQL_NOTEBOOK_SCHEME, type SqlNotebookFileSystemProvider } from "./fileSystem.js";
 
 export const OPEN_SQL_NOTEBOOK_COMMAND = "postgresql-workbench.openSqlNotebook";
 export const RENAME_SQL_NOTEBOOK_COMMAND = "postgresql-workbench.renameSqlNotebook";

@@ -268,12 +268,14 @@ export function SqlResultView({ payload, messaging }: SqlResultViewProps) {
       <header className="result-toolbar">
         <div className="result-summary">
           <span className="result-badge">{statementResultBadge(current)}</span>
-          <span
-            className="result-binding"
-            title={`Result binding: ${current.binding.connectionName} · ${current.binding.database}`}
-          >
-            {current.binding.database}
-          </span>
+          {current.binding ? (
+            <span
+              className="result-binding"
+              title={`Result binding: ${current.binding.connectionName} · ${current.binding.database}`}
+            >
+              {current.binding.database}
+            </span>
+          ) : null}
           {capabilities.navigation && messaging && rowset ? (
             <ResultNavigation
               state={{

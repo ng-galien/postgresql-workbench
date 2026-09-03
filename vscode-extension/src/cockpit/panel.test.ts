@@ -30,7 +30,13 @@ describe("WorkbenchGraphPanel", () => {
       },
     };
     createWebviewPanel.mockReturnValue(panel);
-    const host = new WorkbenchGraphPanel("/extension" as never, vi.fn(), vi.fn());
+    const host = new WorkbenchGraphPanel(
+      "/extension" as never,
+      vi.fn(),
+      vi.fn(),
+      () => "ws://127.0.0.1:1/test",
+      false,
+    );
 
     host.ensure("demo");
 

@@ -2,8 +2,9 @@ import { countLabel } from "../../../../rows/src/countLabel.js";
 import { relationLabel } from "../graph/relationPresentation.js";
 import { useCockpitStore } from "../graph/store.js";
 import { inspectSymbol } from "../graph/transport.js";
+import type { CockpitMessaging } from "../protocol.js";
 
-export function CockpitEdgePopover() {
+export function CockpitEdgePopover({ messaging }: { messaging: CockpitMessaging }) {
   const selected = useCockpitStore((state) => state.selectedEdgeId);
   const edge = useCockpitStore((state) =>
     state.selectedEdgeId ? state.exploration.edges[state.selectedEdgeId] : undefined,
@@ -25,7 +26,7 @@ export function CockpitEdgePopover() {
         <span>{edge.kinds.map(relationLabel).join(" · ")}</span>
         <span>{countLabel(edge.count, "reference")}</span>
       </div>
-      <button type="button" onClick={() => inspectSymbol(edge.source)}>
+      <button type="button" onClick={() => inspectSymbol(messaging, edge.source)}>
         Show caller DDL
       </button>
     </aside>

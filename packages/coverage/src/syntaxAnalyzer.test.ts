@@ -42,6 +42,8 @@ END;
         language: "plpgsql",
         source: body,
         uri: "coverage.plpgsql",
+        maxDepth: 1_024,
+        maxNodes: 100_000,
       },
     ]);
     expect(analysis.diagnostics).toEqual([]);
@@ -303,6 +305,7 @@ function tree(...children: SyntaxNode[]): SyntaxTree {
   return {
     file: "coverage.plpgsql",
     language: "plpgsql",
+    target: { language: "plpgsql", entryPoint: "block" },
     focus: "coverage.plpgsql",
     focusLineRange: null,
     root: node("source_file", 1, ...children),

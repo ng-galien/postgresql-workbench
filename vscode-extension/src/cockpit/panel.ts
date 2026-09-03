@@ -4,7 +4,8 @@ import type {
   WorkbenchGraphWebviewMessage,
 } from "../../../packages/views/src/cockpit/protocol.js";
 import viewBundles from "../../../packages/views/viewBundles.json" with { type: "json" };
-import { webviewPage } from "../webviewPage.js";
+import { sqlEditorWebviewPage } from "../sqlEditorWebviewPage.js";
+import { webviewShell } from "../webviewShell.js";
 
 export class WorkbenchGraphPanel implements vscode.Disposable {
   private panel?: vscode.WebviewPanel;
@@ -13,6 +14,7 @@ export class WorkbenchGraphPanel implements vscode.Disposable {
     private readonly extensionUri: vscode.Uri,
     private readonly onMessage: (message: WorkbenchGraphWebviewMessage) => void,
     private readonly onDispose: () => void,
+    private readonly sqlEditorLanguageServerUrl: () => string,
     private readonly collectRenderEvidence = false,
   ) {}
 
@@ -48,7 +50,12 @@ export class WorkbenchGraphPanel implements vscode.Disposable {
       light: vscode.Uri.joinPath(this.extensionUri, "icons", "sql-cockpit-light.svg"),
       dark: vscode.Uri.joinPath(this.extensionUri, "icons", "sql-cockpit-dark.svg"),
     };
-    panel.webview.html = graphHtml(panel.webview, this.extensionUri, this.collectRenderEvidence);
+    panel.webview.html = graphHtml(
+      panel.webview,
+      this.extensionUri,
+      this.collectRenderEvidence,
+      this.sqlEditorLanguageServerUrl(),
+    );
     panel.onDidDispose(() => {
       if (this.panel !== panel) return;
       this.panel = undefined;
@@ -82,14 +89,19 @@ function graphHtml(
   webview: vscode.Webview,
   extensionUri: vscode.Uri,
   collectRenderEvidence: boolean,
+  languageServerUrl: string,
 ): string {
-  return webviewPage({
+  const editor = sqlEditorWebviewPage(webview, extensionUri, languageServerUrl);
+  return webviewShell({
     webview,
     extensionUri,
     title: "PostgreSQL Graph",
     script: viewBundles.cockpitGraph.script,
     stylesheet: viewBundles.cockpitGraph.stylesheet,
-    extraCsp: [`connect-src ${webview.cspSource}`],
-    globals: { __PLPGSQL_GRAPH_EVIDENCE__: collectRenderEvidence },
+    extraCsp: editor.extraCsp,
+    globals: {
+      ...editor.globals,
+      __PLPGSQL_GRAPH_EVIDENCE__: collectRenderEvidence,
+    },
   });
 }

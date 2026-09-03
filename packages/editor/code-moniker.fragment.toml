@@ -1,0 +1,13 @@
+fragment = "editor"
+enabled = true
+
+[aliases]
+editor_source = "source ~ '**/dir:packages/dir:editor/**'"
+editor_sql_analysis_presentation_target = "target ~ '**/dir:packages/dir:editor/**' OR target ~ '**/dir:packages/dir:sql/**' OR target ~ '**/dir:packages/dir:presentation/**'"
+
+[[ts.refs.where]]
+id = "editor-dependency-is-limited-to-sql-analysis-and-presentation"
+severity = "error"
+expr = "$editor_source AND $structural_edge AND ($engine_package_target OR $host_local_target) => $editor_sql_analysis_presentation_target"
+message = "packages/editor integrates Monaco with SQL authoring and presentation contracts; it must never depend on a view or a host."
+rationale = "The same Monaco editor must run in the browser shell and a future Electron renderer. SQL and PL/pgSQL behavior comes from packages/sql over the official language-client stack, visual roles come from packages/presentation, and every view or host remains a consumer above this package."

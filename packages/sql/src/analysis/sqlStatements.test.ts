@@ -44,6 +44,7 @@ function parserWith(statements: SyntaxNode[], overrides: Partial<SyntaxTree> = {
         truncated: false,
         hasError: false,
         ...overrides,
+        target: overrides.target ?? { language: "sql", entryPoint: "script" },
       };
     },
   };

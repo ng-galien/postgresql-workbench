@@ -57,12 +57,13 @@ packages/              # The engine, one package per subject; boundaries enforce
     languageServer/     # Completion, semantic tokens, diagnostics — the front door
   catalog/             # PostgreSQL catalog projection, DDL sync, Cockpit graph
   rows/                # Reading and editing relation rows: editability, edits, Data View engine
+  presentation/        # Host-neutral visual roles, default theme, PostgreSQL identities
   views/               # The React views: result grid, Data View, Cockpit, debug results
   coverage/            # pgTAP coverage analysis and instrumentation
   dap/                 # @ng-galien/postgresql-dap — its own version and release tag
     main.ts             # Entry point — runs DAP session over stdio
     debugger/           # Public DAP surface, launch contract, pldbgapi backend, session
-  shell/               # Browser harness driving the views against PostgreSQL without VS Code
+  shell/               # The second shell: engine + LSP + views in a browser, seed of the Electron app
 
 e2e/
   init/                # SQL init scripts (extension + test functions)
@@ -129,7 +130,7 @@ The `vscode-extension/` is a full-featured VS Code extension:
 - esbuild bundles extension.ts and the extension-specific dapServer.ts entry; the latter reuses the shared stdio DAP host without importing the standalone CLI entry
 - Imports from ../packages/ work via esbuild (not tsc rootDir — removed)
 - The extension adapts the engine to VS Code and holds nothing else; the views name their
-  colours `--postgres-*` and `webviewPage.ts` says what those names are worth
+  colours `--postgres-*` and `webviewShell.ts` says what those names are worth
 
 ## Testing
 
@@ -167,5 +168,7 @@ returns undefined.
 - Works with standard EDB pldebugger — the ng-galien fork is optional (better composite type fallback)
 - Biome for lint+format, Lefthook for pre-commit (biome fix → typecheck DAP + extension in parallel)
 - `npm run check:architecture` checks the package boundaries (code-moniker architecture profile) and
-  runs in CI as the `Architecture` job — a boundary is not a convention here, it is a gate
+  runs in CI as the `Architecture` job — a boundary is not a convention here, it is a gate. The
+  decisions themselves live in `.code-moniker.toml` and the package fragments: read the boundary
+  view (`code-moniker rules show .`) before changing a boundary, not this file
 - Node.js 24+ required

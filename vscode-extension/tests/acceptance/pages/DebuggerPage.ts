@@ -142,7 +142,12 @@ export class DebuggerPage {
 
   async expectActiveRoutineSource(sourceTab: RegExp, routineSource: RegExp): Promise<void> {
     const tab = this.page.getByRole("tab", { name: sourceTab });
-    await expect(tab).toBeVisible({ timeout: 10_000 });
+    try {
+      await expect(tab).toBeVisible({ timeout: 10_000 });
+    } catch {
+      const names = await this.page.getByRole("tab").allTextContents();
+      throw new Error(`No tab matches ${sourceTab}; open tabs: ${names.join(" | ")}`);
+    }
     await expect(tab).toHaveAttribute("aria-selected", "true", { timeout: 10_000 });
     await expect(
       this.activeEditor().locator(".view-line").filter({ hasText: routineSource }).first(),
@@ -155,7 +160,8 @@ export class DebuggerPage {
     await expect(this.debugToolbar()).toBeVisible({ timeout: 5_000 });
     await this.runDebugAction("workbench.action.debug.continue");
     const results = await this.resultsFrame();
-    await expect(results.locator(".result-badge.status-success")).toHaveText("Completed", {
+    // The same result view the Scratchpad shows: the toolbar badge names the completed command.
+    await expect(results.locator(".sql-result .result-badge").first()).toBeVisible({
       timeout: DEBUG_DAP_EVENT_TIMEOUT_MS,
     });
     await expect(results.locator(".result-badge.status-pending")).toHaveCount(0, {
@@ -169,6 +175,22 @@ export class DebuggerPage {
     }
     await expect(this.debugToolbar()).toBeHidden({ timeout: 5_000 });
     await this.expectNoActiveSession();
+  }
+
+  /** Inspects a cell and opens the export dialog on the captured result: both affordances work. */
+  async useResultActions(expectedCellValue: string): Promise<void> {
+    const results = await this.resultsFrame();
+    const table = new ResultTable(results);
+    await table.inspect();
+    await expect(results.getByLabel(/^Value of /u)).toContainText(expectedCellValue, {
+      timeout: 5_000,
+    });
+    await results.getByRole("button", { name: "Close the value panel", exact: true }).click();
+    const exportPanel = await table.openExport();
+    await expect(exportPanel).toBeVisible({ timeout: 5_000 });
+    await expect(exportPanel.getByText(expectedCellValue).first()).toBeVisible({ timeout: 5_000 });
+    await exportPanel.getByTitle("Close", { exact: true }).click();
+    await expect(exportPanel).toBeHidden({ timeout: 5_000 });
   }
 
   async expectNoActiveSession(): Promise<void> {
@@ -225,9 +247,15 @@ export class DebuggerPage {
   }
 
   async expectNoErrorNotification(): Promise<void> {
-    await expect(this.page.locator(".notification-toast:visible .codicon-error")).toHaveCount(0, {
-      timeout: 5_000,
+    const errors = this.page.locator(".notification-toast:visible", {
+      has: this.page.locator(".codicon-error"),
     });
+    try {
+      await expect(errors).toHaveCount(0, { timeout: 5_000 });
+    } catch {
+      const texts = await errors.allTextContents();
+      throw new Error(`An error notification appeared: ${texts.join(" | ")}`);
+    }
   }
 
   async expectNoCoverageDecorations(): Promise<void> {

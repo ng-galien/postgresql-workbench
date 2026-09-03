@@ -1,24 +1,10 @@
 /**
  * Scratchpads: the SQL notebooks the user runs statements in — their file format, their Connection
  * Association, LIMIT/OFFSET result pages, and the explicit transactions they hold.
- * The module has two public doors, and nothing else under `scratchpad/` may be imported:
- * - this file, for everything that runs inside VS Code;
- * - `notebookFile.ts`, for the file format and result payload types, which are pure and therefore
- *   usable from the renderer webview and from tests that must not load VS Code.
+ * This file is the module's one public door for code that runs inside VS Code; the file format
+ * itself lives in packages/scratchpad, imported from there by every consumer.
  */
 
-export {
-  nextSqlNotebookName,
-  normalizeSqlNotebookName,
-  parseSqlNotebookFile,
-  resolveScratchpadAssociation,
-  type ScratchpadAssociation,
-  SQL_NOTEBOOK_EXTENSION,
-  SQL_NOTEBOOK_RESULT_MIME,
-  SQL_NOTEBOOK_TYPE,
-  type SqlNotebookMetadata,
-  scratchpadExecutionMode,
-} from "./notebookFile.js";
 export {
   NEW_SQL_NOTEBOOK_COMMAND,
   registerSqlNotebook,

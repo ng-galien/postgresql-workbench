@@ -1,3 +1,5 @@
+import type { SyntaxLanguage } from "../analysis/syntaxTree.js";
+import { NOTEBOOK_CELL_URI_SCHEME } from "../text/documentLanguage.js";
 import type { SqlAuthoringSyntaxResult } from "./protocol.js";
 
 export const SQL_AUTHORING_SYNTAX_SETTINGS =
@@ -17,7 +19,16 @@ export function formatSkippedMessage(syntax: SqlAuthoringSyntaxResult): string |
     : `Format skipped: the SQL contains a syntax error at line ${syntax.errorLine}.`;
 }
 
-/** PL/pgSQL syntax-tree tokens complement indexed SQL tokens only for `.pgsql` files. */
-export function wantsPlpgsqlSemanticTokens(uri: string, languageId: string): boolean {
-  return languageId === "plpgsql" && uri.startsWith("file:");
+/**
+ * The LSP document's root grammar. Virtual PostgreSQL sources are SQL wrappers with injections.
+ * A notebook cell executes as a SQL script whatever its editor language says, so it parses as
+ * one: the PL/pgSQL inside it — a DO body, a routine body — comes back as parser injections. A
+ * bare `plpgsql` document outside a notebook is a routine body and keeps the PL/pgSQL root.
+ */
+export function postgresAuthoringDocumentLanguage(
+  languageId: string,
+  uri?: string,
+): SyntaxLanguage {
+  if (uri?.startsWith(`${NOTEBOOK_CELL_URI_SCHEME}:`)) return "sql";
+  return languageId === "plpgsql" ? "plpgsql" : "sql";
 }

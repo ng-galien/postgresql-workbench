@@ -65,20 +65,24 @@ export type SqlNotebookRendererRequest =
   /* Following an address a cell holds; the same request every result surface sends. */
   | FollowLinkRequest;
 
+export interface SqlResultPreviewedResponse {
+  type: "sql-result/previewed";
+  requestId: number;
+  resultId: string;
+  text: string;
+  error?: true;
+}
+
+export interface SqlResultInspectedResponse {
+  type: "sql-result/inspected";
+  requestId: string;
+  resultId: string;
+  cell?: DebugResultCell;
+}
+
 export type SqlNotebookRendererResponse =
-  | {
-      type: "sql-result/previewed";
-      requestId: number;
-      resultId: string;
-      text: string;
-      error?: true;
-    }
-  | {
-      type: "sql-result/inspected";
-      requestId: string;
-      resultId: string;
-      cell?: DebugResultCell;
-    }
+  | SqlResultPreviewedResponse
+  | SqlResultInspectedResponse
   | {
       type: "sql-result/update";
       sessionId: string;

@@ -1,0 +1,19 @@
+{
+  "sqlSlots": {
+    "relation": {
+      "nonterminalGotos": ["relation_expr", "relation_expr_opt_alias", "extended_relation_expr"]
+    },
+    "column": {
+      "nonterminalGotos": ["columnref"]
+    },
+    "routine": {
+      "nonterminalGotos": ["func_name"]
+    },
+    "type": {
+      "nonterminalGotos": ["Typename", "SimpleTypename", "ConstTypename"]
+    },
+    "procedure": {
+      "kernelItems": ["CallStmt: CALL . func_application"]
+    }
+  }
+}

@@ -1,4 +1,4 @@
-import { expect, type Page } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
 import { ResultTable } from "../../views/testing/ResultTable.js";
 
 /**
@@ -10,8 +10,111 @@ import { ResultTable } from "../../views/testing/ResultTable.js";
 /** Opens an empty view: the shell is one running application, so each scenario starts it over. */
 export async function openEmpty(page: Page) {
   await page.request.post("/reset");
-  await page.goto("/");
+  await page.goto("/data-view");
   await expect(page.getByText("The query is empty")).toBeVisible();
+}
+
+/** The official Monaco surface used by the shell, addressed through its accessible editor name. */
+export class MonacoEditor {
+  readonly root: Locator;
+
+  constructor(
+    private readonly page: Page,
+    ariaLabel: string,
+  ) {
+    const accessibleControl = page.getByRole("textbox", { name: ariaLabel, exact: true });
+    // TypeFox disposes an editor through its asynchronous queue. If a panel has just been closed
+    // and reopened, the newest editor is the live surface while the previous DOM may still be
+    // leaving the page.
+    this.root = page.locator(".monaco-editor").filter({ has: accessibleControl }).last();
+  }
+
+  async waitUntilReady(): Promise<void> {
+    await expect(this.root).toBeVisible();
+  }
+
+  async replace(text: string): Promise<void> {
+    await this.waitUntilReady();
+    if (await this.completionWidget().isVisible()) await this.page.keyboard.press("Escape");
+    await this.root.click();
+    await this.page.keyboard.press(process.platform === "darwin" ? "Meta+a" : "Control+a");
+    await this.page.keyboard.insertText(text);
+    await expect.poll(() => this.text()).toBe(text);
+  }
+
+  async text(): Promise<string> {
+    await this.waitUntilReady();
+    await this.root.click();
+    const modifier = process.platform === "darwin" ? "Meta" : "Control";
+    await this.page.keyboard.press(`${modifier}+a`);
+    await this.page.keyboard.press(`${modifier}+c`);
+    return this.page.evaluate(() => navigator.clipboard.readText());
+  }
+
+  async submit(): Promise<void> {
+    await this.page.keyboard.press("Enter");
+  }
+
+  async requestCompletions(): Promise<void> {
+    await this.root.click();
+    await this.page.keyboard.press(
+      process.platform === "darwin" ? "Meta+ArrowDown" : "Control+End",
+    );
+    await this.page.keyboard.press("Control+Space");
+    await expect(this.completionWidget()).toBeVisible();
+  }
+
+  completionWidget(): Locator {
+    return this.root.locator(".suggest-widget:visible");
+  }
+
+  suggestions(): Locator {
+    return this.completionWidget().locator(".monaco-list-row");
+  }
+
+  suggestion(label: string): Locator {
+    return this.suggestions()
+      .filter({ has: this.page.getByText(label, { exact: true }) })
+      .first();
+  }
+
+  async accept(label: string): Promise<void> {
+    const proposal = this.suggestion(label);
+    await expect(proposal).toBeVisible();
+    await proposal.click();
+  }
+
+  /** Computed colours of visible leaf tokens spelling exactly `text`. */
+  tokenColours(text: string): Promise<string[]> {
+    return this.root.locator(".view-lines").evaluate((lines, token) => {
+      const colours = new Set<string>();
+      for (const span of lines.querySelectorAll("span")) {
+        if (span.children.length === 0 && span.textContent === token) {
+          colours.add(getComputedStyle(span).color);
+        }
+      }
+      return [...colours];
+    }, text);
+  }
+
+  /** Browser-resolved colour of a host-overridable presentation role. */
+  presentationColour(
+    role:
+      | "--pgw-syntax-binding"
+      | "--pgw-syntax-column"
+      | "--pgw-syntax-keyword"
+      | "--pgw-syntax-string"
+      | "--pgw-syntax-type",
+  ): Promise<string> {
+    return this.page.evaluate((property) => {
+      const probe = document.createElement("span");
+      probe.style.color = `var(${property})`;
+      document.body.append(probe);
+      const colour = getComputedStyle(probe).color;
+      probe.remove();
+      return colour;
+    }, role);
+  }
 }
 
 /** Adds a relation from the additions menu, and waits for what it composed to load. */

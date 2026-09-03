@@ -1,6 +1,9 @@
 import { Client } from "pg";
 import type * as vscode from "vscode";
-import type { SslMode } from "../../../packages/catalog/src/savedConnection.js";
+import {
+  type PostgresClientIdentity,
+  postgresClientConfig,
+} from "../../../packages/catalog/src/postgresClientConfig.js";
 
 export type ConnectionErrorKind = "auth" | "network" | "database" | "unknown";
 export interface ConnectionError {
@@ -8,14 +11,7 @@ export interface ConnectionError {
   kind: ConnectionErrorKind;
 }
 
-export interface ConnectParams {
-  host: string;
-  port: number;
-  database: string;
-  user: string;
-  password: string;
-  ssl?: SslMode;
-}
+export type ConnectParams = PostgresClientIdentity;
 
 /**
  * Handles pg.Client lifecycle and pldbgapi validation.
@@ -25,20 +21,7 @@ export class ConnectionService {
   constructor(private readonly out: vscode.OutputChannel) {}
 
   async connectClient(params: ConnectParams): Promise<Client> {
-    const client = new Client({
-      host: params.host,
-      port: params.port,
-      database: params.database,
-      user: params.user,
-      password: params.password,
-      connectionTimeoutMillis: 10_000,
-      statement_timeout: 10_000,
-      ...(params.ssl === "require"
-        ? { ssl: { rejectUnauthorized: false } }
-        : params.ssl === "prefer"
-          ? { ssl: { rejectUnauthorized: false } }
-          : {}),
-    });
+    const client = new Client(postgresClientConfig(params));
 
     await client.connect();
     this.out.appendLine(`TCP connected to ${params.host}:${params.port}/${params.database}`);

@@ -1,5 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
+import type { SqlEditorSurfaceProps } from "../../../../editor/src/contracts.js";
+import type { CockpitMessaging } from "../protocol.js";
 
 const cockpit = vi.hoisted(() => ({
   receive: vi.fn(),
@@ -14,19 +16,24 @@ const cockpit = vi.hoisted(() => ({
   dismissPreview: vi.fn(),
 }));
 
-vi.mock("../vscodeApi.js", () => ({
-  post: vi.fn(),
-  subscribeToHost: () => () => {},
-}));
 vi.mock("../graph/store.js", () => ({
   useCockpitStore: (selector: (state: typeof cockpit) => unknown) => selector(cockpit),
 }));
 
 import { App } from "./App.js";
 
+function StubEditor({ ariaLabel, text }: SqlEditorSurfaceProps) {
+  return <section aria-label={ariaLabel}>{text}</section>;
+}
+
+const messaging: CockpitMessaging = {
+  post: vi.fn(),
+  subscribe: () => () => undefined,
+};
+
 describe("Workbench graph cockpit shell", () => {
   it("renders the database-context invalidation instead of a loading placeholder", () => {
-    const html = renderToStaticMarkup(<App />);
+    const html = renderToStaticMarkup(<App messaging={messaging} Editor={StubEditor} />);
 
     expect(html).toContain("cockpit-error");
     expect(html).toContain("The Cockpit Connection changed");

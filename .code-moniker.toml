@@ -19,9 +19,11 @@ components = [
   "daemon",
   "debugger",
   "ddl-sync",
+  "editor",
   "extension-host",
   "language-server",
   "query-engine",
+  "presentation",
   "result",
   "scratchpad",
   "sql-analysis",
@@ -64,11 +66,11 @@ enable = [
   "workbench-daemon-lifecycle-stays-at-runtime-boundaries",
   "extension-host-composition-root-is-not-a-service-locator",
   "extension-host-workbench-encapsulation-does-not-re-export-engine",
-  "ddl-sync-single-responsibility-excludes-runtime-orchestration",
   "connection-service-ownership-stays-with-connection-manager",
-  "scratchpad-single-responsibility-keeps-files-passive",
   "workbench-ownership-keeps-tree-drag-destination-neutral",
   # declared by the package fragments
+  "ddl-sync-single-responsibility-excludes-runtime-orchestration",
+  "scratchpad-single-responsibility-keeps-files-passive",
   "language-server-encapsulation-keeps-features-inside-server",
   "query-engine-dependency-does-not-point-to-language-server",
   "sql-analysis-dependency-stays-inside-sql-analysis",
@@ -76,13 +78,19 @@ enable = [
   "coverage-dependency-is-limited-to-sql-analysis",
   "debugger-dependency-is-limited-to-sql-analysis",
   "result-dependency-is-limited-to-sql-analysis-and-debugger",
-  "webview-dependency-is-limited-to-catalog-debugger-and-result",
+  "presentation-dependency-is-leaf",
+  "editor-dependency-is-limited-to-sql-analysis-and-presentation",
+  "webview-dependency-is-limited-to-catalog-debugger-result-presentation-and-editor",
   "workbench-composition-root-stays-independent-of-extension-host",
   "result-row-update-builder-encapsulation-stays-in-result-engine",
   "data-view-result-protocol-ownership-stays-in-result-engine",
   "result-dependency-does-not-point-to-data-view",
   "data-view-hidden-column-ownership-stays-in-hidden-columns",
   "data-view-query-info-ownership-stays-in-state-contract",
+  "data-view-edit-policy-ownership-stays-with-the-engine-and-the-grid",
+  "syntax-grammar-vocabulary-encapsulation-stays-in-postgres-grammar",
+  "scratchpad-depends-on-engine-only",
+  "coverage-encapsulation-consumers-enter-through-the-index",
 ]
 
 [[views]]
@@ -91,41 +99,88 @@ title = "PostgreSQL Workbench boundaries"
 scope = "."
 intent = "Review ownership and dependency direction before changing a package boundary, the extension's activation, PostgreSQL Connections, the Workbench Index, the Cockpit, Scratchpads, or DDL synchronization."
 summary = """
-Six packages and one extension. packages/sql is the leaf: it reads SQL and PL/pgSQL and answers
-editor questions through its language server. packages/catalog says what a database contains and
-keeps the Workbench Index of it. packages/dap debugs PL/pgSQL. packages/rows reads and edits result
-rows. packages/coverage maps executed lines back to source. packages/views renders what the others
-produce, in a webview that is a separate runtime and reaches the host only through a typed protocol.
+One engine, three shells. Eight packages are the engine: packages/sql is the syntax leaf — it reads SQL and
+PL/pgSQL and answers editor questions through its language server. packages/catalog says what a
+database contains and keeps the Workbench Index of it. packages/dap debugs PL/pgSQL. packages/rows
+reads and edits result rows. packages/coverage maps executed lines back to source.
+packages/presentation owns the host-neutral visual vocabulary and default theme. packages/editor
+owns the host-neutral Monaco surface and connects it to the SQL authoring server through the
+official Monaco language-client stack. packages/views
+renders what the others produce — React views that reach whatever hosts them only through the typed
+protocol each view declares, because the same views must run under three shells: a VS Code webview,
+a plain web page served by packages/shell, and the Electron application that shell grows into.
 
-The Extension Host composes them: it owns activation, VS Code commands, the open Connections, and the
-controllers whose lifecycle outlives a command. No package depends on it, and each package's own
-fragment states what it may depend on.
+A shell composes the engine and adapts it to one runtime; it adds no judgement of its own. The
+VS Code extension is one shell — activation, commands, the open Connections, the long-lived
+controllers. packages/shell is the second: it runs the same engine, the same language server as a
+child process, and the same views in a browser, which is why it is the seed of the Electron
+application rather than a test harness. No package depends on any shell.
+
+Every language capability — grammar vocabulary, lexical tokens, semantic names, completion — flows
+through the SQL authoring server and its one client. A view that reaches for a host API, or a shell
+that answers a language question itself, breaks the target on two of the three shells at once.
+Each shell reaches the server through a KNOWN LSP client, never a homemade one: the extension
+through VS Code's own LanguageClient, and the web and Electron shells through Monaco — Monaco is
+the editor of the shells that are not VS Code, driven by monaco-languageclient over a transport the
+shell provides. What this project writes itself is host plumbing only: starting the server,
+carrying the transport, answering the host-bound requests. The same rule holds for the virtual
+sources: their scheme, addressing and content are the engine's (catalog), each shell serves them
+into its own document system, and their language features come from the server like every other
+document's.
 """
 
 [[views.boundaries]]
 id = "sql-analysis"
 owns = [
   "the Code Moniker syntax boundary for SQL and PL/pgSQL",
+  "the grammar's vocabulary: generated from the grammars Code Moniker runs, read through one module",
   "SQL as text: identifiers, lexing, formatting, document language",
   "the query engine: analysis, relations, composition, join planning",
-  "the SQL authoring language server and its protocol",
+  "the SQL authoring language server, its protocol, its one token legend, and the one client every surface asks it through",
+  "what a PL/pgSQL routine body's own names are: its variables, its parameters, its declared types",
 ]
 forbids = [
   "depending on any other package, or on the Extension Host",
   "importing what the language server answers with, from outside the server",
   "the query engine depending on the language server",
   "secondary SQL or PL/pgSQL syntax providers",
+  "asking a host's own provider registry for what the server answers",
+  "a question the server asks its host that only one host can answer",
 ]
 forbid_rules = [
   "sql-analysis-dependency-stays-inside-sql-analysis",
   "language-server-encapsulation-keeps-features-inside-server",
   "query-engine-dependency-does-not-point-to-language-server",
   "syntax-workbench-debugger-ownership-stays-at-runtime-boundaries",
+  "syntax-grammar-vocabulary-encapsulation-stays-in-postgres-grammar",
+  "scratchpad-depends-on-engine-only",
+  "coverage-encapsulation-consumers-enter-through-the-index",
 ]
-rationale = "The language server is the front door for editor features; a consumer asks it rather than importing completion or semantic tokens. Anything needed outside that protocol is a worker called directly: `query` to rewrite SQL, `text` to read it as text. The package is a leaf because the standalone DAP executable ships it without VS Code."
+rationale = """
+The language server is the front door for editor features; a consumer asks it rather than importing
+completion or semantic tokens. Anything needed outside that protocol is a worker called directly:
+`query` to rewrite SQL, `text` to read it as text. The package is a leaf because the standalone DAP
+executable ships it without VS Code.
+
+There is one client, built on the protocol library the server itself is built on, and every surface
+asks through it. A host supplies the two things that genuinely differ — how its documents reach the
+server, and what carries the request — and VS Code's own language client satisfies that without
+adaptation, which is the point: VS Code is one host of this server, not the condition for having
+one. The composition shell runs the server as a child process over stdio, which is the shape a
+standalone application takes.
+
+Measured against that, August 2026. The Data View asked VS Code what to propose and how to colour.
+VS Code answers with every provider registered for the language, so a second SQL extension installed
+beside this one landed its proposals in a Workbench view wearing this one's vocabulary — and outside
+VS Code there is no aggregator to ask at all. Colouring a PL/pgSQL body was worse: it existed only
+inside a VS Code provider, and the server asked the Extension Host for it and relayed the answer, so
+a body opened anywhere else was coloured by nobody and nothing said so.
+"""
 symbols = [
   "ts:packages/sql/src/localCodeMonikerSyntax.class:StatelessCodeMonikerSyntaxRuntime",
   "ts:packages/sql/src/analysis/codeMonikerSyntax.function:createCodeMonikerSyntaxParser",
+  "ts:packages/sql/src/languageServer/client.function:createSqlAuthoringClient",
+  "ts:packages/sql/src/routines/semanticTokens.function:plpgsqlSemanticTokens",
 ]
 rules = [
   "sql-analysis-dependency-stays-inside-sql-analysis",
@@ -148,10 +203,9 @@ forbids = [
 ]
 forbid_rules = [
   "ts.refs.catalog.catalog-dependency-is-limited-to-sql-analysis",
-  "ddl-sync-single-responsibility-excludes-runtime-orchestration",
   "workbench-daemon-lifecycle-stays-at-runtime-boundaries",
 ]
-rationale = "The catalog answers what a database contains; rows, coverage, debugging and rendering consume that answer. postgresDdlSync builds SQL and coalesces notifications deterministically, while ddlSync owns LISTEN state and refresh coordination."
+rationale = "The catalog answers what a database contains; rows, coverage, debugging and rendering consume that answer. postgresDdlSync builds SQL and coalesces notifications deterministically, while ddlSync owns LISTEN state and refresh coordination. The virtual sources are the engine's: the code+moniker:// scheme, the resource index behind it and the canonical symbol addressing all live here, so a shell serves those documents into its own document system — VS Code through a content provider, Electron through its own — without owning what they say. VS Code is one integration modality; it governs nothing, and a virtual source only it can open is a regression against every other shell."
 symbols = [
   "ts:packages/catalog/src/indexController.class:WorkbenchIndexController",
   "ts:packages/catalog/src/localCodeMoniker.class:LocalCodeMonikerSession",
@@ -209,25 +263,120 @@ rules = [
 ]
 
 [[views.boundaries]]
+id = "data-view-editing"
+owns = [
+  "what a change is: a cell edit, a row taken away, a row added — and the row identity all three are held against",
+  "what may be written and why not: the column policy, the one table whole rows go to, what a deletion drags along",
+  "what is waiting: the three lists, the one door every move goes through, and the way back to what was held before it",
+  "how a change is written: the guarded UPDATE, the DELETE by identity, the INSERT of the columns filled in",
+  "the single transaction the three are written in, and the ROLLBACK that leaves the database as it was",
+]
+forbids = [
+  "a surface deciding whether a cell may be written, or wording the refusal itself",
+  "a surface assembling a statement that writes a row",
+  "a surface performing a move on the held changes other than by handing it to PendingEdits.move",
+  "taking a change while the transaction that would carry it is in flight",
+]
+forbid_rules = [
+  "data-view-edit-policy-ownership-stays-with-the-engine-and-the-grid",
+  "result-row-update-builder-encapsulation-stays-in-result-engine",
+]
+rationale = """
+The hot path. A reader changes a cell, takes rows away, adds one and fills it in, reads back the
+list of what is waiting, and then writes all of it at once or throws all of it away. Nothing here
+touches PostgreSQL until they say so, and when they do it is one transaction: every statement or
+none, guarded against the row having moved under them since it was read.
+
+The journey is four questions asked in one place each. `editability` says what may be written and
+why not, and both the grid and the held changes ask it, so a reader who is refused is refused in
+the same words wherever they meet it. `dataView` says what a change is and what each one will do,
+in the reader's language, before they commit to it. `pendingEdits` holds the three lists and is the
+one door every move goes through. `updates` turns them into SQL, and nothing else assembles a
+statement that writes a row.
+
+A surface brings what it holds and no judgement: what may be written, which columns it is showing,
+a connection to write through, a way to say what happened, a way to tell whatever shows the changes,
+and — where it has one — a way to remember the move so its own undo stack keeps step. A surface
+speaks the same way whether a change is being held or written, so it says that once. Everything
+else is decided before it is handed anything.
+
+Measured against that, August 2026. Both surfaces answered all six moves themselves, and what was
+true of one move was true of the others only by coincidence. It had already stopped being true: a
+write in flight refused the cell edits, because that was the only move that asked. A row added
+meanwhile was held, and then dropped without a word when the transaction that never carried it
+cleared what was waiting — the reader was told their changes had been applied, and the row they had
+just added was gone. One door, one guard, one refusal, one undo entry, and the six moves named
+together as `DataViewMove`: a seventh is added here, and both surfaces route it untouched.
+"""
+symbols = [
+  "ts:packages/rows/src/dataView/pendingEdits.class:PendingEdits",
+  "ts:packages/rows/src/dataView/pendingEdits.type:DataViewMove",
+  "ts:packages/rows/src/dataView/editability.function:reasonAgainstWriting",
+  "ts:packages/rows/src/dataView/updates.function:buildRowUpdates",
+]
+rules = [
+  "data-view-edit-policy-ownership-stays-with-the-engine-and-the-grid",
+  "result-row-update-builder-encapsulation-stays-in-result-engine",
+  "data-view-hidden-column-ownership-stays-in-hidden-columns",
+]
+
+[[views.boundaries]]
+id = "presentation"
+owns = [
+  "the typed visual roles shared by every rendered surface",
+  "the complete default Workbench theme",
+  "PostgreSQL visual identities independent of any host theme API",
+]
+forbids = [
+  "depending on another product package or a host",
+  "naming VS Code, Monaco, Electron, CSS framework, or transport concepts",
+  "consumer-specific theme projections",
+]
+forbid_rules = ["ts.refs.presentation.presentation-dependency-is-leaf"]
+rationale = "A view names the role a visual value plays and a host may override that role. The shared vocabulary and its working defaults therefore precede every renderer; VS Code token names belong to the extension adapter, while future Monaco and Electron adapters consume the same roles without changing them."
+symbols = [
+  "ts:packages/presentation/src/roles.const:WORKBENCH_THEME_ROLES",
+  "ts:packages/presentation/src/presentation.function:postgresVisual",
+]
+rules = ["ts.refs.presentation.presentation-dependency-is-leaf"]
+
+[[views.boundaries]]
+id = "editor"
+owns = [
+  "the host-neutral Monaco editor surface consumed by every non-VS-Code renderer",
+  "the official Monaco language-client integration with the SQL authoring server",
+  "Monaco workers, editor lifecycle, models, and theme projection from presentation roles",
+]
+forbids = [
+  "depending on views, shell, Electron, or the VS Code Extension Host",
+  "implementing SQL or PL/pgSQL parsing, colouring, completion, or LSP transport semantics locally",
+  "depending on any product package other than sql and presentation",
+]
+forbid_rules = ["ts.refs.editor.editor-dependency-is-limited-to-sql-analysis-and-presentation"]
+rationale = "Monaco is reusable infrastructure, not a view and not a shell. It consumes the SQL authoring and presentation contracts, while views embed it and shells provide transport. Keeping that direction explicit prevents an editor convenience from pulling host state or feature policy back into the engine."
+symbols = ["ts:packages/editor/src/MonacoSqlEditor.function:MonacoSqlEditor"]
+rules = ["ts.refs.editor.editor-dependency-is-limited-to-sql-analysis-and-presentation"]
+
+[[views.boundaries]]
 id = "webview-rendering"
 owns = [
   "the React result grid, its navigation, and the three views that nest it",
   "the Cockpit graph and its interaction state",
-  "the shared PostgreSQL visual identities",
+  "generic navigation structures supplied with routes by their host",
 ]
 forbids = [
   "depending on the Extension Host",
-  "depending on any package other than catalog, dap and rows",
+  "depending on any package other than catalog, dap, rows, presentation and editor",
   "PostgreSQL transport, Code Moniker sessions, or VS Code state",
   "declaring the protocol it speaks: the Data View's belongs to the engine",
 ]
-forbid_rules = ["ts.refs.views.webview-dependency-is-limited-to-catalog-debugger-and-result"]
-rationale = "A webview is a separate runtime. It renders values and posts messages; connections, sessions and command execution stay in the host and cross the boundary through the protocol each view declares."
+forbid_rules = ["ts.refs.views.webview-dependency-is-limited-to-catalog-debugger-result-presentation-and-editor"]
+rationale = "A webview is a separate runtime, and for these views it is three runtimes: a VS Code webview, the composition shell's browser page, and the Electron renderer to come. The views render values and post messages; connections, sessions and command execution stay in whichever host is present and cross the boundary through the protocol each view declares. Measured against that, August 2026: the second grammar the views ran — Shiki over a TextMate file read from the extension's directory — is gone, and every colour on every source surface, the Cockpit preview included, is a kind of the language server's one legend, named by the view and valued by the host. SQL and PL/pgSQL editor features now cross the same host-neutral LSP boundary; browser packages may not register parallel Monaco providers."
 symbols = [
   "ts:packages/views/src/cockpit/graph/store.interface:CockpitStore",
-  "ts:packages/views/src/presentation.function:postgresVisual",
+  "ts:packages/views/src/navigation/WorkbenchNavigation.function:WorkbenchNavigation",
 ]
-rules = ["ts.refs.views.webview-dependency-is-limited-to-catalog-debugger-and-result"]
+rules = ["ts.refs.views.webview-dependency-is-limited-to-catalog-debugger-result-presentation-and-editor"]
 
 [[views.boundaries]]
 id = "activation"
@@ -249,18 +398,22 @@ Activation chooses implementations and binds commands; feature state stays in th
 defines its lifecycle. The extension adapts the engine to VS Code and holds nothing else, because
 the same engine is meant to run under a host that is not VS Code at all.
 
-Measured against that, August 2026. Five modules that never mentioned VS Code — 731 lines — moved
-to the packages their own imports named, and the package rules now keep them there. The re-exports
-that made engine code look like extension code are gone, and a rule holds that one.
+Measured against that, September 2026. The pure modules moved to the packages their own imports
+named — the notebook file format seeded packages/scratchpad, debuggability joined the dap launch
+contract, associations and the connection registry joined catalog, the coverage report shapes
+joined coverage, graph navigation joined the views — and the package rules now keep each of them
+there. The re-exports that made engine code look like extension code are gone, and a rule holds
+that one.
 
-What is left is named and guarded rather than enforced by a rule, because neither fact lives in the
-reference graph. Twelve files still adapt nothing to VS Code, and
-scripts/extension/check-extension-adapts.mjs lists each with its reason: two are legitimate — the
-standalone DAP entry and one line shared by every module — and ten are engine code awaiting a
-package. Two of those ten have no home the graph allows at all:
-debug/launchConfiguration needs the saved connections and the SQL call parser together, and no
-package may depend on both catalog and sql; scratchpad/notebookFile needs catalog, dap, rows and
-views at once. The guard fails on a new one, and on an entry that has started adapting something.
+What is left is named and guarded rather than enforced by a rule, because neither fact lives in
+the reference graph. scripts/extension/check-extension-adapts.mjs lists each remaining file with
+its reason: the adapters that are legitimately VS Code's — the DAP entry, the shared error line,
+the theme projection, the webview transport and its API shim, the notebook renderer entry. The
+last two debts dissolved in September 2026: coverage/client was a duplicate of the
+ConnectionManager's own client plumbing and became ConnectionManager.openClient, and
+debug/launchConfiguration joined the debugger's launch contract once its Connection needs were
+declared as ports the host satisfies. The guard fails on a new entry, and on an entry that has
+started adapting something.
 
 A command is registered in a module's registerCommands. No reference rule can hold that: `vscode`
 is an ambient module, `registerCommand` has no indexed symbol, and a rule written against it reports
@@ -306,9 +459,9 @@ forbids = [
   "reusing the shared interactive client for notebook execution",
 ]
 forbid_rules = ["scratchpad-single-responsibility-keeps-files-passive"]
-rationale = "A Scratchpad opens before anything connects, so reading and writing one must not need a live Connection. Execution, explicit transactions and LIMIT/OFFSET paging belong to register, association, resultHost and the shared row engine."
+rationale = "A Scratchpad opens before anything connects, so reading and writing one must not need a live Connection. Execution, explicit transactions and LIMIT/OFFSET paging belong to the registerCommands host module, resultHost and the shared row engine."
 symbols = [
-  "ts:vscode-extension/src/scratchpad/notebookFile.interface:SqlNotebookFile",
+  "ts:packages/scratchpad/src/notebookFile.interface:SqlNotebookFile",
   "ts:vscode-extension/src/scratchpad/workspace.class:SqlNotebookWorkspace",
   "ts:vscode-extension/src/scratchpad/resultHost.class:SqlNotebookResultHost",
 ]
@@ -346,6 +499,27 @@ check = "code_moniker_rules uri=\"workspace\" action=\"run\" profile=\"architect
 id = "a-rule-that-guards-nothing"
 rationale = "Every boundary rule lives in the fragment of the package it constrains, and the workspace file keeps only the vocabulary that is general. A rule whose subject is renamed keeps passing while checking nothing, so `check --report` names any rule whose antecedent never matched, and each rule here was proved by planting a forbidden edge and watching it fire."
 check = "code_moniker_rules uri=\"workspace\" action=\"run\" profile=\"architecture\" report=true limit=200"
+
+[[views.gotchas]]
+id = "a-move-is-not-an-indexed-edge"
+rationale = "The door that every move on a Data View's held changes goes through is held by TypeScript and by a test, not by a rule — and that is not a choice. A call to `edits.move(...)` is a method call on a field, and this index links no reference from either surface to a method of `PendingEdits`: a rule written against one reports zero violations while both hosts sit in front of it. So the six mutators are private, which makes the door the only way in and a second one a compile error rather than a review comment; the moves are named in a record over their own union, so a seventh cannot be added without being named, labelled and performed; and pendingEdits.test proves the guard by holding a transaction open and attempting all six moves against it. What the graph can see is guarded by rules instead: the policy that refuses a write, and the three builders that assemble one."
+symbols = ["ts:packages/rows/src/dataView/pendingEdits.class:PendingEdits"]
+check = "npx vitest run packages/rows/src/dataView/pendingEdits.test.ts"
+
+[[views.gotchas]]
+id = "syntax-tokens-have-one-chain-of-ownership"
+rationale = "Everything a colouring surface is told descends one chain, and each link has exactly one author. PostgreSQL authors the grammar: gram.y and kwlist.h generate tree-sitter-postgres, whose node-types.json is the complete list of what a parse can say. scripts/sql/generate-grammar-kinds.mjs reads that list from the two grammars Code Moniker actually runs — the locked SQL crate, and the vendored PL/pgSQL copy Code Moniker modifies for quoted block labels — and writes grammarKinds.ts with its provenance; the e2e grammar test parses with the real parser and refuses any kind the committed copy does not declare, both proved by planting. postgresGrammar.ts is the one reading of that list — the few real decisions over it — and a rule keeps every other layer behind it: debugger stepping, coverage labels, and the lexical layer all ask it. The server's legend is then COMPOSED, never re-spelled: it opens with the PL/pgSQL routine legend, whose tokens arrive already numbered and are pushed into the stream unchanged — correct only because that legend is this one's opening segment, which is now true by construction — and it closes with the lexical kinds, appended so an older client's numbering still holds. The views hold no list at all: they receive kinds by name, resolved against the legend the initialize handshake declared."
+symbols = [
+  "ts:packages/sql/src/analysis/postgresGrammar.function:plpgsqlStep(procedureStatement:SyntaxNode)",
+  "ts:packages/sql/src/languageServer/features/semanticTokens.const:SQL_SEMANTIC_TOKEN_TYPES",
+]
+check = "npx vitest run e2e/postgres-grammar.test.ts e2e/sql-lexical-tokens.test.ts e2e/semantic-tokens.test.ts"
+
+[[views.gotchas]]
+id = "one-language-authority-is-guarded-by-a-script"
+rationale = "The application is meant to run under a host that is not VS Code, and two ways of losing that are invisible to every other check here. A surface can ask VS Code's provider registry instead of this server — which answers with everyone's providers, and answers nothing at all outside VS Code. And a question the server sends back to its host can end up with only one host able to answer it, at which point the capability is VS Code's rather than the application's; the server catches such a failure, so the feature simply stops without a word. check-extension-adapts asks whether a file adapts anything to VS Code and is blind to both — the files at fault imported `vscode` and passed. scripts/test/check-language-authority.mjs asks the other question: it reads the requests the server actually sends, requires every host to answer each of them, and refuses any aggregator call in the extension. It fails on a host that stops answering, on a surface that goes back to asking VS Code, and on losing sight of the server itself; all three were proved by planting them."
+symbols = ["ts:packages/sql/src/languageServer/client.function:createSqlAuthoringClient"]
+check = "node scripts/test/check-language-authority.mjs"
 
 [[views.gotchas]]
 id = "lifecycle-concentration"
