@@ -723,6 +723,7 @@ class WorkbenchTreeChildren {
 
   private async rootChildren(): Promise<PlpgsqlTreeItem[]> {
     if (this.scope === "scratchpads") return this.scratchpads();
+    if (this.connections.connections.length === 0) return [];
     return [
       ...this.connections.connections.map((connection) => {
         const connected = this.connections.isConnectionConnected(connection.id);

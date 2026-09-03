@@ -92,6 +92,23 @@ const createdTable: WorkbenchObjectModel = {
 };
 
 describe("Workbench tree object navigation", () => {
+  it("leaves the Connections view empty when no Connection is saved", async () => {
+    const event = () => ({ dispose: () => undefined });
+    const provider = new WorkbenchTreeProvider(
+      {
+        connections: [],
+        onChanged: event,
+      } as never,
+      { onDidChangeState: event } as never,
+      { list: async () => [], onDidChangeEntries: event } as never,
+      { transaction: () => undefined, onDidChange: event } as never,
+      { onDidChangeState: event } as never,
+    );
+
+    await expect(provider.getChildren()).resolves.toEqual([]);
+    provider.dispose();
+  });
+
   it("scopes a disconnect event to its exact Connection branch", async () => {
     const connectionA = {
       id: "connection-a",

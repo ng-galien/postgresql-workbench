@@ -15,6 +15,14 @@ test.describe("Connections page", () => {
 
     const frame = await test.step("open the Connections page", () => connectionsPage.open());
 
+    await test.step("fill the complete editor viewport", async () => {
+      const pageHeight = await frame
+        .locator(".connections-page")
+        .evaluate((element) => element.getBoundingClientRect().height);
+      const viewportHeight = await frame.evaluate(() => window.innerHeight);
+      expect(Math.abs(viewportHeight - pageHeight)).toBeLessThanOrEqual(1);
+    });
+
     await test.step("describe a new Connection and test it against the live server", async () => {
       await connectionsPage.startAdding(frame);
       await connectionsPage.fill(frame, {

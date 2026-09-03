@@ -69,6 +69,7 @@ export class WorkbenchTree {
   }
 
   async collapseAll(): Promise<void> {
+    if (await this.isEmptyConnectionsView()) return;
     await this.locator().waitFor({
       state: "visible",
       timeout: 5_000,
@@ -228,6 +229,7 @@ export class WorkbenchTree {
   }
 
   async hasItem(label: RegExp): Promise<boolean> {
+    if (await this.isEmptyConnectionsView()) return false;
     try {
       await this.findItem(label);
       return true;
@@ -254,6 +256,13 @@ export class WorkbenchTree {
         message: `The ${this.accessibleName} TreeView must not contain ${label}`,
       })
       .toBe(false);
+  }
+
+  private async isEmptyConnectionsView(): Promise<boolean> {
+    return (
+      this.accessibleName === "Connections" &&
+      (await this.page.getByRole("button", { name: "Open Connections", exact: true }).isVisible())
+    );
   }
 
   async itemTexts(label: RegExp): Promise<string[]> {

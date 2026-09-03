@@ -212,6 +212,7 @@ async function waitForWorkbenchViews(app: ElectronApplication, timeout: number):
   );
   await page
     .getByRole("tree", { name: "Connections", exact: true })
+    .or(page.getByRole("button", { name: "Open Connections", exact: true }))
     .waitFor({ state: "visible", timeout });
   return page;
 }

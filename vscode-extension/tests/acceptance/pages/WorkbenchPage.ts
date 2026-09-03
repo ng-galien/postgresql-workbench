@@ -1,4 +1,4 @@
-import { expect, type Locator } from "@playwright/test";
+import { expect, type Frame, type Locator } from "@playwright/test";
 import type { WorkbenchStateSnapshot } from "../fixtures/vscode";
 import { readDragProbe, startNativeTreeDrag } from "../support/dragProbe";
 import { currentPage, type PageProvider } from "./PageProvider";
@@ -46,14 +46,55 @@ export class WorkbenchPage {
     await this.tree.collapseAll();
   }
 
-  async addConnection(connectionUrl: string, expectedConnection: RegExp): Promise<void> {
-    const addConnection = await this.tree.findItem(/^Add Connection\.\.\.$/);
-    await addConnection.click();
-    await this.quickInput.chooseThenInput(/Add connection/i, /postgresql:\/\/user:pass@localhost/i);
-    await this.quickInput.submit(connectionUrl, /postgresql:\/\/user:pass@localhost/i);
-    await expect(await this.tree.waitForItem(expectedConnection)).toContainText(CONNECTED_TEXT, {
+  async addConnection(
+    connectionUrl: string,
+    expectedConnection: RegExp,
+    expectedState: RegExp = CONNECTED_TEXT,
+  ): Promise<void> {
+    const openConnections = this.page.getByRole("button", {
+      name: "Open Connections",
+      exact: true,
+    });
+    if (await openConnections.isVisible()) {
+      await openConnections.click();
+      const frame = await this.connectionsFrame();
+      const url = new URL(connectionUrl);
+      await frame.getByLabel("New Connection", { exact: true }).click();
+      await frame.getByLabel("Host", { exact: true }).fill(url.hostname);
+      await frame.getByLabel("Port", { exact: true }).fill(url.port);
+      await frame.getByLabel("Database", { exact: true }).fill(url.pathname.slice(1));
+      await frame.getByLabel("User", { exact: true }).fill(decodeURIComponent(url.username));
+      await frame.getByLabel("Password", { exact: true }).fill(decodeURIComponent(url.password));
+      await frame.getByRole("button", { name: "Create & Connect", exact: true }).click();
+    } else {
+      const addConnection = await this.tree.findItem(/^Add Connection\.\.\.$/);
+      await addConnection.click();
+      await this.quickInput.chooseThenInput(
+        /Add connection/i,
+        /postgresql:\/\/user:pass@localhost/i,
+      );
+      await this.quickInput.submit(connectionUrl, /postgresql:\/\/user:pass@localhost/i);
+    }
+    await expect(await this.tree.waitForItem(expectedConnection)).toContainText(expectedState, {
       timeout: 5_000,
     });
+  }
+
+  private async connectionsFrame(): Promise<Frame> {
+    const deadline = Date.now() + 10_000;
+    while (Date.now() < deadline) {
+      for (const frame of this.page.frames()) {
+        if (
+          await frame
+            .getByLabel("Saved Connections")
+            .count()
+            .catch(() => 0)
+        )
+          return frame;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    throw new Error("The Connections page frame did not become available within 10000 ms");
   }
 
   async ensureConnection(connectionUrl: string, expectedConnection: RegExp): Promise<void> {

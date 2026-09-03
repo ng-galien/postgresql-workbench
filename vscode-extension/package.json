@@ -455,6 +455,12 @@
         }
       ]
     },
+    "viewsWelcome": [
+      {
+        "view": "postgresql-workbench-connections",
+        "contents": "No saved Connections.\n[Open Connections](command:postgresql-workbench.manageConnections)"
+      }
+    ],
     "submenus": [
       {
         "id": "postgresql-workbench.scratchpadExecutionMode",
