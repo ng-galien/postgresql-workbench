@@ -11,9 +11,11 @@ Workbench capabilities without using the database tree as a control panel.
 
 ### Connections
 
-- Added a full-height **Manage Connections** page with a collapsible Connection
-  rail, compact status cards, per-Connection actions and layouts that adapt when
-  the editor group becomes narrow
+- Added a **Manage Connections** page that fills the complete editor viewport,
+  with a collapsible Connection rail, compact status cards, per-Connection
+  actions and layouts that adapt when the editor group becomes narrow
+- Added a native empty state to the Connections tree that opens the management
+  page, and restores that entry point after the last saved Connection is removed
 - Moved creation, editing, deletion, import, connection testing and connect or
   disconnect actions into that page; saved passwords remain in VS Code secret
   storage and are never sent back to the webview
