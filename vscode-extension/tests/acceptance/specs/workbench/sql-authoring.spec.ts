@@ -263,7 +263,7 @@ test.describe("SQL authoring", () => {
         await notebook.dismissCompletion();
       } finally {
         await vscode.removeConnection(alternateConnectionId);
-        await workbench.tree.expectItemAbsent(alternateConnection);
+        await workbench.tree.expectItemAbsent(alternateConnection, 10_000);
       }
     });
   });

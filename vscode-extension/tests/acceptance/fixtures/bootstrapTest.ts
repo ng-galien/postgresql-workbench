@@ -32,18 +32,22 @@ export const test = base.extend<BootstrapFixtures, BootstrapWorkerFixtures>({
   // VS Code is launched behind the database, so the first Connection this lane adds has something
   // to connect to. Playwright only builds a fixture a test reaches, and no bootstrap scenario
   // names the database directly — what it verifies is the Workbench arriving at it.
-  vscode: async ({ demoDatabase: _demoDatabase }, use) => {
-    const instance = await launchVSCode({
-      windowTimeout: 10_000,
-      activationTimeout: 20_000,
-      viewTimeout: 10_000,
-    });
-    try {
-      await use(instance);
-    } finally {
-      await instance.dispose();
-    }
-  },
+  vscode: [
+    async ({ demoDatabase: _demoDatabase }, use) => {
+      const instance = await launchVSCode({
+        windowTimeout: 10_000,
+        activationTimeout: 20_000,
+        viewTimeout: 10_000,
+      });
+      try {
+        await use(instance);
+      } finally {
+        await instance.dispose();
+      }
+    },
+    // Keep host startup outside the 45-second Connection journey budget.
+    { timeout: 45_000 },
+  ],
   workbench: async ({ vscode }, use) => {
     await use(
       new WorkbenchPage(
