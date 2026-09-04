@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+## [1.5.1] - 2026-09-04
+
+### Cockpit
+
+- Fixed the DDL inspector theme projection so VS Code functional colours render
+  correctly in Monaco instead of falling back to red
+- Restored visible SQL keyword, string and number syntax colours in the DDL
+  inspector
+- Rendered complete function and procedure DDL with the SQL wrapper grammar and
+  embedded PL/pgSQL syntax, covered by a real VS Code Playwright journey
+
+### Connections
+
+- Registered the first-time Connections page before notebooks, Data View,
+  Cockpit, debugger and SQL authoring startup, so an empty workspace cannot be
+  stranded behind secondary feature initialization
+
 ## [1.5.0] - 2026-09-03
 
 PostgreSQL Workbench 1.5.0 makes Connections the operational front door of the

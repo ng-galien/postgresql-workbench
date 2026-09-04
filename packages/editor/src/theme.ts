@@ -48,7 +48,7 @@ export function workbenchMonacoTheme(element: Element): WorkbenchMonacoTheme {
     if (!resolved) throw new Error(`Missing Workbench theme role: ${name}`);
     return resolved;
   };
-  const role = (name: WorkbenchColorRole): string => value(name);
+  const role = (name: WorkbenchColorRole): string => monacoColour(value(name), name);
   const semanticTokenColors = Object.fromEntries(
     SQL_SEMANTIC_TOKEN_TYPES.map((token) => [token, role(SQL_TOKEN_THEME_ROLES[token])]),
   ) as Record<SqlSemanticTokenType, string>;
@@ -94,6 +94,56 @@ export function workbenchMonacoTheme(element: Element): WorkbenchMonacoTheme {
       },
     },
   };
+}
+
+/** Monaco's standalone theme API accepts hexadecimal colours, while VS Code may expose rgba(). */
+function monacoColour(value: string, role: WorkbenchColorRole): string {
+  const hexadecimal = value.match(/^#([\da-f]{3,4}|[\da-f]{6}|[\da-f]{8})$/iu)?.[1];
+  if (hexadecimal) {
+    const expanded =
+      hexadecimal.length <= 4
+        ? [...hexadecimal].map((component) => component.repeat(2)).join("")
+        : hexadecimal;
+    return `#${expanded.toLowerCase()}`;
+  }
+
+  const functional = value.match(/^rgba?\((.*)\)$/iu)?.[1];
+  if (!functional) throw new Error(`Invalid Workbench colour role: ${role} (${value})`);
+
+  const [channelsSource, slashAlpha] = functional.split(/\s*\/\s*/u);
+  const components = channelsSource.includes(",")
+    ? channelsSource.split(/\s*,\s*/u)
+    : channelsSource.trim().split(/\s+/u);
+  const legacyAlpha = components.length === 4 ? components.pop() : undefined;
+  if (components.length !== 3 || (slashAlpha !== undefined && legacyAlpha !== undefined)) {
+    throw new Error(`Invalid Workbench colour role: ${role} (${value})`);
+  }
+
+  const channels = components.map((component) => cssChannel(component));
+  const alpha = cssAlpha(slashAlpha ?? legacyAlpha ?? "1");
+  if (channels.some((component) => component === undefined) || alpha === undefined) {
+    throw new Error(`Invalid Workbench colour role: ${role} (${value})`);
+  }
+  const hex = [...(channels as number[]), alpha]
+    .map((component) => component.toString(16).padStart(2, "0"))
+    .join("");
+  return `#${alpha === 255 ? hex.slice(0, 6) : hex}`;
+}
+
+function cssChannel(value: string): number | undefined {
+  const percentage = value.endsWith("%");
+  const numeric = Number.parseFloat(value);
+  if (!Number.isFinite(numeric)) return undefined;
+  const channel = percentage ? (numeric / 100) * 255 : numeric;
+  return Math.round(Math.min(255, Math.max(0, channel)));
+}
+
+function cssAlpha(value: string): number | undefined {
+  const percentage = value.endsWith("%");
+  const numeric = Number.parseFloat(value);
+  if (!Number.isFinite(numeric)) return undefined;
+  const alpha = percentage ? numeric / 100 : numeric;
+  return Math.round(Math.min(1, Math.max(0, alpha)) * 255);
 }
 
 function monacoThemeBase(value: string): editor.BuiltinTheme {

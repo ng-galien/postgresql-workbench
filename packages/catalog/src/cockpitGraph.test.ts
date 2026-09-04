@@ -192,7 +192,7 @@ describe("SQL cockpit projection", () => {
     });
     expect(preview).toMatchObject({
       symbolUri: view.uri,
-      editorUri: `file:///postgresql-workbench/cockpit-previews/${encodeURIComponent(encodeURIComponent(view.uri))}.sql`,
+      editorUri: `file:///postgresql-workbench/cockpit-previews/${encodeURIComponent(encodeURIComponent(view.uri))}.postgresql-view`,
       firstLine: 1,
       lastLine: 2,
       lines: [
@@ -201,6 +201,26 @@ describe("SQL cockpit projection", () => {
       ],
     });
     expect(preview.editorUri).not.toBe(view.file);
+  });
+
+  it("presents complete routine DDL with a SQL wrapper language", () => {
+    const routine = symbol("place_order", "function", 82);
+    routine.language = "plpgsql";
+    const preview = sourcePreviewPresentation({
+      symbol: routine,
+      source: {
+        file: routine.file,
+        first_line: 1,
+        last_line: 3,
+        lines: [
+          { number: 1, text: "CREATE FUNCTION place_order() RETURNS void AS $$" },
+          { number: 2, text: "BEGIN NULL; END;" },
+          { number: 3, text: "$$ LANGUAGE plpgsql;" },
+        ],
+      },
+    });
+
+    expect(preview.languageId).toBe("postgresql-function");
   });
 
   it("advertises secondary cockpit actions only for PL/pgSQL routines", () => {

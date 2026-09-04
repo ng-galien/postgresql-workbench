@@ -1,3 +1,7 @@
+import {
+  type PostgresSourceLanguageId,
+  postgresSourceLanguageId,
+} from "../../sql/src/text/documentLanguage.js";
 import type {
   CodeMonikerClient,
   CodeMonikerGraphResult,
@@ -145,8 +149,8 @@ export interface WorkbenchGraphSourcePreview {
   symbolUri: string;
   /** Stable document identity the embedded editor and language server share. */
   editorUri: string;
-  /** The indexed source language; SQL and PL/pgSQL remain distinct at the LSP boundary. */
-  languageId: "sql" | "plpgsql";
+  /** The PostgreSQL source kind; complete DDL wrappers always use the SQL root grammar. */
+  languageId: PostgresSourceLanguageId | "sql";
   title: string;
   kind: string;
   file: string;
@@ -582,7 +586,7 @@ export function sourcePreviewPresentation(source: {
   symbol: CodeMonikerSymbol;
   source: NonNullable<CodeMonikerSymbol["source"]>;
 }): WorkbenchGraphSourcePreview {
-  const languageId = source.symbol.language === "plpgsql" ? "plpgsql" : "sql";
+  const languageId = postgresSourceLanguageId(source.symbol.kind);
   return {
     symbolUri: source.symbol.uri,
     // The editor receives the bounded source excerpt below, not the complete indexed document.

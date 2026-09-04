@@ -1,4 +1,4 @@
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import * as vscode from "vscode";
 import { CallSiteConnectionStore } from "../../packages/catalog/src/callSiteAssociations.js";
@@ -25,7 +25,10 @@ import {
 import type { DebugResultStore } from "../../packages/rows/src/capturedResults.js";
 import { planSqlResultExecution } from "../../packages/sql/src/analysis/sqlStatements.js";
 import type { SqlAuthoringNavigationTarget } from "../../packages/sql/src/languageServer/protocol.js";
-import { POSTGRES_SOURCE_LANGUAGE_IDS } from "../../packages/sql/src/text/documentLanguage.js";
+import {
+  POSTGRES_SOURCE_LANGUAGE_IDS,
+  postgresSourceLanguageId,
+} from "../../packages/sql/src/text/documentLanguage.js";
 import { createAcceptanceProbes, registerAcceptanceControl } from "./acceptanceControl.js";
 import { WorkbenchGraphView } from "./cockpit/index.js";
 import { registerGraphWorkbenchCommands } from "./cockpit/registerCommands.js";
@@ -146,6 +149,15 @@ function codeMonikerWorkspaceRoots(context: vscode.ExtensionContext): string[] {
   return [fallback];
 }
 
+/** Acceptance-only gate proving Connections does not wait for secondary feature registration. */
+async function waitForAcceptanceFeatureBootstrapGate(
+  context: vscode.ExtensionContext,
+): Promise<void> {
+  const gate = process.env.POSTGRESQL_WORKBENCH_ACCEPTANCE_FEATURE_BOOTSTRAP_GATE_FILE;
+  if (!gate || context.extensionMode === vscode.ExtensionMode.Production) return;
+  while (!existsSync(gate)) await new Promise((resolve) => setTimeout(resolve, 25));
+}
+
 function registerDiagnosticsAndReconnect(
   context: vscode.ExtensionContext,
   connections: ConnectionManager,
@@ -214,6 +226,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
       }),
   });
   context.subscriptions.push(workbenchDdlSync);
+  let refreshSqlCodeLens = () => {};
+  const connectionsPanel = registerConnectionCommands({
+    context,
+    connections: cm,
+    ddlSync: workbenchDdlSync,
+    index: workbenchIndex,
+    refreshCodeLens: () => refreshSqlCodeLens(),
+    output: out,
+  });
+  if (cm.store.getAll().length === 0) connectionsPanel.open();
+
   acceptanceProbes.armIndexPhaseGate = (phases) => workbenchIndex.armAcceptancePhaseGate(phases);
   acceptanceProbes.releaseIndexPhaseGate = (runId, phase) =>
     workbenchIndex.releaseAcceptancePhaseGate(runId, phase);
@@ -227,6 +250,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
     index: workbenchIndex.acceptanceSnapshot(),
     recentOutput: [...outputTail],
   });
+  await waitForAcceptanceFeatureBootstrapGate(context);
   let debugScratchpadSql: ScratchpadDebugger = async () => ({
     started: false,
     message: "The PL/pgSQL debugger is still starting.",
@@ -394,14 +418,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
     sourceEditor: (symbolUri) => {
       const uri = workbenchSourceUris.documentUri(symbolUri);
       const descriptor = uri ? workbenchSourceUris.sourceDescriptorForDocumentUri(uri) : undefined;
-      return uri && descriptor
-        ? {
-            // The Cockpit Monaco model contains a bounded preview, so it must not reuse the URI
-            // of the complete virtual source document. The identity query remains resolvable.
-            editorUri: uri.with({ fragment: "cockpit-source-preview" }).toString(),
-            languageId: descriptor.plpgsql ? "plpgsql" : "sql",
-          }
-        : undefined;
+      if (!uri || !descriptor) return undefined;
+      const routineKind =
+        descriptor.symbolKind === "function" || descriptor.symbolKind === "procedure"
+          ? descriptor.symbolKind
+          : undefined;
+      return {
+        // The Cockpit Monaco model contains a bounded preview, so it must not reuse the URI
+        // of the complete virtual source document. The identity query remains resolvable.
+        editorUri: uri.with({ fragment: "cockpit-source-preview" }).toString(),
+        languageId: postgresSourceLanguageId(descriptor.documentKind, routineKind),
+      };
     },
     sqlEditorLanguageServerUrl: requireSqlEditorLanguageServerUrl,
   });
@@ -656,6 +683,83 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
     workbenchIndex,
     workbenchGraph,
   );
+
+  const connectionSnapshot = (connectionId: string) => {
+    const connection = cm.store.get(connectionId);
+    return connection
+      ? workbenchIndex.sqlAuthoringSnapshot({
+          connectionId: connection.id,
+          database: connection.database,
+        })
+      : undefined;
+  };
+  const debuggerCapabilityAvailability = (
+    connectionId: string,
+  ): SqlDebugAvailability | undefined => {
+    const capability = cm.debugCapabilityFor(connectionId);
+    if (capability.status === "available") return undefined;
+    return {
+      status: "unavailable",
+      reason:
+        capability.status === "checking"
+          ? "Checking debugger capability"
+          : "Debugger extension unavailable",
+    };
+  };
+  const codeLens = new SqlCodeLensProvider(() => workbenchIndex.syntaxParser(), {
+    forDocument: (documentUri) => {
+      const uri = vscode.Uri.parse(documentUri);
+      const binding =
+        uri.scheme === CodeMonikerContentProvider.SCHEME
+          ? workbenchSourceUris.sourceDescriptorForDocumentUri(uri)
+          : undefined;
+      const connectionId = binding?.connectionId ?? callSiteConnections.getDocument(documentUri);
+      const connection = connectionId ? cm.store.get(connectionId) : undefined;
+      return connection ? { id: connection.id, name: getConnectionName(connection) } : undefined;
+    },
+    indexState: (connection) => {
+      const snapshot = connectionSnapshot(connection.id);
+      return snapshot ? (snapshot.status === "available" ? "available" : "stale") : "missing";
+    },
+    debugCallAvailability: (connection, call) =>
+      debuggerCapabilityAvailability(connection.id) ??
+      debuggableSqlCall(connectionSnapshot(connection.id), call),
+    debugDefinitionAvailability: (connection, definition) =>
+      debuggerCapabilityAvailability(connection.id) ??
+      debuggableSqlDefinition(connectionSnapshot(connection.id), definition),
+    canDeployManagedRoutine: (documentUri) => {
+      const uri = vscode.Uri.parse(documentUri);
+      const descriptor = workbenchSourceUris.sourceDescriptorForDocumentUri(uri);
+      if (
+        descriptor?.documentKind !== "routine" ||
+        !descriptor.plpgsql ||
+        (descriptor.symbolKind !== "function" && descriptor.symbolKind !== "procedure")
+      ) {
+        return false;
+      }
+      const edited = vscode.workspace.textDocuments.some(
+        (candidate) => candidate.isDirty && candidate.uri.toString() === documentUri,
+      );
+      return edited || contentProvider.hasWorkingCopy(uri);
+    },
+  });
+  refreshSqlCodeLens = () => codeLens.refresh();
+  context.subscriptions.push(contentProvider.onDidChangeFile(() => codeLens.refresh()));
+  context.subscriptions.push(
+    vscode.languages.registerCodeLensProvider(
+      [
+        { language: "sql" },
+        { language: "plpgsql" },
+        ...POSTGRES_SOURCE_LANGUAGE_IDS.map((language) => ({ language })),
+        { pattern: "**/*.sql" },
+        { pattern: "**/*.pgsql" },
+      ],
+      codeLens,
+    ),
+    cm.onChanged(() => codeLens.refresh()),
+    workbenchIndex.onDidChangeState(() => codeLens.refresh()),
+  );
+
   try {
     const authoring = await registerSqlAuthoring(
       context,
@@ -797,91 +901,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<Plpgsq
       for (const connectionId of connectionIds) treeProvider.refreshConnection(connectionId);
     }),
   );
-
-  const connectionSnapshot = (connectionId: string) => {
-    const connection = cm.store.get(connectionId);
-    return connection
-      ? workbenchIndex.sqlAuthoringSnapshot({
-          connectionId: connection.id,
-          database: connection.database,
-        })
-      : undefined;
-  };
-  const debuggerCapabilityAvailability = (
-    connectionId: string,
-  ): SqlDebugAvailability | undefined => {
-    const capability = cm.debugCapabilityFor(connectionId);
-    if (capability.status === "available") return undefined;
-    return {
-      status: "unavailable",
-      reason:
-        capability.status === "checking"
-          ? "Checking debugger capability"
-          : "Debugger extension unavailable",
-    };
-  };
-  const codeLens = new SqlCodeLensProvider(() => workbenchIndex.syntaxParser(), {
-    forDocument: (documentUri) => {
-      const uri = vscode.Uri.parse(documentUri);
-      const binding =
-        uri.scheme === CodeMonikerContentProvider.SCHEME
-          ? workbenchSourceUris.sourceDescriptorForDocumentUri(uri)
-          : undefined;
-      const connectionId = binding?.connectionId ?? callSiteConnections.getDocument(documentUri);
-      const connection = connectionId ? cm.store.get(connectionId) : undefined;
-      return connection ? { id: connection.id, name: getConnectionName(connection) } : undefined;
-    },
-    indexState: (connection) => {
-      const snapshot = connectionSnapshot(connection.id);
-      return snapshot ? (snapshot.status === "available" ? "available" : "stale") : "missing";
-    },
-    debugCallAvailability: (connection, call) =>
-      debuggerCapabilityAvailability(connection.id) ??
-      debuggableSqlCall(connectionSnapshot(connection.id), call),
-    debugDefinitionAvailability: (connection, definition) =>
-      debuggerCapabilityAvailability(connection.id) ??
-      debuggableSqlDefinition(connectionSnapshot(connection.id), definition),
-    canDeployManagedRoutine: (documentUri) => {
-      const uri = vscode.Uri.parse(documentUri);
-      const descriptor = workbenchSourceUris.sourceDescriptorForDocumentUri(uri);
-      if (
-        descriptor?.documentKind !== "routine" ||
-        !descriptor.plpgsql ||
-        (descriptor.symbolKind !== "function" && descriptor.symbolKind !== "procedure")
-      ) {
-        return false;
-      }
-      const edited = vscode.workspace.textDocuments.some(
-        (candidate) => candidate.isDirty && candidate.uri.toString() === documentUri,
-      );
-      return edited || contentProvider.hasWorkingCopy(uri);
-    },
-  });
-  context.subscriptions.push(contentProvider.onDidChangeFile(() => codeLens.refresh()));
-  context.subscriptions.push(
-    vscode.languages.registerCodeLensProvider(
-      [
-        { language: "sql" },
-        { language: "plpgsql" },
-        ...POSTGRES_SOURCE_LANGUAGE_IDS.map((language) => ({ language })),
-        { pattern: "**/*.sql" },
-        { pattern: "**/*.pgsql" },
-      ],
-      codeLens,
-    ),
-    cm.onChanged(() => codeLens.refresh()),
-    workbenchIndex.onDidChangeState(() => codeLens.refresh()),
-  );
-
-  const connectionsPanel = registerConnectionCommands({
-    context,
-    connections: cm,
-    ddlSync: workbenchDdlSync,
-    index: workbenchIndex,
-    codeLens,
-    output: out,
-  });
-  if (cm.store.getAll().length === 0) connectionsPanel.open();
 
   registerSqlWorkbenchCommands({
     output: out,
