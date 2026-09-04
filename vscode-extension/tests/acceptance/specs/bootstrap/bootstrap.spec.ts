@@ -1,4 +1,4 @@
-import { expect, test } from "../../fixtures/bootstrapTest";
+import { expect, test, waitForConnectionsPage } from "../../fixtures/bootstrapTest";
 import {
   demoConnectionTreeItem as connection,
   connectionTreeItem,
@@ -59,7 +59,13 @@ async function confirmConnectionRemoval(workbench: WorkbenchPage) {
  * The startup sequence, in the order a first-time workbench lives it. A VS Code instance that is
  * restarted keeps what this establishes, which is why every other lane may assume it.
  */
+test("opens first-time Connections before secondary features are ready", async ({ vscode }) => {
+  await waitForConnectionsPage(vscode.page);
+  expect((await vscode.inspectWorkbenchState()).connection.savedConnectionIds).toEqual([]);
+});
+
 test("starts, configures its first Connection, and indexes the database behind it", async ({
+  demoDatabase: _demoDatabase,
   vscode,
   workbench,
 }) => {
@@ -100,6 +106,7 @@ test("starts, configures its first Connection, and indexes the database behind i
 });
 
 test("recovers, renames, and removes a Connection after connection errors", async ({
+  demoDatabase: _demoDatabase,
   vscode,
   workbench,
 }) => {
@@ -175,6 +182,7 @@ test("recovers, renames, and removes a Connection after connection errors", asyn
 });
 
 test("restores the Connections setup action after removing the last Connection", async ({
+  demoDatabase: _demoDatabase,
   vscode,
   workbench,
 }) => {

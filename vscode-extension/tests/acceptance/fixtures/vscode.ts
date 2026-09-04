@@ -603,6 +603,7 @@ async function focusWindow(app: ElectronApplication, page: Page): Promise<void> 
 
 export interface LaunchVSCodeOptions {
   activationTimeout?: number;
+  beforeFeatureBootstrapReady?: (page: Page) => Promise<void>;
   viewTimeout?: number;
   windowTimeout?: number;
 }
@@ -625,6 +626,9 @@ export async function launchVSCode(options: LaunchVSCodeOptions = {}): Promise<V
   const extensionsDir = join(profileRoot, "extensions");
   const controlFile = join(profileRoot, "acceptance-command.json");
   const readyFile = `${controlFile}.ready`;
+  const featureBootstrapGateFile = options.beforeFeatureBootstrapReady
+    ? join(profileRoot, "feature-bootstrap-ready.gate")
+    : undefined;
   const settingsPath = join(userDataDir, "User", "settings.json");
   rmSync(artifactsRoot, { recursive: true, force: true });
   mkdirSync(dirname(settingsPath), { recursive: true });
@@ -686,6 +690,11 @@ export async function launchVSCode(options: LaunchVSCodeOptions = {}): Promise<V
       env: {
         ...process.env,
         POSTGRESQL_WORKBENCH_ACCEPTANCE_CONTROL_FILE: controlFile,
+        ...(featureBootstrapGateFile
+          ? {
+              POSTGRESQL_WORKBENCH_ACCEPTANCE_FEATURE_BOOTSTRAP_GATE_FILE: featureBootstrapGateFile,
+            }
+          : {}),
       },
       args: [
         "--disable-gpu-sandbox",
@@ -721,7 +730,14 @@ export async function launchVSCode(options: LaunchVSCodeOptions = {}): Promise<V
       tracingStarted = true;
     }
     recordBootstrapStage("waiting-for-vscode-window");
-    await waitForVSCodeWindow(app, windowTimeout);
+    const vscodeWindow = await waitForVSCodeWindow(app, windowTimeout);
+    if (options.beforeFeatureBootstrapReady && featureBootstrapGateFile) {
+      try {
+        await options.beforeFeatureBootstrapReady(vscodeWindow);
+      } finally {
+        writeFileSync(featureBootstrapGateFile, "ready\n");
+      }
+    }
     recordBootstrapStage("waiting-for-extension-activation");
     let ready = await waitForActivation(
       readyFile,

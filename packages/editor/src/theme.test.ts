@@ -31,6 +31,27 @@ describe("the Monaco projection of the Workbench theme", () => {
     vi.unstubAllGlobals();
   });
 
+  it("converts functional CSS colours to the hexadecimal format Monaco accepts", () => {
+    vi.stubGlobal(
+      "getComputedStyle",
+      vi.fn(() => ({
+        getPropertyValue(name: string) {
+          if (name === "--pgw-color-scheme") return "light";
+          if (name === "--pgw-code-font-size") return "13px";
+          if (name === "--pgw-code-font-family") return "Workbench Mono";
+          if (name === "--pgw-scrollbar") return "rgba(121, 121, 121, 0.4)";
+          return "rgb(12, 34, 56)";
+        },
+      })),
+    );
+
+    const theme = workbenchMonacoTheme({} as Element);
+
+    expect(theme.data.colors["scrollbarSlider.background"]).toBe("#79797966");
+    expect(theme.semanticTokenColors.keyword).toBe("#0c2238");
+    vi.unstubAllGlobals();
+  });
+
   it("fails closed when a required presentation role is absent", () => {
     vi.stubGlobal(
       "getComputedStyle",

@@ -154,6 +154,33 @@ test.describe("Workbench graph", () => {
     await test.step("open Source from product and verify its side geometry", async () => {
       await cockpit.showSource("product");
       await expect(cockpit.sourceBody).toContainText(/CREATE\s+TABLE/i, { timeout: 5_000 });
+      const colours = await cockpit.sourceColourEvidence();
+      expect(colours.renderedSelectionBackgrounds).toEqual([]);
+      expect(colours.renderedScrollbarBackgrounds).not.toContain("rgb(255, 0, 0)");
+      expect(colours.renderedScrollbarBackgrounds).not.toContain("rgba(255, 0, 0, 1)");
+      await cockpit.selectAllSourceText();
+      await expect
+        .poll(
+          async () => (await cockpit.sourceColourEvidence()).renderedSelectionBackgrounds.length,
+        )
+        .toBeGreaterThan(0);
+      const selectionColours = (await cockpit.sourceColourEvidence()).renderedSelectionBackgrounds;
+      expect(selectionColours).not.toContain("rgb(255, 0, 0)");
+      expect(selectionColours).not.toContain("rgba(255, 0, 0, 1)");
+      await expect
+        .poll(
+          async () => {
+            const syntax = await cockpit.sourceSyntaxEvidence();
+            const colours = Object.values(syntax.keywordColours);
+            return {
+              allPresent: colours.every(Boolean),
+              allDistinctFromText: colours.every((colour) => colour !== syntax.editorForeground),
+              oneKeywordColour: new Set(colours).size === 1,
+            };
+          },
+          { timeout: 10_000, message: "Table DDL syntax colours must finish rendering" },
+        )
+        .toEqual({ allPresent: true, allDistinctFromText: true, oneKeywordColour: true });
       await expect
         .poll(() => cockpit.inspectorPlacement(), {
           timeout: 5_000,
@@ -255,5 +282,42 @@ test.describe("Workbench graph", () => {
 
     await cockpit.closeSourceWithEscape();
     await expect(cockpit.inspector).toBeHidden({ timeout: 5_000 });
+  });
+
+  test("phase 2b — renders function DDL as SQL with an embedded PL/pgSQL body", async ({
+    workbench,
+    cockpit,
+  }) => {
+    const functionLabel = "place_order(int4, int4, int4)";
+    await openCockpitFromTree(workbench, cockpit, /^place_order/, functionLabel);
+    await cockpit.showSource(functionLabel);
+    await expect(cockpit.sourceBody).toContainText(/CREATE\s+OR\s+REPLACE\s+FUNCTION/i, {
+      timeout: 5_000,
+    });
+    await expect(cockpit.sourceBody).toContainText(/DECLARE[\s\S]+BEGIN[\s\S]+END/i, {
+      timeout: 5_000,
+    });
+
+    await expect
+      .poll(
+        async () => {
+          const syntax = await cockpit.sourceSyntaxEvidence([
+            "CREATE",
+            "FUNCTION",
+            "DECLARE",
+            "BEGIN",
+            "SELECT",
+            "END",
+          ]);
+          const colours = Object.values(syntax.keywordColours);
+          return {
+            allPresent: colours.every(Boolean),
+            allDistinctFromText: colours.every((colour) => colour !== syntax.editorForeground),
+            oneKeywordColour: new Set(colours).size === 1,
+          };
+        },
+        { timeout: 10_000, message: "Function DDL syntax colours must finish rendering" },
+      )
+      .toEqual({ allPresent: true, allDistinctFromText: true, oneKeywordColour: true });
   });
 });

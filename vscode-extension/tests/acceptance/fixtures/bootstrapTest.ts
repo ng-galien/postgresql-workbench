@@ -1,4 +1,4 @@
-import { test as base } from "@playwright/test";
+import { test as base, type Page } from "@playwright/test";
 import { WorkbenchPage } from "../pages/WorkbenchPage";
 import { type DemoDatabase, startDemoDatabase } from "./demoDatabase";
 import { launchVSCode, type VSCodeInstance } from "./vscode";
@@ -10,6 +10,25 @@ interface BootstrapFixtures {
 
 interface BootstrapWorkerFixtures {
   demoDatabase: DemoDatabase;
+}
+
+export async function waitForConnectionsPage(page: Page): Promise<void> {
+  const deadline = Date.now() + 15_000;
+  while (Date.now() < deadline) {
+    for (const frame of page.frames()) {
+      if (
+        await frame
+          .getByLabel("Saved Connections")
+          .isVisible()
+          .catch(() => false)
+      )
+        return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error(
+    "A first-time user could not reach the Connections page while secondary features were still starting",
+  );
 }
 
 /**
@@ -29,15 +48,14 @@ export const test = base.extend<BootstrapFixtures, BootstrapWorkerFixtures>({
     },
     { scope: "worker" },
   ],
-  // VS Code is launched behind the database, so the first Connection this lane adds has something
-  // to connect to. Playwright only builds a fixture a test reaches, and no bootstrap scenario
-  // names the database directly — what it verifies is the Workbench arriving at it.
   vscode: [
-    async ({ demoDatabase: _demoDatabase }, use) => {
+    // biome-ignore lint/correctness/noEmptyPattern: Playwright requires fixture arguments to use object destructuring.
+    async ({}, use) => {
       const instance = await launchVSCode({
         windowTimeout: 10_000,
         activationTimeout: 20_000,
         viewTimeout: 10_000,
+        beforeFeatureBootstrapReady: waitForConnectionsPage,
       });
       try {
         await use(instance);

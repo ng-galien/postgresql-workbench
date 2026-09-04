@@ -74,6 +74,12 @@ export class CockpitPage {
     });
   }
 
+  async selectAllSourceText(): Promise<void> {
+    if (!this.frame) throw new Error("CockpitPage.waitUntilOpen() must be called first");
+    await this.frame.locator(".source-body .view-line").first().click();
+    await this.page.keyboard.press("ControlOrMeta+A");
+  }
+
   async openIndexedDefinition(label: string): Promise<void> {
     const open = this.node(label).getByRole("button", { name: /^Open/ });
     await open.waitFor({ state: "visible", timeout: 5_000 });
@@ -272,6 +278,63 @@ export class CockpitPage {
         })(),
       };
     });
+  }
+
+  async sourceColourEvidence(): Promise<{
+    selectionRole: string;
+    scrollbarRole: string;
+    renderedSelectionBackgrounds: string[];
+    renderedScrollbarBackgrounds: string[];
+  }> {
+    if (!this.frame) throw new Error("CockpitPage.waitUntilOpen() must be called first");
+    await this.frame
+      .locator(".source-body .monaco-editor")
+      .waitFor({ state: "visible", timeout: 10_000 });
+    return this.frame.evaluate(() => {
+      const rootStyle = getComputedStyle(document.documentElement);
+      const backgrounds = (selector: string) => [
+        ...new Set(
+          [...document.querySelectorAll<HTMLElement>(selector)]
+            .map((element) => getComputedStyle(element).backgroundColor)
+            .filter((colour) => colour !== "rgba(0, 0, 0, 0)" && colour !== "transparent"),
+        ),
+      ];
+      return {
+        selectionRole: rootStyle.getPropertyValue("--pgw-code-selection-background").trim(),
+        scrollbarRole: rootStyle.getPropertyValue("--pgw-scrollbar").trim(),
+        renderedSelectionBackgrounds: backgrounds(".source-body .selected-text"),
+        renderedScrollbarBackgrounds: backgrounds(
+          ".source-body .monaco-scrollable-element > .scrollbar > .slider",
+        ),
+      };
+    });
+  }
+
+  async sourceSyntaxEvidence(keywords = ["CREATE", "TABLE", "CONSTRAINT"]): Promise<{
+    editorForeground: string;
+    keywordColours: Record<string, string>;
+  }> {
+    if (!this.frame) throw new Error("CockpitPage.waitUntilOpen() must be called first");
+    return this.frame.evaluate((requestedKeywords) => {
+      const lines = [...document.querySelectorAll<HTMLElement>(".source-body .view-line")];
+      const tokens = lines.flatMap((line) =>
+        [...line.querySelectorAll<HTMLElement>("span")].filter(
+          (span) => span.children.length === 0 && /(?:^|\s)mtk\d+(?:\s|$)/u.test(span.className),
+        ),
+      );
+      const keywordColours = Object.fromEntries(
+        requestedKeywords.map((keyword) => {
+          const token = tokens.find((candidate) =>
+            candidate.textContent?.split(/[^A-Z_]+/u).includes(keyword),
+          );
+          return [keyword, token ? getComputedStyle(token).color : ""];
+        }),
+      );
+      return {
+        editorForeground: lines[0] ? getComputedStyle(lines[0]).color : "",
+        keywordColours,
+      };
+    }, keywords);
   }
 
   async canvasGeometry(): Promise<{ width: number; height: number }> {
