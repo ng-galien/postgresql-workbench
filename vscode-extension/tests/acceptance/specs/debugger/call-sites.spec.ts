@@ -4,7 +4,8 @@ import {
   demoConnectionQuickPickItem as connectionChoice,
   demoDatabaseTreeItem as database,
 } from "../../fixtures/demoDatabase";
-import { test } from "../../fixtures/test";
+import { expect, test } from "../../fixtures/test";
+import { SCHEMAS_TREE_ITEM } from "../../pages/WorkbenchTreeLabels";
 
 test.describe("PL/pgSQL debugger call sites", () => {
   test.describe.configure({ timeout: DEBUG_PLAYWRIGHT_TEST_TIMEOUT_MS });
@@ -89,6 +90,19 @@ test.describe("PL/pgSQL debugger call sites", () => {
     workbench,
     debuggerPage,
   }) => {
+    await test.step("keep the routine available across repeated schema collapse and expansion", async () => {
+      for (let cycle = 0; cycle < 3; cycle += 1) {
+        const schema = await workbench.tree.expandPath([
+          connection,
+          database,
+          SCHEMAS_TREE_ITEM,
+          /^playground$/u,
+        ]);
+        const routine = await workbench.tree.findChild(schema, /^debug_tree_entry\(\)/u);
+        await expect(routine).toBeVisible();
+        await workbench.tree.collapseItem(schema, /^playground$/u);
+      }
+    });
     await workbench.debugRoutineFromTree(
       connection,
       database,

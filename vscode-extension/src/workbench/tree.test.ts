@@ -911,6 +911,8 @@ describe("Workbench tree incremental refresh", () => {
     });
 
     changes.length = 0;
+    const beforeCollapse = await provider.getChildren(schema);
+    for (const item of beforeCollapse) provider.getTreeItem(item);
     provider.setExpanded(schema, false);
     indexChanges.fire(index.state);
     expect(changes.map((item) => item?.kind)).toEqual([
@@ -918,11 +920,47 @@ describe("Workbench tree incremental refresh", () => {
       "sourcesSnapshot",
       "object",
     ]);
+    provider.setExpanded(schema, true);
+    const afterSchemaCollapse = await provider.getChildren(schema);
+    for (const item of afterSchemaCollapse) {
+      expect(item).toBe(beforeCollapse.find((previous) => previous.id === item.id));
+      provider.getTreeItem(item);
+    }
 
     changes.length = 0;
     provider.setExpanded(sources, false);
     indexChanges.fire(index.state);
     expect(changes.map((item) => item?.kind)).toEqual(["databaseSource", "sourcesSnapshot"]);
+    provider.setExpanded(sources, true);
+    provider.setExpanded(schema, true);
+    const afterSourcesCollapse = await provider.getChildren(schema);
+    for (const item of afterSourcesCollapse) {
+      expect(item).toBe(beforeCollapse.find((previous) => previous.id === item.id));
+      provider.getTreeItem(item);
+    }
+    indexedSymbols.splice(0, indexedSymbols.length);
+    index.state = {
+      ...index.state,
+      change: {
+        kind: "incremental",
+        schemas: ["shop"],
+        sourceUris: beforeCollapse.flatMap((item) =>
+          item.kind === "object" || item.kind === "function" ? [item.object.sourceUri] : [],
+        ),
+      },
+    };
+    indexChanges.fire(index.state);
+    expect(await provider.getChildren(schema)).toEqual([]);
+    indexedSymbols.push(symbol);
+    const afterRecreation = await provider.getChildren(schema);
+    expect(afterRecreation).toHaveLength(1);
+    expect(afterRecreation[0]).not.toBe(
+      beforeCollapse.find((item) => item.id === afterRecreation[0]?.id),
+    );
+    provider.refresh(true);
+    const afterReset = await provider.getChildren(schema);
+    expect(afterReset).toHaveLength(1);
+    expect(afterReset[0]).not.toBe(afterRecreation[0]);
     provider.dispose();
   });
 });
