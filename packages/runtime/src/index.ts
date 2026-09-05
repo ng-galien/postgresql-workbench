@@ -14,9 +14,10 @@ export class WorkbenchRuntime {
   readonly catalog: CatalogObservations;
   readonly debug: DebugSessions;
   readonly coverage: CoverageObservations;
-  private readonly syntax = new StatelessCodeMonikerSyntaxRuntime();
+  private readonly syntax: StatelessCodeMonikerSyntaxRuntime;
 
-  constructor(profiles: readonly ConnectionProfile[]) {
+  constructor(profiles: readonly ConnectionProfile[], syntaxRuntimePath?: string) {
+    this.syntax = new StatelessCodeMonikerSyntaxRuntime({ runtimePath: syntaxRuntimePath });
     this.sessions = new DatabaseSessions(profiles);
     this.scratchpads = new ScratchpadSessions(this.sessions, this.evidence);
     this.catalog = new CatalogObservations(this.sessions, this.evidence);

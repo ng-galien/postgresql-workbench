@@ -11,10 +11,42 @@ database sessions, scratchpads, execution evidence, PL/pgSQL debugging, native
 coverage, and structural catalog observations. Reading a captured result never
 re-executes its SQL.
 
-This is a source-checkout entry point; it is not installed by the VSIX and is
-not yet a published npm package. It uses the
+The extension includes a managed local server, and the standalone launcher is
+available from a source checkout (not yet a published npm package). It uses the
 [official MCP TypeScript SDK](https://ts.sdk.modelcontextprotocol.io/server)
-and its stdio transport. No OpenAI account, API key, or particular model is required.
+and its stdio or Streamable HTTP transport. No OpenAI account, API key, or particular model is required.
+
+## Manage MCP from Settings
+
+Open **Connections → Settings → MCP** in a trusted workspace containing one
+local project folder. Choose the saved PostgreSQL Connection that agents may
+access, then **Start MCP server**. The page shows the process state, PID,
+Connection, and loopback URL. **Stop MCP server** closes its sessions and
+discards retained observations. Stop it before changing the port (default 7432).
+A port conflict is reported without stopping the process that already owns it.
+Saved Connection edits apply on the next start.
+
+The server runs in a separate process on the extension host machine. It receives
+the selected Connection and its secret through a private parent channel, using
+the same TLS and connection tuning as Workbench. It never borrows an editor
+session. It stops when its VS Code window closes; the standalone launcher below
+can run without VS Code.
+
+**Install / update Codex** writes `.codex/config.toml` in the project;
+**Install / update Claude Code** writes `.mcp.json`. Other server entries are
+preserved. These files contain a private local bearer token, never the database
+password. Workbench excludes them through Git's local exclude file and refuses
+to modify a tracked configuration. Keep them private in projects without Git.
+Existing Workbench entries managed elsewhere are not overwritten.
+
+The page reports absent, installed, different, invalid, or locally disabled
+Codex configuration. After changing the port, update each integration. It does
+not claim that a running agent has connected or inspect global client policies.
+Restart or reconnect the client and approve its project server: see the official
+[Codex MCP guide](https://developers.openai.com/codex/mcp) and
+[Claude Code MCP guide](https://code.claude.com/docs/en/mcp).
+Local clients must run on the same machine as the server; this loopback endpoint
+does not provide access to a hosted cloud agent.
 
 ## Start the server
 
@@ -55,6 +87,17 @@ Set the referenced password variable separately. `ssl: true` enables TLS with
 certificate verification. Inline passwords, unknown profile fields, and
 duplicate profile IDs are rejected. Without custom profiles, the PostgreSQL
 environment variables define a profile named `default`.
+
+For a standalone HTTP server, additionally set `PGWB_MCP_PORT` and a private
+`PGWB_MCP_TOKEN` of at least 32 characters in the environment, then launch the
+same Node entry point. Connect to `http://127.0.0.1:<port>/mcp` with
+`Authorization: Bearer <token>`. Only loopback requests with the exact Host and
+no browser Origin are accepted. Each HTTP client owns a separate runtime; up to
+16 client sessions can coexist. Clients should terminate their MCP session when
+finished. After 30 minutes without a request, a client runtime expires and its
+database sessions and observations are released. An executing request prevents
+expiration; an idle SSE stream does not. Restarting the service clears all sessions
+and observations.
 
 ## Tool surface
 

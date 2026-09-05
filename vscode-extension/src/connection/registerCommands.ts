@@ -29,6 +29,7 @@ export function registerConnectionCommands(options: ConnectionCommandOptions): C
     index,
     context.extensionUri,
     () => startDockerDebugDatabase(connections, output),
+    context,
   );
   context.subscriptions.push(
     connectionsPanel,

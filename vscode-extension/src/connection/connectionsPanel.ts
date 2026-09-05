@@ -18,6 +18,7 @@ import viewBundles from "../../../packages/views/viewBundles.json" with { type: 
 import { webviewShell } from "../webviewShell.js";
 import { loadPgsqlConnections, loadSqlToolsConnections } from "./commands.js";
 import type { ConnectionManager } from "./index.js";
+import { McpIntegration } from "./mcpIntegration.js";
 import { ConnectionStore } from "./savedConnections.js";
 
 /**
@@ -39,6 +40,8 @@ export class ConnectionsPanel implements vscode.Disposable {
   private postStateQueued = false;
   private postStateSequence = 0;
   private readonly subscriptions: readonly { dispose(): void }[];
+  private readonly mcp: McpIntegration;
+  private mcpStateSequence = 0;
 
   constructor(
     private readonly connections: ConnectionManager,
@@ -46,8 +49,14 @@ export class ConnectionsPanel implements vscode.Disposable {
     private readonly index: WorkbenchIndexController,
     private readonly extensionUri: vscode.Uri,
     private readonly startDockerDatabase: () => Promise<string | undefined>,
+    context: vscode.ExtensionContext,
   ) {
+    this.mcp = new McpIntegration(context, connections.store);
     this.subscriptions = [
+      this.mcp,
+      this.mcp.onChanged(() => {
+        void this.postMcpState();
+      }),
       connections.onChanged(() => this.queuedPostState()),
       ddlSync.onDidChangeState(() => this.queuedPostState()),
       index.onDidChangeState(() => this.queuedPostState()),
@@ -93,6 +102,9 @@ export class ConnectionsPanel implements vscode.Disposable {
     if (message.type === "ready") {
       await this.postState();
       this.postAppSettings();
+      await this.postMcpState();
+    } else if (message.type === "mcpAction") {
+      await this.mcp.act(message.action, message.port, message.connectionId, message.client);
     } else if (message.type === "setAppSetting")
       await this.applyAppSetting(message.key, message.value);
     else if (message.type === "save")
@@ -166,6 +178,12 @@ export class ConnectionsPanel implements vscode.Disposable {
       ssl: draft.ssl,
       ...(draft.tuning ? { tuning: draft.tuning } : {}),
     };
+  }
+
+  private async postMcpState() {
+    const sequence = ++this.mcpStateSequence;
+    const state = await this.mcp.state();
+    if (sequence === this.mcpStateSequence) this.post({ type: "mcpState", state });
   }
 
   private async save(draft: ConnectionDraft, originalId?: string, connect = false): Promise<void> {

@@ -55,7 +55,7 @@ packages/                  the engine, one package per subject
                            npm DAP server: launch, PostgreSQL backend, and session
   shell/                   browser harness driving the views without VS Code
   runtime/                 standalone database sessions, scratchpads, and retained observations
-  mcp/                     MCP stdio adapter over the standalone runtime, independent of VS Code
+  mcp/                     MCP stdio/HTTP adapters and project integration over the standalone runtime
 vscode-extension/          VS Code extension: the host that adapts the engine to VS Code
 e2e/                       PostgreSQL, DAP, coverage, and compatibility tests
 demo/                      deterministic PostgreSQL demo used by showcases

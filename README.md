@@ -15,8 +15,9 @@ server remains usable from other DAP clients such as Neovim and Emacs.
 
 The [standalone MCP server](docs/user/mcp.md) gives agents their own Workbench
 sessions, scratchpads, captured execution evidence, PL/pgSQL debugging, coverage
-and structural observations without VS Code. Build it from this checkout with
-`npm run build:mcp`; it is separate from the VSIX and the published DAP package.
+and structural observations without VS Code. Build it with `npm run build:mcp`,
+or manage the bundled local server and install project configurations for Codex
+and Claude Code from **Connections → Settings → MCP**.
 
 Read the [PostgreSQL Workbench documentation](https://ng-galien.github.io/postgresql-workbench/)
 for feature guides, including the [Data View guide](https://ng-galien.github.io/postgresql-workbench/docs/data-view.html),
@@ -28,7 +29,7 @@ setup instructions, and the complete command and settings reference.
 postgresql-workbench/
 ├── packages/             # Shared SQL, catalog, rows, coverage and debugger engines
 │   ├── runtime/          # Standalone sessions and retained observations
-│   └── mcp/              # Independent MCP stdio surface
+│   └── mcp/              # Independent MCP stdio and local HTTP surface
 ├── vscode-extension/     # VS Code extension (first-party client)
 ├── e2e/                  # Integration tests (Docker + PostgreSQL)
 └── demo/                 # Demo container + sample functions to debug

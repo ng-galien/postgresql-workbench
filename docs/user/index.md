@@ -43,8 +43,8 @@ and password are all `postgres`.
   and inspect values.
 - [Standalone DAP server](dap.md) — integrate the debugger engine with another
   editor or DAP client.
-- [Standalone MCP server](mcp.md) — give agents independent Workbench sessions,
-  captured results, debugging, coverage and structural observations.
+- [MCP server and project integration](mcp.md) — manage the local server from
+  Settings, install Codex and Claude Code configurations, or run independently.
 - [Commands and settings](reference.md) — browse the complete generated reference.
 - [Measured performance](performance.md) — review reproducible indexing measurements
   on synthetic ERP-scale PostgreSQL catalogs.
