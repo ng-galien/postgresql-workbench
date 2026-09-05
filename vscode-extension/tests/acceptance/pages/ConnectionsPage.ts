@@ -15,7 +15,63 @@ export class ConnectionsPage {
 
   async open(): Promise<Frame> {
     await this.executeCommand("postgresql-workbench.manageConnections");
-    return this.frame();
+    const frame = await this.frame();
+    await frame.evaluate(() => {
+      const diagnostics = window as typeof window & { __pgwbConnectionsEvents?: unknown[] };
+      if (diagnostics.__pgwbConnectionsEvents) return;
+      const events: unknown[] = [];
+      diagnostics.__pgwbConnectionsEvents = events;
+      const record = (event: object) => {
+        events.push({ at: new Date().toISOString(), ...event });
+        if (events.length > 40) events.shift();
+      };
+      // Whitelist lifecycle facts. Never retain drafts, passwords, SQL or result payloads.
+      window.addEventListener("message", ({ data }) => {
+        if (data?.type === "state") {
+          record({
+            type: "state",
+            connections: data.connections.map((connection: { id: string; connected: boolean }) => ({
+              id: connection.id,
+              connected: connection.connected,
+            })),
+          });
+        } else if (["saved", "connectionAction", "extensionInstalled"].includes(data?.type)) {
+          record({ type: data.type, id: data.id, action: data.action, ok: data.ok });
+        }
+      });
+      window.addEventListener(
+        "click",
+        ({ target }) => {
+          const button = target instanceof Element ? target.closest("button") : null;
+          const action = button?.textContent?.trim();
+          if (
+            ["Save", "Delete Connection", "Delete", "Keep", "Install pldbgapi"].includes(
+              action ?? "",
+            )
+          ) {
+            record({ type: "click", action });
+          }
+        },
+        true,
+      );
+    });
+    return frame;
+  }
+
+  async diagnostics(): Promise<unknown> {
+    const frame = await this.frame();
+    return frame.evaluate(() => ({
+      at: new Date().toISOString(),
+      events: (window as typeof window & { __pgwbConnectionsEvents?: unknown[] })
+        .__pgwbConnectionsEvents,
+      connections: [...document.querySelectorAll(".connections-card")].map((card) => ({
+        label: card.querySelector(".connections-card-main")?.getAttribute("aria-label"),
+        selected: card.getAttribute("aria-current"),
+      })),
+      deleteActions: [...document.querySelectorAll(".connections-danger-zone button")].map(
+        (button) => button.textContent?.trim(),
+      ),
+    }));
   }
 
   async frame(): Promise<Frame> {

@@ -40,7 +40,12 @@ export class ScratchpadsView {
   }
 
   async transaction(scratchpad: Locator, status: ScratchpadTransactionStatus): Promise<Locator> {
-    await this.expand(scratchpad);
+    await expect
+      .poll(() => this.hasTransaction(scratchpad, status), {
+        timeout: 5_000,
+        message: `The Scratchpad tree must publish Transaction ${status}`,
+      })
+      .toBe(true);
     return this.tree.findChild(scratchpad, new RegExp(`^Transaction ${status}`, "u"));
   }
 

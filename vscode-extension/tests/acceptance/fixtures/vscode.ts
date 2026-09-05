@@ -14,9 +14,10 @@ import { dirname, join, resolve } from "node:path";
 import type { ElectronApplication, Page } from "@playwright/test";
 import { _electron as electron } from "playwright";
 import { preparedAcceptanceVSCode } from "./vscodeDownload";
+import { createAcceptanceWorkspace } from "./workspace";
 
 const extensionRoot = resolve(__dirname, "../../..");
-const workspace = resolve(extensionRoot, "tests", "workspace");
+const workspaceSource = resolve(extensionRoot, "tests", "workspace");
 const artifactsRoot = resolve(
   extensionRoot,
   "test-results",
@@ -241,6 +242,7 @@ async function waitForActivation(
 export interface VSCodeInstance {
   app: ElectronApplication;
   page: Page;
+  workspacePath: string;
   armIndexPhaseGate(phases: readonly WorkbenchIndexPhase[]): Promise<void>;
   executeCommand(
     command:
@@ -433,6 +435,11 @@ export interface ActiveNotebookSnapshot {
   cells: Array<{
     kind: "code" | "markup";
     languageId: string;
+    executionSummary?: {
+      executionOrder?: number;
+      success?: boolean;
+      timing?: { startTime: number; endTime: number };
+    };
     outputs: string[];
     outputGroups: string[][];
     text: string;
@@ -651,7 +658,6 @@ export async function launchVSCode(options: LaunchVSCodeOptions = {}): Promise<V
       "workbench.secondarySideBar.defaultVisibility": "hidden",
     }),
   );
-  if (!existsSync(workspace)) throw new Error(`Acceptance workspace missing: ${workspace}`);
 
   let app: ElectronApplication | undefined;
   let tracingStarted = false;
@@ -685,6 +691,7 @@ export async function launchVSCode(options: LaunchVSCodeOptions = {}): Promise<V
   };
 
   try {
+    const workspace = createAcceptanceWorkspace(workspaceSource, profileRoot);
     app = await electron.launch({
       executablePath,
       env: {
@@ -772,6 +779,7 @@ export async function launchVSCode(options: LaunchVSCodeOptions = {}): Promise<V
     recordBootstrapStage("ready");
     return {
       app: runningApp,
+      workspacePath: workspace,
       get page() {
         return page;
       },

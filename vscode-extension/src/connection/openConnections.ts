@@ -280,6 +280,10 @@ export class ConnectionManager implements vscode.Disposable {
     return this.runConnectionTransition(id, () => this.connectConnectionTransition(id, options));
   }
 
+  // PostgreSQL connectivity is authoritative. Indexing and debugger capability
+  // detection start independently after the connection has been published.
+  // The failed endpoint remains a saved, disconnected Connection. Publish that state even
+  // when the initial root refresh is still materializing the newly added row.
   private async connectConnectionTransition(
     id: string,
     options: { force?: boolean } = {},
@@ -367,8 +371,6 @@ export class ConnectionManager implements vscode.Disposable {
             });
 
             await this.store.setConnectionOpen(id, true);
-            // PostgreSQL connectivity is authoritative. Indexing and debugger capability
-            // detection start independently after the connection has been published.
             this.fire([id]);
             void this.refreshDebugCapability(id);
 
@@ -378,8 +380,6 @@ export class ConnectionManager implements vscode.Disposable {
 
         const classifiedFailure = failure;
         if (classifiedFailure) {
-          // The failed endpoint remains a saved, disconnected Connection. Publish that state even
-          // when the initial root refresh is still materializing the newly added row.
           this.fire([id]);
           const actions =
             classifiedFailure.kind === "auth"
@@ -513,23 +513,40 @@ export class ConnectionManager implements vscode.Disposable {
     this.fire(id ? [id] : [], id === undefined);
   }
 
+  // VS Code does not expose a disposable for one showErrorMessage notification. Hiding
+  // toasts closes its obsolete recovery actions without clearing notification history.
   async removeConnectionConfiguration(id: string): Promise<boolean> {
-    return this.runConnectionTransition(id, () =>
-      this.withConnectionChange(id, "removing the Connection", async () => {
-        await this.disconnectConnectionClient(id);
-        await this.store.setConnectionOpen(id, false);
-        this.connectionLosses.delete(id);
-        this.forgetDebugCapability(id);
-        await this.store.remove(id);
-        this.fire([id], true);
-        if (this.pendingRecoveryNotifications.delete(id)) {
-          // VS Code does not expose a disposable for one showErrorMessage notification. Hiding
-          // toasts closes its obsolete recovery actions without clearing notification history.
-          await vscode.commands.executeCommand("notifications.hideToasts");
-        }
-        return true;
-      }),
-    );
+    const trace = (stage: string) =>
+      this.out.appendLine(
+        `Connection removal: ${JSON.stringify({ at: new Date().toISOString(), id, stage })}`,
+      );
+    trace("requested");
+    try {
+      const removed = await this.runConnectionTransition(id, () => {
+        trace("waiting-for-scratchpads");
+        return this.withConnectionChange(id, "removing the Connection", async () => {
+          trace("disconnecting");
+          await this.disconnectConnectionClient(id);
+          trace("clearing-open-intent");
+          await this.store.setConnectionOpen(id, false);
+          this.connectionLosses.delete(id);
+          this.forgetDebugCapability(id);
+          trace("removing-configuration");
+          await this.store.remove(id);
+          trace("configuration-removed");
+          this.fire([id], true);
+          if (this.pendingRecoveryNotifications.delete(id)) {
+            await vscode.commands.executeCommand("notifications.hideToasts");
+          }
+          return true;
+        });
+      });
+      trace(removed ? "complete" : "refused");
+      return removed;
+    } catch (error) {
+      trace("failed");
+      throw error;
+    }
   }
 
   async replaceConnectionConfiguration(

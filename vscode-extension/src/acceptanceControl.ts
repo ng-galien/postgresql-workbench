@@ -37,6 +37,8 @@ const REMOVE_CONNECTION_COMMAND = "postgresql-workbench.acceptance.removeConnect
 const RESET_WORKBENCH_COMMAND = "postgresql-workbench.acceptance.resetWorkbench";
 const OPEN_WORKSPACE_FILE_COMMAND = "postgresql-workbench.acceptance.openWorkspaceFile";
 const OPEN_SQL_DOCUMENT_COMMAND = "postgresql-workbench.acceptance.openSqlDocument";
+// Closing through the tab API: the close control is not what any scenario verifies,
+// and its markup moves between VS Code versions.
 const CLOSE_ACTIVE_EDITOR_COMMAND = "postgresql-workbench.acceptance.closeActiveEditor";
 const JOIN_ALL_GROUPS_COMMAND = "workbench.action.joinAllGroups";
 const NEW_GROUP_RIGHT_COMMAND = "workbench.action.newGroupRight";
@@ -164,6 +166,7 @@ export function registerAcceptanceControl(
                     ? ("markup" as const)
                     : ("code" as const),
                 languageId: cell.document.languageId,
+                executionSummary: cell.executionSummary,
                 outputs: cell.outputs.flatMap((output) => output.items.map((item) => item.mime)),
                 outputGroups: cell.outputs.map((output) => output.items.map((item) => item.mime)),
                 outputPreviews: cell.outputs.map((output) =>
@@ -258,8 +261,6 @@ export function registerAcceptanceControl(
           return;
         }
         if (instruction.command === CLOSE_ACTIVE_EDITOR_COMMAND) {
-          // Closing through the tab API rather than the tab's chrome: the close control is not
-          // what any scenario verifies, and its markup moves between VS Code versions.
           const active = vscode.window.tabGroups.activeTabGroup.activeTab;
           if (active) await vscode.window.tabGroups.close(active, false);
           markReady(instruction.nonce, { closed: Boolean(active) });
@@ -322,8 +323,11 @@ export function registerAcceptanceControl(
         if (instruction.command !== RELOAD_WINDOW_COMMAND) markReady(instruction.nonce);
       })
       .catch((error: unknown) => {
-        // biome-ignore lint/suspicious/noConsole: acceptance-only bridge failures must remain visible in extension-host logs.
-        if ((error as NodeJS.ErrnoException).code !== "ENOENT") console.error(error);
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+          process.stderr.write(
+            `${error instanceof Error ? (error.stack ?? error.message) : String(error)}\n`,
+          );
+        }
       });
   };
   watchFile(controlFile, { interval: 50 }, consume);
@@ -360,6 +364,8 @@ function isDebugConfiguration(value: unknown): value is vscode.DebugConfiguratio
   );
 }
 
+// Acceptance cleanup is best-effort after the editor has already closed.
+// The directory can already be gone after an interrupted acceptance run.
 async function deleteAcceptanceSqlDocuments(uris: Set<string>): Promise<void> {
   const directories = new Set<string>();
   await Promise.all(
@@ -368,9 +374,7 @@ async function deleteAcceptanceSqlDocuments(uris: Set<string>): Promise<void> {
       directories.add(vscode.Uri.joinPath(uri, "..").toString());
       try {
         await vscode.workspace.fs.delete(uri);
-      } catch {
-        // Acceptance cleanup is best-effort after the editor has already closed.
-      }
+      } catch {}
       uris.delete(value);
     }),
   );
@@ -378,9 +382,7 @@ async function deleteAcceptanceSqlDocuments(uris: Set<string>): Promise<void> {
     [...directories].map(async (value) => {
       try {
         await vscode.workspace.fs.delete(vscode.Uri.parse(value));
-      } catch {
-        // The directory can already be gone after an interrupted acceptance run.
-      }
+      } catch {}
     }),
   );
 }
