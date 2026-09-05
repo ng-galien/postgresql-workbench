@@ -43,6 +43,7 @@ if (marketplaceCards.length === 0) {
 const required = [
   "extension/dist/extension.js",
   "extension/dist/dap-server.js",
+  "extension/dist/mcp-server.js",
   "extension/dist/sql-authoring-server.js",
   "extension/dist/sql-notebook-renderer.js",
   "extension/dist/data-view.js",

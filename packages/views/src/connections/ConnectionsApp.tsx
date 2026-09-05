@@ -3,6 +3,8 @@ import { getConnectionName, getConnectionUrl } from "../../../catalog/src/savedC
 import type { PostgresServerSnapshot } from "../../../catalog/src/serverSnapshot.js";
 import type { ViewMessaging } from "../messaging.js";
 import { IndexPanel } from "./IndexPanel.js";
+import { McpSettings } from "./McpSettings.js";
+import type { McpSettingsState } from "./protocol.js";
 import {
   APP_SETTINGS,
   type AppSettingDescriptor,
@@ -37,7 +39,8 @@ export function ConnectionsApp({
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [dockerSetupOpen, setDockerSetupOpen] = useState(false);
   const [appSettingsOpen, setAppSettingsOpen] = useState(false);
-  const [activeAppSection, setActiveAppSection] = useState<AppSettingSection>("authoring");
+  const [activeAppSection, setActiveAppSection] = useState<AppSettingSection | "mcp">("authoring");
+  const [mcpState, setMcpState] = useState<McpSettingsState>();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [contextMenu, setContextMenu] = useState<ContextMenuState>();
   const [draft, setDraft] = useState<ConnectionDraft>(EMPTY_DRAFT);
@@ -82,6 +85,10 @@ export function ConnectionsApp({
 
   useEffect(() => {
     const unsubscribe = messaging.subscribe((message) => {
+      if (message.type === "mcpState") {
+        setMcpState(message.state);
+        return;
+      }
       if (message.type === "appSettings") {
         setAppSettings(message.values);
         return;
@@ -486,6 +493,11 @@ export function ConnectionsApp({
               <div className="connections-settings-layout">
                 <nav aria-label="Settings sections" className="connections-settings-nav">
                   <span className="connections-kicker">Application</span>
+                  <SectionLink
+                    active={activeAppSection === "mcp"}
+                    label="MCP"
+                    onSelect={() => setActiveAppSection("mcp")}
+                  />
                   {APP_SECTIONS.map((section) => (
                     <SectionLink
                       active={activeAppSection === section.id}
@@ -502,19 +514,27 @@ export function ConnectionsApp({
                 </nav>
                 <div className="connections-settings-content">
                   <div className="connections-form-sections connections-settings-tail">
-                    <AppSettingsCard
-                      onApply={(key, value) =>
-                        messaging.post({ type: "setAppSetting", key, value })
-                      }
-                      section={activeAppSection}
-                      title={
-                        activeAppSection === "schema-sync"
-                          ? "Schema sync defaults"
-                          : (APP_SECTIONS.find((entry) => entry.id === activeAppSection)?.label ??
-                            "")
-                      }
-                      values={appSettings}
-                    />
+                    {activeAppSection === "mcp" ? (
+                      <McpSettings
+                        state={mcpState}
+                        connections={connections}
+                        post={(message) => messaging.post(message)}
+                      />
+                    ) : (
+                      <AppSettingsCard
+                        onApply={(key, value) =>
+                          messaging.post({ type: "setAppSetting", key, value })
+                        }
+                        section={activeAppSection}
+                        title={
+                          activeAppSection === "schema-sync"
+                            ? "Schema sync defaults"
+                            : (APP_SECTIONS.find((entry) => entry.id === activeAppSection)?.label ??
+                              "")
+                        }
+                        values={appSettings}
+                      />
+                    )}
                   </div>
                 </div>
               </div>

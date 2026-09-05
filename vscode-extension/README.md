@@ -16,6 +16,12 @@ Built for your **development database**: local PostgreSQL, Docker, or self-hoste
 Open the [documentation site](https://ng-galien.github.io/postgresql-workbench/)
 for focused guides to the Cockpit, SQL scratchpads, pgTAP coverage, the debugger,
 the standalone DAP server, and the complete command and settings reference.
+Agents can also use the repository's independent
+[MCP server](https://ng-galien.github.io/postgresql-workbench/docs/mcp.html)
+for their own Workbench sessions and retained observations. **Connections →
+Settings → MCP** starts and stops the bundled local server, changes its port,
+and installs Codex and Claude Code configurations in the open project. A
+standalone launcher also runs from a source checkout without VS Code.
 The complete Schemas-to-editor drag-and-drop contract is maintained in the
 [SQL authoring guide](https://ng-galien.github.io/postgresql-workbench/docs/sql-authoring.html#compose-sql-by-drag-and-drop).
 

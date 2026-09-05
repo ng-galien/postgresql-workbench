@@ -279,8 +279,16 @@ export class PostgresDebugger {
     }));
   }
 
-  async setGlobalBreakpoint(oid: number): Promise<void> {
+  async setGlobalBreakpoint(oid: number, targetPid?: number): Promise<void> {
     if (this.invalidSession()) return;
+    if (targetPid !== undefined) {
+      await this.client.query("SELECT pldbg_set_global_breakpoint($1, $2, -1, $3)", [
+        this.session,
+        oid,
+        targetPid,
+      ]);
+      return;
+    }
     await this.client.query(SQL.SET_GLOBAL_BREAKPOINT, [this.session, oid]);
   }
 

@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+## [1.6.0] - 2026-09-05
+
+### MCP integration
+
+- Added an independent MCP server over stdio or local HTTP, with database
+  sessions, versioned Scratchpads, retained execution observations, structural
+  catalog snapshots, PL/pgSQL debugging, pgTAP tests and native coverage
+- Added server status, start/stop controls, Connection selection and port
+  configuration in Connections → Settings → MCP
+- Added project-local configuration installation for Codex and Claude Code,
+  preserving other servers and verifying Git exclusion before writing local
+  bearer tokens
+
+### Reliability
+
+- Preserved database object identities when tree branches are collapsed and
+  expanded, preventing duplicate-element errors in VS Code
+- Isolated acceptance workspaces and database fixtures, verified MCP lifecycle
+  cleanup, and waited for completed notebook executions and transaction updates
+
 ## [1.5.1] - 2026-09-04
 
 ### Cockpit

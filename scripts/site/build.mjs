@@ -22,6 +22,7 @@ const guides = [
   ["testing-coverage.md", "pgTAP and coverage"],
   ["debugger.md", "PL/pgSQL debugger"],
   ["dap.md", "Standalone DAP server"],
+  ["mcp.md", "Standalone MCP server"],
   ["reference.md", "Commands and settings"],
   ["performance.md", "Measured performance"],
 ];

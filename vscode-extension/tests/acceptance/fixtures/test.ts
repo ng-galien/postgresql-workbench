@@ -8,6 +8,7 @@ import { NotebookPage } from "../pages/NotebookPage";
 import { SqlEditorPage } from "../pages/SqlEditorPage";
 import { WorkbenchPage } from "../pages/WorkbenchPage";
 import {
+  createConnectionsDatabase,
   type DemoDatabase,
   demoConnectionTreeItem as demoConnection,
   demoConnectionId,
@@ -24,6 +25,7 @@ interface AcceptanceFixtures {
   notebook: NotebookPage;
   sqlEditor: SqlEditorPage;
   connectionsPage: ConnectionsPage;
+  connectionsDatabase: string;
 }
 
 interface AcceptanceWorkerFixtures {
@@ -170,9 +172,53 @@ export const test = base.extend<AcceptanceFixtures, AcceptanceWorkerFixtures>({
       new SqlEditorPage(() => vscode.page, vscode.inspectActiveTextEditor, vscode.executeCommand),
     );
   },
+  connectionsDatabase: async ({ demoDatabase: _demoDatabase }, use) => {
+    const database = await createConnectionsDatabase();
+    try {
+      await use(database.name);
+    } finally {
+      await database.dispose();
+    }
+  },
   connectionsPage: async ({ vscode }, use) => {
     await use(new ConnectionsPage(() => vscode.page, vscode.executeCommand));
   },
 });
+
+/** Called in afterEach, before fixture cleanup can drop the database or close Electron. */
+export async function captureConnectionsFailure(
+  page: ConnectionsPage,
+  vscode: VSCodeInstance,
+  testInfo: TestInfo,
+): Promise<void> {
+  if (testInfo.status === testInfo.expectedStatus) return;
+  const snapshot = await vscode
+    .inspectWorkbenchState()
+    .then((state) => ({
+      at: new Date().toISOString(),
+      connection: state.connection,
+      removalEvents: (state as typeof state & { recentOutput?: string[] }).recentOutput?.filter(
+        (line) => line.startsWith("Connection removal: "),
+      ),
+    }))
+    .catch((error) => ({
+      diagnosticError: error instanceof Error ? error.message : String(error),
+    }));
+  await attachTextArtifact(
+    testInfo,
+    "connections-host-state.json",
+    JSON.stringify(snapshot, null, 2),
+    "application/json",
+  ).catch(() => {});
+  const view = await page.diagnostics().catch((error) => ({
+    diagnosticError: error instanceof Error ? error.message : String(error),
+  }));
+  await attachTextArtifact(
+    testInfo,
+    "connections-view-state.json",
+    JSON.stringify(view, null, 2),
+    "application/json",
+  ).catch(() => {});
+}
 
 export { expect } from "@playwright/test";

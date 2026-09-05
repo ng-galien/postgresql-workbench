@@ -2,7 +2,7 @@
   "name": "postgresql-workbench",
   "version": "0.1.0",
   "private": true,
-  "description": "PostgreSQL Workbench for VS Code: explore schemas, write SQL, edit data, run pgTAP tests with coverage, and debug PL/pgSQL.",
+  "description": "PostgreSQL Workbench: explore schemas, write SQL, edit data, run pgTAP coverage, debug PL/pgSQL, and connect agents through MCP.",
   "homepage": "https://ng-galien.github.io/postgresql-workbench/",
   "repository": {
     "type": "git",
@@ -16,6 +16,9 @@
   },
   "main": "dist/dap/src/main.js",
   "scripts": {
+    "build:mcp": "node scripts/mcp/build.mjs",
+    "mcp": "node dist/mcp/server.cjs",
+    "test:mcp": "node scripts/mcp/test.mjs",
     "build": "npm run build:dap && npm --prefix vscode-extension run compile && npm run build:ext",
     "build:dap": "node scripts/dap/clean.mjs && tsc",
     "build:dap:package": "node scripts/dap/build-package.mjs",
@@ -55,6 +58,7 @@
     "@code-moniker/client": "0.10.1",
     "@codingame/monaco-vscode-editor-api": "25.1.2",
     "@codingame/monaco-vscode-files-service-override": "25.1.2",
+    "@modelcontextprotocol/sdk": "1.30.0",
     "@typefox/monaco-editor-react": "7.7.0",
     "@vscode/debugadapter": "^1.68.0",
     "@vscode/debugprotocol": "^1.68.0",
@@ -63,7 +67,8 @@
     "vscode": "npm:@codingame/monaco-vscode-extension-api@25.1.2",
     "vscode-languageserver-protocol": "^3.18.2",
     "vscode-ws-jsonrpc": "3.5.0",
-    "ws": "8.21.3"
+    "ws": "8.21.3",
+    "zod": "4.5.4"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.9",

@@ -109,10 +109,35 @@ export class NotebookPage {
   }
 
   async executeCode(cell: Locator): Promise<void> {
+    const cellIndex = await cell.getAttribute("data-index");
+    const index = cellIndex === null ? -1 : Number(cellIndex);
+    const before = await this.snapshot();
+    if (!before || !Number.isInteger(index) || index < 0 || !before.cells[index]) {
+      throw new Error("The executed cell has no active notebook identity");
+    }
+    const previousOrder = before.cells[index]?.executionSummary?.executionOrder;
     await cell
       .getByRole("button", { name: /Execute Cell/ })
       .first()
       .click();
+    await expect
+      .poll(
+        async () => {
+          const notebook = await this.snapshot();
+          if (notebook?.uri !== before.uri) return false;
+          const execution = notebook.cells[index]?.executionSummary;
+          return (
+            execution?.executionOrder !== undefined &&
+            execution.executionOrder !== previousOrder &&
+            execution.timing?.endTime !== undefined
+          );
+        },
+        {
+          timeout: 10_000,
+          message: "The requested cell execution must finish before the next action",
+        },
+      )
+      .toBe(true);
   }
 
   async requestCompletion(cell: Locator): Promise<void> {

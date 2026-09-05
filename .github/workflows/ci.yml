@@ -91,6 +91,9 @@ jobs:
       - name: Run DAP integration tests
         run: npm run test:e2e:run
         timeout-minutes: 20
+      - name: Run standalone MCP acceptance journeys
+        run: npm run test:mcp
+        timeout-minutes: 3
       - name: Stop PostgreSQL integration fixture
         if: always()
         run: npm run test:e2e:down

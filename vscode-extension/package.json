@@ -1,8 +1,8 @@
 {
   "name": "postgresql-workbench",
   "displayName": "PostgreSQL Workbench",
-  "version": "1.5.1",
-  "description": "PostgreSQL Workbench for VS Code: explore schemas, write SQL, edit data, run pgTAP tests with coverage, and debug PL/pgSQL.",
+  "version": "1.6.0",
+  "description": "PostgreSQL Workbench: explore schemas, write SQL, edit data, run pgTAP coverage, debug PL/pgSQL, and connect agents through MCP.",
   "publisher": "ng-galien",
   "author": {
     "name": "Alexandre Boyer",

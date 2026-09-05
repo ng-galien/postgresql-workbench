@@ -111,7 +111,27 @@ export const APP_SETTINGS = appSettingsJson as readonly AppSettingDescriptor[];
 /** The extensions the Workbench builds on, installable from the page when the server offers them. */
 export type WorkbenchServerExtension = "pldbgapi" | "pgtap";
 
+export interface McpSettingsState {
+  status: "Stopped" | "Starting" | "Running" | "Stopping" | "Failed";
+  busy: boolean;
+  port: number;
+  url: string;
+  pid?: number;
+  activeConnection?: string;
+  project?: string;
+  trusted: boolean;
+  message?: string;
+  integrations: { client: "codex" | "claude"; path: string; status: string }[];
+}
+
 export type ConnectionsPageRequest =
+  | {
+      type: "mcpAction";
+      action: "start" | "stop" | "port" | "install" | "refresh";
+      port?: number;
+      connectionId?: string;
+      client?: "codex" | "claude";
+    }
   | { type: "ready" }
   | { type: "save"; draft: ConnectionDraft; originalId?: string; connect?: boolean }
   | { type: "delete"; id: string }
@@ -134,6 +154,7 @@ export type ConnectionsPageRequest =
   | { type: "import" };
 
 export type ConnectionsPageResponse =
+  | { type: "mcpState"; state: McpSettingsState }
   | { type: "state"; connections: ConnectionSummary[] }
   | { type: "saved"; id: string }
   | { type: "saveFailed"; message: string }

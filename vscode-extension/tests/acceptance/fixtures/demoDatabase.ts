@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { Client } from "pg";
 import { escapeRegExp } from "../../../../packages/views/testing/text.js";
@@ -51,6 +52,21 @@ export interface DemoDatabase {
   inspectRoutine(schema: string, routine: string): Promise<{ exists: boolean }>;
   inspectTrigger(schema: string, table: string, trigger: string): Promise<{ exists: boolean }>;
   stop(): void;
+}
+
+/** Own only this journey's database; template1 may already contain extensions from earlier runs. */
+export async function createConnectionsDatabase(): Promise<{
+  name: string;
+  dispose(): Promise<void>;
+}> {
+  const name = `pgwb_connections_${randomUUID().replaceAll("-", "")}`;
+  await withDemoClient((client) => client.query(`CREATE DATABASE "${name}" TEMPLATE template0`));
+  return {
+    name,
+    async dispose() {
+      await withDemoClient((client) => client.query(`DROP DATABASE "${name}" WITH (FORCE)`));
+    },
+  };
 }
 
 export function startDemoDatabase(): DemoDatabase {

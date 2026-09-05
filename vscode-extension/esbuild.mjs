@@ -70,6 +70,12 @@ const dapConnectionConfig = {
   metafile: true,
 };
 
+const mcpConfig = {
+  ...dapConnectionConfig,
+  entryPoints: ["../packages/mcp/src/managed.ts"],
+  outfile: "dist/mcp-server.js",
+};
+
 /** @type {import('esbuild').BuildOptions} */
 const sqlAuthoringConnectionConfig = {
   entryPoints: ["../packages/sql/src/languageServer/server.ts"],
@@ -254,6 +260,7 @@ async function main() {
     cleanDist();
     const extCtx = await esbuild.context(extensionConfig);
     const dapCtx = await esbuild.context(dapConnectionConfig);
+    const mcpCtx = await esbuild.context(mcpConfig);
     const sqlAuthoringCtx = await esbuild.context(sqlAuthoringConnectionConfig);
     const graphCtx = await esbuild.context(graphWebviewConfig);
     const notebookRendererCtx = await esbuild.context(sqlNotebookRendererConfig);
@@ -264,6 +271,7 @@ async function main() {
     await Promise.all([
       extCtx.watch(),
       dapCtx.watch(),
+      mcpCtx.watch(),
       sqlAuthoringCtx.watch(),
       graphCtx.watch(),
       notebookRendererCtx.watch(),
@@ -278,6 +286,7 @@ async function main() {
     const results = await Promise.all([
       esbuild.build(extensionConfig),
       esbuild.build(dapConnectionConfig),
+      esbuild.build(mcpConfig),
       esbuild.build(sqlAuthoringConnectionConfig),
       esbuild.build(graphWebviewConfig),
       esbuild.build(sqlNotebookRendererConfig),

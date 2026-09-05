@@ -57,15 +57,15 @@ import {
 
 export class ConnectionItem extends vscode.TreeItem {
   readonly kind = "connection" as const;
+  // Always collapsible: a disconnected Connection keeps a closed chevron so
+  // sibling rows stay aligned and its branch offers the connect hint.
+  // VS Code persists expansion and selection against the historical tree identity.
   constructor(
     public readonly connection: ConnectionConfig,
     public readonly connected: boolean,
     public readonly debugCapability: DebugCapabilitySnapshot,
   ) {
-    // Always collapsible: a disconnected Connection keeps a closed chevron so
-    // sibling rows stay aligned and its branch offers the connect hint.
     super(getConnectionName(connection), vscode.TreeItemCollapsibleState.Collapsed);
-    // VS Code persists expansion and selection against this historical tree identity.
     this.id = `postgres-server:${connection.id}`;
     if (!connected) {
       this.iconPath = new vscode.ThemeIcon("debug-disconnect");
@@ -603,9 +603,9 @@ class MessageItem extends vscode.TreeItem {
 }
 
 class ConnectConnectionMessageItem extends MessageItem {
+  // Historical child identity retained with the parent so expanded disconnected rows stay stable.
   constructor(connection: ConnectionConfig) {
     super("Not connected");
-    // Historical child identity retained with the parent so expanded disconnected rows stay stable.
     this.id = `postgres-server-connect:${connection.id}`;
     this.iconPath = new vscode.ThemeIcon("plug");
     this.description = "select to connect";
@@ -669,9 +669,8 @@ class WorkbenchTreeChildren {
     private readonly scope: WorkbenchTreeScope,
   ) {}
 
-  refresh(): void {
-    // Children are resolved from the exact Connection snapshot on every request.
-  }
+  // Children are resolved from the exact Connection snapshot on every request.
+  refresh(): void {}
 
   setScratchpadFilter(filter: string): void {
     this.scratchpadFilter = filter.trim().toLocaleLowerCase();
@@ -947,6 +946,9 @@ export class WorkbenchTreeProvider
     });
   }
 
+  // A root refresh that adds a Connection can still be rendering when its immediate
+  // connect result arrives. An item-only event cannot materialize that new root, so
+  // publish the current root snapshot again instead of leaving the welcome view stale.
   private refreshConnections(change: ConnectionChange): void {
     if (change.rootsChanged) {
       this.refresh(true);
@@ -967,9 +969,6 @@ export class WorkbenchTreeProvider
         );
       })
     ) {
-      // A root refresh that adds a Connection can still be rendering when its immediate
-      // connect result arrives. An item-only event cannot materialize that new root, so
-      // publish the current root snapshot again instead of leaving the welcome view stale.
       this.refresh(true);
       return;
     }
@@ -1273,6 +1272,8 @@ export class WorkbenchTreeProvider
     }
   }
 
+  // Collapsing hides objects but VS Code retains their registrations. Preserve canonical
+  // instances until structural removal or a full reset to avoid duplicate TreeItem ids.
   private forgetVisibleObjects(schema?: string, connection?: ConnectionConfig): void {
     for (const [sourceUri, item] of this.visibleObjects) {
       if (schema && item.object.schema !== schema) continue;
@@ -1283,7 +1284,6 @@ export class WorkbenchTreeProvider
         continue;
       }
       this.visibleObjects.delete(sourceUri);
-      if (item.id) this.visibleItems.delete(item.id);
     }
   }
 

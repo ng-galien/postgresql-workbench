@@ -1,0 +1,13 @@
+fragment = "runtime"
+enabled = true
+
+[aliases]
+workbench_runtime_source = "source ~ '**/dir:packages/dir:runtime/**'"
+workbench_runtime_engine = "target ~ '**/dir:packages/dir:runtime/**' OR target ~ '**/dir:packages/dir:sql/**' OR target ~ '**/dir:packages/dir:catalog/**' OR target ~ '**/dir:packages/dir:coverage/**' OR target ~ '**/dir:packages/dir:dap/**' OR target ~ '**/dir:packages/dir:scratchpad/**'"
+
+[[ts.refs.where]]
+id = "workbench-composition-root-keeps-standalone-runtime-independent"
+severity = "error"
+expr = "$workbench_runtime_source AND $structural_edge AND ($engine_package_target OR $host_local_target) => $workbench_runtime_engine"
+message = "The standalone Workbench runtime composes engine capabilities without importing MCP, an editor, a view, or the extension."
+rationale = "Session ownership and retained execution evidence must remain usable by any host. The MCP transport consumes this runtime; it must never become a runtime dependency."

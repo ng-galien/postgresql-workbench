@@ -1,17 +1,21 @@
-import { expect, test } from "../../fixtures/test";
+import { captureConnectionsFailure, expect, test } from "../../fixtures/test";
 
 /*
  * The whole life of a Connection on the one page a new user meets first: described and tested,
  * created and connected, its live server read from the Overview, the debugger extension installed
- * from there, then renamed and removed — without a single host input box. template1 keeps the
- * identity unique to this journey, and its missing pldbgapi proves the verdict tells connection
- * and debugger apart.
+ * from there, then renamed and removed — without a single host input box. A database created from
+ * template0 keeps pldbgapi absent on every run, including when the demo server is reused locally.
  */
 test.describe("Connections page", () => {
+  test.afterEach(async ({ connectionsPage, vscode }, testInfo) => {
+    await captureConnectionsFailure(connectionsPage, vscode, testInfo);
+  });
+
   test("creates, tests, renames and deletes a Connection on the page", async ({
     connectionsPage,
+    connectionsDatabase,
   }) => {
-    const url = "postgres@localhost:5434/template1";
+    const url = `postgres@localhost:5434/${connectionsDatabase}`;
 
     const frame = await test.step("open the Connections page", () => connectionsPage.open());
 
@@ -28,12 +32,14 @@ test.describe("Connections page", () => {
       await connectionsPage.fill(frame, {
         Host: "localhost",
         Port: "5434",
-        Database: "template1",
+        Database: connectionsDatabase,
         User: "postgres",
         Password: "postgres",
       });
       const report = await connectionsPage.testConnection(frame);
-      await expect(report).toContainText("Connected to localhost:5434/template1 as postgres");
+      await expect(report).toContainText(
+        `Connected to localhost:5434/${connectionsDatabase} as postgres`,
+      );
       await expect(report).toContainText("PL/pgSQL debugger");
     });
 
@@ -47,7 +53,7 @@ test.describe("Connections page", () => {
       await expect(sessions).toContainText("postgresql-workbench", { timeout: 10_000 });
       const databases = frame.getByRole("region", { name: "Databases" });
       await expect(databases).toContainText("demo");
-      await expect(databases).toContainText("template1");
+      await expect(databases).toContainText(connectionsDatabase);
       await expect(databases.getByText("current", { exact: true })).toBeVisible();
     });
 
@@ -55,9 +61,13 @@ test.describe("Connections page", () => {
       const extensions = frame.getByRole("region", { name: "Extensions" });
       await expect(extensions).toContainText("pldbgapi", { timeout: 10_000 });
       await expect(extensions).toContainText("pgtap");
-      const install = extensions.getByRole("button", { name: "Install pldbgapi", exact: true });
-      if ((await install.count()) > 0) await install.click();
-      await expect(extensions.getByText(/installed \d/u).first()).toBeVisible({
+      const debuggerExtension = extensions
+        .getByRole("listitem")
+        .filter({ has: frame.getByText("pldbgapi", { exact: true }) });
+      await debuggerExtension
+        .getByRole("button", { name: "Install pldbgapi", exact: true })
+        .click();
+      await expect(debuggerExtension.getByText(/installed \d/u)).toBeVisible({
         timeout: 20_000,
       });
     });

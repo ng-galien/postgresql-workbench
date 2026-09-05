@@ -1,4 +1,5 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -56,7 +57,14 @@ describe.skipIf(!localArtifactsAvailable)("local Code Moniker runtime contract",
   afterEach(async () => {
     await client?.dispose();
     await owner?.dispose();
-    if (isolatedWorkspace) rmSync(isolatedWorkspace, { recursive: true, force: true });
+    if (isolatedWorkspace) {
+      await rm(isolatedWorkspace, {
+        recursive: true,
+        force: true,
+        maxRetries: 5,
+        retryDelay: 100,
+      });
+    }
   });
 
   it("serializes concurrent stateless MCP syntax reads", async () => {

@@ -13,6 +13,12 @@ synchronization, pgTAP testing, coverage, and PL/pgSQL debugging. Its standalone
 [Debug Adapter Protocol](https://microsoft.github.io/debug-adapter-protocol/)
 server remains usable from other DAP clients such as Neovim and Emacs.
 
+The [standalone MCP server](docs/user/mcp.md) gives agents their own Workbench
+sessions, scratchpads, captured execution evidence, PL/pgSQL debugging, coverage
+and structural observations without VS Code. Build it with `npm run build:mcp`,
+or manage the bundled local server and install project configurations for Codex
+and Claude Code from **Connections → Settings → MCP**.
+
 Read the [PostgreSQL Workbench documentation](https://ng-galien.github.io/postgresql-workbench/)
 for feature guides, including the [Data View guide](https://ng-galien.github.io/postgresql-workbench/docs/data-view.html),
 setup instructions, and the complete command and settings reference.
@@ -21,7 +27,9 @@ setup instructions, and the complete command and settings reference.
 
 ```
 postgresql-workbench/
-├── src/                  # DAP server (TypeScript, stdio)
+├── packages/             # Shared SQL, catalog, rows, coverage and debugger engines
+│   ├── runtime/          # Standalone sessions and retained observations
+│   └── mcp/              # Independent MCP stdio and local HTTP surface
 ├── vscode-extension/     # VS Code extension (first-party client)
 ├── e2e/                  # Integration tests (Docker + PostgreSQL)
 └── demo/                 # Demo container + sample functions to debug

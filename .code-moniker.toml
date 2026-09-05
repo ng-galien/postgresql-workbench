@@ -82,6 +82,8 @@ enable = [
   "editor-dependency-is-limited-to-sql-analysis-and-presentation",
   "webview-dependency-is-limited-to-catalog-debugger-result-presentation-and-editor",
   "workbench-composition-root-stays-independent-of-extension-host",
+  "workbench-composition-root-keeps-standalone-runtime-independent",
+  "workbench-dependency-keeps-mcp-behind-runtime",
   "result-row-update-builder-encapsulation-stays-in-result-engine",
   "data-view-result-protocol-ownership-stays-in-result-engine",
   "result-dependency-does-not-point-to-data-view",
@@ -99,7 +101,7 @@ title = "PostgreSQL Workbench boundaries"
 scope = "."
 intent = "Review ownership and dependency direction before changing a package boundary, the extension's activation, PostgreSQL Connections, the Workbench Index, the Cockpit, Scratchpads, or DDL synchronization."
 summary = """
-One engine, three shells. Eight packages are the engine: packages/sql is the syntax leaf — it reads SQL and
+The shared engine supports editor surfaces and autonomous agents. packages/sql is the syntax leaf — it reads SQL and
 PL/pgSQL and answers editor questions through its language server. packages/catalog says what a
 database contains and keeps the Workbench Index of it. packages/dap debugs PL/pgSQL. packages/rows
 reads and edits result rows. packages/coverage maps executed lines back to source.
@@ -115,6 +117,10 @@ VS Code extension is one shell — activation, commands, the open Connections, t
 controllers. packages/shell is the second: it runs the same engine, the same language server as a
 child process, and the same views in a browser, which is why it is the seed of the Electron
 application rather than a test harness. No package depends on any shell.
+
+packages/runtime owns independent PostgreSQL sessions, Scratchpads and immutable captured observations,
+composing catalog, debugging and coverage capabilities without an editor. packages/mcp is the stdio
+adapter over that runtime. It does not attach to extension-owned sessions or depend on VS Code.
 
 Every language capability — grammar vocabulary, lexical tokens, semantic names, completion — flows
 through the SQL authoring server and its one client. A view that reaches for a host API, or a shell
