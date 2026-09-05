@@ -1,5 +1,30 @@
 # AGENTS.md
 
+## Agent collaboration
+
+- Carry authorized work through implementation, relevant validation, and review.
+  Resolve routine choices from the checkout and conversation; ask only when
+  missing information materially changes the outcome. Continue independent work
+  while awaiting an answer.
+- Keep read-only requests read-only. Raise product or architecture decisions
+  explicitly when they change the agreed scope or contracts.
+- Reuse authorization already given for the same action and scope. Commit,
+  push, merge, and publication remain separate authorization boundaries.
+- Treat mid-task corrections as updates to the ongoing task; preserve completed
+  work and the original objective unless the user replaces it.
+- Use applicable skills for their specific task. Explain any instruction that
+  blocks progress, with its source and the concrete action requiring approval.
+- Delegate bounded, independent work when requested; use an independent
+  read-only reviewer for the delivery gates below. Give reviewers the scope,
+  final diff, and validation evidence; report findings only after they return.
+- Keep updates and final answers concise, in the user's language. State the
+  outcome, evidence, and remaining limitations; repository documentation stays
+  in English.
+
+These collaboration rules apply the
+[GPT-6 Astra guidance](https://developers.openai.com/api/docs/guides/latest-model?model=gpt-6-astra)
+to this repository.
+
 ## Product
 
 PostgreSQL Workbench is the `ng-galien.postgresql-workbench` VS Code extension.
@@ -29,6 +54,8 @@ packages/                  the engine, one package per subject
   dap/                     `@ng-galien/postgresql-dap`, the independently versioned
                            npm DAP server: launch, PostgreSQL backend, and session
   shell/                   browser harness driving the views without VS Code
+  runtime/                 standalone database sessions, scratchpads, and retained observations
+  mcp/                     MCP stdio adapter over the standalone runtime, independent of VS Code
 vscode-extension/          VS Code extension: the host that adapts the engine to VS Code
 e2e/                       PostgreSQL, DAP, coverage, and compatibility tests
 demo/                      deterministic PostgreSQL demo used by showcases
@@ -78,6 +105,9 @@ npm run marketplace:media -- capture-all --theme light
 ```
 
 During feature iterations, run the smallest relevant unit or integration test.
+Choose checks that exercise the affected behavior. Documentation-only changes
+need a diff and content review, not a product test suite. After checks pass,
+repeat or broaden them only for subsequent edits, failures, or unresolved risks.
 Before a release candidate, run the complete local gates, package the VSIX, and
 verify the real VS Code and PostgreSQL paths affected by the release.
 

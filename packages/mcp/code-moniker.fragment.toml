@@ -1,0 +1,13 @@
+fragment = "mcp"
+enabled = true
+
+[aliases]
+workbench_mcp_source = "source ~ '**/dir:packages/dir:mcp/**'"
+workbench_mcp_target = "target ~ '**/dir:packages/dir:mcp/**' OR target ~ '**/dir:packages/dir:runtime/**'"
+
+[[ts.refs.where]]
+id = "workbench-dependency-keeps-mcp-behind-runtime"
+severity = "error"
+expr = "$workbench_mcp_source AND $structural_edge AND ($engine_package_target OR $host_local_target) => $workbench_mcp_target"
+message = "MCP adapts the standalone Workbench runtime; it never imports the extension or another engine directly."
+rationale = "Transport handlers validate inputs and project outputs. PostgreSQL session lifecycle and product operations belong to the runtime so an agent does not need VS Code or a second implementation of the product."

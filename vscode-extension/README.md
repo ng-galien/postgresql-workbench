@@ -16,6 +16,10 @@ Built for your **development database**: local PostgreSQL, Docker, or self-hoste
 Open the [documentation site](https://ng-galien.github.io/postgresql-workbench/)
 for focused guides to the Cockpit, SQL scratchpads, pgTAP coverage, the debugger,
 the standalone DAP server, and the complete command and settings reference.
+Agents can also use the repository's independent
+[MCP server](https://ng-galien.github.io/postgresql-workbench/docs/mcp.html)
+for their own Workbench sessions and retained observations. It runs from a
+source checkout and is not part of the VSIX or coupled to a running editor.
 The complete Schemas-to-editor drag-and-drop contract is maintained in the
 [SQL authoring guide](https://ng-galien.github.io/postgresql-workbench/docs/sql-authoring.html#compose-sql-by-drag-and-drop).
 

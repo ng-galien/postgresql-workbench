@@ -14,6 +14,8 @@ import {
 
 export interface BoundedQueryResultOptions {
   id: string;
+  /** Use PostgreSQL's unnamed extended-query Parse to reject multiple statements before execution. */
+  singleStatement?: boolean;
   label?: string;
   source?: DebugResultSource;
   timestamp?: string;
@@ -231,10 +233,11 @@ export function runBoundedQuery(
   let seenRows = 0;
   let fields: FieldDef[] = [];
 
-  const queryConfig: QueryArrayConfig<unknown[]> = {
+  const queryConfig: QueryArrayConfig<unknown[]> & { queryMode?: "extended" } = {
     text,
     values,
     rowMode: "array",
+    ...(options.singleStatement ? { queryMode: "extended" as const } : {}),
   };
   const query = new Query(queryConfig) as unknown as Query<Record<string, unknown>>;
 
