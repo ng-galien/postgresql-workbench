@@ -1,6 +1,6 @@
 {
   "name": "@ng-galien/postgresql-coverage",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Standalone PL/pgSQL statement and branch coverage with pgTAP, for Node.js and CI",
   "license": "MIT",
   "author": "Alexandre Boyer",

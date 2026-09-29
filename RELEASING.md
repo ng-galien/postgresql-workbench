@@ -402,18 +402,24 @@ should require explicit approval. The workflows use npm 11.5.1 or newer on
 Node.js 24 and publish public scoped packages with provenance.
 
 The first publication of each package must establish its npm entry before its
-trusted publisher can be configured. Create a short-lived granular npm token
-allowed to publish the three `@ng-galien` packages, store it as
-`NPM_BOOTSTRAP_TOKEN` in the protected GitHub `npm` environment, and approve each
-first `*-v0.1.0` run. The token supplies authentication only; the workflow still
-publishes the validated GitHub Actions tarball with provenance.
+trusted publisher can be configured. Publish the real validated tarball manually
+with an authenticated maintainer session and npm's security-key verification.
+Do not create placeholder packages or grant a scope-wide bootstrap token access
+to unrelated packages. This initial manual version does not have GitHub provenance.
 
-After all first publications:
+After the initial publications:
 
-1. configure the three trusted publishers above;
-2. revoke the granular npm token;
-3. delete `NPM_BOOTSTRAP_TOKEN` from the GitHub environment;
-4. rerun a failed publish job if it stopped after npm publication.
+1. configure the three exact trusted publishers above, allowing `npm publish`;
+2. increment each package version and commit the release on `main`;
+3. push the corresponding package tags and approve the protected environment;
+4. verify that the new versions published by GitHub Actions include npm provenance.
+
+The `0.1.0` packages establish the registry entries; `0.1.1` is the first release
+intended for GitHub trusted publishing. The workflows use only OIDC, with no npm
+token stored in GitHub. To configure an existing package from the authenticated
+CLI, use `npm trust github <package> --repo ng-galien/postgresql-workbench
+--file release-<package>.yml --env npm --allow-publish` (substitute the exact
+package name and workflow filename from the table).
 
 Every publish step compares registry integrity with the validated tarball before
 doing anything. An exact existing publication is accepted; a mismatch fails the

@@ -125,13 +125,6 @@ jobs:
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
         with:
           subject-path: artifacts/ng-galien-postgresql-coverage-*.tgz
-      - name: Configure first-publication npm authentication
-        env:
-          BOOTSTRAP_TOKEN: ${{ secrets.NPM_BOOTSTRAP_TOKEN }}
-        run: |
-          if test -n "${BOOTSTRAP_TOKEN}"; then
-            echo "NODE_AUTH_TOKEN=${BOOTSTRAP_TOKEN}" >> "${GITHUB_ENV}"
-          fi
       - name: Publish validated package to npm
         run: |
           tarball=(artifacts/ng-galien-postgresql-coverage-*.tgz)
