@@ -12,6 +12,7 @@ import {
   postgresDatabaseDocumentGlob,
   readPostgresCatalog,
 } from "../packages/catalog/src/postgresCatalog.js";
+import { comparePostgresStructures } from "../packages/catalog/src/postgresSchemaComparison.js";
 
 const PG_CONFIG = {
   host: "127.0.0.1",
@@ -66,6 +67,7 @@ describe.skipIf(!LOCAL_CODE_MONIKER_AVAILABLE)(
       await postgres.query(`
         DROP SCHEMA IF EXISTS workbench_u1 CASCADE;
         CREATE SCHEMA workbench_u1;
+        CREATE TYPE workbench_u1.account_state AS ENUM ('active', 'closed');
         CREATE TABLE workbench_u1.owner (
           id bigint PRIMARY KEY,
           display_name text NOT NULL
@@ -73,8 +75,13 @@ describe.skipIf(!LOCAL_CODE_MONIKER_AVAILABLE)(
         CREATE TABLE workbench_u1.account (
           id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
           owner_id bigint NOT NULL REFERENCES workbench_u1.owner(id),
-          active boolean NOT NULL DEFAULT true
+          active boolean NOT NULL DEFAULT true,
+          state workbench_u1.account_state NOT NULL DEFAULT 'active',
+          CONSTRAINT account_owner_positive CHECK (owner_id > 0)
         );
+        COMMENT ON COLUMN workbench_u1.account.owner_id IS
+          '@hall renamed-from member_id';
+        CREATE INDEX account_state_idx ON workbench_u1.account (state) WHERE active;
         CREATE TABLE workbench_u1.empty_marker ();
         CREATE VIEW workbench_u1.active_account AS
         SELECT account.id, account.owner_id
@@ -122,6 +129,26 @@ describe.skipIf(!LOCAL_CODE_MONIKER_AVAILABLE)(
       }
     });
 
+    it("preserves the caller search path inside a read-only transaction", async () => {
+      await postgres.query("BEGIN READ ONLY");
+      try {
+        await postgres.query("SET LOCAL search_path = workbench_u1, public");
+        const before = await postgres.query("SHOW search_path");
+        const snapshot = await readPostgresCatalog(catalogClient(postgres), {
+          connectionId: "transaction",
+          database: WORKBENCH_DATABASE,
+        });
+        expect((await postgres.query("SHOW search_path")).rows).toEqual(before.rows);
+        const index = snapshot.sourceSet.documents.find(
+          (document) => document.postgres?.name === "account_state_idx",
+        );
+        expect(index?.content).toContain("ON workbench_u1.account");
+        await postgres.query("SELECT * FROM account LIMIT 0");
+      } finally {
+        await postgres.query("ROLLBACK");
+      }
+    });
+
     it("indexes relational definitions and exposes a traversable view-to-table relation", async () => {
       const snapshot = await readPostgresCatalog(catalogClient(postgres), {
         connectionId: "e2e-local",
@@ -129,6 +156,61 @@ describe.skipIf(!LOCAL_CODE_MONIKER_AVAILABLE)(
       });
       expect(snapshot.sourceSet.documents.length).toBeGreaterThanOrEqual(8);
       expect(snapshot.metrics.introspectionMs).toBeLessThan(10_000);
+      expect(
+        snapshot.sourceSet.documents.find(
+          (document) =>
+            document.postgres?.documentKind === "type" &&
+            document.postgres.name === "account_state",
+        )?.content,
+      ).toContain("AS ENUM ('active', 'closed')");
+      expect(
+        snapshot.sourceSet.documents.find(
+          (document) =>
+            document.postgres?.documentKind === "index" &&
+            document.postgres.name === "account_state_idx",
+        )?.content,
+      ).toContain("WHERE active");
+      const accountDocument = snapshot.sourceSet.documents.find(
+        (document) =>
+          document.postgres?.documentKind === "table" && document.postgres.name === "account",
+      );
+      expect(accountDocument?.content).toContain("CHECK (owner_id > 0)");
+      expect(accountDocument?.content).toContain(
+        `COMMENT ON COLUMN "workbench_u1"."account"."owner_id" IS '@hall renamed-from member_id';`,
+      );
+
+      const repartitioned = snapshot.sourceSet.documents.map((document, index) => ({
+        ...document,
+        uri: `memory://repartitioned/${String(snapshot.sourceSet.documents.length - index).padStart(3, "0")}.sql`,
+      }));
+      const isomorphic = await comparePostgresStructures(
+        codeMoniker().client,
+        snapshot.sourceSet.documents,
+        repartitioned,
+        "catalog..repartitioned-catalog",
+      );
+      expect(isomorphic.isomorphic).toBe(true);
+      expect(isomorphic.onlyInBase).toEqual([]);
+      expect(isomorphic.onlyInHead).toEqual([]);
+      expect(isomorphic.changed).toEqual([]);
+
+      const changedView = repartitioned.map((document) =>
+        document.postgres?.documentKind === "view" && document.postgres.name === "active_account"
+          ? { ...document, content: document.content.replace("WHERE active", "WHERE NOT active") }
+          : document,
+      );
+      const different = await comparePostgresStructures(
+        codeMoniker().client,
+        snapshot.sourceSet.documents,
+        changedView,
+        "catalog..changed-catalog",
+      );
+      expect(different.isomorphic).toBe(false);
+      expect(
+        different.changed.some(
+          (change) => change.kind === "view" && change.identity.includes("active_account"),
+        ),
+      ).toBe(true);
 
       expect(codeMoniker().metadata.packageVersion).toMatch(/^\d+\.\d+\.\d+$/);
       expect(codeMoniker().metadata.source).toBe(

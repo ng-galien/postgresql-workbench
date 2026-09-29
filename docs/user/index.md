@@ -38,7 +38,7 @@ and password are all `postgres`.
 - [Run, debug, and deploy SQL](execution-debugging-and-deployment.md) — understand
   the action matrix for Scratchpads, free SQL files, and managed PostgreSQL sources.
 - [pgTAP and coverage](testing-coverage.md) — discover tests, calculate coverage,
-  and understand the limits.
+  understand the limits, and use the standalone library/CLI prepared for distribution.
 - [PL/pgSQL debugger](debugger.md) — prepare PostgreSQL, launch sessions, step,
   and inspect values.
 - [Standalone DAP server](dap.md) — integrate the debugger engine with another

@@ -291,7 +291,7 @@ describe("pgTAP output", () => {
     expect(queries[0]?.sql).toMatch(/WITH ORDINALITY/);
     expect(queries[0]?.sql).toMatch(/ELSE ''/);
     expect(queries[0]?.sql).toMatch(/LIMIT \(\$1::int \+ 1\)/);
-    expect(queries[0]?.values).toEqual([2, 2_048]);
+    expect(queries[0]?.values).toEqual([2, 16_384]);
     expect(report).toMatchObject({ truncated: true, valid: false });
     expect(report.errors.join("\n")).toMatch(/configured limit/);
 
@@ -309,6 +309,6 @@ describe("pgTAP output", () => {
       2,
       4,
     );
-    expect(queries[1]?.values).toEqual([1, 1]);
+    expect(queries[1]?.values).toEqual([1, 4]);
   });
 });

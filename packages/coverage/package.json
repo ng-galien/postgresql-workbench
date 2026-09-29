@@ -1,0 +1,55 @@
+{
+  "name": "@ng-galien/postgresql-coverage",
+  "version": "0.1.0",
+  "description": "Standalone PL/pgSQL statement and branch coverage with pgTAP, for Node.js and CI",
+  "license": "MIT",
+  "author": "Alexandre Boyer",
+  "homepage": "https://github.com/ng-galien/postgresql-workbench/tree/main/packages/coverage#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ng-galien/postgresql-workbench",
+    "directory": "packages/coverage"
+  },
+  "bugs": {
+    "url": "https://github.com/ng-galien/postgresql-workbench/issues"
+  },
+  "keywords": [
+    "postgresql",
+    "postgres",
+    "plpgsql",
+    "coverage",
+    "pgtap"
+  ],
+  "type": "commonjs",
+  "main": "./dist/index.cjs",
+  "types": "./dist/types/coverage/src/standalone.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/types/coverage/src/standalone.d.ts",
+      "default": "./dist/index.cjs"
+    }
+  },
+  "bin": {
+    "postgresql-coverage": "./dist/cli.cjs"
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "scripts": {
+    "prepack": "node ../../scripts/coverage/build-package.mjs"
+  },
+  "dependencies": {
+    "@code-moniker/client": "0.12.0",
+    "@types/pg": "^8.11.10",
+    "pg": "^8.20.0"
+  }
+}

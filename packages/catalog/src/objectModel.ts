@@ -23,7 +23,14 @@ export interface WorkbenchRoutineParam {
   type: string;
 }
 
-export type WorkbenchObjectKind = "table" | "view" | "function" | "procedure" | "trigger";
+export type WorkbenchObjectKind =
+  | "type"
+  | "table"
+  | "index"
+  | "view"
+  | "function"
+  | "procedure"
+  | "trigger";
 
 export interface WorkbenchObjectModel {
   symbolUri: string;
@@ -57,16 +64,18 @@ export interface WorkbenchSchemaModel {
 
 interface DatabaseDocumentIdentity extends WorkbenchDatabaseIdentity {
   schema: string;
-  documentKind: "schema" | "table" | "view" | "routine" | "trigger";
+  documentKind: "schema" | "type" | "table" | "index" | "view" | "routine" | "trigger";
   oid: number;
 }
 
 const OBJECT_ORDER: Record<WorkbenchObjectKind, number> = {
-  table: 0,
-  view: 1,
-  function: 2,
-  procedure: 2,
-  trigger: 3,
+  type: 0,
+  table: 1,
+  index: 2,
+  view: 3,
+  function: 4,
+  procedure: 4,
+  trigger: 5,
 };
 
 export function buildWorkbenchSchemas(
@@ -247,7 +256,11 @@ function topLevelObjectKind(
   }
   if (
     documentKind !== "schema" &&
-    (symbolKind === "table" || symbolKind === "view" || symbolKind === "trigger") &&
+    (symbolKind === "type" ||
+      symbolKind === "table" ||
+      symbolKind === "index" ||
+      symbolKind === "view" ||
+      symbolKind === "trigger") &&
     symbolKind === documentKind
   ) {
     return symbolKind;

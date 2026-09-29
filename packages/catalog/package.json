@@ -1,0 +1,46 @@
+{
+  "name": "@ng-galien/postgresql-catalog",
+  "version": "0.1.0",
+  "description": "Canonical PostgreSQL catalog projection and Code Moniker structural comparison",
+  "license": "MIT",
+  "author": "Alexandre Boyer",
+  "homepage": "https://github.com/ng-galien/postgresql-workbench/tree/main/packages/catalog#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ng-galien/postgresql-workbench",
+    "directory": "packages/catalog"
+  },
+  "bugs": {
+    "url": "https://github.com/ng-galien/postgresql-workbench/issues"
+  },
+  "keywords": [
+    "postgresql",
+    "postgres",
+    "schema",
+    "catalog",
+    "database-migration"
+  ],
+  "main": "./dist/index.mjs",
+  "types": "./dist/types/catalog/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/types/catalog/src/index.d.ts",
+      "default": "./dist/index.mjs"
+    }
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "scripts": {
+    "prepack": "node ../../scripts/catalog/build-package.mjs"
+  }
+}

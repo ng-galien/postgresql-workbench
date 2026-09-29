@@ -50,7 +50,8 @@ packages/                  the engine, one package per subject
                            depending only on SQL authoring and presentation contracts
   views/                   the React views every surface renders: result grid,
                            Data View, Cockpit, debug results
-  coverage/                pgTAP coverage analysis and instrumentation
+  coverage/                pgTAP coverage analysis and instrumentation; independently versioned
+                           Node.js library and schema/pattern CLI
   dap/                     `@ng-galien/postgresql-dap`, the independently versioned
                            npm DAP server: launch, PostgreSQL backend, and session
   shell/                   browser harness driving the views without VS Code

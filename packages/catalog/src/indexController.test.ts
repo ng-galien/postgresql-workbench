@@ -675,7 +675,7 @@ describe("WorkbenchIndexController connection state", () => {
           },
         ],
       };
-      const catalog: PostgresCatalogSnapshot = {
+      const catalog: Omit<PostgresCatalogSnapshot, "catalog"> = {
         sourceSet: candidateSourceSet,
         metrics: { introspectionMs: 1, materializationMs: 1, documentCount: 1 },
         origins: new Map(),
@@ -719,7 +719,7 @@ describe("WorkbenchIndexController connection state", () => {
         }>;
         probeGraph: () => Promise<number>;
         publishAndReadCatalog: (
-          catalog: PostgresCatalogSnapshot,
+          catalog: Omit<PostgresCatalogSnapshot, "catalog">,
           connectionId: string,
           database: string,
           started: number,
@@ -788,7 +788,7 @@ describe("WorkbenchIndexController Code Moniker readiness", () => {
       ensureSession: () => Promise<LocalCodeMonikerSession>;
       assertCapabilities: () => void;
       publishAndReadCatalog: (
-        catalog: PostgresCatalogSnapshot,
+        catalog: Omit<PostgresCatalogSnapshot, "catalog">,
         connectionId: string,
         database: string,
         started: number,

@@ -94,6 +94,18 @@ jobs:
       - name: Run standalone MCP acceptance journeys
         run: npm run test:mcp
         timeout-minutes: 3
+      - name: Run standalone catalog package smoke
+        run: npm run test:catalog:package
+        timeout-minutes: 3
+      - name: Run standalone coverage package and schema journeys
+        run: npm run test:coverage:package -- --e2e
+        timeout-minutes: 5
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: "5433"
+          PGDATABASE: testdb
+          PGUSER: postgres
+          PGPASSWORD: postgres
       - name: Stop PostgreSQL integration fixture
         if: always()
         run: npm run test:e2e:down

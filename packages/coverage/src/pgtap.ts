@@ -198,27 +198,35 @@ export async function executePgTapTest(
   const boundedLines = Math.max(1, Math.floor(maxOutputLines));
   const boundedBytes = Math.max(4, Math.floor(maxOutputBytes));
   const rowLimit = Math.min(boundedLines, Math.max(1, Math.floor(boundedBytes / 4)));
-  const maxCharactersPerLine = Math.max(1, Math.floor(boundedBytes / rowLimit / 4));
   const result = await client.query<{
     tap_line: string;
     line_truncated: boolean;
     row_overflow: boolean;
   }>(
-    `SELECT CASE
-              WHEN output.ordinality <= $1::int
-              THEN pg_catalog.left(output.tap_line, $2::int)
+    `WITH bounded AS (
+       SELECT pg_catalog.left(output.tap_line, $2::int + 1) AS tap_line, output.ordinality
+       FROM ${quoteSqlIdentifier(test.schema)}.${quoteSqlIdentifier(test.name)}()
+            WITH ORDINALITY AS output(tap_line, ordinality)
+       LIMIT ($1::int + 1)
+     ), measured AS (
+       SELECT tap_line, ordinality,
+              sum(pg_catalog.octet_length(tap_line)) OVER (ORDER BY ordinality) AS output_bytes
+       FROM bounded
+     )
+     SELECT CASE
+              WHEN output.ordinality <= $1::int AND output.output_bytes <= $2::int
+              THEN output.tap_line
               ELSE ''
             END AS tap_line,
             CASE
               WHEN output.ordinality <= $1::int
-              THEN pg_catalog.char_length(output.tap_line) > $2::int
+              THEN output.output_bytes > $2::int
               ELSE false
             END AS line_truncated,
             output.ordinality > $1::int AS row_overflow
-       FROM ${quoteSqlIdentifier(test.schema)}.${quoteSqlIdentifier(test.name)}()
-            WITH ORDINALITY AS output(tap_line, ordinality)
-      LIMIT ($1::int + 1)`,
-    [rowLimit, maxCharactersPerLine],
+       FROM measured AS output
+       ORDER BY output.ordinality`,
+    [rowLimit, boundedBytes],
   );
   const truncated =
     result.rows.some(({ row_overflow }) => row_overflow) ||

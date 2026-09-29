@@ -28,6 +28,14 @@ class FakeCatalogClient implements CatalogQueryClient {
       rows: [
         {
           schemas: [{ oid: 10, schema_name: "app" }],
+          types: [
+            {
+              oid: 11,
+              schema_name: "app",
+              object_name: "account_state",
+              definition: `CREATE TYPE "app"."account_state" AS ENUM ('active', 'closed')`,
+            },
+          ],
           tables: [
             {
               table_oid: 20,
@@ -52,6 +60,7 @@ class FakeCatalogClient implements CatalogQueryClient {
               default_expr: null,
               identity_kind: "",
               generated_kind: "",
+              column_comment: null,
             },
             {
               table_oid: 20,
@@ -64,6 +73,7 @@ class FakeCatalogClient implements CatalogQueryClient {
               default_expr: null,
               identity_kind: "",
               generated_kind: "",
+              column_comment: "@hall renamed-from member_id",
             },
           ],
           constraints: [
@@ -84,6 +94,14 @@ class FakeCatalogClient implements CatalogQueryClient {
               source_columns_nullable: [true],
               referenced_columns: ["id"],
               validated: true,
+            },
+          ],
+          indexes: [
+            {
+              oid: 25,
+              schema_name: "app",
+              object_name: "account_owner_idx",
+              definition: "CREATE INDEX account_owner_idx ON app.account USING btree (owner_id)",
             },
           ],
           views: [
@@ -156,18 +174,27 @@ describe("readPostgresCatalog", () => {
     expect(client.calls).toHaveLength(1);
     expect(client.calls[0]).toContain("workbench:catalog");
     expect(client.calls[0]).toContain("workbench:tables");
+    expect(client.calls[0]).toContain("set_config('search_path', 'pg_catalog', true)");
     expect(client.calls[0]).toContain("constraint_row.convalidated AS validated");
+    expect(client.calls[0]).toContain("pg_get_triggerdef(trigger_row.oid, true)");
     expect(first.sourceSet.srcset).toMatch(/^postgres-[a-f0-9]{20}$/);
     expect(first.sourceSet.revision).toMatch(/^[a-f0-9]{64}$/);
     expect(first.sourceSet.revision).toBe(second.sourceSet.revision);
     expect(first.sourceSet.documents[0]?.uri).toMatch(/^postgresql:\/\/local-dev\/sample\//);
-    expect(first.sourceSet.documents).toHaveLength(7);
-    expect(first.metrics.documentCount).toBe(7);
+    expect(first.sourceSet.documents).toHaveLength(9);
+    expect(first.metrics.documentCount).toBe(9);
+
+    const type = first.sourceSet.documents.find((document) => document.postgres?.oid === 11);
+    expect(type?.uri).toMatch(/\/type\/account_state\.sql$/);
+    expect(type?.content).toBe(`CREATE TYPE "app"."account_state" AS ENUM ('active', 'closed');\n`);
 
     const table = first.sourceSet.documents.find((document) => document.postgres?.oid === 20);
     expect(table?.uri).toMatch(/\/table\/account\.sql$/);
     expect(table?.content).toContain('CREATE TABLE "app"."account"');
     expect(table?.content).toContain('"id" bigint NOT NULL');
+    expect(table?.content).toContain(
+      `COMMENT ON COLUMN "app"."account"."owner_id" IS '@hall renamed-from member_id';`,
+    );
     expect(table?.content).toContain(
       'CONSTRAINT "account_owner_fkey" FOREIGN KEY (owner_id) REFERENCES app.owner(id)',
     );
@@ -190,6 +217,12 @@ describe("readPostgresCatalog", () => {
         validated: true,
       },
     ]);
+
+    const index = first.sourceSet.documents.find((document) => document.postgres?.oid === 25);
+    expect(index?.uri).toMatch(/\/index\/account_owner_idx\.sql$/);
+    expect(index?.content).toBe(
+      "CREATE INDEX account_owner_idx ON app.account USING btree (owner_id);\n",
+    );
 
     const routine = first.sourceSet.documents.find((document) => document.postgres?.oid === 40);
     expect(routine?.uri).toMatch(/\/routine\/find_account\(p_id%20bigint\)\.sql$/);
@@ -338,6 +371,7 @@ describe("readPostgresCatalog", () => {
             rows: [
               {
                 schemas: [],
+                types: [],
                 tables: [{ table_oid: 20, schema_name: "app", table_name: "account" }],
                 columns: [
                   {
@@ -351,6 +385,7 @@ describe("readPostgresCatalog", () => {
                     default_expr: null,
                     identity_kind: "",
                     generated_kind: "",
+                    column_comment: null,
                   },
                   {
                     table_oid: 20,
@@ -363,6 +398,7 @@ describe("readPostgresCatalog", () => {
                     default_expr: null,
                     identity_kind: "",
                     generated_kind: "",
+                    column_comment: null,
                   },
                 ],
                 constraints: [
@@ -400,6 +436,7 @@ describe("readPostgresCatalog", () => {
                     validated: true,
                   },
                 ],
+                indexes: [],
                 views: [
                   {
                     oid: 30,

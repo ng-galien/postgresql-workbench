@@ -328,67 +328,94 @@ The `extension-v*` tag also triggers the GitHub Pages workflow. Confirm that
 the Pages deployment for the release commit succeeds before considering the
 release complete.
 
-## Publish the standalone DAP package
+## Publish the standalone npm packages
 
-The DAP has its own package version and release tag. It is not coupled to the
-VS Code extension version.
+Three independently versioned packages can be released without publishing the
+VS Code extension:
 
-1. Update `packages/dap/package.json` and validate the package:
+| Package | Manifest | Tag | Workflow |
+| --- | --- | --- | --- |
+| `@ng-galien/postgresql-catalog` | `packages/catalog/package.json` | `catalog-v<version>` | `release-catalog.yml` |
+| `@ng-galien/postgresql-coverage` | `packages/coverage/package.json` | `coverage-v<version>` | `release-coverage.yml` |
+| `@ng-galien/postgresql-dap` | `packages/dap/package.json` | `dap-v<version>` | `release-dap.yml` |
 
-   ```bash
-   npm ci
-   npm run build:dap
-   npm run test:dap
-   npm run test:dap:package
-   npm run test:e2e:up
-   npm run test:e2e:dap
-   npm run test:dap:package -- --e2e
-   npm run test:e2e:down
-   npm run test:e2e:legacy
-   ```
+Each workflow requires the tag commit to be contained in `main`, checks that the
+tag exactly matches its manifest version, rebuilds and tests the distribution,
+packs one minimal tarball, verifies its checksum, attests it, publishes that exact
+artifact to npm, and attaches it to a dedicated GitHub Release. Package tags do
+not publish the extension or trigger a Marketplace release.
 
-2. Commit and push the release preparation on `main`.
-3. Create an annotated tag matching the package version:
+Before creating a release commit, update only the package being released and run
+its local gates:
 
-   ```bash
-   git tag -a dap-v0.1.0 -m "PostgreSQL DAP 0.1.0"
-   git push origin main dap-v0.1.0
-   ```
+```bash
+# Catalog: ESM library, TypeScript declarations, isolated install and npm ci
+npm run test:catalog:package
 
-The DAP workflow rebuilds and tests the package, packs a minimal npm tarball,
-verifies its checksum, attests its provenance, publishes that exact tarball to
-npm, and attaches it to a dedicated GitHub Release.
+# Coverage: CJS/ESM library, CLI and TypeScript declarations
+npm run test:coverage:package
+npm run test:e2e:up
+PGHOST=127.0.0.1 PGPORT=5433 PGDATABASE=testdb \
+  PGUSER=postgres PGPASSWORD=postgres \
+  npm run test:coverage:package -- --e2e
+npm run test:e2e:down
+
+# DAP: library/runtime package plus real PostgreSQL and compatibility paths
+npm run build:dap
+npm run test:dap
+npm run test:dap:package
+npm run test:e2e:up
+npm run test:e2e:dap
+npm run test:dap:package -- --e2e
+npm run test:e2e:down
+npm run test:e2e:legacy
+```
+
+Commit and push the release preparation on `main`. Only with explicit publication
+authorization, create and push the annotated tag for that package, for example:
+
+```bash
+git tag -a catalog-v0.1.0 -m "PostgreSQL Catalog 0.1.0"
+git push origin main catalog-v0.1.0
+
+git tag -a coverage-v0.1.0 -m "PostgreSQL Coverage 0.1.0"
+git push origin main coverage-v0.1.0
+
+git tag -a dap-v0.1.0 -m "PostgreSQL DAP 0.1.0"
+git push origin main dap-v0.1.0
+```
 
 ### npm trusted publishing
 
-The publish job uses GitHub OIDC rather than a long-lived npm token. Configure
-the npm trusted publisher for:
+All publish jobs use the protected GitHub environment named `npm` and request
+`id-token: write`. After the packages exist on npm, configure one trusted
+publisher per package with these exact values:
 
-- package: `@ng-galien/postgresql-dap`;
-- repository: `ng-galien/postgresql-workbench`;
-- workflow: `release-dap.yml`;
-- GitHub environment: `npm`.
+| npm package | GitHub organization | Repository | Workflow filename | Environment |
+| --- | --- | --- | --- | --- |
+| `@ng-galien/postgresql-catalog` | `ng-galien` | `postgresql-workbench` | `release-catalog.yml` | `npm` |
+| `@ng-galien/postgresql-coverage` | `ng-galien` | `postgresql-workbench` | `release-coverage.yml` | `npm` |
+| `@ng-galien/postgresql-dap` | `ng-galien` | `postgresql-workbench` | `release-dap.yml` | `npm` |
 
-The GitHub `npm` environment must accept only `dap-v*` tags and should require
-explicit approval. The workflow uses npm 11.5.1 or newer on Node.js 24 and
-requests `id-token: write`, as required by npm trusted publishing.
+The GitHub `npm` environment must accept only the three package tag families and
+should require explicit approval. The workflows use npm 11.5.1 or newer on
+Node.js 24 and publish public scoped packages with provenance.
 
-The first publication must establish the scoped package before its trusted
-publisher can be configured. Create a short-lived granular npm token allowed to
-publish `@ng-galien/postgresql-dap`, store it as `NPM_BOOTSTRAP_TOKEN` in the
-protected GitHub `npm` environment, and approve the first `dap-v0.1.0` run. The
-workflow still publishes the validated tarball from GitHub Actions with
-`--provenance`; the token supplies authentication only.
+The first publication of each package must establish its npm entry before its
+trusted publisher can be configured. Create a short-lived granular npm token
+allowed to publish the three `@ng-galien` packages, store it as
+`NPM_BOOTSTRAP_TOKEN` in the protected GitHub `npm` environment, and approve each
+first `*-v0.1.0` run. The token supplies authentication only; the workflow still
+publishes the validated GitHub Actions tarball with provenance.
 
-Immediately after the first publication:
+After all first publications:
 
-1. configure the trusted publisher above;
+1. configure the three trusted publishers above;
 2. revoke the granular npm token;
 3. delete `NPM_BOOTSTRAP_TOKEN` from the GitHub environment;
-4. rerun the failed publish job if the first run stopped after npm publication.
+4. rerun a failed publish job if it stopped after npm publication.
 
-The publish step compares registry integrity with the validated tarball before
+Every publish step compares registry integrity with the validated tarball before
 doing anything. An exact existing publication is accepted; a mismatch fails the
-release. Subsequent `dap-v*` releases authenticate only through OIDC. GitHub
-Release creation is idempotent, so rerunning the publish job replaces its two
-validated assets instead of failing on an existing release.
+release. GitHub Release creation is also idempotent, so a rerun replaces the
+validated tarball and checksum instead of creating a second release.

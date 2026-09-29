@@ -16,6 +16,10 @@
   },
   "main": "dist/dap/src/main.js",
   "scripts": {
+    "build:catalog:package": "node scripts/catalog/build-package.mjs",
+    "test:catalog:package": "node scripts/catalog/test-package.mjs",
+    "build:coverage:package": "node scripts/coverage/build-package.mjs",
+    "test:coverage:package": "node scripts/coverage/test-package.mjs",
     "build:mcp": "node scripts/mcp/build.mjs",
     "mcp": "node dist/mcp/server.cjs",
     "test:mcp": "node scripts/mcp/test.mjs",
@@ -55,7 +59,7 @@
     "test:shell": "playwright test --config packages/shell/tests/playwright.config.ts"
   },
   "dependencies": {
-    "@code-moniker/client": "0.10.1",
+    "@code-moniker/client": "0.12.0",
     "@codingame/monaco-vscode-editor-api": "25.1.2",
     "@codingame/monaco-vscode-files-service-override": "25.1.2",
     "@modelcontextprotocol/sdk": "1.30.0",

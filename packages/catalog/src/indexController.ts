@@ -182,7 +182,7 @@ export interface WorkbenchSourceDescriptor {
   connectionId: string;
   database: string;
   schema: string;
-  documentKind: "schema" | "table" | "view" | "routine" | "trigger";
+  documentKind: "schema" | "type" | "table" | "index" | "view" | "routine" | "trigger";
   oid: number;
   name: string;
   signature: string;
@@ -209,6 +209,8 @@ interface IndexedPostgresRegistry {
   viewDependencies: PostgresViewDependency[];
   resources: Map<string, IndexedPostgresResource>;
 }
+
+type WorkbenchCatalogSnapshot = Omit<PostgresCatalogSnapshot, "catalog">;
 
 interface ActiveIndexRun {
   cancelled: boolean;
@@ -378,10 +380,9 @@ export class WorkbenchIndexController {
     release();
   }
 
+  /** Cancels only a phase-gated run; automatic refreshes settle before the next scenario. */
   async settleAcceptanceOperations(): Promise<void> {
     this.requireAcceptanceControl();
-    // Only a run held by the phase gate is abandoned; automatic refreshes of
-    // any Connection settle normally so the next scenario finds a fresh index.
     const heldRunId = this.acceptancePhaseGate?.runId;
     this.clearAcceptancePhaseGate();
     if (heldRunId !== undefined) {
@@ -623,7 +624,7 @@ export class WorkbenchIndexController {
         { consistency: "stale_ok", limit: 20 },
       );
       if (
-        !isWorkbenchRelationSnapshotCurrent(
+        !isScopeRelationSnapshotCurrent(
           result.generation,
           snapshot.generation,
           generationPage.data.rows.some((symbol) => symbol.uri === routine.symbolUri),
@@ -819,10 +820,8 @@ export class WorkbenchIndexController {
         },
         { consistency: "stale_ok", limit: 20 },
       );
-      // Currency is judged against this scope's own registry: the daemon
-      // workspace generation also moves whenever another Connection publishes.
       if (
-        !isWorkbenchRelationSnapshotCurrent(
+        !isScopeRelationSnapshotCurrent(
           result.generation,
           snapshot.generation,
           generationPage.data.rows.some((symbol) => symbol.uri === object.symbolUri),
@@ -923,15 +922,13 @@ export class WorkbenchIndexController {
     return cancelled;
   }
 
-  /** Chains `operation` after the previous operation of the same scope only. */
+  /** Chains per scope, while an idle scope starts synchronously and exposes its indexing state. */
   private enqueueScopeRun<T>(
     scope: string,
     connectionId: string,
     operation: () => Promise<T>,
   ): Promise<T> {
     const previous = this.scopeRuns.get(scope)?.tail;
-    // An idle scope starts synchronously so its "indexing" state is visible to
-    // the caller immediately, exactly like a direct call.
     const run = previous
       ? previous.then(
           () => operation(),
@@ -1003,6 +1000,7 @@ export class WorkbenchIndexController {
     );
   }
 
+  /** Lets a newer same-scope refresh own publication without rejecting the older caller. */
   private async runPostgresDatabaseIndex(
     client: CatalogQueryClient,
     identity: { connectionId: string; database: string },
@@ -1015,8 +1013,6 @@ export class WorkbenchIndexController {
       database: identity.database,
       readCatalog: () => readPostgresCatalog(client, identity),
       isCurrent: () => this.scopeRefreshEpoch(scope) === refreshEpoch,
-      // A newer refresh of this scope owns publication; the older result is
-      // still returned so its caller can complete without an error.
       publish: () => this.scopeRefreshEpoch(scope) === refreshEpoch,
       reportFailureState: false,
     });
@@ -1246,7 +1242,7 @@ export class WorkbenchIndexController {
   }
 
   private async publishAndReadCatalog(
-    catalog: PostgresCatalogSnapshot,
+    catalog: WorkbenchCatalogSnapshot,
     connectionId: string,
     database: string,
     indexingStarted: number,
@@ -1355,7 +1351,7 @@ export class WorkbenchIndexController {
 
   private async publishCatalog(
     session: WorkbenchCodeMonikerSession,
-    catalog: PostgresCatalogSnapshot,
+    catalog: WorkbenchCatalogSnapshot,
     scope: string,
     connectionId: string,
     isCurrent: () => boolean,
@@ -1741,10 +1737,9 @@ export class WorkbenchIndexController {
     }
   }
 
+  /** A gate not yet bound to a run remains armed while another scope settles. */
   private clearAcceptancePhaseGate(runId?: number): void {
     const gate = this.acceptancePhaseGate;
-    // A gate not yet bound to a run stays armed: a run of another scope
-    // settling must not disarm the gate meant for a later run.
     if (!gate || (runId !== undefined && gate.runId !== runId)) return;
     this.acceptancePhaseGate = undefined;
     const release = gate.release;
@@ -1782,7 +1777,7 @@ function applyCatalogPatch(
   identity: { connectionId: string; database: string },
   registry: IndexedPostgresRegistry,
   patch: PostgresCatalogPatch,
-): PostgresCatalogSnapshot {
+): WorkbenchCatalogSnapshot {
   const documents = new Map(registry.documents);
   const origins = new Map(registry.origins);
   const removedOids = new Set<number>();
@@ -1847,6 +1842,19 @@ function requireCapability(available: boolean, capability: string): void {
 
 function duration(milliseconds: number): string {
   return `${milliseconds.toFixed(1)}ms`;
+}
+
+/** Uses the scope registry because another Connection can advance the daemon generation. */
+function isScopeRelationSnapshotCurrent(
+  resultGeneration: number | null,
+  snapshotGeneration: number | null,
+  containsExpectedSymbol: boolean,
+): boolean {
+  return isWorkbenchRelationSnapshotCurrent(
+    resultGeneration,
+    snapshotGeneration,
+    containsExpectedSymbol,
+  );
 }
 
 function buildSqlAuthoringSnapshot(

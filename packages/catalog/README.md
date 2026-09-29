@@ -1,0 +1,70 @@
+# PostgreSQL catalog projection
+
+`@ng-galien/postgresql-catalog` reads a PostgreSQL catalog into deterministic
+virtual SQL documents and compares two structural projections through Code
+Moniker. It is the reusable schema authority shared by PostgreSQL Workbench and
+database upgrade consumers.
+
+The projection covers schemas, enum types, tables, columns, named constraints,
+column comments, explicit indexes, views, routines and triggers. Roles,
+privileges and application data remain outside this structural model.
+
+## Installation
+
+Requires Node.js 22 or later. The package is ESM and includes TypeScript
+declarations under its root export. It has no runtime npm dependencies: callers
+provide the database connection and, for comparisons, a Code Moniker client.
+The package is licensed under MIT (see `LICENSE`).
+
+A `catalog-v<version>` tag launches the package validation and npm publication
+workflow described in the repository release guide. Install
+an exact version and commit the consumer lockfile:
+
+```sh
+npm install --save-exact @ng-galien/postgresql-catalog@0.1.0
+npm ci
+```
+
+For local development, `npm run test:catalog:package` in the Workbench checkout
+creates a versioned `.tgz`, prints its path and integrity, and proves an isolated
+installation followed by `npm ci`. Copy that tarball into the consumer's
+`vendor/` directory and install it with
+`npm install --save-exact ./vendor/ng-galien-postgresql-catalog-0.1.0.tgz`.
+Commit both the tarball and lockfile for reproducibility. This local archive
+reference requires no adjacent Workbench checkout. A registry dependency should
+replace it when the package is published.
+
+## Public API
+
+```ts
+import { readPostgresCatalog, assemblePostgresStructureSql }
+  from '@ng-galien/postgresql-catalog';
+import type { CatalogQueryClient } from '@ng-galien/postgresql-catalog';
+
+export async function inspect(client: CatalogQueryClient) {
+  const snapshot = await readPostgresCatalog(client, {
+    connectionId: 'application',
+    database: 'application',
+  });
+  return assemblePostgresStructureSql(snapshot.sourceSet.documents);
+}
+```
+
+`client.query(sql)` must return `{ rows: Record<string, unknown>[] }` and use
+an already connected PostgreSQL session. The caller owns credentials and
+connection disposal. Reading the catalog does not execute migrations.
+
+- `readPostgresCatalog` returns the catalog model, virtual SQL source set,
+  origins, relationships and timing metrics.
+- `readPostgresCatalogDocuments` returns a patch for selected document URIs
+  and optional new resources. Catch `PostgresCatalogFullRefreshRequired` to
+  retry with a full snapshot when resource mappings are unavailable.
+- `assemblePostgresStructureSql` produces deterministic SQL from documents.
+- `comparePostgresStructures(client, base, head, scope, mode?)` delegates to
+  the supplied `CodeMonikerStructureComparisonClient.diffImpact.compare`.
+  The default `semantic` mode retains semantic changes; `structure` applies
+  the projection's narrower structural filters. Neither verdict certifies
+  migration safety or data preservation. Diagnostics prevent an isomorphic
+  verdict. This package does not create a Code Moniker transport or daemon.
+
+Import only from the package root; internal paths are not public contracts.

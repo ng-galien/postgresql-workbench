@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "emitDeclarationOnly": true,
+    "outDir": "./dist/types",
+    "rootDir": "..",
+    "sourceMap": false
+  },
+  "include": ["src/standalone.ts"],
+  "exclude": ["dist", "node_modules"]
+}

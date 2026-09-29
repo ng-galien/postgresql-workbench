@@ -99,6 +99,21 @@ statement/branch coverage. Coverage uses a dedicated transactional runner and
 does not depend on DAP or pldebugger; see the extension README for database
 permissions, test discovery patterns, limits, and export formats.
 
+The same engine is distributed as the independently versioned
+[`@ng-galien/postgresql-coverage`](packages/coverage/README.md) library and CLI.
+It covers complete schemas or explicit glob selections, with pgTAP tests selected
+by schema or pattern and no required test-name prefix. It includes uncalled routines
+at zero coverage and exports JSON/LCOV.
+`npm run test:coverage:package -- --e2e` validates its isolated distribution.
+
+The deterministic PostgreSQL schema projection and structural comparison API is
+also distributed as the dependency-free ESM package
+[`@ng-galien/postgresql-catalog`](packages/catalog/README.md). The catalog,
+coverage, and DAP packages have separate versions and release tags so consumers
+can adopt each engine without installing the extension. Their npm release
+workflows and first-publication procedure are documented in
+[`RELEASING.md`](RELEASING.md#publish-the-standalone-npm-packages).
+
 Build the installable extension with:
 
 ```bash

@@ -22,6 +22,10 @@ for their own Workbench sessions and retained observations. **Connections →
 Settings → MCP** starts and stops the bundled local server, changes its port,
 and installs Codex and Claude Code configurations in the open project. A
 standalone launcher also runs from a source checkout without VS Code.
+The shared coverage engine is also distributed as an independent Node.js library and CLI,
+with schema or pattern selection and JSON/LCOV reports. See the
+[standalone coverage guide](https://ng-galien.github.io/postgresql-workbench/docs/testing-coverage.html#standalone-library-and-cli)
+for its scope and current distribution status.
 The complete Schemas-to-editor drag-and-drop contract is maintained in the
 [SQL authoring guide](https://ng-galien.github.io/postgresql-workbench/docs/sql-authoring.html#compose-sql-by-drag-and-drop).
 

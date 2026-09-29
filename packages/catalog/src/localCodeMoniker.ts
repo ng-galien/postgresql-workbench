@@ -5,6 +5,36 @@ import type { CodeMonikerSyntaxClient } from "../../sql/src/analysis/codeMoniker
 import { inspectCodeMonikerRuntime } from "./codeMonikerRuntime.js";
 import type { PostgresDocumentDescriptor, VirtualSqlSourceSet } from "./postgresCatalog.js";
 
+export interface CodeMonikerDiffImpactSide {
+  identity: string;
+  compact_identity: string;
+  file: string;
+  kind: string;
+  name: string;
+}
+
+export interface CodeMonikerDiffImpactSymbol {
+  kind: string;
+  body_changed: boolean;
+  signature_changed: boolean;
+  header_changed: boolean;
+  old?: CodeMonikerDiffImpactSide | null;
+  new?: CodeMonikerDiffImpactSide | null;
+}
+
+export interface CodeMonikerDiffImpactRef {
+  kind: string;
+  ref_kind: string;
+  old_target?: string | null;
+  new_target?: string | null;
+}
+
+export interface CodeMonikerDiffImpactResult {
+  diagnostics: string[];
+  symbol_changes: CodeMonikerDiffImpactSymbol[];
+  ref_changes: CodeMonikerDiffImpactRef[];
+}
+
 export interface CodeMonikerSymbol {
   id?: string;
   uri: string;
@@ -181,6 +211,21 @@ export interface CodeMonikerClient extends CodeMonikerSyntaxClient {
       options?: Record<string, unknown>,
       queryOptions?: Record<string, unknown>,
     ): Promise<CodeMonikerIdentityGraphPage>;
+  };
+  readonly diffImpact: {
+    compare(options: {
+      scope: string;
+      project?: string | null;
+      base: VirtualSqlSourceSet;
+      head: VirtualSqlSourceSet;
+      files: Array<{
+        status: "modified";
+        old_uri: string;
+        new_uri: string;
+        old_hunks: Array<{ start: number; end: number }>;
+        new_hunks: Array<{ start: number; end: number }>;
+      }>;
+    }): Promise<CodeMonikerDiffImpactResult>;
   };
   supportsQuery(name: string): boolean;
   supportsCommand(name: string): boolean;
