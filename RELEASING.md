@@ -414,7 +414,7 @@ After the initial publications:
 3. push the corresponding package tags and approve the protected environment;
 4. verify that the new versions published by GitHub Actions include npm provenance.
 
-The `0.1.0` packages establish the registry entries; `0.1.1` is the first release
+The `0.1.0` packages establish the registry entries; `0.1.2` is the first release
 intended for GitHub trusted publishing. The workflows use only OIDC, with no npm
 token stored in GitHub. To configure an existing package from the authenticated
 CLI, use `npm trust github <package> --repo ng-galien/postgresql-workbench

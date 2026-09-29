@@ -1,6 +1,6 @@
 {
   "name": "@ng-galien/postgresql-catalog",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Canonical PostgreSQL catalog projection and Code Moniker structural comparison",
   "license": "MIT",
   "author": "Alexandre Boyer",

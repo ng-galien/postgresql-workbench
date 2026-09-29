@@ -116,7 +116,7 @@ jobs:
           subject-path: artifacts/ng-galien-postgresql-catalog-*.tgz
       - name: Publish validated package to npm
         run: |
-          tarball=(artifacts/ng-galien-postgresql-catalog-*.tgz)
+          tarball=(./artifacts/ng-galien-postgresql-catalog-*.tgz)
           package="$(node -p "require('./packages/catalog/package.json').name")"
           version="$(node -p "require('./packages/catalog/package.json').version")"
           local_integrity="$(node -e "const fs=require('node:fs');const c=require('node:crypto');process.stdout.write('sha512-'+c.createHash('sha512').update(fs.readFileSync(process.argv[1])).digest('base64'))" "${tarball[0]}")"

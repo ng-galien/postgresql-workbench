@@ -1,6 +1,6 @@
 {
   "name": "@ng-galien/postgresql-dap",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Standalone PostgreSQL Debug Adapter Protocol server for PL/pgSQL",
   "license": "MIT",
   "author": {

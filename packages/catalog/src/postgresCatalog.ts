@@ -778,9 +778,9 @@ function incrementalCatalogSql(ids: IncrementalCatalogIds): string {
 }
 
 function appendCatalogFilter(sql: string, condition: string): string {
-  const order = sql.lastIndexOf("ORDER BY");
-  if (order < 0) throw new Error("Workbench catalog query has no ORDER BY clause");
-  return `${sql.slice(0, order)}AND ${condition}\n${sql.slice(order)}`;
+  const boundary = sql.search(/\n(?:GROUP|ORDER) BY /u);
+  if (boundary < 0) throw new Error("Workbench catalog query has no grouping or ordering clause");
+  return `${sql.slice(0, boundary)}\nAND ${condition}${sql.slice(boundary)}`;
 }
 
 function numericList(values: readonly number[]): string {

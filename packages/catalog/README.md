@@ -21,7 +21,7 @@ workflow described in the repository release guide. Install
 an exact version and commit the consumer lockfile:
 
 ```sh
-npm install --save-exact @ng-galien/postgresql-catalog@0.1.1
+npm install --save-exact @ng-galien/postgresql-catalog@0.1.2
 npm ci
 ```
 
@@ -29,7 +29,7 @@ For local development, `npm run test:catalog:package` in the Workbench checkout
 creates a versioned `.tgz`, prints its path and integrity, and proves an isolated
 installation followed by `npm ci`. Copy that tarball into the consumer's
 `vendor/` directory and install it with
-`npm install --save-exact ./vendor/ng-galien-postgresql-catalog-0.1.1.tgz`.
+`npm install --save-exact ./vendor/ng-galien-postgresql-catalog-0.1.2.tgz`.
 Commit both the tarball and lockfile for reproducibility. This local archive
 reference requires no adjacent Workbench checkout. A registry dependency should
 replace it when the package is published.

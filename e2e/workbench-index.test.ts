@@ -11,6 +11,7 @@ import {
   type CatalogQueryClient,
   postgresDatabaseDocumentGlob,
   readPostgresCatalog,
+  readPostgresCatalogDocuments,
 } from "../packages/catalog/src/postgresCatalog.js";
 import { comparePostgresStructures } from "../packages/catalog/src/postgresSchemaComparison.js";
 
@@ -143,6 +144,18 @@ describe.skipIf(!LOCAL_CODE_MONIKER_AVAILABLE)(
           (document) => document.postgres?.name === "account_state_idx",
         );
         expect(index?.content).toContain("ON workbench_u1.account");
+        const table = snapshot.sourceSet.documents.find(
+          (document) => document.postgres?.name === "account",
+        );
+        expect(table).toBeDefined();
+        const patch = await readPostgresCatalogDocuments(
+          catalogClient(postgres),
+          { connectionId: "transaction", database: WORKBENCH_DATABASE },
+          [table!],
+          new Set([table!.uri]),
+        );
+        expect(patch.upsertDocuments.some((document) => document.uri === table!.uri)).toBe(true);
+        expect((await postgres.query("SHOW search_path")).rows).toEqual(before.rows);
         await postgres.query("SELECT * FROM account LIMIT 0");
       } finally {
         await postgres.query("ROLLBACK");
