@@ -1,7 +1,75 @@
 import { describe, expect, it, vi } from "vitest";
-import { createCodeMonikerSyntaxParser } from "./codeMonikerSyntax.js";
+import { type CodeMonikerSyntaxTree, createCodeMonikerSyntaxParser } from "./codeMonikerSyntax.js";
 
 describe("createCodeMonikerSyntaxParser", () => {
+  it("normalizes omitted vendor metadata without inventing an injected entry point", async () => {
+    const tree: CodeMonikerSyntaxTree = {
+      file: "query.sql",
+      language: "sql",
+      focus: "query.sql",
+      emitted_nodes: 2,
+      total_nodes: 2,
+      max_depth: 32,
+      truncated: true,
+      has_error: true,
+      root: {
+        kind: "program",
+        named: true,
+        error: false,
+        missing: false,
+        byte_range: [0, 9],
+        start: { line: 1, column: 0 },
+        end: { line: 1, column: 9 },
+        children: [
+          {
+            kind: "program",
+            language: "sql",
+            entry_point: "future-entry",
+            has_error: true,
+            named: true,
+            error: true,
+            missing: false,
+            byte_range: [0, 9],
+            start: { line: 1, column: 0 },
+            end: { line: 1, column: 9 },
+            children: [],
+          },
+        ],
+      },
+    };
+    const parser = createCodeMonikerSyntaxParser({ queryData: async () => tree });
+    const result = await parser.parse({ language: "sql", source: "SELECT 1;" });
+    expect(result.focusLineRange).toBeNull();
+    expect(result.root.text).toBeNull();
+    expect(result.root.children[0].text).toBeNull();
+    expect(result.root.children[0].languageRegion).toEqual({
+      language: "sql",
+      hasError: true,
+      projection: { kind: "identity" },
+    });
+    expect(result.hasError).toBe(true);
+    expect(result.truncated).toBe(true);
+    tree.focus_line_range = [1, 3];
+    tree.root.text = "SELECT 1;";
+    const populated = await parser.parse({ language: "sql", source: "SELECT 1;" });
+    expect(populated.focusLineRange).toEqual([1, 3]);
+    expect(populated.root.text).toBe("SELECT 1;");
+    await expect(parser.parse({ language: "plpgsql", source: "BEGIN END;" })).rejects.toThrow(
+      "Code Moniker returned sql for a plpgsql parse request",
+    );
+  });
+
+  it("propagates provider failures", async () => {
+    const parser = createCodeMonikerSyntaxParser({
+      queryData: async () => {
+        throw new Error("provider unavailable");
+      },
+    });
+    await expect(parser.parse({ language: "sql", source: "SELECT 1;" })).rejects.toThrow(
+      "provider unavailable",
+    );
+  });
+
   it("parses transient PL/pgSQL through the stateless Code Moniker contract", async () => {
     const queryData = vi.fn().mockResolvedValue({
       file: "routine.plpgsql",

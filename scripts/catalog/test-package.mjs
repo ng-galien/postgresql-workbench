@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -116,6 +116,56 @@ execFileSync(
   { cwd: consumer, stdio: "inherit" },
 );
 execFileSync(process.execPath, ["consumer.mjs"], { cwd: consumer, stdio: "inherit" });
+
+// Compile and execute against the real published client, not a look-alike mock.
+const compatibility = resolve(temporary, "compatibility");
+mkdirSync(compatibility);
+for (const file of ["package.json", "package-lock.json"]) {
+  copyFileSync(resolve(root, "scripts/catalog/compatibility", file), resolve(compatibility, file));
+}
+runNpm(["ci", "--ignore-scripts", "--no-audit", "--no-fund"], compatibility);
+runNpm(
+  [
+    "install",
+    "--offline",
+    "--ignore-scripts",
+    "--no-audit",
+    "--no-fund",
+    resolve(temporary, packed.filename),
+  ],
+  compatibility,
+);
+copyFileSync(
+  resolve(root, "scripts/catalog/compatibility/consumer.mts"),
+  resolve(compatibility, "consumer.mts"),
+);
+execFileSync(
+  process.execPath,
+  [
+    resolve(root, "node_modules/typescript/bin/tsc"),
+    "--ignoreConfig",
+    "--strict",
+    "--target",
+    "ES2022",
+    "--module",
+    "NodeNext",
+    "--moduleResolution",
+    "NodeNext",
+    "consumer.mts",
+    "--types",
+    "node",
+    "--typeRoots",
+    resolve(root, "node_modules/@types"),
+  ],
+  { cwd: compatibility, stdio: "inherit" },
+);
+const workspace = resolve(temporary, "workspace");
+mkdirSync(workspace);
+execFileSync(process.execPath, ["consumer.mjs", workspace], {
+  cwd: compatibility,
+  stdio: "inherit",
+  timeout: 60_000,
+});
 process.stdout.write(
   `Catalog package: isolated ESM, TypeScript and offline npm ci passed on ${process.version}.\n`,
 );

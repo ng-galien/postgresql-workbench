@@ -21,7 +21,7 @@ workflow described in the repository release guide. Install
 an exact version and commit the consumer lockfile:
 
 ```sh
-npm install --save-exact @ng-galien/postgresql-catalog@0.1.3
+npm install --save-exact @ng-galien/postgresql-catalog@0.1.4
 npm ci
 ```
 
@@ -29,10 +29,15 @@ For local development, `npm run test:catalog:package` in the Workbench checkout
 creates a versioned `.tgz`, prints its path and integrity, and proves an isolated
 installation followed by `npm ci`. Copy that tarball into the consumer's
 `vendor/` directory and install it with
-`npm install --save-exact ./vendor/ng-galien-postgresql-catalog-0.1.3.tgz`.
+`npm install --save-exact ./vendor/ng-galien-postgresql-catalog-0.1.4.tgz`.
 Commit both the tarball and lockfile for reproducibility. This local archive
 reference requires no adjacent Workbench checkout. A registry dependency should
 replace it when the package is published.
+
+The package check also compiles a consumer against the real published Code
+Moniker 0.13.0 declarations and runs its parser and a manifest/catalog comparison.
+This compatibility phase installs the client from its own committed lockfile
+and requires npm access; the catalog-only install above is still tested offline.
 
 ## Public API
 

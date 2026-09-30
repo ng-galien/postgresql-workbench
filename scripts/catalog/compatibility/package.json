@@ -1,0 +1,8 @@
+{
+  "name": "postgresql-catalog-client-compatibility",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@code-moniker/client": "0.13.0"
+  }
+}

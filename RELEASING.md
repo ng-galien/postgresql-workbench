@@ -416,7 +416,9 @@ After the initial publications:
 
 The `0.1.0` packages establish the registry entries; `0.1.2` is the first release
 published through GitHub trusted publishing. Catalog `0.1.3` adds parser-backed
-primary-key nullability normalization; Coverage and DAP remain at `0.1.2`.
+primary-key nullability normalization. Catalog `0.1.4` aligns the syntax adapter
+with Code Moniker 0.13's public types and adds an isolated real-client compilation
+and comparison gate. Coverage and DAP remain at `0.1.2`.
 The workflows use only OIDC, with no npm
 token stored in GitHub. To configure an existing package from the authenticated
 CLI, use `npm trust github <package> --repo ng-galien/postgresql-workbench

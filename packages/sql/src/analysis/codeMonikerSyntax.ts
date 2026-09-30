@@ -16,7 +16,7 @@ export interface CodeMonikerSyntaxPoint {
 export interface CodeMonikerSyntaxNode {
   kind: string;
   language?: string | null;
-  entry_point?: "script" | "statement" | "expression" | "block" | null;
+  entry_point?: string | null;
   has_error?: boolean | null;
   named: boolean;
   error: boolean;
@@ -24,7 +24,7 @@ export interface CodeMonikerSyntaxNode {
   byte_range: [number, number];
   start: CodeMonikerSyntaxPoint;
   end: CodeMonikerSyntaxPoint;
-  text: string | null;
+  text?: string | null;
   children: CodeMonikerSyntaxNode[];
 }
 
@@ -32,7 +32,7 @@ export interface CodeMonikerSyntaxTree {
   file: string;
   language: string;
   focus: string;
-  focus_line_range: [number, number] | null;
+  focus_line_range?: [number, number] | null;
   root: CodeMonikerSyntaxNode;
   emitted_nodes: number;
   total_nodes: number;
@@ -91,7 +91,7 @@ function mapSyntaxTree(tree: CodeMonikerSyntaxTree, requestedLanguage: SyntaxLan
         ? { language: "sql", entryPoint: "script" }
         : { language: "plpgsql", entryPoint: "block" },
     focus: tree.focus,
-    focusLineRange: tree.focus_line_range,
+    focusLineRange: tree.focus_line_range ?? null,
     root: mapSyntaxNode(tree.root, true),
     emittedNodes: tree.emitted_nodes,
     totalNodes: tree.total_nodes,
@@ -118,7 +118,7 @@ function mapSyntaxNode(node: CodeMonikerSyntaxNode, documentRoot = false): Synta
     byteRange: node.byte_range,
     start: mapSyntaxPoint(node.start),
     end: mapSyntaxPoint(node.end),
-    text: node.text,
+    text: node.text ?? null,
     children: node.children.map((child) => mapSyntaxNode(child)),
   };
 }
