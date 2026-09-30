@@ -21,7 +21,7 @@ workflow described in the repository release guide. Install
 an exact version and commit the consumer lockfile:
 
 ```sh
-npm install --save-exact @ng-galien/postgresql-catalog@0.1.2
+npm install --save-exact @ng-galien/postgresql-catalog@0.1.3
 npm ci
 ```
 
@@ -29,7 +29,7 @@ For local development, `npm run test:catalog:package` in the Workbench checkout
 creates a versioned `.tgz`, prints its path and integrity, and proves an isolated
 installation followed by `npm ci`. Copy that tarball into the consumer's
 `vendor/` directory and install it with
-`npm install --save-exact ./vendor/ng-galien-postgresql-catalog-0.1.2.tgz`.
+`npm install --save-exact ./vendor/ng-galien-postgresql-catalog-0.1.3.tgz`.
 Commit both the tarball and lockfile for reproducibility. This local archive
 reference requires no adjacent Workbench checkout. A registry dependency should
 replace it when the package is published.
@@ -60,11 +60,33 @@ connection disposal. Reading the catalog does not execute migrations.
   and optional new resources. Catch `PostgresCatalogFullRefreshRequired` to
   retry with a full snapshot when resource mappings are unavailable.
 - `assemblePostgresStructureSql` produces deterministic SQL from documents.
-- `comparePostgresStructures(client, base, head, scope, mode?)` delegates to
+- `comparePostgresStructures(client, base, head, scope, mode?, parser?)` delegates to
   the supplied `CodeMonikerStructureComparisonClient.diffImpact.compare`.
   The default `semantic` mode retains semantic changes; `structure` applies
   the projection's narrower structural filters. Neither verdict certifies
   migration safety or data preservation. Diagnostics prevent an isomorphic
   verdict. This package does not create a Code Moniker transport or daemon.
+- `createCodeMonikerSyntaxParser(client)` adapts an existing client's `queryData`
+  method to the exported `SyntaxParser` port. It does not open a connection.
+  Pass this parser to structural comparisons to recognize implicit `NOT NULL`
+  on inline or table-level primary keys in `CREATE TABLE`. This includes
+  composite and quoted keys. Other nullability changes remain differences.
+  Without a parser, or for incomplete syntax, comparison remains conservative.
+  Primary keys introduced through `ALTER TABLE` are not normalized by this pass.
+  Broader manifest/catalog comparisons involving sequential `ALTER TABLE`,
+  constraint signatures and explicit default index methods require Code Moniker
+  0.13 or later; a less capable provider can report conservative differences.
+
+```ts
+import { comparePostgresStructures, createCodeMonikerSyntaxParser }
+  from '@ng-galien/postgresql-catalog';
+
+// Reuse the application's existing Code Moniker client and transport.
+const parser = createCodeMonikerSyntaxParser(codeMoniker);
+const comparison = await comparePostgresStructures(
+  codeMoniker, manifestDocuments, catalogDocuments, 'manifest..catalog',
+  'structure', parser,
+);
+```
 
 Import only from the package root; internal paths are not public contracts.

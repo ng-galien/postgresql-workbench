@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
+import type { SyntaxParser } from "../../sql/src/analysis/syntaxTree.js";
 import type { VirtualSqlDocument, VirtualSqlSourceSet } from "./postgresCatalog.js";
+import { explicitPrimaryKeyNullability } from "./postgresPrimaryKeyNullability.js";
 
 interface CodeMonikerDiffImpactSide {
   identity: string;
@@ -88,9 +90,14 @@ export async function comparePostgresStructures(
   head: readonly VirtualSqlDocument[],
   scope: string,
   mode: PostgresStructureComparisonMode = "semantic",
+  parser?: SyntaxParser,
 ): Promise<PostgresStructureComparison> {
   const baseDocument = assembleStructureDocument(base);
   const headDocument = assembleStructureDocument(head);
+  if (mode === "structure" && parser) {
+    baseDocument.content = await explicitPrimaryKeyNullability(baseDocument.content, parser);
+    headDocument.content = await explicitPrimaryKeyNullability(headDocument.content, parser);
+  }
   const raw = await client.diffImpact.compare({
     scope,
     project: "postgres-schema",

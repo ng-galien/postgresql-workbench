@@ -1,4 +1,9 @@
 export {
+  type CodeMonikerSyntaxClient,
+  createCodeMonikerSyntaxParser,
+} from "../../sql/src/analysis/codeMonikerSyntax.js";
+export type { SyntaxNode, SyntaxParser, SyntaxTree } from "../../sql/src/analysis/syntaxTree.js";
+export {
   type CatalogQueryClient,
   type PostgresCatalogColumn,
   type PostgresCatalogConstraint,

@@ -69,11 +69,11 @@ assert.equal(
 );
 const source = `import {
   readPostgresCatalog, readPostgresCatalogDocuments, assemblePostgresStructureSql,
-  comparePostgresStructures, PostgresCatalogFullRefreshRequired,
+  comparePostgresStructures, createCodeMonikerSyntaxParser, PostgresCatalogFullRefreshRequired,
 } from '@ng-galien/postgresql-catalog';
 import type {
   CatalogQueryClient, PostgresCatalogPatch, PostgresStructureComparisonMode,
-  CodeMonikerStructureComparisonClient,
+  CodeMonikerStructureComparisonClient, CodeMonikerSyntaxClient, SyntaxParser,
 } from '@ng-galien/postgresql-catalog';
 const client: CatalogQueryClient = { query: async () => ({ rows: [{
   schemas: [], types: [], tables: [], columns: [], constraints: [], indexes: [],
@@ -91,6 +91,11 @@ const comparisonClient: CodeMonikerStructureComparisonClient = {
 const mode: PostgresStructureComparisonMode = 'semantic';
 const comparison = await comparePostgresStructures(comparisonClient, [], [], 'smoke', mode);
 if (!comparison.isomorphic) throw Error('Invalid comparison');
+const syntaxClient: CodeMonikerSyntaxClient = {
+  queryData: async () => { throw Error('The semantic comparison must not parse'); },
+};
+const parser: SyntaxParser = createCodeMonikerSyntaxParser(syntaxClient);
+await comparePostgresStructures(comparisonClient, [], [], 'smoke', mode, parser);
 if (!(new PostgresCatalogFullRefreshRequired('smoke') instanceof Error)) throw Error('Invalid error');
 `;
 writeFileSync(resolve(consumer, "consumer.mts"), source);
