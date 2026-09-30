@@ -5,16 +5,32 @@ import {
   syntaxNodeText,
 } from "../../sql/src/analysis/syntaxNodes.js";
 import type { SyntaxNode, SyntaxParser } from "../../sql/src/analysis/syntaxTree.js";
+import { postgresStatementTrees } from "./postgresSyntaxStatements.js";
 
 /** PostgreSQL materializes PRIMARY KEY columns as NOT NULL in its catalog. */
 export async function explicitPrimaryKeyNullability(
   source: string,
   parser: SyntaxParser,
 ): Promise<string> {
-  const tree = await parser.parse({ language: "sql", source });
-  if (tree.hasError || tree.truncated) return source;
+  const statements = await postgresStatementTrees(source, parser, [
+    "CreateStmt",
+    "CreateSchemaStmt",
+  ]);
+  let bytes = Buffer.from(source);
+  for (const statement of statements.reverse()) {
+    const normalized = primaryKeyStatement(statement.source, statement.root);
+    bytes = Buffer.concat([
+      bytes.subarray(0, statement.offset),
+      Buffer.from(normalized),
+      bytes.subarray(statement.offset + Buffer.byteLength(statement.source)),
+    ]);
+  }
+  return bytes.toString("utf8");
+}
+
+function primaryKeyStatement(source: string, root: SyntaxNode): string {
   const insertions = new Set<number>();
-  for (const table of findSyntaxNodes(tree.root, "CreateStmt")) {
+  for (const table of findSyntaxNodes(root, "CreateStmt")) {
     const columns = findSyntaxNodes(table, "columnDef");
     const primaryColumns = new Set<string>();
     for (const constraint of findSyntaxNodes(table, "ConstraintElem")) {

@@ -21,7 +21,7 @@ workflow described in the repository release guide. Install
 an exact version and commit the consumer lockfile:
 
 ```sh
-npm install --save-exact @ng-galien/postgresql-catalog@0.1.4
+npm install --save-exact @ng-galien/postgresql-catalog@0.1.5
 npm ci
 ```
 
@@ -29,7 +29,7 @@ For local development, `npm run test:catalog:package` in the Workbench checkout
 creates a versioned `.tgz`, prints its path and integrity, and proves an isolated
 installation followed by `npm ci`. Copy that tarball into the consumer's
 `vendor/` directory and install it with
-`npm install --save-exact ./vendor/ng-galien-postgresql-catalog-0.1.4.tgz`.
+`npm install --save-exact ./vendor/ng-galien-postgresql-catalog-0.1.5.tgz`.
 Commit both the tarball and lockfile for reproducibility. This local archive
 reference requires no adjacent Workbench checkout. A registry dependency should
 replace it when the package is published.
@@ -76,7 +76,13 @@ connection disposal. Reading the catalog does not execute migrations.
   Pass this parser to structural comparisons to recognize implicit `NOT NULL`
   on inline or table-level primary keys in `CREATE TABLE`. This includes
   composite and quoted keys. Other nullability changes remain differences.
-  Without a parser, or for incomplete syntax, comparison remains conservative.
+  Without a parser, comparison remains conservative.
+  Large sources use a shallow statement outline with complete byte-range coverage,
+  followed by full parsing of table declarations, including tables inside
+  `CREATE SCHEMA`. Routine bodies and the complete SQL source remain unchanged.
+  Invalid syntax or incomplete statement/table trees fail explicitly instead of
+  returning a verdict from incomplete syntax evidence. This bounded read avoids
+  oversized syntax responses; it does not add expression equivalence rules.
   Primary keys introduced through `ALTER TABLE` are not normalized by this pass.
   Broader manifest/catalog comparisons involving sequential `ALTER TABLE`,
   constraint signatures and explicit default index methods require Code Moniker

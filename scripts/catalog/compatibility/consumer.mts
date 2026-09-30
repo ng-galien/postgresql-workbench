@@ -52,8 +52,28 @@ CREATE INDEX probe_value_idx ON public.probe USING btree (value);`;
       throw new Error(`${label}: ${JSON.stringify(result)}`);
     }
   }
+  const largeRoutine =
+    "CREATE FUNCTION public.large_body() RETURNS void LANGUAGE plpgsql AS $body$\nBEGIN\n" +
+    "PERFORM 1; -- CREATE TABLE shadow (x int PRIMARY KEY); é\n".repeat(10_000) +
+    "END;\n$body$;\n";
+  for (const [label, target, expected] of [
+    ["large materialization", head, true],
+    ["large real nullability change", head.replace("note text,", "note text NOT NULL,"), false],
+  ] as const) {
+    const result = await comparePostgresStructures(
+      client,
+      documents(largeRoutine + base),
+      documents(largeRoutine + target),
+      label,
+      "structure",
+      parser,
+    );
+    if (result.isomorphic !== expected || result.diagnostics.length !== 0) {
+      throw new Error(`${label}: ${JSON.stringify(result)}`);
+    }
+  }
   process.stdout.write(
-    "Published Code Moniker 0.13.0: strict public types, real parser and Hall comparison passed.\n",
+    "Published Code Moniker 0.13.0: strict public types, real parser and bounded materialization probes passed.\n",
   );
 } finally {
   client?.close();

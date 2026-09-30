@@ -111,19 +111,55 @@ CREATE TABLE public.two ("clé" text, "ID" bigint);`;
     expect(result.isomorphic).toBe(false);
   });
 
-  it("does not rewrite incomplete syntax and inserts outside trailing line comments", async () => {
+  it("rejects incomplete syntax and inserts outside trailing line comments", async () => {
     const incomplete = "CREATE TABLE public.probe (id bigint PRIMARY KEY";
-    expect(await explicitPrimaryKeyNullability(incomplete, parser)).toBe(incomplete);
+    await expect(explicitPrimaryKeyNullability(incomplete, parser)).rejects.toThrow(
+      "syntax errors",
+    );
     const source = "CREATE TABLE public.probe (id bigint PRIMARY KEY -- comment\n);";
     const rewritten = await explicitPrimaryKeyNullability(source, parser);
     expect(rewritten).toContain("NOT NULL");
     expect((await parser.parse({ language: "sql", source: rewritten })).hasError).toBe(false);
     expect(await explicitPrimaryKeyNullability(rewritten, parser)).toBe(rewritten);
     const valid = await parser.parse({ language: "sql", source });
-    expect(
-      await explicitPrimaryKeyNullability(source, {
-        parse: async () => ({ ...valid, truncated: true }),
+    await expect(
+      explicitPrimaryKeyNullability(source, {
+        parse: async (request) =>
+          request.maxDepth === 3 ? parser.parse(request) : { ...valid, truncated: true },
       }),
-    ).toBe(source);
+    ).rejects.toThrow("truncated SQL table declaration");
+    await expect(
+      explicitPrimaryKeyNullability(source, {
+        parse: async () => ({ ...valid, root: { ...valid.root, children: [] }, truncated: true }),
+      }),
+    ).rejects.toThrow("complete SQL statement outline");
+  });
+
+  it("uses parser-proven ranges around large routine bodies and quoted separators", async () => {
+    const routine =
+      "CREATE FUNCTION public.large_body() RETURNS void LANGUAGE plpgsql AS $body$\nBEGIN\n" +
+      "PERFORM 1; -- CREATE TABLE shadow (x int PRIMARY KEY); é\n".repeat(10_000) +
+      "END;\n$body$;\n";
+    const table = 'CREATE TABLE public.real_table ("clé" text PRIMARY KEY);';
+    const requests: string[] = [];
+    const instrumented: SyntaxParser = {
+      parse: async (request) => {
+        requests.push(`${request.maxDepth ?? "full"}:${Buffer.byteLength(request.source)}`);
+        return parser.parse(request);
+      },
+    };
+    const normalized = await explicitPrimaryKeyNullability(routine + table, instrumented);
+    expect(normalized.startsWith(routine)).toBe(true);
+    expect((await compare(routine + table, normalized)).isomorphic).toBe(true);
+    expect(normalized.endsWith('("clé" text PRIMARY KEY\nNOT NULL);')).toBe(true);
+    expect(requests).toEqual([
+      `3:${Buffer.byteLength(routine + table)}`,
+      `full:${Buffer.byteLength(table.slice(0, -1))}`,
+    ]);
+  });
+  it("normalizes tables nested in CREATE SCHEMA", async () => {
+    const base = "CREATE SCHEMA example CREATE TABLE t (id integer PRIMARY KEY);";
+    const head = "CREATE SCHEMA example CREATE TABLE t (id integer PRIMARY KEY NOT NULL);";
+    expect((await compare(base, head)).isomorphic).toBe(true);
   });
 });
