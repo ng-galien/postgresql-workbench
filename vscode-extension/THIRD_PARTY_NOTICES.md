@@ -840,7 +840,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ````
 
-## @hono/node-server@2.1.1
+## @hono/node-server@2.1.6
 
 License: MIT
 Source: git+https://github.com/honojs/node-server.git
@@ -871,7 +871,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ````
 
-## @modelcontextprotocol/sdk@1.30.0
+## @modelcontextprotocol/sdk@1.32.2
 
 License: MIT
 Source: git+https://github.com/modelcontextprotocol/typescript-sdk.git
@@ -1408,7 +1408,7 @@ MIT License
     SOFTWARE
 ````
 
-## @xyflow/react@12.11.3
+## @xyflow/react@12.12.1
 
 License: MIT
 Source: https://github.com/xyflow/xyflow.git
@@ -1439,7 +1439,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ````
 
-## @xyflow/system@0.0.80
+## @xyflow/system@0.0.84
 
 License: MIT
 Source: https://github.com/xyflow/xyflow.git
@@ -1596,7 +1596,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ````
 
-## brace-expansion@5.0.9
+## brace-expansion@5.0.12
 
 License: MIT
 Source: git+https://github.com/juliangruber/brace-expansion.git
@@ -1629,7 +1629,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ````
 
-## brace-expansion@2.1.4
+## brace-expansion@2.1.7
 
 License: MIT
 Source: git://github.com/juliangruber/brace-expansion.git
@@ -1707,7 +1707,7 @@ TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ````
 
-## d3-color@3.1.0
+## d3-color@3.1.1
 
 License: ISC
 Source: https://github.com/d3/d3-color.git
@@ -1715,7 +1715,7 @@ Source: https://github.com/d3/d3-color.git
 ### LICENSE
 
 ````text
-Copyright 2010-2022 Mike Bostock
+Copyright 2010-2026 Mike Bostock
 
 Permission to use, copy, modify, and/or distribute this software for any purpose
 with or without fee is hereby granted, provided that the above copyright notice
@@ -1730,7 +1730,7 @@ TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
 THIS SOFTWARE.
 ````
 
-## d3-dispatch@3.0.1
+## d3-dispatch@3.0.2
 
 License: ISC
 Source: https://github.com/d3/d3-dispatch.git
@@ -1738,7 +1738,7 @@ Source: https://github.com/d3/d3-dispatch.git
 ### LICENSE
 
 ````text
-Copyright 2010-2021 Mike Bostock
+Copyright 2010-2026 Mike Bostock
 
 Permission to use, copy, modify, and/or distribute this software for any purpose
 with or without fee is hereby granted, provided that the above copyright notice
@@ -1753,7 +1753,7 @@ TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
 THIS SOFTWARE.
 ````
 
-## d3-drag@3.0.0
+## d3-drag@3.0.1
 
 License: ISC
 Source: https://github.com/d3/d3-drag.git
@@ -1761,7 +1761,7 @@ Source: https://github.com/d3/d3-drag.git
 ### LICENSE
 
 ````text
-Copyright 2010-2021 Mike Bostock
+Copyright 2010-2026 Mike Bostock
 
 Permission to use, copy, modify, and/or distribute this software for any purpose
 with or without fee is hereby granted, provided that the above copyright notice
@@ -1776,7 +1776,7 @@ TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
 THIS SOFTWARE.
 ````
 
-## d3-ease@3.0.1
+## d3-ease@3.0.2
 
 License: BSD-3-Clause
 Source: https://github.com/d3/d3-ease.git
@@ -1784,7 +1784,7 @@ Source: https://github.com/d3/d3-ease.git
 ### LICENSE
 
 ````text
-Copyright 2010-2021 Mike Bostock
+Copyright 2010-2026 Mike Bostock
 Copyright 2001 Robert Penner
 All rights reserved.
 
@@ -1814,7 +1814,7 @@ ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ````
 
-## d3-interpolate@3.0.1
+## d3-interpolate@3.0.2
 
 License: ISC
 Source: https://github.com/d3/d3-interpolate.git
@@ -1822,7 +1822,7 @@ Source: https://github.com/d3/d3-interpolate.git
 ### LICENSE
 
 ````text
-Copyright 2010-2021 Mike Bostock
+Copyright 2010-2026 Mike Bostock
 
 Permission to use, copy, modify, and/or distribute this software for any purpose
 with or without fee is hereby granted, provided that the above copyright notice
@@ -1837,7 +1837,7 @@ TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
 THIS SOFTWARE.
 ````
 
-## d3-selection@3.0.0
+## d3-selection@3.0.1
 
 License: ISC
 Source: https://github.com/d3/d3-selection.git
@@ -1845,7 +1845,7 @@ Source: https://github.com/d3/d3-selection.git
 ### LICENSE
 
 ````text
-Copyright 2010-2021 Mike Bostock
+Copyright 2010-2026 Mike Bostock
 
 Permission to use, copy, modify, and/or distribute this software for any purpose
 with or without fee is hereby granted, provided that the above copyright notice
@@ -1860,7 +1860,7 @@ TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
 THIS SOFTWARE.
 ````
 
-## d3-timer@3.0.1
+## d3-timer@3.0.2
 
 License: ISC
 Source: https://github.com/d3/d3-timer.git
@@ -1868,7 +1868,7 @@ Source: https://github.com/d3/d3-timer.git
 ### LICENSE
 
 ````text
-Copyright 2010-2021 Mike Bostock
+Copyright 2010-2026 Mike Bostock
 
 Permission to use, copy, modify, and/or distribute this software for any purpose
 with or without fee is hereby granted, provided that the above copyright notice
@@ -1883,7 +1883,7 @@ TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
 THIS SOFTWARE.
 ````
 
-## d3-transition@3.0.1
+## d3-transition@3.0.2
 
 License: ISC
 Source: https://github.com/d3/d3-transition.git
@@ -1891,7 +1891,7 @@ Source: https://github.com/d3/d3-transition.git
 ### LICENSE
 
 ````text
-Copyright 2010-2021 Mike Bostock
+Copyright 2010-2026 Mike Bostock
 
 Permission to use, copy, modify, and/or distribute this software for any purpose
 with or without fee is hereby granted, provided that the above copyright notice
@@ -1906,7 +1906,7 @@ TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
 THIS SOFTWARE.
 ````
 
-## d3-zoom@3.0.0
+## d3-zoom@3.0.1
 
 License: ISC
 Source: https://github.com/d3/d3-zoom.git
@@ -1914,7 +1914,7 @@ Source: https://github.com/d3/d3-zoom.git
 ### LICENSE
 
 ````text
-Copyright 2010-2021 Mike Bostock
+Copyright 2010-2026 Mike Bostock
 
 Permission to use, copy, modify, and/or distribute this software for any purpose
 with or without fee is hereby granted, provided that the above copyright notice
@@ -2537,7 +2537,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ````
 
-## fast-uri@3.1.7
+## fast-uri@3.1.9
 
 License: BSD-3-Clause
 Source: git+https://github.com/fastify/fast-uri.git
@@ -2577,7 +2577,7 @@ The complete list of contributors can be found at:
 - https://github.com/garycourt/uri-js/graphs/contributors
 ````
 
-## hono@4.13.7
+## hono@4.13.17
 
 License: MIT
 Source: git+https://github.com/honojs/hono.git
@@ -3347,7 +3347,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ````
 
-## pg@8.23.0
+## pg@8.23.1
 
 License: MIT
 Source: git://github.com/brianc/node-postgres.git
@@ -3378,7 +3378,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ````
 
-## pg-cloudflare@1.4.0
+## pg-cloudflare@1.4.1
 
 License: MIT
 Source: git://github.com/brianc/node-postgres.git
@@ -3409,7 +3409,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ````
 
-## pg-connection-string@2.14.0
+## pg-connection-string@2.14.1
 
 License: MIT
 Source: git://github.com/brianc/node-postgres.git
@@ -3494,7 +3494,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ````
 
-## pg-protocol@1.16.0
+## pg-protocol@1.16.1
 
 License: MIT
 Source: git://github.com/brianc/node-postgres.git
@@ -3707,7 +3707,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ````
 
-## react@19.2.8
+## react@19.3.1
 
 License: MIT
 Source: https://github.com/react/react.git
@@ -3738,7 +3738,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ````
 
-## react-dom@19.2.8
+## react-dom@19.3.1
 
 License: MIT
 Source: https://github.com/react/react.git
@@ -3769,10 +3769,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ````
 
-## scheduler@0.27.0
+## scheduler@0.28.0
 
 License: MIT
-Source: https://github.com/facebook/react.git
+Source: https://github.com/react/react.git
 
 ### LICENSE
 
@@ -3800,7 +3800,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ````
 
-## semver@7.8.5
+## semver@7.8.6
 
 License: ISC
 Source: git+https://github.com/npm/node-semver.git
@@ -3825,7 +3825,7 @@ ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR
 IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 ````
 
-## smol-toml@1.8.0
+## smol-toml@1.9.1
 
 License: BSD-3-Clause
 Source: github:squirrelchat/smol-toml
@@ -3882,7 +3882,7 @@ ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR
 IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 ````
 
-## sql-formatter@15.8.2
+## sql-formatter@15.9.0
 
 License: MIT
 Source: git+https://github.com/sql-formatter-org/sql-formatter.git
@@ -3915,10 +3915,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ````
 
-## use-sync-external-store@1.6.0
+## use-sync-external-store@1.7.0
 
 License: MIT
-Source: https://github.com/facebook/react.git
+Source: https://github.com/react/react.git
 
 ### LICENSE
 
@@ -3946,7 +3946,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ````
 
-## vscode-jsonrpc@9.0.1
+## vscode-jsonrpc@9.0.3
 
 License: MIT
 Source: https://github.com/Microsoft/vscode-languageserver-node.git
@@ -4009,7 +4009,7 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED *AS IS*, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ````
 
-## vscode-languageclient@10.1.0
+## vscode-languageclient@10.1.2
 
 License: MIT
 Source: https://github.com/Microsoft/vscode-languageserver-node.git
@@ -4051,7 +4051,7 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED *AS IS*, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ````
 
-## vscode-languageserver@10.1.0
+## vscode-languageserver@10.1.2
 
 License: MIT
 Source: https://github.com/Microsoft/vscode-languageserver-node.git
@@ -4072,7 +4072,7 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED *AS IS*, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ````
 
-## vscode-languageserver-protocol@3.18.2
+## vscode-languageserver-protocol@3.18.4
 
 License: MIT
 Source: https://github.com/Microsoft/vscode-languageserver-node.git
@@ -4114,7 +4114,7 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED *AS IS*, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ````
 
-## vscode-languageserver-textdocument@1.0.13
+## vscode-languageserver-textdocument@1.0.15
 
 License: MIT
 Source: https://github.com/Microsoft/vscode-languageserver-node.git
@@ -4135,7 +4135,28 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED *AS IS*, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ````
 
-## vscode-languageserver-types@3.18.0
+## vscode-languageserver-textdocument@1.0.16
+
+License: MIT
+Source: https://github.com/Microsoft/vscode-languageserver-node.git
+
+### License.txt
+
+````text
+Copyright (c) Microsoft Corporation
+
+All rights reserved.
+
+MIT License
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED *AS IS*, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+````
+
+## vscode-languageserver-types@3.18.4
 
 License: MIT
 Source: https://github.com/Microsoft/vscode-languageserver-node.git
@@ -4196,7 +4217,7 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ````
 
-## ws@8.21.3
+## ws@8.22.2
 
 License: MIT
 Source: git+https://github.com/websockets/ws.git
@@ -4256,7 +4277,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ````
 
-## zod@4.5.4
+## zod@4.6.7
 
 License: MIT
 Source: git+https://github.com/colinhacks/zod.git
