@@ -102,7 +102,7 @@ CREATE INDEX probe_value_idx ON public.probe USING btree (value);`;
       throw new Error("Full schema comparison is not isomorphic; inspect the report");
   }
   process.stdout.write(
-    `Code Moniker client 0.14.0 with ${localBinary ? "explicit local native binary" : "published native provider"}: strict public types, real parser and bounded materialization probes passed.\n`,
+    `Code Moniker client 0.14.1 with ${localBinary ? "explicit local native binary" : "published native provider"}: strict public types, real parser and bounded materialization probes passed.\n`,
   );
 } finally {
   client?.close();

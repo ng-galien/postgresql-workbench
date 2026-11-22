@@ -24,7 +24,7 @@
 
 ### Code Moniker and catalog comparison
 
-- Updated the Code Moniker client and packaged runtime to 0.14.0
+- Updated the Code Moniker client and packaged runtime to 0.14.1
 - Improved structural catalog comparison for equivalent PostgreSQL expressions
   and column nullability
 

@@ -11,13 +11,29 @@ async function extensionSyntaxParser() {
   return api.workbenchIndex.syntaxParser();
 }
 
+async function pollUntil<T>(
+  fetch: () => T | Thenable<T>,
+  accept: (value: T) => boolean,
+  timeoutMs = 30_000,
+): Promise<T> {
+  const deadline = Date.now() + timeoutMs;
+  let value = await fetch();
+  while (!accept(value) && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    value = await fetch();
+  }
+  return value;
+}
+
 // ============================================================
 suite("Extension basics", () => {
   test("opens the Connections page on command", async () => {
     await vscode.commands.executeCommand("postgresql-workbench.manageConnections");
-    const tab = vscode.window.tabGroups.activeTabGroup.activeTab;
-    assert.ok(tab, "a tab should be active after opening the Connections page");
-    assert.strictEqual(tab.label, "PostgreSQL Connections");
+    const tab = await pollUntil(
+      () => vscode.window.tabGroups.activeTabGroup.activeTab,
+      (active) => active?.label === "PostgreSQL Connections",
+    );
+    assert.strictEqual(tab?.label, "PostgreSQL Connections");
   });
   test("activates and registers commands", async () => {
     const ext = vscode.extensions.getExtension(EXT_ID)!;
@@ -230,20 +246,6 @@ suite("Scratchpad SQL authoring", () => {
     );
     await vscode.window.showNotebookDocument(notebook);
     return notebook.cellAt(0);
-  }
-
-  async function pollUntil<T>(
-    fetch: () => Thenable<T>,
-    accept: (value: T) => boolean,
-    timeoutMs = 30_000,
-  ): Promise<T> {
-    const deadline = Date.now() + timeoutMs;
-    let value = await fetch();
-    while (!accept(value) && Date.now() < deadline) {
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      value = await fetch();
-    }
-    return value;
   }
 
   test("a notebook cell is coloured by the SQL authoring server", async function () {

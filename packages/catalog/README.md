@@ -35,7 +35,7 @@ reference requires no adjacent Workbench checkout. A registry dependency should
 replace it when the package is published.
 
 The package check also compiles a consumer against the real published Code
-Moniker 0.14.0 declarations and runs its parser and a manifest/catalog comparison.
+Moniker 0.14.1 declarations and runs its parser and a manifest/catalog comparison.
 This compatibility phase installs the client from its own committed lockfile
 and requires npm access; the catalog-only install above is still tested offline.
 

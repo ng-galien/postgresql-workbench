@@ -3,6 +3,6 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@code-moniker/client": "0.14.0"
+    "@code-moniker/client": "0.14.1"
   }
 }
