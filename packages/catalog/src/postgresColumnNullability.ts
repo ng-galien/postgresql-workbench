@@ -17,7 +17,7 @@ export async function explicitColumnNullability(
   parser: SyntaxParser,
 ): Promise<string> {
   const sourceBytes = Buffer.from(source);
-  const statements = await postgresStatementTrees(source, parser, [
+  const { trees: statements } = await postgresStatementTrees(source, parser, [
     "CreateStmt",
     "CreateSchemaStmt",
   ]);

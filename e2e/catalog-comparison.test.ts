@@ -8,6 +8,7 @@ import {
   type LocalCodeMonikerSession,
 } from "../packages/catalog/src/localCodeMoniker.js";
 import { explicitColumnNullability } from "../packages/catalog/src/postgresColumnNullability.js";
+import { readExpressionContexts } from "../packages/catalog/src/postgresExpressionContext.js";
 import { comparePostgresStructures } from "../packages/catalog/src/postgresSchemaComparison.js";
 import { createCodeMonikerSyntaxParser } from "../packages/sql/src/analysis/codeMonikerSyntax.js";
 import type { SyntaxParser } from "../packages/sql/src/analysis/syntaxTree.js";
@@ -382,4 +383,34 @@ CREATE TABLE public.two ("clé" text, "ID" bigint);`;
       `full:${Buffer.byteLength(table.slice(0, -1))}`,
     ]);
   });
+
+  it("resolves function names and table context across a schema larger than one syntax request", async () => {
+    const routines = Array.from(
+      { length: 8_500 },
+      (_, index) =>
+        `CREATE FUNCTION public.probe_${index}(a integer, b integer, c integer) RETURNS integer LANGUAGE sql IMMUTABLE AS $$ SELECT a + b + c $$;`,
+    ).join("\n");
+    const source = `${routines}\nCREATE TABLE public.tail (value text DEFAULT 'x');`;
+    expect(Buffer.byteLength(source)).toBeGreaterThan(1024 * 1024);
+    const context = await readExpressionContexts(source, parser);
+    const table = context.tables.get(JSON.stringify(["public", "tail"]));
+
+    expect(context.limitations).toEqual([]);
+    expect(table?.resolution.unknownFunctions).toBe(false);
+    expect(table?.resolution.functions.size).toBe(8_500);
+    expect(table?.resolution.functions.has(JSON.stringify(["public", "probe_8499"]))).toBe(true);
+    expect(table?.columns.get("value")).toBe("text");
+
+    let requests = 0;
+    const countedParser: SyntaxParser = {
+      parse: (request) => {
+        requests += 1;
+        return parser.parse(request);
+      },
+    };
+    await expect(
+      readExpressionContexts(`CREATE TABLE ;\n${source}`, countedParser),
+    ).rejects.toThrow("SQL source contains syntax errors");
+    expect(requests).toBeLessThan(30);
+  }, 30_000);
 });

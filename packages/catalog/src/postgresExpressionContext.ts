@@ -5,9 +5,11 @@ import {
   findSyntaxNode,
   findSyntaxNodes,
   syntaxNodeText,
+  UnusableSyntaxTreeError,
 } from "../../sql/src/analysis/syntaxNodes.js";
 import type { SyntaxNode, SyntaxParser } from "../../sql/src/analysis/syntaxTree.js";
 import {
+  isSyntaxResponseTooLarge,
   postgresStatementDeclarations,
   postgresStatementTrees,
 } from "./postgresSyntaxStatements.js";
@@ -44,12 +46,11 @@ const DECLARATIVE_CONTEXT_STATEMENTS = new Set([
   "CommentStmt",
   "VariableSetStmt",
 ]);
-
 export async function readExpressionContexts(
   source: string,
   parser: SyntaxParser,
 ): Promise<ExpressionContexts> {
-  const statements = await postgresStatementTrees(source, parser, [
+  const { outlines, trees: statements } = await postgresStatementTrees(source, parser, [
     "CreateStmt",
     "CreateSchemaStmt",
     "IndexStmt",
@@ -67,18 +68,13 @@ export async function readExpressionContexts(
     unknownFunctions: false,
     operators: false,
   };
-  const headers = await parser.parse({
-    language: "sql",
-    source,
-    namedOnly: false,
-    maxDepth: 8,
-    maxNodes: 40_000,
-  });
-  for (const declaration of postgresStatementDeclarations(Buffer.from(source), headers.root)) {
-    if (!DECLARATIVE_CONTEXT_STATEMENTS.has(declaration.kind)) {
-      result.limitations.push(
-        `Expression context is not proven for ${declaration.kind} at byte ${declaration.byteRange[0]}`,
-      );
+  for (const outline of outlines) {
+    for (const declaration of outline.declarations) {
+      if (!DECLARATIVE_CONTEXT_STATEMENTS.has(declaration.kind)) {
+        result.limitations.push(
+          `Expression context is not proven for ${declaration.kind} at byte ${outline.byteOffset + declaration.byteRange[0]}`,
+        );
+      }
     }
   }
   for (const statement of statements) {
@@ -105,11 +101,18 @@ export async function readExpressionContexts(
     }
   }
   if (result.limitations.length) return result;
-  resolution.unknownFunctions = headers.emittedNodes >= 40_000 || headers.hasError;
-  for (const fn of findSyntaxNodes(headers.root, "CreateFunctionStmt")) {
-    const name = directSyntaxChild(fn, "func_name");
-    if (!name || !findSyntaxNode(name, "attr_name")) resolution.unknownFunctions = true;
-    else resolution.functions.add(qualifiedName(source, name, []));
+  for (const outline of outlines) {
+    const functions = outline.declarations.filter((node) => node.kind === "CreateFunctionStmt");
+    if (
+      !(await collectFunctionNames(
+        Buffer.from(outline.source),
+        functions,
+        parser,
+        resolution.functions,
+      ))
+    ) {
+      resolution.unknownFunctions = true;
+    }
   }
   for (const statement of statements) {
     for (const schema of findSyntaxNodes(statement.root, "CreateSchemaStmt")) {
@@ -196,6 +199,46 @@ export async function readExpressionContexts(
     result.limitations.push("Expression context is not proven across multiple search_path changes");
   }
   return result;
+}
+
+async function collectFunctionNames(
+  source: Buffer,
+  functions: readonly SyntaxNode[],
+  parser: SyntaxParser,
+  names: Set<string>,
+): Promise<boolean> {
+  if (!functions.length) return true;
+  const bytes = source.subarray(functions[0].byteRange[0], functions.at(-1)!.byteRange[1]);
+  const text = bytes.toString("utf8");
+  try {
+    const headers = await parser.parse({ language: "sql", source: text, maxDepth: 8 });
+    if (!headers.hasError) {
+      const declarations = postgresStatementDeclarations(bytes, headers.root);
+      const declarationsOfFunctions = declarations.filter(
+        (node) => node.kind === "CreateFunctionStmt",
+      );
+      if (declarationsOfFunctions.length === functions.length) {
+        let complete = true;
+        for (const declaration of declarationsOfFunctions) {
+          const name = directSyntaxChild(declaration, "func_name");
+          if (!name || !findSyntaxNode(name, "attr_name")) complete = false;
+          else names.add(qualifiedName(text, name, []));
+        }
+        return complete;
+      }
+    }
+  } catch (error) {
+    if (!(error instanceof UnusableSyntaxTreeError) && !isSyntaxResponseTooLarge(error))
+      throw error;
+  }
+  // The outline already proved these boundaries. Resolve the same names in
+  // smaller requests if the provider's default response budget was exhausted.
+  if (functions.length === 1) return false;
+  const middle = Math.floor(functions.length / 2);
+  return (
+    (await collectFunctionNames(source, functions.slice(0, middle), parser, names)) &&
+    (await collectFunctionNames(source, functions.slice(middle), parser, names))
+  );
 }
 
 export function contextForSymbol(
