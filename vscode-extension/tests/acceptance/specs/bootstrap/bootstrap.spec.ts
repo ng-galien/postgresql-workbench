@@ -111,6 +111,14 @@ test("recovers, renames, and removes a Connection after connection errors", asyn
   workbench,
 }) => {
   await workbench.reset();
+  const notifications = workbench.page.getByRole("button", {
+    name: "Notifications",
+    exact: true,
+  });
+  const notificationCenter = workbench.page.locator(".notifications-center");
+  const recoveryError = notificationCenter.getByRole("dialog", {
+    name: CONNECTION_ERROR_NOTIFICATION,
+  });
 
   await test.step("remove an invalid Connection directly from its error state", async () => {
     await addInvalidConnection(workbench);
@@ -123,9 +131,29 @@ test("recovers, renames, and removes a Connection after connection errors", asyn
   });
 
   await test.step("recreate the invalid Connection and expose recovery", async () => {
+    // Removing a Connection hides its toast but leaves it in notification history.
+    await notifications.click();
+    await notificationCenter
+      .getByRole("button", {
+        name: "Clear All Notifications",
+        exact: true,
+      })
+      .click();
+    await expect(notificationCenter).toBeHidden();
+    await notifications.click();
+    await expect(notificationCenter).toBeVisible();
+    await expect(recoveryError).toHaveCount(0);
+    await notifications.click();
+    await expect(notificationCenter).toBeHidden();
+
     await addInvalidConnection(workbench);
-    const failure = await expectFailedConnection(workbench);
-    await failure.getByRole("button", { name: "Edit Connection", exact: true }).click();
+    // VS Code can suppress the toast when several notifications arrive together.
+    await notifications.click();
+    await expect(recoveryError).toBeVisible();
+    await expect(
+      notificationCenter.getByRole("dialog", { name: CONNECTION_PROGRESS_NOTIFICATION }),
+    ).toHaveCount(0);
+    await recoveryError.getByRole("button", { name: "Edit Connection", exact: true }).click();
   });
 
   await test.step("correct the port and connect the edited Connection", async () => {
