@@ -223,6 +223,35 @@ describe("PostgreSQL structural comparison", () => {
     expect(result.onlyInHead).toEqual([]);
   });
 
+  it("does not reconcile constraints when the provider omits their signatures", async () => {
+    const side = {
+      kind: "constraint",
+      identity: "sql:schema:app/table:t/constraint:c",
+      compact_identity: "sql:schema:app/table:t/constraint:c",
+    };
+    const result = await comparePostgresStructures(
+      {
+        diffImpact: {
+          compare: async () => ({
+            diagnostics: [],
+            ref_changes: [],
+            symbol_changes: [
+              { kind: "removed", old: side },
+              { kind: "added", new: side },
+            ],
+          }),
+        },
+      },
+      [],
+      [],
+      "missing-signatures",
+      "structure",
+    );
+    expect(result.isomorphic).toBe(false);
+    expect(result.onlyInBase).toHaveLength(1);
+    expect(result.onlyInHead).toHaveLength(1);
+  });
+
   it("pairs generated check names despite PostgreSQL expression rewriting", async () => {
     const raw = {
       diagnostics: [],

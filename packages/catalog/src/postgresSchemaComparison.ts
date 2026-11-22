@@ -1,7 +1,13 @@
 import { createHash } from "node:crypto";
 import type { SyntaxParser } from "../../sql/src/analysis/syntaxTree.js";
 import type { VirtualSqlDocument, VirtualSqlSourceSet } from "./postgresCatalog.js";
-import { explicitPrimaryKeyNullability } from "./postgresPrimaryKeyNullability.js";
+import { explicitColumnNullability } from "./postgresColumnNullability.js";
+import {
+  contextForSymbol,
+  type ExpressionContexts,
+  readExpressionContexts,
+} from "./postgresExpressionContext.js";
+import { expressionSignature } from "./postgresExpressionSignature.js";
 
 interface CodeMonikerDiffImpactSide {
   identity: string;
@@ -95,8 +101,8 @@ export async function comparePostgresStructures(
   const baseDocument = assembleStructureDocument(base);
   const headDocument = assembleStructureDocument(head);
   if (mode === "structure" && parser) {
-    baseDocument.content = await explicitPrimaryKeyNullability(baseDocument.content, parser);
-    headDocument.content = await explicitPrimaryKeyNullability(headDocument.content, parser);
+    baseDocument.content = await explicitColumnNullability(baseDocument.content, parser);
+    headDocument.content = await explicitColumnNullability(headDocument.content, parser);
   }
   const raw = await client.diffImpact.compare({
     scope,
@@ -113,10 +119,26 @@ export async function comparePostgresStructures(
       },
     ],
   });
+  const contexts =
+    mode === "structure" && parser
+      ? {
+          base: await readExpressionContexts(baseDocument.content, parser),
+          head: await readExpressionContexts(headDocument.content, parser),
+        }
+      : undefined;
+  const structuralSymbols =
+    contexts && parser
+      ? await normalizeExpressionSignatures(
+          raw.symbol_changes,
+          parser,
+          contexts.base,
+          contexts.head,
+        )
+      : raw.symbol_changes;
   const relevantSymbols =
     mode === "semantic"
       ? raw.symbol_changes
-      : reconcileEquivalentConstraints(raw.symbol_changes.filter(isStructuralSymbolChange));
+      : reconcileEquivalentConstraints(structuralSymbols.filter(isStructuralSymbolChange));
   const onlyInBase = relevantSymbols
     .filter((change) => change.kind === "removed")
     .map((change) => structureDifference(change, "old"));
@@ -130,20 +152,67 @@ export async function comparePostgresStructures(
     mode === "semantic"
       ? raw.ref_changes.map(referenceDifference)
       : structuralReferenceDifferences(raw.ref_changes);
+  const diagnostics = [...raw.diagnostics];
+  const expressionProofUsed = structuralSymbols.some((change) =>
+    [change.old, change.new].some((side) =>
+      /^(check|attribute|predicate|key):[a-f0-9]{64}$/u.test(side?.signature ?? ""),
+    ),
+  );
+  if (relevantSymbols.length && contexts && expressionProofUsed) {
+    diagnostics.push(...contexts.base.limitations.map((reason) => `Base: ${reason}`));
+    diagnostics.push(...contexts.head.limitations.map((reason) => `Head: ${reason}`));
+  }
   return {
     isomorphic:
       onlyInBase.length === 0 &&
       onlyInHead.length === 0 &&
       changed.length === 0 &&
       references.length === 0 &&
-      raw.diagnostics.length === 0,
+      diagnostics.length === 0,
     onlyInBase,
     onlyInHead,
     changed,
     references,
-    diagnostics: raw.diagnostics,
+    diagnostics,
     raw,
   };
+}
+
+async function normalizeExpressionSignatures(
+  changes: readonly CodeMonikerDiffImpactSymbol[],
+  parser: SyntaxParser,
+  baseContext: ExpressionContexts,
+  headContext: ExpressionContexts,
+): Promise<CodeMonikerDiffImpactSymbol[]> {
+  const signatures = new Map<string, string>();
+  const contextEligible = !baseContext.limitations.length && !headContext.limitations.length;
+  const normalized: CodeMonikerDiffImpactSymbol[] = [];
+  for (const change of changes) {
+    const next = { ...change };
+    for (const side of ["old", "new"] as const) {
+      const symbol = change[side];
+      if (!symbol?.signature) continue;
+      const key = `${side}\u0000${symbol.compact_identity}\u0000${symbol.kind}\u0000${symbol.signature}`;
+      let signature = signatures.get(key);
+      if (signature === undefined) {
+        signature = await expressionSignature(
+          symbol.signature,
+          symbol.kind,
+          parser,
+          contextEligible
+            ? contextForSymbol(
+                side === "old" ? baseContext : headContext,
+                symbol.compact_identity || symbol.identity,
+              )
+            : undefined,
+        );
+        signatures.set(key, signature);
+      }
+      next[side] = { ...symbol, signature };
+    }
+    normalized.push(next);
+  }
+  return normalized;
 }
 
 function isStructuralSymbolChange(change: CodeMonikerDiffImpactSymbol): boolean {
@@ -183,6 +252,7 @@ function reconcileEquivalentConstraints(
   const addedByStructure = new Map<string, number[]>();
   for (const [index, change] of remaining.entries()) {
     if (change.kind !== "added" || change.new?.kind !== "constraint") continue;
+    if (change.new.signature === undefined) continue;
     const key = constraintStructureKey(change.new);
     const matches = addedByStructure.get(key) ?? [];
     matches.push(index);
@@ -191,6 +261,7 @@ function reconcileEquivalentConstraints(
   const ignored = new Set<number>();
   for (const [index, change] of remaining.entries()) {
     if (change.kind !== "removed" || change.old?.kind !== "constraint") continue;
+    if (change.old.signature === undefined) continue;
     const matches = addedByStructure.get(constraintStructureKey(change.old));
     const matchingIndex = matches?.pop();
     if (matchingIndex === undefined) continue;

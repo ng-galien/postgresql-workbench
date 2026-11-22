@@ -1,6 +1,6 @@
 {
   "name": "@ng-galien/postgresql-dap",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Standalone PostgreSQL Debug Adapter Protocol server for PL/pgSQL",
   "license": "MIT",
   "author": {
@@ -45,7 +45,7 @@
     "prepack": "node ../../scripts/dap/build-package.mjs && node ../../scripts/dap/verify-package.mjs"
   },
   "dependencies": {
-    "@code-moniker/client": "0.12.0",
+    "@code-moniker/client": "0.14.0",
     "@vscode/debugadapter": "^1.68.0",
     "@vscode/debugprotocol": "^1.68.0",
     "pg": "^8.20.0"

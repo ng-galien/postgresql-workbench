@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-## [1.6.0] - 2026-09-05
+## [1.6.0] - 2026-11-22
 
 ### MCP integration
 
@@ -21,6 +21,12 @@
   expanded, preventing duplicate-element errors in VS Code
 - Isolated acceptance workspaces and database fixtures, verified MCP lifecycle
   cleanup, and waited for completed notebook executions and transaction updates
+
+### Code Moniker and catalog comparison
+
+- Updated the Code Moniker client and packaged runtime to 0.14.0
+- Improved structural catalog comparison for equivalent PostgreSQL expressions
+  and column nullability
 
 ## [1.5.1] - 2026-09-04
 

@@ -1,6 +1,6 @@
 {
   "name": "@ng-galien/postgresql-coverage",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Standalone PL/pgSQL statement and branch coverage with pgTAP, for Node.js and CI",
   "license": "MIT",
   "author": "Alexandre Boyer",
@@ -48,7 +48,7 @@
     "prepack": "node ../../scripts/coverage/build-package.mjs"
   },
   "dependencies": {
-    "@code-moniker/client": "0.12.0",
+    "@code-moniker/client": "0.14.0",
     "@types/pg": "^8.11.10",
     "pg": "^8.20.0"
   }

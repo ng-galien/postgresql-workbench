@@ -7,28 +7,38 @@ import {
 import type { SyntaxNode, SyntaxParser } from "../../sql/src/analysis/syntaxTree.js";
 import { postgresStatementTrees } from "./postgresSyntaxStatements.js";
 
-/** PostgreSQL materializes PRIMARY KEY columns as NOT NULL in its catalog. */
-export async function explicitPrimaryKeyNullability(
+/**
+ * PostgreSQL materializes PRIMARY KEY and IDENTITY columns as NOT NULL.
+ * The provider owns statement boundaries, including quoted bodies and comments;
+ * a shallow projection avoids serializing every routine's AST.
+ */
+export async function explicitColumnNullability(
   source: string,
   parser: SyntaxParser,
 ): Promise<string> {
+  const sourceBytes = Buffer.from(source);
   const statements = await postgresStatementTrees(source, parser, [
     "CreateStmt",
     "CreateSchemaStmt",
   ]);
-  let bytes = Buffer.from(source);
-  for (const statement of statements.reverse()) {
-    const normalized = primaryKeyStatement(statement.source, statement.root);
+  const insertions = new Set<number>();
+  for (const statement of statements) {
+    for (const insertion of implicitNotNullInsertions(statement.source, statement.root)) {
+      insertions.add(statement.offset + insertion);
+    }
+  }
+  let bytes = sourceBytes;
+  for (const offset of [...insertions].sort((left, right) => right - left)) {
     bytes = Buffer.concat([
-      bytes.subarray(0, statement.offset),
-      Buffer.from(normalized),
-      bytes.subarray(statement.offset + Buffer.byteLength(statement.source)),
+      bytes.subarray(0, offset),
+      Buffer.from("\nNOT NULL"),
+      bytes.subarray(offset),
     ]);
   }
   return bytes.toString("utf8");
 }
 
-function primaryKeyStatement(source: string, root: SyntaxNode): string {
+function implicitNotNullInsertions(source: string, root: SyntaxNode): Set<number> {
   const insertions = new Set<number>();
   for (const table of findSyntaxNodes(root, "CreateStmt")) {
     const columns = findSyntaxNodes(table, "columnDef");
@@ -46,21 +56,17 @@ function primaryKeyStatement(source: string, root: SyntaxNode): string {
       const name = directSyntaxChild(column, "ColId");
       const constraints = findSyntaxNodes(column, "ColConstraintElem");
       const primary = constraints.some((node) => hasKeywords(node, "kw_primary", "kw_key"));
+      const identity = constraints.some((node) => hasKeywords(node, "kw_generated", "kw_identity"));
       const notNull = constraints.some((node) => hasKeywords(node, "kw_not", "kw_null"));
-      if (!notNull && (primary || (name && primaryColumns.has(columnName(source, name))))) {
+      if (
+        !notNull &&
+        (primary || identity || (name && primaryColumns.has(columnName(source, name))))
+      ) {
         insertions.add(column.byteRange[1]);
       }
     }
   }
-  let bytes = Buffer.from(source);
-  for (const offset of [...insertions].sort((left, right) => right - left)) {
-    bytes = Buffer.concat([
-      bytes.subarray(0, offset),
-      Buffer.from("\nNOT NULL"),
-      bytes.subarray(offset),
-    ]);
-  }
-  return bytes.toString("utf8");
+  return insertions;
 }
 
 function columnName(source: string, node: SyntaxNode): string {

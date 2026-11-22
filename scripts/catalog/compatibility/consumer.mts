@@ -1,4 +1,4 @@
-import { realpathSync } from "node:fs";
+import { readFileSync, realpathSync, writeFileSync } from "node:fs";
 import process from "node:process";
 import type { CodeMonikerClient } from "@code-moniker/client";
 import { NodeDaemonRuntime } from "@code-moniker/client/node";
@@ -16,7 +16,10 @@ function parserFor(client: CodeMonikerClient): SyntaxParser {
 
 const workspace = realpathSync(process.argv[2]);
 const runtime = new NodeDaemonRuntime({ registryDirectory: `${workspace}-registry` });
-const daemon = await runtime.launch({ workspaceRoots: [workspace] });
+const localBinary = process.env.CATALOG_TEST_CODE_MONIKER_BINARY;
+const daemon = localBinary
+  ? await runtime.launch({ workspaceRoots: [workspace], binaryCandidates: [localBinary] })
+  : await runtime.launch({ workspaceRoots: [workspace] });
 let client: CodeMonikerClient | undefined;
 try {
   client = await runtime.connect(daemon.entry, { expectedWorkspaceRoots: [workspace] });
@@ -72,8 +75,34 @@ CREATE INDEX probe_value_idx ON public.probe USING btree (value);`;
       throw new Error(`${label}: ${JSON.stringify(result)}`);
     }
   }
+  if (process.env.CATALOG_SCHEMA_CASE) {
+    const schemaCase = JSON.parse(readFileSync(process.env.CATALOG_SCHEMA_CASE, "utf8"));
+    const result = await comparePostgresStructures(
+      client,
+      schemaCase.base,
+      schemaCase.head,
+      schemaCase.name,
+      "structure",
+      parser,
+    );
+    if (process.env.CATALOG_SCHEMA_REPORT) {
+      writeFileSync(process.env.CATALOG_SCHEMA_REPORT, JSON.stringify(result, null, 2));
+    }
+    process.stdout.write(
+      `${JSON.stringify({
+        schema: schemaCase.name,
+        isomorphic: result.isomorphic,
+        onlyInBase: result.onlyInBase.length,
+        onlyInHead: result.onlyInHead.length,
+        changed: result.changed.length,
+        diagnostics: result.diagnostics,
+      })}\n`,
+    );
+    if (!result.isomorphic)
+      throw new Error("Full schema comparison is not isomorphic; inspect the report");
+  }
   process.stdout.write(
-    "Published Code Moniker 0.13.0: strict public types, real parser and bounded materialization probes passed.\n",
+    `Code Moniker client 0.14.0 with ${localBinary ? "explicit local native binary" : "published native provider"}: strict public types, real parser and bounded materialization probes passed.\n`,
   );
 } finally {
   client?.close();
