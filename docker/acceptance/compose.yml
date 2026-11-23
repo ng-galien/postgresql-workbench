@@ -4,7 +4,7 @@ x-runner: &runner
     context: ../..
     dockerfile: docker/acceptance/Dockerfile
     args:
-      NODE_VERSION: 22.23.2
+      NODE_VERSION: 22.23.5
       VSCODE_VERSION: ${PGWB_ACCEPTANCE_VSCODE_VERSION:-1.109.0}
   init: true
   shm_size: 2gb

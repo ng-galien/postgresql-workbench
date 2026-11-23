@@ -1,5 +1,5 @@
-ARG NODE_VERSION=22.23.2
-FROM node:${NODE_VERSION}-bookworm@sha256:0557ac14e0d45d02ed563067b82856ca5e7aa3437fa28d98d4350ea9c3d9494a AS node-runtime
+ARG NODE_VERSION=22.23.5
+FROM node:${NODE_VERSION}-bookworm@sha256:e13726ca604184d7a91fcacab1fc09eefd642dc28e79ac34e85540dd93b78cfb AS node-runtime
 
 FROM mcr.microsoft.com/playwright:v1.62.1-noble@sha256:dcc5531e97840b9b5e794f2814476b21571c5124a3fca2267d73041f56e7580e
 

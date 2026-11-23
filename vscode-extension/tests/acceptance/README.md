@@ -123,7 +123,7 @@ database-backed lanes fresh PostgreSQL fixtures. Set `PGWB_PLAYWRIGHT_RUN_ID`
 when a stable diagnostic identifier is useful; the runner refuses to overwrite
 evidence for an existing identifier.
 
-The image pins Node 22.23.2 and Playwright 1.62.1 by their multi-architecture
+The image pins Node 22.23.5 and Playwright 1.62.1 by their multi-architecture
 image manifests, plus VS Code 1.109.0 and Ubuntu Noble. It caches that exact VS
 Code binary during the image build instead of following the moving `stable`
 channel. The PostgreSQL 17/pldebugger demo base is pinned to its verified
