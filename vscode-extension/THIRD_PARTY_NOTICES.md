@@ -3882,7 +3882,7 @@ ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR
 IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 ````
 
-## sql-formatter@15.9.0
+## sql-formatter@15.10.0
 
 License: MIT
 Source: git+https://github.com/sql-formatter-org/sql-formatter.git

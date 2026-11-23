@@ -71,7 +71,7 @@
     "vscode": "npm:@codingame/monaco-vscode-extension-api@25.1.2",
     "vscode-languageserver-protocol": "^3.18.2",
     "vscode-ws-jsonrpc": "3.5.0",
-    "ws": "8.21.3",
+    "ws": "8.23.0",
     "zod": "4.6.7"
   },
   "devDependencies": {
